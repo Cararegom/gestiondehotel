@@ -8,6 +8,29 @@ import {
     showLoading 
 } from '../../uiUtils.js';
 
+// --- Helpers para horario de hotel ---
+let hotelCheckin = "15:00";
+let hotelCheckout = "12:00";
+
+function parseTimeToDate(date, horaStr) {
+  const d = new Date(date);
+  const [h, m] = horaStr.split(':').map(x=>parseInt(x));
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+function calcMinutesBetween(a, b) {
+  return Math.round((b - a)/60000);
+}
+function calcularMinutosNoche(checkin, checkout) {
+  // checkin/checkout string 'HH:MM'
+  const now = new Date();
+  const inDate = parseTimeToDate(now, checkin);
+  let outDate = parseTimeToDate(now, checkout);
+  // Si checkout es menor, es el día siguiente
+  if (outDate <= inDate) outDate.setDate(outDate.getDate() + 1);
+  return calcMinutesBetween(inDate, outDate);
+}
+
 // --- Module-Scoped Variables ---
 let moduleListeners = [];
 let currentHotelId = null;
@@ -84,7 +107,6 @@ function setTableErrorState(tbodyEl, message = "Error al cargar datos.") {
         tbodyEl.innerHTML = `<tr><td colspan="100%" class="text-red-600 text-center p-3">${message}</td></tr>`;
     }
 }
-
 // --- Lógica para Tiempos de Estancia ---
 async function cargarYRenderizarTiemposEstancia(tbodyEl, supabaseInst, hotelId, feedbackEl) {
   if (!tbodyEl || !supabaseInst || !hotelId) {
@@ -163,6 +185,7 @@ function resetearFormularioTiempoEstancia(formEl, btnCancelarEl) {
   formEl.elements.nombreTiempo.focus();
 }
 
+// --- CAMBIO IMPORTANTE: Si el nombre contiene "noche", minutos se calculan según los horarios de hotel configurados
 async function handleTiempoEstanciaSubmit(event, formEl, tbodyEl, feedbackEl, btnGuardarEl, btnCancelarEl) {
     event.preventDefault();
     if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
@@ -174,16 +197,21 @@ async function handleTiempoEstanciaSubmit(event, formEl, tbodyEl, feedbackEl, bt
     const idEdit = formData.get('tiempoEstanciaIdEdit');
     const activoValue = formEl.elements.activoTiempo.checked;
 
+    // --- CAMBIO: Si es "Noche", calcula minutos automáticamente usando el horario del hotel
+    let minutosParsed = parseInt(minutosValue);
+    if (nombreValue && nombreValue.toLowerCase().includes('noche')) {
+      minutosParsed = calcularMinutosNoche(hotelCheckin, hotelCheckout);
+      formEl.elements.minutosTiempo.value = minutosParsed;
+    }
+
     const originalButtonText = btnGuardarEl.textContent;
     setFormLoadingState(formEl, true, btnGuardarEl, originalButtonText, 'Guardando...');
 
-    const minutosParsed = parseInt(minutosValue);
-    
-    if (!nombreValue || !minutosValue || isNaN(minutosParsed) || minutosParsed <= 0) {
+    if (!nombreValue || !minutosParsed || isNaN(minutosParsed) || minutosParsed <= 0) {
       showHabitacionesFeedback(feedbackEl, 'Nombre y minutos (mayor a 0) son obligatorios.', 'error');
       setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
       if (!nombreValue) formEl.elements.nombreTiempo.focus();
-      else if (!minutosValue || isNaN(minutosParsed) || minutosParsed <= 0) formEl.elements.minutosTiempo.focus();
+      else if (!minutosParsed || isNaN(minutosParsed) || minutosParsed <= 0) formEl.elements.minutosTiempo.focus();
       return;
     }
 
@@ -199,13 +227,14 @@ async function handleTiempoEstanciaSubmit(event, formEl, tbodyEl, feedbackEl, bt
     }
 
     const payload = {
-      hotel_id: currentHotelId,
-      nombre: nombreValue,
-      minutos: minutosParsed,
-      precio_adicional,
-      activo: activoValue,
-      user_id: currentModuleUser.id 
-    };
+  hotel_id: currentHotelId,
+  nombre: nombreValue,
+  minutos: minutosParsed,
+  precio: precio_adicional,   // ← Aquí está la clave
+  precio_adicional,           // (opcional, puedes dejarlo para no romper lógica vieja)
+  activo: activoValue,
+  user_id: currentModuleUser.id 
+};
 
     try {
       if (idEdit) {
@@ -241,7 +270,6 @@ function populateTiemposEstanciaSelect(selectEl, selectedIds = []) {
           }).join('')
         : `<option value="" disabled>No hay tiempos activos. Defínalos primero.</option>`;
 }
-
 // --- Lógica para Habitaciones ---
 async function renderHabitaciones(habitacionesContainer, supabaseInst, hotelId, feedbackEl) {
   if (!habitacionesContainer) {
@@ -251,11 +279,11 @@ async function renderHabitaciones(habitacionesContainer, supabaseInst, hotelId, 
   }
   if (!hotelId) {
     console.error("RenderHabitaciones: hotelId es undefined. No se puede cargar habitaciones.");
-    setTableErrorState(habitacionesContainer, "Error: Hotel no identificado para cargar habitaciones."); // Usar helper
+    setTableErrorState(habitacionesContainer, "Error: Hotel no identificado para cargar habitaciones.");
     if (feedbackEl) showHabitacionesFeedback(feedbackEl, "Error: Hotel no identificado para cargar habitaciones.", "error");
     return;
   }
-  setTableLoadingState(habitacionesContainer, "Cargando habitaciones..."); // Usar helper
+  setTableLoadingState(habitacionesContainer, "Cargando habitaciones...");
   if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
 
   try {
@@ -263,27 +291,27 @@ async function renderHabitaciones(habitacionesContainer, supabaseInst, hotelId, 
       .from('habitaciones')
       .select(`
         id, nombre, tipo, precio, estado, activo, amenidades,
-        habitacion_tiempos_permitidos ( 
-          tiempo_estancia_id, 
-          tiempos_estancia (id, nombre, minutos) 
+        habitacion_tiempos_permitidos (
+          tiempo_estancia_id,
+          tiempos_estancia (id, nombre, minutos)
         )
       `)
       .eq('hotel_id', hotelId)
       .order('nombre', { ascending: true });
 
     if (error) throw error;
-    habitacionesContainer.innerHTML = ''; 
+    habitacionesContainer.innerHTML = '';
 
     if (!habitaciones || habitaciones.length === 0) {
-      setTableEmptyState(habitacionesContainer, "No hay habitaciones registradas para este hotel."); // Usar helper
+      setTableEmptyState(habitacionesContainer, "No hay habitaciones registradas para este hotel.");
       return;
     }
 
     habitaciones.forEach(h => {
       const card = document.createElement('div');
       card.className = `habitacion-card card p-3 rounded shadow-sm estado-${h.estado || 'desconocido'} ${h.activo ? 'activa' : 'inactiva'}`;
-      card.dataset.habitacionId = h.id; 
-      
+      card.dataset.habitacionId = h.id;
+
       const estadoDisplay = h.estado ? h.estado.charAt(0).toUpperCase() + h.estado.slice(1) : 'Desconocido';
       const nombresTiemposEstancia = h.habitacion_tiempos_permitidos && h.habitacion_tiempos_permitidos.length > 0
         ? h.habitacion_tiempos_permitidos.map(htp => htp.tiempos_estancia?.nombre || 'Tiempo desc.').join(', ')
@@ -308,7 +336,7 @@ async function renderHabitaciones(habitacionesContainer, supabaseInst, hotelId, 
     });
   } catch (err) {
     console.error('Error loading rooms:', err);
-    setTableErrorState(habitacionesContainer, `Error al cargar habitaciones: ${err.message}`); // Usar helper
+    setTableErrorState(habitacionesContainer, `Error al cargar habitaciones: ${err.message}`);
     if (feedbackEl) showHabitacionesFeedback(feedbackEl, `Error al cargar habitaciones: ${err.message}`, 'error');
   }
 }
@@ -326,7 +354,7 @@ function populateForm(formEl, selectTiemposEl, habitacionData, btnCancelarEl, bt
 
   const selectedTiempoIds = habitacionData.habitacion_tiempos_permitidos?.map(htp => htp.tiempo_estancia_id.toString()) || [];
   populateTiemposEstanciaSelect(selectTiemposEl, selectedTiempoIds);
-  
+
   if (btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
   if (btnGuardarEl) btnGuardarEl.textContent = 'Actualizar Habitación';
   formEl.elements.nombre.focus();
@@ -403,15 +431,50 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
     }
 }
 
+// --- Render Configuración de Horarios ---
+async function renderHorariosConfig(container, supabaseInst, hotelId, feedbackEl) {
+    const { data: hotel, error } = await supabaseInst.from('hoteles')
+        .select('checkin_hora, checkout_hora').eq('id', hotelId).single();
+    if (error) {
+        feedbackEl.textContent = "No se pudo cargar configuración de horarios.";
+        return;
+    }
+    hotelCheckin = hotel?.checkin_hora || "15:00";
+    hotelCheckout = hotel?.checkout_hora || "12:00";
+    container.innerHTML = `
+      <form id="form-horarios-hotel" class="flex flex-col md:flex-row gap-2 mb-4 items-center">
+        <label><b>Check-in:</b> <input id="checkin-hotel" type="time" value="${hotelCheckin}" class="form-control"></label>
+        <label><b>Check-out:</b> <input id="checkout-hotel" type="time" value="${hotelCheckout}" class="form-control"></label>
+        <button type="submit" class="button button-primary ml-3">Guardar Horarios</button>
+      </form>
+      <div class="text-xs text-gray-500 ml-1">Horarios aplican para la opción “Noche”</div>
+    `;
+    const form = container.querySelector('#form-horarios-hotel');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const inVal = form['checkin-hotel'].value || "15:00";
+      const outVal = form['checkout-hotel'].value || "12:00";
+      const { error } = await supabaseInst.from('hoteles')
+        .update({ checkin_hora: inVal, checkout_hora: outVal }).eq('id', hotelId);
+      if (!error) {
+        hotelCheckin = inVal; hotelCheckout = outVal;
+        feedbackEl.textContent = "Horarios guardados ✔️";
+        setTimeout(()=>{feedbackEl.textContent=""}, 1200);
+      } else {
+        feedbackEl.textContent = "Error guardando horarios";
+      }
+    };
+}
+
 // --- Main Module Mount Function ---
 export async function mount(container, supabaseInst, user) {
   console.log("[Habitaciones/mount] Iniciando montaje...");
-  unmount(); 
+  unmount();
 
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
-  currentHotelId = null; 
+  currentHotelId = null;
 
   let tempHotelId = user?.user_metadata?.hotel_id;
   if (!tempHotelId && user?.id) {
@@ -425,12 +488,15 @@ export async function mount(container, supabaseInst, user) {
     }
   }
   currentHotelId = tempHotelId;
-  
+
   container.innerHTML = `
     <div class="card habitaciones-module shadow-lg rounded-lg">
-      <div class="card-header bg-gray-100 p-4 border-b"><h2 class="text-xl font-semibold text-gray-800">Gestión de Hotel: Habitaciones y Tiempos de Estancia</h2></div>
+      <div class="card-header bg-gray-100 p-4 border-b">
+        <h2 class="text-xl font-semibold text-gray-800">Gestión de Hotel: Habitaciones y Tiempos de Estancia</h2>
+      </div>
       <div class="card-body p-4 md:p-6 space-y-8">
         <div id="habitaciones-global-feedback" role="status" aria-live="polite" class="feedback-message mb-3" style="min-height: 24px;"></div>
+        <div id="config-horarios-hotel"></div>
         <section id="section-tiempos-estancia" class="p-4 border rounded-md bg-gray-50 shadow-sm">
           <h3 class="text-lg font-semibold text-gray-700 mb-3">Administrar Tiempos de Estancia</h3>
           <form id="form-tiempo-estancia" class="form space-y-3 mb-4" novalidate>
@@ -457,6 +523,7 @@ export async function mount(container, supabaseInst, user) {
     </div>`;
 
   const feedbackGlobalEl = container.querySelector('#habitaciones-global-feedback');
+  const configHorariosEl = container.querySelector('#config-horarios-hotel');
   const formTiempoEstanciaEl = container.querySelector('#form-tiempo-estancia');
   const tablaTiemposEstanciaBodyEl = container.querySelector('#tabla-tiempos-estancia-body');
   const btnGuardarTiempoEstanciaEl = container.querySelector('#btn-guardar-tiempo-estancia');
@@ -473,7 +540,10 @@ export async function mount(container, supabaseInst, user) {
     if(formHabitacionEl) formHabitacionEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
     return;
   }
-  
+
+  // Render configuración de horarios arriba de todo
+  if (configHorariosEl) await renderHorariosConfig(configHorariosEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl);
+
   if (!formTiempoEstanciaEl || !tablaTiemposEstanciaBodyEl || !btnGuardarTiempoEstanciaEl || !btnCancelarEdicionTiempoEl ||
       !formHabitacionEl || !selectHabitacionTiemposEl || !listaHabitacionesContainerEl || !btnGuardarHabitacionEl || !btnCancelarEdicionHabitacionEl ||
       !feedbackGlobalEl) {
@@ -500,7 +570,7 @@ export async function mount(container, supabaseInst, user) {
     const tiempoId = button.dataset.id;
     const accion = button.dataset.accion;
     if (feedbackGlobalEl) clearHabitacionesFeedbackLocal(feedbackGlobalEl);
-    
+
     const originalButtonText = button.textContent;
     button.disabled = true;
     button.textContent = '...';
@@ -521,9 +591,8 @@ export async function mount(container, supabaseInst, user) {
         await currentSupabaseInstance.from('tiempos_estancia').update({ activo: !estadoActual }).eq('id', tiempoId).eq('hotel_id', currentHotelId);
         showHabitacionesFeedback(feedbackGlobalEl, `Tiempo de estancia ${!estadoActual ? 'activado' : 'desactivado'}.`, 'success');
         await cargarYRenderizarTiemposEstancia(tablaTiemposEstanciaBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl);
-      } catch (err) { 
+      } catch (err) {
         showHabitacionesFeedback(feedbackGlobalEl, `Error al cambiar estado: ${err.message}`, 'error', 0);
-        // No es necesario reactivar aquí si la tabla se recarga, el botón se recreará.
       }
     }
   };
@@ -536,12 +605,12 @@ export async function mount(container, supabaseInst, user) {
   moduleListeners.push({ element: formHabitacionEl, type: 'submit', handler: habitacionSubmitHandler });
 
   const cancelHabitacionHandler = () => {
-      resetForm(formHabitacionEl, selectHabitacionTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl);
-      if(feedbackGlobalEl) clearHabitacionesFeedbackLocal(feedbackGlobalEl);
+    resetForm(formHabitacionEl, selectHabitacionTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl);
+    if(feedbackGlobalEl) clearHabitacionesFeedbackLocal(feedbackGlobalEl);
   };
   btnCancelarEdicionHabitacionEl.addEventListener('click', cancelHabitacionHandler);
   moduleListeners.push({ element: btnCancelarEdicionHabitacionEl, type: 'click', handler: cancelHabitacionHandler });
-  
+
   const listaHabitacionesClickHandler = async (e) => {
     const button = e.target.closest('button[data-accion]');
     if (!button) return;
@@ -549,7 +618,7 @@ export async function mount(container, supabaseInst, user) {
     const habitacionId = button.dataset.id;
     const accion = button.dataset.accion;
     if (feedbackGlobalEl) clearHabitacionesFeedbackLocal(feedbackGlobalEl);
-    
+
     const originalButtonText = button.textContent;
     button.disabled = true;
     button.textContent = '...';
@@ -590,40 +659,38 @@ export async function mount(container, supabaseInst, user) {
           showHabitacionesFeedback(feedbackGlobalEl, 'Habitación eliminada exitosamente.', 'success');
           await renderHabitaciones(listaHabitacionesContainerEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl);
           if (formHabitacionEl.elements.habitacionIdEdit.value === habitacionId) {
-            resetForm(formHabitacionEl, selectHabitacionTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl);
+            resetForm(formHabitacionEl, selectTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl);
           }
         } catch (err) {
           console.error('Error deleting room:', err);
           showHabitacionesFeedback(feedbackGlobalEl, `Error al eliminar habitación: ${err.message}`, 'error', 0);
-          button.disabled = false; // Reactivar en caso de error
+          button.disabled = false;
           button.textContent = originalButtonText;
         }
       } else {
-        button.disabled = false; // Reactivar si el usuario cancela
-        button.textContent = originalButtonText;
-      }
-    } else { 
         button.disabled = false;
         button.textContent = originalButtonText;
+      }
+    } else {
+      button.disabled = false;
+      button.textContent = originalButtonText;
     }
   };
   listaHabitacionesContainerEl.addEventListener('click', listaHabitacionesClickHandler);
   moduleListeners.push({ element: listaHabitacionesContainerEl, type: 'click', handler: listaHabitacionesClickHandler });
-  
+
   // Carga inicial de datos
-  console.log("[Habitaciones/mount] Llamando a cargarYRenderizarTiemposEstancia...");
-  await cargarYRenderizarTiemposEstancia(tablaTiemposEstanciaBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl); 
-  console.log("[Habitaciones/mount] Llamando a renderHabitaciones...");
+  await cargarYRenderizarTiemposEstancia(tablaTiemposEstanciaBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl);
   await renderHabitaciones(listaHabitacionesContainerEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl);
-  
+
   resetearFormularioTiempoEstancia(formTiempoEstanciaEl, btnCancelarEdicionTiempoEl);
   resetForm(formHabitacionEl, selectHabitacionTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl);
-  
+
   if(formTiempoEstanciaEl && formTiempoEstanciaEl.elements.nombreTiempo) formTiempoEstanciaEl.elements.nombreTiempo.focus();
   console.log("[Habitaciones/mount] Montaje completado.");
 }
 
-export function unmount() { 
+export function unmount() {
   console.log("Habitaciones.unmount: Limpiando listeners y estado...");
   moduleListeners.forEach(({ element, type, handler }) => {
     if (element && typeof element.removeEventListener === 'function') {
@@ -635,6 +702,6 @@ export function unmount() {
   currentModuleUser = null;
   currentSupabaseInstance = null;
   todosLosTiemposEstanciaCache = [];
-  currentContainerEl = null; 
+  currentContainerEl = null;
   console.log('Habitaciones module unmounted.');
 }

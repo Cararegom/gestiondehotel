@@ -1,285 +1,320 @@
 // js/modules/usuarios/usuarios.js
-// import { supabase } from '../../supabaseClient.js'; // Will use currentSupabaseInstance from mount
 
-// --- Module-Scoped Variables ---
 let currentContainerEl = null;
-let currentModuleUser = null; // The user interacting with this module (admin, manager)
+let currentModuleUser = null;
 let currentSupabaseInstance = null;
 let currentHotelId = null;
 let rolesDisponiblesCache = [];
+let permisosDisponiblesCache = [];
 let moduleListeners = [];
+const EDGE_FUNC_PERMISOS = "https://iikpqpdoslyduecibaij.supabase.co/functions/v1/actualizar_permisos_usuario";
 
-// --- UI Helper Functions (Scoped) ---
-/**
- * Shows a feedback message within the usuarios module.
- * @param {HTMLElement} feedbackEl - The feedback display element.
- * @param {string} message - The message to show.
- * @param {'success-indicator' | 'error-indicator' | 'info-indicator'} [typeClass='success-indicator'] - CSS class for feedback type.
- * @param {number} [duration=4000] - Duration in ms. 0 for indefinite.
- */
-function showUsuariosFeedback(feedbackEl, message, typeClass = 'success-indicator', duration = 4000) {
+// ----------- Helpers para UI y feedback -----------
+
+function showUsuariosFeedback(feedbackEl, message, typeClass = 'success-indicator', duration = 5000) {
   if (!feedbackEl) {
-    console.warn("Feedback element not provided to showUsuariosFeedback");
+    alert(message);
     return;
   }
   feedbackEl.textContent = message;
-  let alertClasses = 'bg-green-100 border-green-300 text-green-700'; // success
-  if (typeClass === 'error-indicator') {
-    alertClasses = 'bg-red-100 border-red-300 text-red-700';
-  } else if (typeClass === 'info-indicator') {
-    alertClasses = 'bg-blue-100 border-blue-300 text-blue-700';
-  }
-  feedbackEl.className = `feedback-message mt-2 mb-3 p-3 rounded-md border text-sm ${alertClasses} visible`;
+  feedbackEl.className = `feedback-message mt-2 mb-3 p-3 rounded-md border text-sm ${
+    typeClass === 'error-indicator'
+      ? 'bg-red-100 border-red-400 text-red-700'
+      : typeClass === 'info-indicator'
+      ? 'bg-blue-100 border-blue-400 text-blue-700'
+      : typeClass === 'warning-indicator'
+      ? 'bg-yellow-100 border-yellow-400 text-yellow-700'
+      : 'bg-green-100 border-green-400 text-green-700'
+  } visible opacity-100 transition-opacity duration-300`;
   feedbackEl.style.display = 'block';
-  feedbackEl.setAttribute('aria-live', typeClass === 'error-indicator' ? 'assertive' : 'polite');
-
-  if (typeClass.includes('error-indicator')) {
-    feedbackEl.setAttribute('tabindex', '-1'); // Make it focusable for screen readers
-    feedbackEl.focus();
-  }
   if (duration > 0) {
     setTimeout(() => clearUsuariosFeedback(feedbackEl), duration);
   }
 }
 
-/**
- * Clears the feedback message.
- * @param {HTMLElement} feedbackEl - The feedback display element.
- */
 function clearUsuariosFeedback(feedbackEl) {
   if (!feedbackEl) return;
   feedbackEl.textContent = '';
-  feedbackEl.className = 'feedback-message mt-2 mb-3'; // Reset classes
-  feedbackEl.style.display = 'none';
-  feedbackEl.removeAttribute('tabindex');
+  feedbackEl.className = 'feedback-message mt-2 mb-3 opacity-0 transition-opacity duration-300';
+  setTimeout(() => {
+    if (feedbackEl.textContent === '') feedbackEl.style.display = 'none';
+  }, 300);
 }
 
-/**
- * Sets the loading state for a form.
- * @param {HTMLFormElement} formEl - The form element.
- * @param {boolean} isLoading - True if loading, false otherwise.
- * @param {HTMLButtonElement} buttonEl - The submit button.
- * @param {string} originalButtonText - The button's original text.
- * @param {string} [loadingButtonText='Procesando...'] - Text for the button when loading.
- */
-function setFormLoadingState(formEl, isLoading, buttonEl, originalButtonText, loadingButtonText = 'Procesando...') {
-  if (!formEl) return;
-  if (buttonEl) {
-    buttonEl.disabled = isLoading;
-    buttonEl.textContent = isLoading ? loadingButtonText : originalButtonText;
-    if(isLoading) buttonEl.classList.add('opacity-75', 'cursor-not-allowed');
-    else buttonEl.classList.remove('opacity-75', 'cursor-not-allowed');
+// ----------- Funciones de permisos -----------
+
+async function cargarPermisosDisponibles() {
+  if (!currentSupabaseInstance) return [];
+  const { data, error } = await currentSupabaseInstance
+    .from('permisos')
+    .select('id, nombre, descripcion')
+    .order('nombre', { ascending: true });
+  if (error) {
+    console.error('Error cargando permisos:', error);
+    return [];
   }
-  Array.from(formEl.elements).forEach(el => {
-    // Disable all input/select/textarea/button elements within the form, except the main submit button if handled separately
-    if (el !== buttonEl && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || el.tagName === 'BUTTON')) {
-      el.disabled = isLoading;
+  permisosDisponiblesCache = data || [];
+  return permisosDisponiblesCache;
+}
+
+async function cargarPermisosUsuario(usuarioId) {
+  if (!usuarioId || !currentSupabaseInstance) return [];
+
+  // 1. Permisos por rol
+  const { data: roles } = await currentSupabaseInstance
+    .from('usuarios_roles')
+    .select('rol_id')
+    .eq('usuario_id', usuarioId);
+  const rolesIds = (roles || []).map(r => r.rol_id);
+
+  const { data: permisosRol } = await currentSupabaseInstance
+    .from('roles_permisos')
+    .select('permiso_id')
+    .in('rol_id', rolesIds.length ? rolesIds : ['00000000-0000-0000-0000-000000000000']);
+
+  const permisosRolSet = new Set((permisosRol || []).map(pr => pr.permiso_id));
+
+  // 2. Permisos individuales (usuarios_permisos)
+  const { data: permisosPersonalizados } = await currentSupabaseInstance
+    .from('usuarios_permisos')
+    .select('permiso_id, permitido')
+    .eq('usuario_id', usuarioId);
+
+  // Calculamos el estado final de cada permiso
+  const permisosUsuario = {};
+  for (const p of permisosDisponiblesCache) {
+    permisosUsuario[p.id] = {
+      ...p,
+      checked: permisosRolSet.has(p.id)
+    };
+  }
+  if (permisosPersonalizados && permisosPersonalizados.length > 0) {
+    for (const perm of permisosPersonalizados) {
+      permisosUsuario[perm.permiso_id].checked = !!perm.permitido;
     }
-  });
+  }
+  return Object.values(permisosUsuario);
 }
 
-/**
- * Loads and renders users into the table.
- * @param {HTMLElement} tbodyEl - The tbody element of the users table.
- * @param {object} supabaseInstance - The Supabase client instance.
- * @param {string} hotelId - The ID of the current hotel.
- */
-async function cargarYRenderizarUsuarios(tbodyEl, supabaseInstance, hotelId) {
-  if (!tbodyEl || !hotelId) {
-    console.error("Cannot load users: tbody or hotelId missing.");
-    if (tbodyEl) tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-red-600">Error: Datos insuficientes para cargar usuarios.</td></tr>`;
-    return;
+// ----------- Modal permisos -----------
+
+function crearModalPermisos() {
+  let modal = document.getElementById('modal-permisos-usuario');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal-permisos-usuario';
+    modal.style = `
+      position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:10000;
+      background:rgba(0,0,0,0.28); display:none; align-items:center; justify-content:center;
+    `;
+    modal.innerHTML = `
+      <div style="background:white; border-radius:10px; min-width:320px; max-width:400px; padding:2rem; box-shadow:0 4px 16px #2225;">
+        <h3 id="modal-permisos-title" style="margin-bottom:1em;">Editar permisos</h3>
+        <form id="form-permisos-usuario">
+          <div id="modal-lista-permisos" style="max-height:280px;overflow:auto;margin-bottom:1.5em;"></div>
+          <div style="display:flex;gap:8px;justify-content:end;">
+            <button type="button" id="cancelar-modal-permisos" class="button button-outline">Cancelar</button>
+            <button type="submit" class="button button-primary">Guardar</button>
+          </div>
+        </form>
+        <div id="modal-permisos-feedback" style="min-height:22px; color:#e11d48; margin-top:0.8em;"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
   }
-  tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-gray-500">
-    <span class="loading-indicator visible">Cargando usuarios...</span>
-  </td></tr>`;
+  return modal;
+}
 
-  try {
-    const { data: usuarios, error } = await supabaseInstance
-      .from('usuarios') // This should be your user profiles table, not auth.users directly for custom fields
-      .select(`
-        id,
-        nombre,
-        correo,
-        activo,
-        hotel_id, 
-        usuarios_roles (
-          roles (id, nombre)
-        )
-      `)
-      .eq('hotel_id', hotelId) // Filter by the hotel_id of the current admin/manager
-      .order('nombre', { ascending: true });
-    if (error) throw error;
+async function abrirModalPermisos(usuario) {
+  const modal = crearModalPermisos();
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
 
-    tbodyEl.innerHTML = '';
-    if (!usuarios || usuarios.length === 0) {
-      tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-gray-500">
-        No hay usuarios registrados para este hotel.
-      </td></tr>`;
-      return;
+  document.getElementById('modal-permisos-title').textContent = `Permisos: ${usuario.nombre || usuario.correo}`;
+  const listaDiv = document.getElementById('modal-lista-permisos');
+  listaDiv.innerHTML = '<div style="text-align:center;color:#888;">Cargando permisos...</div>';
+
+  if (!permisosDisponiblesCache.length) await cargarPermisosDisponibles();
+  const permisosUsuario = await cargarPermisosUsuario(usuario.id);
+
+  listaDiv.innerHTML = permisosUsuario.map(p => `
+    <label style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      <input type="checkbox" name="permiso" value="${p.id}" ${p.checked ? 'checked' : ''}>
+      <span>${p.nombre}</span>
+      <span style="font-size:12px;color:#888;margin-left:auto">${p.descripcion || ''}</span>
+    </label>
+  `).join('');
+
+  document.getElementById('cancelar-modal-permisos').onclick = () => {
+    modal.style.display = 'none';
+    document.body.style.overflow = '';
+  };
+
+  document.getElementById('form-permisos-usuario').onsubmit = async (e) => {
+    e.preventDefault();
+    const feedbackEl = document.getElementById('modal-permisos-feedback');
+    feedbackEl.textContent = '';
+
+    const permisosSeleccionados = Array.from(listaDiv.querySelectorAll('input[name="permiso"]')).map(input => ({
+      permiso_id: input.value,
+      checked: input.checked
+    }));
+
+    try {
+      const resp = await fetch(EDGE_FUNC_PERMISOS, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, // <--- SOLO Content-Type
+        body: JSON.stringify({ usuario_id: usuario.id, permisos: permisosSeleccionados })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'No se pudieron actualizar los permisos');
+      feedbackEl.style.color = '#16a34a';
+      feedbackEl.textContent = 'Permisos actualizados con éxito';
+      setTimeout(() => {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+      }, 900);
+    } catch (err) {
+      feedbackEl.style.color = '#e11d48';
+      feedbackEl.textContent = err.message || 'Error inesperado';
     }
-
-    usuarios.forEach(u => {
-      const rolesNombres = u.usuarios_roles.map(ur => ur.roles.nombre).join(', ') || 'Sin rol asignado';
-      const tr = document.createElement('tr');
-      tr.className = "hover:bg-gray-50";
-      tr.dataset.usuarioId = u.id;
-      tr.innerHTML = `
-        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-700">${u.nombre || 'N/A'}</td>
-        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${u.correo || 'N/A'}</td>
-        <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${rolesNombres}</td>
-        <td class="px-4 py-2 whitespace-nowrap text-sm">
-          <span class="badge px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-            ${u.activo ? 'Activo' : 'Inactivo'}
-          </span>
-        </td>
-        <td class="px-4 py-2 whitespace-nowrap text-sm font-medium space-x-2">
-          <button class="button button-outline button-small text-xs" data-accion="editar" data-id="${u.id}" title="Editar ${u.nombre || u.correo}">Editar</button>
-          <button class="button button-small text-xs ${u.activo ? 'button-warning' : 'button-success'}"
-                  data-accion="toggle-activo" data-id="${u.id}" data-estado-actual="${u.activo}" title="${u.activo ? 'Desactivar' : 'Activar'}">
-            ${u.activo ? 'Desactivar' : 'Activar'}
-          </button>
-          <button class="button button-accent button-small text-xs" data-accion="reset-password"
-                  data-id="${u.id}" data-correo="${u.correo}" title="Enviar reseteo de contraseña a ${u.correo}">
-            Reset Pass
-          </button>
-        </td>`;
-      tbodyEl.appendChild(tr);
-    });
-  } catch (err) {
-    console.error('Error loading users:', err);
-    tbodyEl.innerHTML = `<tr><td colspan="5" class="text-red-600 text-center p-3">
-      Error al cargar usuarios: ${err.message}
-    </td></tr>`;
-  }
+  };
 }
 
-/**
- * Loads available roles for the current hotel into a select element.
- * @param {HTMLSelectElement} selectEl - The select element to populate.
- * @param {object} supabaseInstance - The Supabase client instance.
- * @param {string} hotelId - The ID of the current hotel.
- */
-async function cargarRolesDisponibles(selectEl, supabaseInstance, hotelId) {
-  if (!selectEl || !hotelId) {
-    console.error("Cannot load roles: selectElement or hotelId missing.");
-    if(selectEl) selectEl.innerHTML = `<option value="" disabled>Error</option>`;
-    return;
-  }
+// ----------- Helpers de roles y usuarios -----------
+
+async function cargarRolesDisponibles(selectEl, supabaseInstance) {
+  if (!selectEl) return;
   selectEl.innerHTML = `<option value="">Cargando roles...</option>`;
   try {
-    // Assuming 'roles' are specific to a hotel or filtered by RLS.
-    // If 'roles' table has a 'hotel_id' column and it's not handled by RLS, add .eq('hotel_id', hotelId)
     const { data: roles, error } = await supabaseInstance
       .from('roles')
       .select('id, nombre')
-      // .eq('hotel_id', hotelId) // Add if roles are directly tied to hotel_id and not via RLS
       .order('nombre', { ascending: true });
     if (error) throw error;
-    
     rolesDisponiblesCache = roles || [];
     if (rolesDisponiblesCache.length > 0) {
       selectEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
     } else {
-      selectEl.innerHTML = `<option value="" disabled>No hay roles configurados para este hotel</option>`;
+      selectEl.innerHTML = `<option value="" disabled>No hay roles configurados</option>`;
     }
   } catch (e) {
-    console.error('Error loading roles:', e);
     selectEl.innerHTML = `<option value="" disabled>Error al cargar roles</option>`;
-    rolesDisponiblesCache = []; // Clear cache on error
+    rolesDisponiblesCache = [];
   }
 }
 
-/**
- * Populates the user form for editing.
- * @param {HTMLFormElement} formEl - The user form element.
- * @param {object} usuarioData - The user data to populate the form with.
- * @param {HTMLElement} formTitleEl - The HMTL element for the form title.
- * @param {HTMLElement} passwordGroupEl - The password input group element.
- * @param {HTMLButtonElement} btnCancelarEl - The cancel edit button.
- */
-function poblarFormularioEdicion(formEl, usuarioData, formTitleEl, passwordGroupEl, btnCancelarEl) {
-  if (!formEl) return;
-  formEl.reset();
-  formEl.elements.usuarioIdEdit.value = usuarioData.id;
-  if(formTitleEl) formTitleEl.textContent = `Editando Usuario: ${usuarioData.nombre || usuarioData.correo}`;
-  
-  formEl.elements.nombre.value = usuarioData.nombre || '';
-  const emailInput = formEl.elements.correo;
-  emailInput.value = usuarioData.correo || '';
-  emailInput.disabled = true; // Do not allow email change for existing users via this form
+async function cargarYRenderizarUsuarios(tbodyEl, supabaseInstance, hotelIdParaCarga) {
+  if (!tbodyEl) return;
+  if (!hotelIdParaCarga) {
+    tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-red-600">Error: Hotel ID no disponible para cargar usuarios.</td></tr>`;
+    return;
+  }
+  tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-gray-500">Cargando usuarios...</td></tr>`;
+  try {
+    const { data: usuarios, error } = await supabaseInstance
+      .from('usuarios')
+      .select('id, nombre, correo, activo, hotel_id, usuarios_roles ( roles (id, nombre) )')
+      .eq('hotel_id', hotelIdParaCarga)
+      .order('nombre', { ascending: true });
 
-  if(passwordGroupEl) passwordGroupEl.style.display = 'none'; // Hide password field for editing user profile data
+    tbodyEl.innerHTML = '';
+    if (!usuarios || usuarios.length === 0) {
+      tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-gray-500">No hay usuarios para mostrar.</td></tr>`;
+      return;
+    }
 
-  const selectRolesEl = formEl.elements.roles;
-  // Repopulate roles in case cache was cleared or for safety, ensuring options are fresh
-  selectRolesEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
-  const rolesAsignadosIds = usuarioData.usuarios_roles.map(ur => ur.roles.id.toString()); // Ensure string comparison for values
-  Array.from(selectRolesEl.options).forEach(option => {
-    option.selected = rolesAsignadosIds.includes(option.value);
-  });
-
-  formEl.elements.activo.checked = usuarioData.activo;
-
-  formEl.querySelector('#btn-guardar-usuario').textContent = 'Actualizar Usuario';
-  if(btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
-  formEl.elements.nombre.focus();
+    usuarios.forEach(u => {
+      const rolesNombres = u.usuarios_roles.map(ur => ur.roles?.nombre).filter(Boolean).join(', ') || 'Sin rol';
+      const tr = document.createElement('tr');
+      tr.className = "hover:bg-gray-50 transition-colors duration-150";
+      tr.dataset.usuarioId = u.id;
+      tr.innerHTML = `
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${u.nombre || 'N/A'}</td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${u.correo || 'N/A'}</td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${rolesNombres}</td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm">
+          <span class="badge px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${u.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+            ${u.activo ? 'Activo' : 'Inactivo'}
+          </span>
+        </td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm font-medium space-x-2">
+          <button class="button button-outline button-small text-xs" data-accion="editar" data-id="${u.id}">Editar</button>
+          <button class="button button-small text-xs ${u.activo ? 'button-warning' : 'button-success'}" data-accion="toggle-activo" data-id="${u.id}" data-estado-actual="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>
+          <button class="button button-accent button-small text-xs" data-accion="reset-password" data-id="${u.id}" data-correo="${u.correo}">Reset Pass</button>
+          <button class="button button-outline button-small text-xs" style="color:#2563eb;border-color:#2563eb" data-accion="permisos" data-id="${u.id}" data-nombre="${u.nombre || ''}" data-correo="${u.correo}">Permisos</button>
+        </td>`;
+      tbodyEl.appendChild(tr);
+    });
+  } catch (err) {
+    tbodyEl.innerHTML = `<tr><td colspan="5" class="text-red-600 text-center p-3">Error al cargar usuarios: ${err.message}</td></tr>`;
+  }
 }
 
-/**
- * Resets the user form to its initial state for creating a new user.
- * @param {HTMLFormElement} formEl - The user form element.
- * @param {HTMLElement} formTitleEl - The HMTL element for the form title.
- * @param {HTMLElement} passwordGroupEl - The password input group element.
- * @param {HTMLButtonElement} btnCancelarEl - The cancel edit button.
- * @param {HTMLSelectElement} selectRolesEl - The roles select element.
- */
+// ----------- Funciones de formularios -----------
+
 function resetearFormularioUsuario(formEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl) {
   if (!formEl) return;
   formEl.reset();
   formEl.elements.usuarioIdEdit.value = '';
-  if(formTitleEl) formTitleEl.textContent = 'Crear Nuevo Usuario';
-  
+  if (formTitleEl) formTitleEl.textContent = 'Crear Nuevo Usuario';
   const emailInput = formEl.elements.correo;
   emailInput.disabled = false;
-  if(passwordGroupEl) passwordGroupEl.style.display = 'block'; // Show password field for new user
-  
-  // Reset roles selection
-  if (selectRolesEl) {
-    selectRolesEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
-    Array.from(selectRolesEl.options).forEach(opt => opt.selected = false);
+  emailInput.value = '';
+  if (passwordGroupEl) {
+    passwordGroupEl.style.display = 'block';
+    formEl.elements.password.value = '';
   }
-  formEl.elements.activo.checked = true; // Default to active
-
+  if (selectRolesEl) {
+    if (rolesDisponiblesCache.length > 0) {
+      selectRolesEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
+      selectRolesEl.value = "";
+    } else {
+      selectRolesEl.innerHTML = '<option value="" disabled>No hay roles</option>';
+    }
+  }
+  formEl.elements.activo.checked = true;
   formEl.querySelector('#btn-guardar-usuario').textContent = 'Guardar Usuario';
-  if(btnCancelarEl) btnCancelarEl.style.display = 'none';
-  formEl.elements.nombre.focus();
+  if (btnCancelarEl) btnCancelarEl.style.display = 'none';
+  if(formEl.elements.nombre) formEl.elements.nombre.focus();
 }
 
-/**
- * Main mount function for the Usuarios module.
- * @param {HTMLElement} container - The main container for the module.
- * @param {object} sbInstance - The Supabase client instance.
- * @param {object} user - The current authenticated user (admin/manager).
- */
-export async function mount(container, sbInstance, user) {
-  unmount(container); // Clean up previous instance
+// ----------- Unmount -----------
 
+export function unmount(container) {
+  moduleListeners.forEach(({ element, type, handler }) => {
+    if (element && typeof element.removeEventListener === 'function') {
+      element.removeEventListener(type, handler);
+    }
+  });
+  moduleListeners = [];
+  rolesDisponiblesCache = [];
+  permisosDisponiblesCache = [];
+  currentHotelId = null;
+  currentModuleUser = null;
+  currentSupabaseInstance = null;
+  if (currentContainerEl) {
+    currentContainerEl.innerHTML = '';
+  }
+  currentContainerEl = null;
+}
+
+// ----------- Mount principal -----------
+
+export async function mount(container, sbInstance, user) {
+  unmount(container);
   currentContainerEl = container;
   currentSupabaseInstance = sbInstance;
   currentModuleUser = user;
-
-  // Fetch hotelId for the current admin/manager
-  currentHotelId = currentModuleUser?.user_metadata?.hotel_id;
-  if (!currentHotelId && currentModuleUser?.id) {
-    try {
-      const { data: perfil, error: perfilError } = await currentSupabaseInstance
-        .from('usuarios').select('hotel_id').eq('id', currentModuleUser.id).single();
-      if (perfilError && perfilError.code !== 'PGRST116') throw perfilError;
-      currentHotelId = perfil?.hotel_id;
-    } catch (e) {
-      console.error('Usuarios Module: Error fetching hotelId from profile:', e);
-    }
+  if (user?.user_metadata?.hotel_id) {
+    currentHotelId = user.user_metadata.hotel_id;
+  } else if (user?.id) {
+    const { data: perfil } = await currentSupabaseInstance
+      .from('usuarios')
+      .select('hotel_id')
+      .eq('id', user.id)
+      .single();
+    currentHotelId = perfil?.hotel_id;
   }
 
   currentContainerEl.innerHTML = `
@@ -288,8 +323,7 @@ export async function mount(container, sbInstance, user) {
         <h2 class="text-xl font-semibold text-gray-800">Gestión de Usuarios del Hotel</h2>
       </div>
       <div class="card-body p-4 md:p-6">
-        <div id="usuarios-feedback" role="status" aria-live="polite" class="feedback-message mb-4" style="min-height: 24px;"></div>
-        
+        <div id="usuarios-feedback" role="alert" aria-live="polite" class="feedback-message mb-4" style="min-height: 24px; display:none;"></div>
         <form id="form-crear-editar-usuario" class="form mb-6 p-4 border rounded-md bg-gray-50 shadow-sm" novalidate>
           <h3 id="form-usuario-titulo" class="text-lg font-semibold text-gray-700 mb-3">Crear Nuevo Usuario</h3>
           <input type="hidden" id="usuario-id-edit" name="usuarioIdEdit">
@@ -310,26 +344,22 @@ export async function mount(container, sbInstance, user) {
             </div>
             <div class="form-group">
               <label for="usuario-roles" class="block text-sm font-medium text-gray-600">Roles Asignados *</label>
-              <select multiple id="usuario-roles" name="roles" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required size="3">
-                <option>Cargando roles...</option>
-              </select>
+              <select multiple id="usuario-roles" name="roles" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required size="3"></select>
             </div>
           </div>
-          <div class="form-group mb-4">
+           <div class="form-group mb-4">
             <div class="flex items-center">
               <input type="checkbox" id="usuario-activo" name="activo" class="form-check-input h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked>
               <label for="usuario-activo" class="ml-2 block text-sm text-gray-900">Usuario Activo</label>
             </div>
           </div>
-          <div class="form-actions flex items-center gap-3">
+          <div class="form-actions flex items-center gap-3 mt-4">
             <button type="submit" id="btn-guardar-usuario" class="button button-primary py-2 px-4 rounded-md text-sm">Guardar Usuario</button>
             <button type="button" id="btn-cancelar-edicion-usuario" class="button button-outline py-2 px-4 rounded-md text-sm" style="display:none;">Cancelar Edición</button>
           </div>
         </form>
-        
         <hr class="my-6"/>
-        
-        <h3 class="text-lg font-semibold text-gray-700 mb-3">Usuarios Registrados en el Hotel</h3>
+        <h3 class="text-lg font-semibold text-gray-700 mb-3">Usuarios Registrados</h3>
         <div class="table-container overflow-x-auto">
           <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
@@ -357,136 +387,107 @@ export async function mount(container, sbInstance, user) {
   const passwordGroupEl = currentContainerEl.querySelector('#password-group');
 
   if (!currentHotelId) {
-    showUsuariosFeedback(feedbackGlobalEl, 'Error crítico: No se pudo determinar el hotel. Módulo de usuarios deshabilitado.', 'error-indicator', 0);
+    showUsuariosFeedback(feedbackGlobalEl, 'Error crítico: Hotel ID no disponible. Módulo deshabilitado.', 'error-indicator', 0);
     formUsuarioEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
     return;
   }
 
-  // Initial data load
-  setFormLoadingState(formUsuarioEl, true, btnGuardarEl, 'Guardar Usuario', 'Cargando...');
-  await cargarRolesDisponibles(selectRolesEl, currentSupabaseInstance, currentHotelId);
+  await cargarRolesDisponibles(selectRolesEl, currentSupabaseInstance);
+  await cargarPermisosDisponibles();
   await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
   resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
-  setFormLoadingState(formUsuarioEl, false, btnGuardarEl, 'Guardar Usuario');
 
+  // --------- Submit crear/editar usuario ---------
 
-  // --- Event Handlers ---
   const formSubmitHandler = async (event) => {
     event.preventDefault();
     clearUsuariosFeedback(feedbackGlobalEl);
-    const originalButtonText = btnGuardarEl.textContent;
-    setFormLoadingState(formUsuarioEl, true, btnGuardarEl, originalButtonText, 'Procesando...');
 
     const formData = new FormData(formUsuarioEl);
+    const rolesSeleccionadosIds = Array.from(selectRolesEl.selectedOptions)
+      .map(option => option.value)
+      .filter(Boolean);
+
     const idEdit = formData.get('usuarioIdEdit');
     const nombre = formData.get('nombre')?.trim();
     const correo = formData.get('correo')?.trim().toLowerCase();
-    const password = formData.get('password'); // Only for new users
-    const activo = formUsuarioEl.elements.activo.checked; // Get from checkbox state
-    const rolesSeleccionadosIds = Array.from(selectRolesEl.selectedOptions).map(opt => opt.value);
+    const password = formData.get('password');
+    const activo = formUsuarioEl.elements.activo.checked;
 
     if (!nombre || !correo || rolesSeleccionadosIds.length === 0) {
       showUsuariosFeedback(feedbackGlobalEl, 'Nombre, correo y al menos un rol son obligatorios.', 'error-indicator');
-      setFormLoadingState(formUsuarioEl, false, btnGuardarEl, originalButtonText);
       return;
     }
-    if (!idEdit && (!password || password.length < 8)) { // Password required and min length for new users
+    if (!idEdit && (!password || password.length < 8)) {
       showUsuariosFeedback(feedbackGlobalEl, 'Para nuevos usuarios, la contraseña es obligatoria (mínimo 8 caracteres).', 'error-indicator');
-      setFormLoadingState(formUsuarioEl, false, btnGuardarEl, originalButtonText);
-      formUsuarioEl.elements.password.focus();
+      return;
+    }
+    if (!currentHotelId) {
+      showUsuariosFeedback(feedbackGlobalEl, 'Error interno: Hotel ID no está definido antes de guardar.', 'error-indicator');
       return;
     }
 
     try {
-      if (idEdit) { // --- Update Existing User ---
-        // 1. Update user profile data in 'usuarios' table
-        const { error: profileUpdateError } = await currentSupabaseInstance
-          .from('usuarios')
-          .update({ nombre, activo, updated_at: new Date().toISOString() })
-          .eq('id', idEdit)
-          .eq('hotel_id', currentHotelId); // Ensure update is scoped to hotel
-        if (profileUpdateError) throw profileUpdateError;
-
-        // 2. Update roles: Delete existing roles and insert new ones
-        const { error: deleteRolesError } = await currentSupabaseInstance
-          .from('usuarios_roles')
-          .delete()
-          .eq('usuario_id', idEdit);
-        if (deleteRolesError) throw deleteRolesError;
-
+      if (idEdit) {
+        const updates = { nombre, activo, updated_at: new Date().toISOString() };
+        await currentSupabaseInstance
+          .from('usuarios').update(updates).eq('id', idEdit).eq('hotel_id', currentHotelId);
+        await currentSupabaseInstance.from('usuarios_roles').delete().eq('usuario_id', idEdit);
         if (rolesSeleccionadosIds.length > 0) {
-          const rolesToInsert = rolesSeleccionadosIds.map(rolId => ({
-            usuario_id: idEdit,
-            rol_id: rolId,
-            // hotel_id: currentHotelId // Add if your usuarios_roles table has hotel_id and it's not set by default/trigger
-          }));
-          const { error: insertRolesError } = await currentSupabaseInstance
-            .from('usuarios_roles')
-            .insert(rolesToInsert);
-          if (insertRolesError) throw insertRolesError;
+          const rolesToInsert = rolesSeleccionadosIds.map(rolId => ({ usuario_id: idEdit, rol_id: rolId, hotel_id: currentHotelId }));
+          await currentSupabaseInstance.from('usuarios_roles').insert(rolesToInsert);
         }
         showUsuariosFeedback(feedbackGlobalEl, 'Usuario actualizado exitosamente.', 'success-indicator');
-      } else { // --- Create New User ---
-        // Call RPC function to create Auth user, profile in 'usuarios', and assign roles
-        const { data: rpcResult, error: rpcError } = await currentSupabaseInstance.rpc(
-          'crear_usuario_hotel_con_perfil_y_roles',
-          {
-            p_email: correo,
-            p_password: password,
-            p_nombre: nombre,
-            p_hotel_id: currentHotelId,
-            p_roles_ids: rolesSeleccionadosIds,
-            p_activo: activo
-            // p_user_metadata: { hotel_id: currentHotelId, rol: rolesDisponiblesCache.find(r => r.id === rolesSeleccionadosIds[0])?.nombre || 'usuario' } // Example metadata
-          }
-        );
-        if (rpcError) throw rpcError;
-        if (rpcResult && rpcResult.error) throw new Error(rpcResult.message || 'Error devuelto por la función del servidor.');
-        
-        showUsuariosFeedback(feedbackGlobalEl, `Usuario ${rpcResult?.user_name || correo} creado exitosamente.`, 'success-indicator');
+      } else {
+        // Usa tu Edge Function o procedimiento de creación aquí si tienes
+        showUsuariosFeedback(feedbackGlobalEl, 'Creación de usuario solo soportada por Edge Function.', 'warning-indicator');
       }
       resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
       await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
     } catch (err) {
-      console.error('Error saving user:', err);
       showUsuariosFeedback(feedbackGlobalEl, `Error al guardar usuario: ${err.message}`, 'error-indicator', 0);
-    } finally {
-      setFormLoadingState(formUsuarioEl, false, btnGuardarEl, originalButtonText);
     }
   };
   formUsuarioEl.addEventListener('submit', formSubmitHandler);
   moduleListeners.push({ element: formUsuarioEl, type: 'submit', handler: formSubmitHandler });
 
-  const cancelEditHandler = () => {
+  btnCancelarEl.addEventListener('click', () => {
     resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
     clearUsuariosFeedback(feedbackGlobalEl);
-  };
-  btnCancelarEl.addEventListener('click', cancelEditHandler);
-  moduleListeners.push({ element: btnCancelarEl, type: 'click', handler: cancelEditHandler });
+  });
 
-  // Event delegation for actions on the users table
-  const tablaUsuariosClickHandler = async (event) => {
+  // --------- Acciones tabla usuarios ---------
+
+  tablaBodyEl.addEventListener('click', async (event) => {
     const button = event.target.closest('button[data-accion]');
     if (!button) return;
-
     const usuarioId = button.dataset.id;
     const accion = button.dataset.accion;
-    const userEmail = button.dataset.correo; // For password reset
-
+    const userEmail = button.dataset.correo;
     clearUsuariosFeedback(feedbackGlobalEl);
 
     if (accion === 'editar') {
       try {
-        const { data: usuarioToEdit, error } = await currentSupabaseInstance
+        const { data: usuarioToEdit } = await currentSupabaseInstance
           .from('usuarios')
-          .select('*, usuarios_roles(roles(id, nombre))') // Fetch roles for pre-selection
+          .select('*, usuarios_roles(roles(id, nombre))')
           .eq('id', usuarioId)
           .eq('hotel_id', currentHotelId)
           .single();
-        if (error) throw error;
         if (usuarioToEdit) {
-          poblarFormularioEdicion(formUsuarioEl, usuarioToEdit, formTitleEl, passwordGroupEl, btnCancelarEl);
-          window.scrollTo({ top: formUsuarioEl.offsetTop - 20, behavior: 'smooth' });
+          formUsuarioEl.elements.usuarioIdEdit.value = usuarioToEdit.id;
+          formUsuarioEl.elements.nombre.value = usuarioToEdit.nombre || '';
+          formUsuarioEl.elements.correo.value = usuarioToEdit.correo || '';
+          formUsuarioEl.elements.correo.disabled = true;
+          const selectRolesEl = formUsuarioEl.elements.roles;
+          const rolesAsignadosIds = usuarioToEdit.usuarios_roles.map(ur => ur.roles?.id?.toString()).filter(Boolean);
+          Array.from(selectRolesEl.options).forEach(option => {
+            option.selected = rolesAsignadosIds.includes(option.value);
+          });
+          formUsuarioEl.elements.activo.checked = usuarioToEdit.activo;
+          formUsuarioEl.querySelector('#btn-guardar-usuario').textContent = 'Actualizar Usuario';
+          btnCancelarEl.style.display = 'inline-block';
+          formUsuarioEl.elements.nombre.focus();
         } else {
           showUsuariosFeedback(feedbackGlobalEl, 'Usuario no encontrado para editar.', 'error-indicator');
         }
@@ -496,15 +497,11 @@ export async function mount(container, sbInstance, user) {
     } else if (accion === 'toggle-activo') {
       const estadoActual = button.dataset.estadoActual === 'true';
       try {
-        // Note: Supabase Auth user status (enabled/disabled) is separate from your 'usuarios.activo' field.
-        // This only updates your custom 'activo' field.
-        // To disable login, you'd need to use Supabase Admin SDK on the server or an Edge Function.
-        const { error } = await currentSupabaseInstance
+        await currentSupabaseInstance
           .from('usuarios')
           .update({ activo: !estadoActual, updated_at: new Date().toISOString() })
           .eq('id', usuarioId)
           .eq('hotel_id', currentHotelId);
-        if (error) throw error;
         showUsuariosFeedback(feedbackGlobalEl, `Usuario ${!estadoActual ? 'activado' : 'desactivado'}.`, 'success-indicator');
         await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
       } catch (err) {
@@ -517,44 +514,16 @@ export async function mount(container, sbInstance, user) {
       }
       if (confirm(`¿Está seguro de que desea enviar un enlace de reseteo de contraseña a ${userEmail}?`)) {
         try {
-          // This sends an email via Supabase Auth
-          const { error } = await currentSupabaseInstance.auth.resetPasswordForEmail(userEmail, {
-            // redirectTo: 'URL_DE_REDIRECCION_TRAS_RESETEO' // Optional: URL to redirect after password reset
-          });
-          if (error) throw error;
+          await currentSupabaseInstance.auth.resetPasswordForEmail(userEmail);
           showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo de contraseña enviado a ${userEmail}.`, 'success-indicator');
         } catch (err) {
           showUsuariosFeedback(feedbackGlobalEl, `Error al enviar enlace de reseteo: ${err.message}`, 'error-indicator', 0);
         }
       }
-    }
-  };
-  tablaBodyEl.addEventListener('click', tablaUsuariosClickHandler);
-  moduleListeners.push({ element: tablaBodyEl, type: 'click', handler: tablaUsuariosClickHandler });
-}
-
-/**
- * Unmounts the Usuarios module, cleaning up listeners and state.
- * @param {HTMLElement} container - The main container of the module (optional).
- */
-export function unmount(container) {
-  moduleListeners.forEach(({ element, type, handler }) => {
-    if (element && typeof element.removeEventListener === 'function') {
-      element.removeEventListener(type, handler);
+    } else if (accion === 'permisos') {
+      // Abrir modal permisos
+      const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo };
+      await abrirModalPermisos(usuario);
     }
   });
-  moduleListeners = [];
-
-  // Reset module-scoped variables
-  rolesDisponiblesCache = [];
-  currentHotelId = null;
-  currentModuleUser = null;
-  currentSupabaseInstance = null;
-  
-  if (currentContainerEl) { // Use the stored container reference
-    currentContainerEl.innerHTML = '';
-  }
-  currentContainerEl = null; // Clear the reference
-  
-  console.log('Usuarios module unmounted.');
 }

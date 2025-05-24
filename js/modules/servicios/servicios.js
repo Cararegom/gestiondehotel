@@ -7,6 +7,7 @@ let currentHotelId = null;
 let currentModuleUser = null;
 let currentSupabaseInstance = null;
 let tiposServicioCache = []; // Cache for populating the select in the additional services form
+import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
 // --- UTILITIES ---
 const formatCurrencyLocal = (value, currency = 'COP') => {

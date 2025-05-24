@@ -2,6 +2,7 @@
 
 import { showLoading, showError, clearFeedback } from '../../uiUtils.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
+import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
 // Variables para listeners
 let listeners = [];

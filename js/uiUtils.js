@@ -1,46 +1,8 @@
 // js/uiUtils.js
 
-import { APP_CONFIG, I18N_TEXTS } from './config.js'; // Asumiendo que config.js está en la misma carpeta
+import { APP_CONFIG, I18N_TEXTS } from './config.js'; // Asegúrate que config.js esté en la misma carpeta
 
-// ... (tus funciones existentes como showAppFeedback, clearAppFeedback, showLoading, showError, clearFeedback, formatCurrency, formatDateShort, formatDateTime, showGlobalLoading, hideGlobalLoading) ...
-
-// --- ASEGÚRATE DE QUE ESTA FUNCIÓN EXISTA Y ESTÉ EXPORTADA ---
-/**
- * Establece el estado de carga de un formulario, deshabilitando/habilitando campos y actualizando el texto del botón.
- * @param {HTMLFormElement} formEl - El elemento del formulario.
- * @param {boolean} isLoading - True si se está cargando, false en caso contrario.
- * @param {HTMLButtonElement} buttonEl - El botón de envío del formulario.
- * @param {string} originalButtonText - El texto original del botón.
- * @param {string} [loadingButtonText='Procesando...'] - El texto del botón mientras se carga.
- */
-export function mostrarFechaLocal(fechaUtc) {
-    if (!fechaUtc) return '-';
-    return new Date(fechaUtc).toLocaleString();
-}
-export function setFormLoadingState(formEl, isLoading, buttonEl, originalButtonText, loadingButtonText = 'Procesando...') {
-  if (!formEl) {
-    console.warn("setFormLoadingState: formEl no proporcionado.");
-    return;
-  }
-  if (buttonEl) {
-    buttonEl.disabled = isLoading;
-    buttonEl.textContent = isLoading ? loadingButtonText : originalButtonText;
-    if(isLoading) {
-        buttonEl.classList.add('opacity-75', 'cursor-not-allowed');
-    } else {
-        buttonEl.classList.remove('opacity-75', 'cursor-not-allowed');
-    }
-  }
-  // Deshabilitar todos los elementos del formulario excepto los botones (que se manejan por separado si es necesario)
-  Array.from(formEl.elements).forEach(el => {
-    if (el.type !== 'submit' && el.type !== 'button') { 
-      el.disabled = isLoading;
-    }
-  });
-}
-// --- FIN DE LA FUNCIÓN setFormLoadingState ---
-
-// Aquí el resto de tus funciones de uiUtils.js que ya tenías:
+// --- FEEDBACK GLOBAL ---
 export function showAppFeedback(message, type = 'info', autoHide = true, duration = 5000) {
   const feedbackBanner = document.getElementById('app-global-feedback-banner');
   if (!feedbackBanner) {
@@ -65,6 +27,7 @@ export function showAppFeedback(message, type = 'info', autoHide = true, duratio
     setTimeout(() => clearAppFeedback(feedbackBanner), duration);
   }
 }
+
 export function clearAppFeedback(feedbackBannerParam) {
   const banner = feedbackBannerParam || document.getElementById('app-global-feedback-banner');
   if (banner) {
@@ -74,6 +37,8 @@ export function clearAppFeedback(feedbackBannerParam) {
     banner.removeAttribute('tabindex');
   }
 }
+
+// --- FEEDBACK LOCAL PARA COMPONENTES ---
 export function showLoading(element, message = 'Cargando...') {
   if (element) {
     element.textContent = message;
@@ -82,6 +47,7 @@ export function showLoading(element, message = 'Cargando...') {
     element.setAttribute('aria-live', 'polite');
   }
 }
+
 export function showError(element, message, typeClass = 'error-indicator') {
   if (element) {
     element.textContent = message;
@@ -97,6 +63,7 @@ export function showError(element, message, typeClass = 'error-indicator') {
     }
   }
 }
+
 export function clearFeedback(element) {
   if (element) {
     element.textContent = '';
@@ -106,6 +73,33 @@ export function clearFeedback(element) {
     element.removeAttribute('aria-live');
   }
 }
+
+// --- FORMULARIO CARGANDO (para deshabilitar mientras procesa) ---
+/**
+ * Deshabilita/habilita todos los campos del formulario mientras guarda, y actualiza el botón.
+ */
+export function setFormLoadingState(formEl, isLoading, buttonEl, originalButtonText, loadingButtonText = 'Procesando...') {
+  if (!formEl) {
+    console.warn("setFormLoadingState: formEl no proporcionado.");
+    return;
+  }
+  if (buttonEl) {
+    buttonEl.disabled = isLoading;
+    buttonEl.textContent = isLoading ? loadingButtonText : originalButtonText;
+    if (isLoading) {
+      buttonEl.classList.add('opacity-75', 'cursor-not-allowed');
+    } else {
+      buttonEl.classList.remove('opacity-75', 'cursor-not-allowed');
+    }
+  }
+  Array.from(formEl.elements).forEach(el => {
+    if (el.type !== 'submit' && el.type !== 'button') { 
+      el.disabled = isLoading;
+    }
+  });
+}
+
+// --- FECHAS Y MONEDAS ---
 export function formatCurrency(value, currency = 'COP') {
   const numericValue = Number(value);
   if (isNaN(numericValue)) {
@@ -113,6 +107,7 @@ export function formatCurrency(value, currency = 'COP') {
   }
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(numericValue);
 }
+
 export function formatDateShort(dateInput, locale = 'es-CO') {
   if (!dateInput) return 'N/A';
   try {
@@ -121,6 +116,7 @@ export function formatDateShort(dateInput, locale = 'es-CO') {
     return date.toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' });
   } catch (error) { return 'Error de Fecha'; }
 }
+
 export function formatDateTime(dateInput, locale = 'es-CO', options = { dateStyle: 'short', timeStyle: 'short' }) {
   if (!dateInput) return 'N/A';
   try {
@@ -129,6 +125,14 @@ export function formatDateTime(dateInput, locale = 'es-CO', options = { dateStyl
     return date.toLocaleString(locale, options);
   } catch (error) { return 'Error de Fecha/Hora'; }
 }
+
+// --- Otras utilidades rápidas ---
+export function mostrarFechaLocal(fechaUtc) {
+    if (!fechaUtc) return '-';
+    return new Date(fechaUtc).toLocaleString();
+}
+
+// --- LOADING GLOBAL PARA OVERLAY ---
 export function showGlobalLoading(message) {
   const overlay = document.getElementById('app-global-loading-overlay');
   if (overlay) {
@@ -138,7 +142,24 @@ export function showGlobalLoading(message) {
     overlay.style.display = 'flex';
   }
 }
+
 export function hideGlobalLoading() {
   const overlay = document.getElementById('app-global-loading-overlay');
   if (overlay) overlay.style.display = 'none';
+}
+// --- FEEDBACK DE ÉXITO GLOBAL ---
+export function showSuccess(element, message, autoHide = true, duration = 4000) {
+  if (element) {
+    element.textContent = message;
+    element.className = 'feedback-message p-3 my-3 text-sm rounded-md border bg-green-100 border-green-300 text-green-700 visible';
+    element.style.display = 'block';
+    element.setAttribute('aria-live', 'polite');
+    if (autoHide) {
+      setTimeout(() => {
+        element.textContent = '';
+        element.style.display = 'none';
+        element.className = '';
+      }, duration);
+    }
+  }
 }

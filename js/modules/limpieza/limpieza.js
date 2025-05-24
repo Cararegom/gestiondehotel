@@ -7,6 +7,7 @@ import {
   showAppFeedback,
   clearAppFeedback
 } from '../../uiUtils.js';
+import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
 let moduleListeners = [];
 let currentHotelId = null;
@@ -60,7 +61,7 @@ function renderPendientes(pendientes, listEl, feedbackEl) {
 }
 
 /**
- * Confirma la limpieza: actualiza estado a "libre", notifica al recepcionista
+ * Confirma la limpieza: actualiza estado a "libre", notifica al recepcionista y muestra feedback personalizado
  */
 async function confirmCleaningById(roomId, roomNombre, feedbackEl, listEl) {
   showGlobalLoading();
@@ -85,7 +86,12 @@ async function confirmCleaningById(roomId, roomNombre, feedbackEl, listEl) {
       generadaPorUsuarioId: user.id
     });
 
-    showAppFeedback(feedbackEl, `Limpieza de '${updated.nombre}' confirmada.`, 'success');
+    // Mensaje personalizado al usuario de limpieza
+    showAppFeedback(
+      feedbackEl,
+      `Habitación <b>${updated.nombre}</b>: limpieza lista y confirmada 👌`,
+      'success'
+    );
 
     // Refrescar la lista de pendientes
     await fetchPendientes(listEl, feedbackEl);
@@ -143,13 +149,15 @@ export async function mount(container, supabaseInst, currentUser) {
 
   // 1) Cargar pendientes de limpieza
   await fetchPendientes(pendientesListEl, pendientesFeedback);
-
+  
   // 2) Delegar click en "Confirmar Limpieza"
   const onPendingClick = e => {
     if (e.target.matches('.btn-confirm-clean')) {
+      e.target.disabled = true;
       const id = e.target.dataset.id;
       const nombre = e.target.closest('.pending-card').querySelector('span').textContent;
-      confirmCleaningById(id, nombre, pendientesFeedback, pendientesListEl);
+      confirmCleaningById(id, nombre, pendientesFeedback, pendientesListEl)
+        .finally(() => { e.target.disabled = false; });
     }
   };
   pendientesListEl.addEventListener('click', onPendingClick);

@@ -7,6 +7,7 @@ let currentContainerEl = null;
 let currentSupabase = null;
 let currentUser = null;
 let currentHotelId = null;
+import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
 // --- Memorias auxiliares
 let categoriasCache = [];
@@ -52,64 +53,14 @@ function renderTiendaTabs(tab) {
   if(tab === 'Lista de Compras') renderListaCompras();
 }
 
-// ====================  PESTAÑA POS  ====================
+// ====================  BLOQUE POS COMPLETO Y CORREGIDO ====================
 
 let posProductos = [];
 let posMetodosPago = [];
-let posReservas = [];
+let posHabitacionesOcupadas = [];
 let posCarrito = [];
+let posFiltro = '';
 
-async function renderPOS() {
-  const cont = document.getElementById('contenidoTiendaTab');
-  cont.innerHTML = `<div>Cargando...</div>`;
-  // Carga productos, métodos de pago, reservas
-  await cargarDatosPOS();
-
-  // Renderiza la interfaz
-  cont.innerHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:18px;">
-      <div style="flex:1;min-width:300px;">
-        <h4>Productos disponibles</h4>
-        <div id="productosPOS" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;"></div>
-      </div>
-      <div style="min-width:320px;">
-        <h4>Carrito de venta</h4>
-        <table style="width:100%;font-size:13px;margin-bottom:8px;">
-          <thead>
-            <tr style="background:#f1f1f1;"><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th><th></th></tr>
-          </thead>
-          <tbody id="carritoPOS"></tbody>
-        </table>
-        <div style="text-align:right;font-weight:bold;">Total: <span id="totalPOS">$0</span></div>
-        <div style="display:flex;gap:6px;margin:10px 0;">
-          <select id="modoPOS" style="flex:1;">
-            <option value="inmediato">Pago Inmediato</option>
-            <option value="habitacion">Cargar a Habitación</option>
-          </select>
-          <select id="metodoPOS" style="flex:1;"></select>
-          <select id="reservaPOS" style="flex:1;display:none"></select>
-          <input id="clientePOS" placeholder="Cliente (opcional)" style="flex:1;" />
-          <button id="btnVentaPOS" style="background:#4CAF50;color:#fff;border:none;padding:6px 12px;border-radius:4px;">Vender</button>
-        </div>
-        <div id="msgPOS" style="color:red;"></div>
-      </div>
-    </div>
-  `;
-
-  renderProductosPOS();
-  renderCarritoPOS();
-  renderMetodosPagoPOS();
-  renderReservasPOS();
-
-  document.getElementById('modoPOS').onchange = (e)=>{
-    document.getElementById('metodoPOS').style.display = e.target.value==='inmediato'?'block':'none';
-    document.getElementById('clientePOS').style.display = e.target.value==='inmediato'?'block':'none';
-    document.getElementById('reservaPOS').style.display = e.target.value==='habitacion'?'block':'none';
-  };
-  document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
-}
-
-// ----- Cargar datos POS -----
 async function cargarDatosPOS() {
   // Productos disponibles para venta
   let {data: productos} = await currentSupabase
@@ -128,24 +79,101 @@ async function cargarDatosPOS() {
     .eq('activo', true);
   posMetodosPago = metodos || [];
 
-  // Reservas activas para cargar a habitación
-  let {data: reservas} = await currentSupabase
-    .from('reservas')
-    .select('id, cliente_nombre')
+  // Habitaciones ocupadas desde el mapa de habitaciones (estado: 'ocupada')
+  let {data: habitaciones} = await currentSupabase
+    .from('habitaciones')
+    .select('id, nombre')
     .eq('hotel_id', currentHotelId)
-    .eq('estado', 'check_in');
-  posReservas = reservas || [];
+    .eq('estado', 'ocupada');
+  posHabitacionesOcupadas = habitaciones || [];
 }
 
-// ----- Renderizar productos POS -----
+async function renderPOS() {
+  const cont = document.getElementById('contenidoTiendaTab');
+  cont.innerHTML = `<div>Cargando...</div>`;
+  await cargarDatosPOS();
+
+  cont.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:18px;">
+      <div style="flex:1;min-width:340px;max-width:480px;">
+        <h4>Productos disponibles</h4>
+        <input id="buscadorPOS" placeholder="Buscar producto..." style="width:100%;margin-bottom:8px;padding:6px 12px;font-size:15px;border-radius:4px;border:1px solid #ccc;">
+        <div id="productosPOS" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;"></div>
+      </div>
+      <div style="min-width:340px;">
+        <h4>Carrito de venta</h4>
+        <table style="width:100%;font-size:13px;margin-bottom:8px;">
+          <thead>
+            <tr style="background:#f1f1f1;"><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th><th></th></tr>
+          </thead>
+          <tbody id="carritoPOS"></tbody>
+        </table>
+        <div style="text-align:right;font-weight:bold;">Total: <span id="totalPOS">$0</span></div>
+        <div style="display:flex;gap:6px;margin:10px 0;">
+          <select id="modoPOS" style="flex:1;">
+            <option value="inmediato">Pago Inmediato</option>
+            <option value="habitacion">Cargar a Habitación</option>
+          </select>
+          <select id="metodoPOS" style="flex:1;"></select>
+          <select id="habitacionPOS" style="flex:1;display:none"></select>
+          <input id="clientePOS" placeholder="Cliente (opcional)" style="flex:1;" />
+          <button id="btnVentaPOS" style="background:#4CAF50;color:#fff;border:none;padding:6px 12px;border-radius:4px;">Vender</button>
+        </div>
+        <div id="msgPOS" style="color:red;"></div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('buscadorPOS').oninput = (e) => {
+    posFiltro = e.target.value.toLowerCase();
+    renderProductosPOS();
+  };
+
+  renderProductosPOS();
+  renderCarritoPOS();
+  renderMetodosPagoPOS();
+  renderHabitacionesPOS();
+
+  document.getElementById('modoPOS').onchange = (e)=>{
+    const modo = e.target.value;
+    document.getElementById('metodoPOS').style.display = modo==='inmediato'?'block':'none';
+    document.getElementById('clientePOS').style.display = modo==='inmediato'?'block':'none';
+    document.getElementById('habitacionPOS').style.display = modo==='habitacion'?'block':'none';
+  };
+  document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
+}
+
 function renderProductosPOS() {
   const cont = document.getElementById('productosPOS');
+  if (!cont) return;
   cont.innerHTML = '';
-  posProductos.forEach(prod => {
+  let productosFiltrados = posProductos;
+  if (posFiltro && posFiltro.trim()) {
+    productosFiltrados = productosFiltrados.filter(p => (p.nombre||'').toLowerCase().includes(posFiltro));
+  }
+  if(productosFiltrados.length === 0) {
+    cont.innerHTML = `<div style="color:#888;">No hay productos encontrados</div>`;
+    return;
+  }
+  productosFiltrados.forEach(prod => {
     let card = document.createElement('div');
-    card.style = "border:1px solid #e1e1e1;padding:8px;border-radius:7px;background:#fff;min-width:140px;max-width:160px;text-align:center;box-shadow:1px 2px 6px #eee;";
+    card.style = `
+      border:1px solid #e1e1e1;
+      padding:8px;
+      border-radius:7px;
+      background:#fff;
+      min-width:160px;
+      max-width:210px;
+      text-align:center;
+      box-shadow:1px 2px 6px #eee;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:8px;
+    `;
     card.innerHTML = `
-      <div style="font-weight:bold;">${prod.nombre}</div>
+      <img src="${prod.imagen_url || 'https://via.placeholder.com/200x200?text=Sin+Imagen'}" style="width:200px;height:200px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#f9f9f9;">
+      <div style="font-weight:bold;word-break:break-all;">${prod.nombre}</div>
       <div style="font-size:13px;color:#0a5;">$${prod.precio_venta}</div>
       <div style="font-size:12px;color:#666;">Stock: ${prod.stock_actual}</div>
       <button onclick="window.addToCartPOS('${prod.id}')" style="margin-top:5px;background:#337ab7;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;">Agregar</button>
@@ -166,7 +194,6 @@ window.addToCartPOS = (id)=>{
   renderCarritoPOS();
 };
 
-// ----- Renderizar carrito POS -----
 function renderCarritoPOS() {
   const tbody = document.getElementById('carritoPOS');
   tbody.innerHTML = '';
@@ -203,7 +230,6 @@ window.removeCartPOS = (id)=>{
   renderCarritoPOS();
 };
 
-// ----- Render métodos de pago y reservas POS -----
 function renderMetodosPagoPOS() {
   let sel = document.getElementById('metodoPOS');
   sel.innerHTML = '';
@@ -214,13 +240,14 @@ function renderMetodosPagoPOS() {
     sel.appendChild(opt);
   });
 }
-function renderReservasPOS() {
-  let sel = document.getElementById('reservaPOS');
+
+function renderHabitacionesPOS() {
+  let sel = document.getElementById('habitacionPOS');
   sel.innerHTML = '';
-  posReservas.forEach(r=>{
+  posHabitacionesOcupadas.forEach(h=>{
     let opt = document.createElement('option');
-    opt.value = r.id;
-    opt.textContent = r.cliente_nombre;
+    opt.value = h.id;
+    opt.textContent = h.nombre;
     sel.appendChild(opt);
   });
 }
@@ -233,28 +260,47 @@ async function registrarVentaPOS() {
       return;
     }
     const modo = document.getElementById('modoPOS').value;
-    let metodo_pago_id = null, reserva_id = null, cliente_temporal = null;
+    let metodo_pago_id = null, habitacion_id = null, cliente_temporal = null;
     if(modo === 'inmediato') {
       metodo_pago_id = document.getElementById('metodoPOS').value;
+      if (metodo_pago_id === "") metodo_pago_id = null;
       cliente_temporal = document.getElementById('clientePOS').value || null;
     } else {
-      reserva_id = document.getElementById('reservaPOS').value;
+      habitacion_id = document.getElementById('habitacionPOS').value;
+      if (habitacion_id === "") habitacion_id = null;
+      if(!habitacion_id) {
+        document.getElementById('msgPOS').textContent = "Selecciona una habitación";
+        return;
+      }
     }
     let total = posCarrito.reduce((a,b)=>a+b.precio_venta*b.cantidad,0);
 
     // Crear venta_tienda (principal)
-    let {data: ventas, error} = await currentSupabase.from('ventas_tienda').insert([{
+    let ventaPayload = {
       hotel_id: currentHotelId,
       usuario_id: currentUser.id,
-      reserva_id,
-      metodo_pago_id,
+      habitacion_id: habitacion_id,
+      metodo_pago_id: metodo_pago_id,
       cliente_temporal,
       total_venta: total,
       fecha: new Date().toISOString(),
       creado_en: new Date().toISOString()
-    }]).select();
+    };
+     console.log('Debug venta POS:', {
+  hotel_id: currentHotelId,
+  usuario_id: currentUser.id,
+  habitacion_id: habitacion_id,
+  metodo_pago_id: metodo_pago_id,
+  cliente_temporal,
+  total_venta: total,
+  fecha: new Date().toISOString(),
+  creado_en: new Date().toISOString()
+});
+    let {data: ventas, error} = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
     if(error || !ventas?.[0]) throw new Error("Error guardando venta");
     let ventaId = ventas[0].id;
+
+   
 
     // Detalle y stock
     for(let item of posCarrito){
@@ -279,7 +325,7 @@ async function registrarVentaPOS() {
       monto: total,
       concepto: 'Venta de tienda',
       fecha_movimiento: new Date().toISOString(),
-      metodo_pago_id: metodo_pago_id || null,
+      metodo_pago_id: metodo_pago_id,
       usuario_id: currentUser.id,
       venta_tienda_id: ventaId,
       creado_en: new Date().toISOString()
@@ -296,6 +342,8 @@ async function registrarVentaPOS() {
     document.getElementById('msgPOS').textContent = err.message;
   }
 }
+// =============== FIN BLOQUE POS ===============
+
 
 // ===================  AQUÍ VA LA SEGUNDA PARTE  ===================
 // ====================  PESTAÑA INVENTARIO  ====================
@@ -342,7 +390,7 @@ async function renderInventario() {
 async function cargarProductosInventario() {
   let {data} = await currentSupabase
     .from('productos_tienda')
-    .select('*, categorias_producto(nombre), proveedores(nombre)')
+    .select('*, categoria_id, proveedor_id')
     .eq('hotel_id', currentHotelId);
   inventarioProductos = data || [];
 }
@@ -419,6 +467,9 @@ async function showModalProducto(productoId = null) {
       <input id="prodStockMin" type="number" placeholder="Stock mínimo" value="${prod?.stock_minimo||''}" style="width:100%;margin-bottom:8px;" />
       <input id="prodStockMax" type="number" placeholder="Stock máximo" value="${prod?.stock_maximo||''}" style="width:100%;margin-bottom:8px;" />
       <input id="prodImagenUrl" placeholder="URL Imagen (opcional)" value="${prod?.imagen_url||''}" style="width:100%;margin-bottom:8px;" />
+      <label style="font-size:13px;">Subir Imagen:
+        <input type="file" id="prodImagenArchivo" accept="image/*" style="width:100%;margin-bottom:8px;" />
+      </label>
       <textarea id="prodDescripcion" placeholder="Descripción" style="width:100%;margin-bottom:8px;">${prod?.descripcion||''}</textarea>
       <div style="margin-top:8px;text-align:right;">
         <button id="btnGuardarProducto" style="background:#4CAF50;color:#fff;padding:7px 15px;border:none;border-radius:4px;">${productoId?'Actualizar':'Crear'}</button>
@@ -431,6 +482,29 @@ async function showModalProducto(productoId = null) {
 window.closeModalProducto = ()=>{document.getElementById('modalProductoInv').style.display='none';};
 
 async function saveProductoInv(productoId) {
+  let imagenUrl = document.getElementById('prodImagenUrl').value;
+  const archivoInput = document.getElementById('prodImagenArchivo');
+  let archivo = archivoInput && archivoInput.files[0];
+
+  if (archivo) {
+    // Sube la imagen al bucket 'productos'
+    const nombreArchivo = `producto_${Date.now()}_${archivo.name}`;
+    let { error: errorUp } = await currentSupabase
+      .storage
+      .from('productos') // El bucket debe existir en Supabase Storage
+      .upload(nombreArchivo, archivo, { upsert: true });
+    if (errorUp) {
+      alert("Error subiendo imagen: " + errorUp.message);
+      return;
+    }
+    // Obtén la URL pública
+    let { data: publicUrlData } = currentSupabase
+      .storage
+      .from('productos')
+      .getPublicUrl(nombreArchivo);
+    imagenUrl = publicUrlData.publicUrl;
+  }
+
   let datos = {
     hotel_id: currentHotelId,
     nombre: document.getElementById('prodNombre').value,
@@ -442,7 +516,7 @@ async function saveProductoInv(productoId) {
     stock_actual: Number(document.getElementById('prodStock').value),
     stock_minimo: Number(document.getElementById('prodStockMin').value),
     stock_maximo: Number(document.getElementById('prodStockMax').value),
-    imagen_url: document.getElementById('prodImagenUrl').value,
+    imagen_url: imagenUrl,
     descripcion: document.getElementById('prodDescripcion').value,
     activo: true,
     actualizado_en: new Date().toISOString(),
@@ -665,12 +739,23 @@ window.toggleEstadoProveedor = async (id,act)=>{
 };
 
 // ====================  PESTAÑA LISTA DE COMPRAS  ====================
+let filtroProveedorListaCompras = '';
+
 async function renderListaCompras() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
       <h4>Lista de Compras Sugerida</h4>
       <button id="btnExportarListaCompra" style="background:#337ab7;color:#fff;padding:6px 14px;border:none;border-radius:4px;">Exportar Excel</button>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="font-weight:500;">Filtrar por proveedor:</label>
+      <select id="selectProveedorCompra" style="margin-left:10px;padding:6px 14px;border-radius:4px;border:1px solid #ccc;min-width:180px;">
+        <option value="">-- Todos los proveedores --</option>
+        ${proveedoresCache.map(pr => `
+          <option value="${pr.id}">${pr.nombre}</option>
+        `).join('')}
+      </select>
     </div>
     <table style="width:100%;font-size:14px;border:1px solid #eee;">
       <thead>
@@ -686,7 +771,14 @@ async function renderListaCompras() {
       <tbody id="bodyListaCompras"></tbody>
     </table>
   `;
+
   document.getElementById('btnExportarListaCompra').onclick = ()=>alert('Función en desarrollo: exportar a Excel');
+
+  document.getElementById('selectProveedorCompra').onchange = (e) => {
+    filtroProveedorListaCompras = e.target.value;
+    renderTablaListaCompras();
+  };
+
   await cargarProductosInventario();
   await cargarCategoriasYProveedores();
   renderTablaListaCompras();
@@ -695,23 +787,24 @@ async function renderListaCompras() {
 function renderTablaListaCompras() {
   let tbody = document.getElementById('bodyListaCompras');
   tbody.innerHTML = '';
-  inventarioProductos
-    .filter(p=>Number(p.stock_actual)<Number(p.stock_maximo))
-    .forEach(p=>{
-      let proveedor = proveedoresCache.find(pr=>pr.id===p.proveedor_id)?.nombre||'';
-      let faltante = Math.max(0,(Number(p.stock_maximo)||0)-(Number(p.stock_actual)||0));
-      let tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${p.nombre}</td>
-        <td>${p.stock_actual||0}</td>
-        <td>${p.stock_minimo||0}</td>
-        <td>${p.stock_maximo||0}</td>
-        <td>${faltante}</td>
-        <td>${proveedor}</td>
-      `;
-      tbody.appendChild(tr);
-    });
+  let lista = inventarioProductos
+    .filter(p=>Number(p.stock_actual)<Number(p.stock_maximo));
+  // Aplica filtro de proveedor si existe
+  if (filtroProveedorListaCompras) {
+    lista = lista.filter(p => p.proveedor_id === filtroProveedorListaCompras);
+  }
+  lista.forEach(p=>{
+    let proveedor = proveedoresCache.find(pr=>pr.id===p.proveedor_id)?.nombre||'';
+    let faltante = Math.max(0,(Number(p.stock_maximo)||0)-(Number(p.stock_actual)||0));
+    let tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${p.nombre}</td>
+      <td>${p.stock_actual||0}</td>
+      <td>${p.stock_minimo||0}</td>
+      <td>${p.stock_maximo||0}</td>
+      <td>${faltante}</td>
+      <td>${proveedor}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }
-
-// ====================  FIN DEL MODULO TIENDA ====================
-

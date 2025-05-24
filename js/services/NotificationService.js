@@ -14,11 +14,21 @@ export async function crearNotificacion(supabase, {
   mensaje,
   entidadTipo,
   entidadId,
-  userId
+  userId // este parámetro puede ser undefined
 }) {
   if (!supabase || typeof supabase.from !== "function") {
     throw new Error("Supabase no válido en crearNotificacion");
   }
+
+  // Validar campos requeridos
+  if (!hotelId)      throw new Error("Falta hotelId en crearNotificacion");
+  if (!rolDestino)   throw new Error("Falta rolDestino en crearNotificacion");
+  if (!tipo)         throw new Error("Falta tipo en crearNotificacion");
+  if (!mensaje)      throw new Error("Falta mensaje en crearNotificacion");
+  if (!entidadTipo)  throw new Error("Falta entidadTipo en crearNotificacion");
+  if (!entidadId)    throw new Error("Falta entidadId en crearNotificacion");
+
+  // Armar payload
   const payload = {
     hotel_id:       hotelId,
     rol_destino:    rolDestino,
@@ -26,12 +36,17 @@ export async function crearNotificacion(supabase, {
     mensaje,
     entidad_tipo:   entidadTipo,
     entidad_id:     entidadId,
-    user_id:        userId,
+    user_id:        userId ?? null // Si viene vacío, se manda como null
   };
+
+  // Elimina campos vacíos para evitar problemas con constraints
+  Object.keys(payload).forEach(key => {
+    if (payload[key] === undefined) delete payload[key];
+  });
 
   const { data, error } = await supabase
     .from('notificaciones')
-    .insert([payload]); // CORRECTO: debe ser array
+    .insert([payload]);
 
   if (error) {
     console.error('Error al insertar notificación:', error);
@@ -39,4 +54,3 @@ export async function crearNotificacion(supabase, {
   }
   return data;
 }
-

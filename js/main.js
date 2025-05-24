@@ -4,23 +4,24 @@ import { getCurrentUser, requireAuth, handleLogout, onAuthStateChange } from './
 import { showAppFeedback, clearAppFeedback, showGlobalLoading, hideGlobalLoading } from './uiUtils.js';
 import { APP_CONFIG } from './config.js';
 
-// IMPORTA SIEMPRE TODO COMO OBJETO PARA SOPORTAR .mount Y .unmount
 import * as Dashboard from './modules/dashboard/dashboard.js';
 import * as Reservas from './modules/reservas/reservas.js';
 import * as Habitaciones from './modules/habitaciones/habitaciones.js';
 import * as Caja from './modules/caja/caja.js';
 import * as Servicios from './modules/servicios/servicios.js';
 import * as Tienda from './modules/tienda/tienda.js';
+import * as Restaurante from './modules/restaurante/restaurante.js';
 import * as Usuarios from './modules/usuarios/usuarios.js';
 import * as Configuracion from './modules/configuracion/configuracion.js';
 import * as Reportes from './modules/reportes/reportes.js';
 import * as Limpieza from './modules/limpieza/limpieza.js';
-import * as Cronometros from './modules/cronometros/cronometros.js';
 import * as Integraciones from './modules/integraciones/integraciones.js';
 import * as MapaHabitaciones from './modules/mapa-habitaciones/mapa-habitaciones.js';
 import * as NotificacionesPage from './modules/notificaciones/notificaciones.js';
-// Módulo de mantenimiento añadido:
 import * as Mantenimiento from './modules/mantenimiento/mantenimiento.js';
+
+// --- AQUI IMPORTAS EL MODULO DE BITACORA ---
+import * as Bitacora from './modules/bitacora/bitacora.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -39,14 +40,15 @@ const routes = {
   '/caja': Caja,
   '/servicios': Servicios,
   '/tienda': Tienda,
+  '/restaurante': Restaurante,
   '/usuarios': Usuarios,
   '/configuracion': Configuracion,
   '/reportes': Reportes,
   '/limpieza': Limpieza,
-  '/cronometros': Cronometros,
   '/integraciones': Integraciones,
   '/notificaciones': NotificacionesPage,
-  '/mantenimiento': Mantenimiento, // Habilitado
+  '/mantenimiento': Mantenimiento,
+  '/bitacora': Bitacora // <--- AGREGA LA RUTA PARA BITACORA
 };
 
 const navLinksConfig = [
@@ -57,10 +59,12 @@ const navLinksConfig = [
     { path: '#/caja', text: 'Caja', icon: '💰' },
     { path: '#/servicios', text: 'Servicios', icon: '🛎️' },
     { path: '#/tienda', text: 'Tienda', icon: '🛍️' },
+    { path: '#/restaurante', text: 'Restaurante', icon: '🍽️' },
     { path: '#/limpieza', text: 'Limpieza', icon: '🧹' },
-    { path: '#/cronometros', text: 'Cronómetros', icon: '⏱️' },
     { path: '#/reportes', text: 'Reportes', icon: '📈' },
-    { path: '#/mantenimiento', text: 'Mantenimiento', icon: '🛠️' }, // Añadido al menú
+    { path: '#/mantenimiento', text: 'Mantenimiento', icon: '🛠️' },
+    // --- AGREGA LA OPCIÓN DE BITÁCORA AL MENÚ ---
+    { path: '#/bitacora', text: 'Bitácora', icon: '📓' },
     { path: '#/usuarios', text: 'Usuarios', icon: '👥' },
     { path: '#/configuracion', text: 'Configuración', icon: '⚙️' },
     { path: '#/integraciones', text: 'Integraciones', icon: '🔗' },

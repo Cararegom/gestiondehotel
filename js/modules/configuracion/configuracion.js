@@ -1,14 +1,17 @@
 // js/modules/configuracion/configuracion.js
+
 import {
   showLoading, showError, clearFeedback, showAppFeedback
 } from '../../uiUtils.js';
 
+// Estado global
 let moduleListeners = [];
 let currentSupabaseInstance = null;
 let currentModuleUser = null;
 let currentHotelId = null;
+let metodosPagoCache = [];
 
-// Función para subir logo a Supabase Storage
+// =============== SUBIR LOGO ===============
 async function subirLogo(logoFile, hotelId, supabaseInst) {
   const fileName = `logos_hoteles/${hotelId}/${Date.now()}_${logoFile.name.replace(/\s/g, '_')}`;
   const { error } = await supabaseInst.storage
@@ -19,7 +22,7 @@ async function subirLogo(logoFile, hotelId, supabaseInst) {
   return publicUrlData?.publicUrl || null;
 }
 
-// Devuelve el HTML del formulario de configuración completo
+// =============== HTML PRINCIPAL ===============
 function generarHTMLConfiguracion() {
   return `
     <div class="card configuracion-module shadow-lg rounded-lg">
@@ -29,35 +32,37 @@ function generarHTMLConfiguracion() {
       <div class="card-body p-4 md:p-6">
         <div id="config-global-feedback" class="feedback-message mb-4" style="min-height: 24px;"></div>
         <form id="form-configuracion-hotel" novalidate class="space-y-6">
+          <!-- ====== DATOS HOTEL ====== -->
           <fieldset class="p-4 border rounded-md bg-gray-50">
             <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Datos del Hotel</legend>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label for="hotel_nombre" class="block text-sm font-medium text-gray-700">Nombre del Hotel *</label>
+                <label for="hotel_nombre">Nombre del Hotel *</label>
                 <input type="text" name="hotel_nombre" id="hotel_nombre" class="form-control mt-1" required />
               </div>
               <div>
-                <label for="hotel_correo_institucional" class="block text-sm font-medium text-gray-700">Correo Institucional</label>
+                <label for="hotel_correo_institucional">Correo Institucional</label>
                 <input type="email" name="hotel_correo_institucional" id="hotel_correo_institucional" class="form-control mt-1" />
               </div>
               <div class="md:col-span-2">
-                <label for="hotel_direccion" class="block text-sm font-medium text-gray-700">Dirección</label>
+                <label for="hotel_direccion">Dirección</label>
                 <input type="text" name="hotel_direccion" id="hotel_direccion" class="form-control mt-1" />
               </div>
               <div>
-                <label for="hotel_telefonos" class="block text-sm font-medium text-gray-700">Teléfonos</label>
+                <label for="hotel_telefonos">Teléfonos</label>
                 <input type="text" name="hotel_telefonos" id="hotel_telefonos" class="form-control mt-1" />
               </div>
               <div>
-                <label for="hotel_ciudad" class="block text-sm font-medium text-gray-700">Ciudad</label>
+                <label for="hotel_ciudad">Ciudad</label>
                 <input type="text" name="hotel_ciudad" id="hotel_ciudad" class="form-control mt-1" />
               </div>
               <div>
-                <label for="hotel_pais" class="block text-sm font-medium text-gray-700">País</label>
+                <label for="hotel_pais">País</label>
                 <input type="text" name="hotel_pais" id="hotel_pais" class="form-control mt-1" />
               </div>
             </div>
           </fieldset>
+          <!-- ====== IMPRESIÓN Y TICKETS ====== -->
           <fieldset class="p-4 border rounded-md bg-gray-50">
             <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Impresión y Tickets</legend>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -83,6 +88,7 @@ function generarHTMLConfiguracion() {
               <label for="mostrar_logo_en_documentos">¿Mostrar logo en documentos?</label>
             </div>
           </fieldset>
+          <!-- ====== IMPUESTOS Y FISCAL ====== -->
           <fieldset class="p-4 border rounded-md bg-gray-50">
             <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Impuestos y Fiscal</legend>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -120,6 +126,7 @@ function generarHTMLConfiguracion() {
               </div>
             </div>
           </fieldset>
+          <!-- ====== PISCINA ====== -->
           <fieldset class="p-4 border rounded-md bg-gray-50">
             <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Piscina</legend>
             <div class="flex items-center mb-4">
@@ -137,6 +144,7 @@ function generarHTMLConfiguracion() {
               </div>
             </div>
           </fieldset>
+          <!-- ====== PREFERENCIAS GENERALES ====== -->
           <fieldset class="p-4 border rounded-md bg-gray-50">
             <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Preferencias Generales</legend>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -158,6 +166,7 @@ function generarHTMLConfiguracion() {
               </div>
             </div>
           </fieldset>
+          <!-- ====== LEGALES ====== -->
           <fieldset class="p-4 border rounded-md bg-gray-50">
             <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Legales</legend>
             <div class="mb-4">
@@ -169,15 +178,25 @@ function generarHTMLConfiguracion() {
               <textarea name="terminos_condiciones" id="terminos_condiciones" class="form-control"></textarea>
             </div>
           </fieldset>
+          <!-- ====== LOGO HOTEL ====== -->
           <fieldset class="p-4 border rounded-md bg-gray-50">
             <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Logo del Hotel</legend>
             <div class="form-group">
-              <label for="logo_uploader" class="block text-sm font-medium text-gray-700">Subir nuevo logo (PNG, JPG, max 2MB)</label>
+              <label for="logo_uploader">Subir nuevo logo (PNG, JPG, max 2MB)</label>
               <input type="file" id="logo_uploader" name="logo_uploader_file" class="form-control mt-1" accept="image/png, image/jpeg">
               <img id="preview_logo" src="#" alt="Vista previa del logo" class="mt-3 max-h-32 rounded border" style="display:none;" />
               <p id="no_logo_message" class="text-sm text-gray-500 mt-2">No hay logo cargado actualmente.</p>
               <input type="hidden" id="logo_url_actual" name="logo_url_actual" />
             </div>
+          </fieldset>
+          <!-- ====== METODOS DE PAGO ====== -->
+          <fieldset class="p-4 border rounded-md bg-gray-50">
+            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Métodos de Pago</legend>
+            <div style="margin-bottom:10px;">
+              <input id="nuevo_metodo_pago" placeholder="Nuevo método de pago" style="padding:6px 12px;margin-right:8px;border-radius:4px;border:1px solid #ccc;width:220px;" />
+              <button type="button" id="btnAgregarMetodoPago" style="background:#337ab7;color:#fff;padding:7px 15px;border:none;border-radius:4px;">Agregar</button>
+            </div>
+            <div id="metodosPagoLista"></div>
           </fieldset>
           <div id="config-feedback" class="feedback-message mt-4" style="min-height:24px;"></div>
           <div class="form-actions mt-6">
@@ -189,7 +208,7 @@ function generarHTMLConfiguracion() {
   `;
 }
 
-// Cargar la configuración existente en el formulario
+// =============== CARGAR CONFIGURACION Y DATOS HOTEL ===============
 async function cargarConfiguracion(formEl, hotelId, supabaseInst, feedbackGlobalEl) {
   if (!formEl) return;
   const feedbackFormEl = formEl.querySelector('#config-feedback');
@@ -212,10 +231,13 @@ async function cargarConfiguracion(formEl, hotelId, supabaseInst, feedbackGlobal
       .single();
     if (hotelErr) throw hotelErr;
 
-    // Poblado de campos
+    // Métodos de pago
+    await cargarMetodosPago(hotelId, supabaseInst);
+    renderMetodosPago();
+
+    // Poblado de campos (igual que antes)
     const setVal = (name, val) => { if (formEl.elements[name]) formEl.elements[name].value = val || ''; };
     const setCheck = (name, val) => { if (formEl.elements[name]) formEl.elements[name].checked = !!val; };
-
     // HOTEL
     setVal('hotel_nombre', hotelData.nombre);
     setVal('hotel_correo_institucional', hotelData.correo);
@@ -281,7 +303,64 @@ async function cargarConfiguracion(formEl, hotelId, supabaseInst, feedbackGlobal
   }
 }
 
-// Guardar toda la configuración
+// =============== MÉTODOS DE PAGO ===============
+async function cargarMetodosPago(hotelId, supabaseInst) {
+  let { data, error } = await supabaseInst
+    .from('metodos_pago')
+    .select('id, nombre, activo')
+    .eq('hotel_id', hotelId);
+  metodosPagoCache = data || [];
+}
+
+function renderMetodosPago() {
+  const listaDiv = document.getElementById('metodosPagoLista');
+  if (!listaDiv) return;
+  if (metodosPagoCache.length === 0) {
+    listaDiv.innerHTML = `<div style="color:#888;">No hay métodos de pago creados.</div>`;
+    return;
+  }
+  listaDiv.innerHTML = `
+    <ul style="list-style:none;padding:0;">
+      ${metodosPagoCache.map(m=>`
+        <li style="margin-bottom:6px;">
+          <span style="display:inline-block;width:140px;">${m.nombre}</span>
+          <button type="button" onclick="window.toggleMetodoPagoActivo('${m.id}', ${!m.activo})"
+            style="margin-left:12px;color:${m.activo?'#25a325':'#c62c2c'};font-weight:bold;border:none;background:none;cursor:pointer;">
+            ${m.activo ? 'Activo' : 'Inactivo'}
+          </button>
+          <button type="button" onclick="window.eliminarMetodoPago('${m.id}')" style="margin-left:10px;color:#e11;font-size:16px;border:none;background:none;cursor:pointer;">🗑️</button>
+        </li>
+      `).join('')}
+    </ul>
+  `;
+}
+
+window.toggleMetodoPagoActivo = async (id, activo) => {
+  await currentSupabaseInstance.from('metodos_pago').update({activo}).eq('id',id);
+  await cargarMetodosPago(currentHotelId, currentSupabaseInstance);
+  renderMetodosPago();
+};
+window.eliminarMetodoPago = async (id) => {
+  if (!confirm("¿Seguro de eliminar este método de pago?")) return;
+  await currentSupabaseInstance.from('metodos_pago').delete().eq('id',id);
+  await cargarMetodosPago(currentHotelId, currentSupabaseInstance);
+  renderMetodosPago();
+};
+
+async function agregarMetodoPago() {
+  const input = document.getElementById('nuevo_metodo_pago');
+  if (!input.value.trim()) return;
+  await currentSupabaseInstance.from('metodos_pago').insert([{
+    hotel_id: currentHotelId,
+    nombre: input.value.trim(),
+    activo: true
+  }]);
+  input.value = '';
+  await cargarMetodosPago(currentHotelId, currentSupabaseInstance);
+  renderMetodosPago();
+}
+
+// =============== GUARDAR CONFIGURACION ===============
 async function guardarConfiguracion(formEl, hotelId, supabaseInst, btnGuardarEl, feedbackFormEl, previewLogoEl, logoUrlActualInputEl) {
   const formData = new FormData(formEl);
   const datosHotel = {
@@ -292,7 +371,6 @@ async function guardarConfiguracion(formEl, hotelId, supabaseInst, btnGuardarEl,
     ciudad: formData.get('hotel_ciudad')?.trim() || null,
     pais: formData.get('hotel_pais')?.trim() || null,
   };
-
   // Configuración completa
   const configuracionHotelPayload = {
     hotel_id: hotelId,
@@ -335,7 +413,6 @@ async function guardarConfiguracion(formEl, hotelId, supabaseInst, btnGuardarEl,
   const logoInputEl = formEl.elements.logo_uploader;
   const logoFile = logoInputEl?.files?.[0];
   let newLogoUrl = logoUrlActualInputEl?.value || null;
-
   if (logoFile) {
     try {
       if (logoFile.size > 2 * 1024 * 1024) throw new Error("El logo supera los 2MB.");
@@ -349,7 +426,6 @@ async function guardarConfiguracion(formEl, hotelId, supabaseInst, btnGuardarEl,
     configuracionHotelPayload.logo_url = newLogoUrl;
     datosHotel.logo_url = newLogoUrl;
   }
-
   // Guardar en DB
   try {
     await supabaseInst.from('hoteles').update(datosHotel).eq('id', hotelId);
@@ -362,11 +438,11 @@ async function guardarConfiguracion(formEl, hotelId, supabaseInst, btnGuardarEl,
   }
 }
 
+// =============== MONTAJE PRINCIPAL ===============
 export async function mount(container, supabaseInstance, user) {
   if (!container) return;
   unmount();
   container.innerHTML = generarHTMLConfiguracion();
-
   currentSupabaseInstance = supabaseInstance;
   currentModuleUser = user;
   currentHotelId = currentModuleUser?.user_metadata?.hotel_id;
@@ -383,7 +459,6 @@ export async function mount(container, supabaseInstance, user) {
     currentSupabaseInstance,
     container.querySelector('#config-global-feedback')
   );
-
   // Logo preview
   const logoInputEl = container.querySelector('#logo_uploader');
   const previewLogoEl = container.querySelector('#preview_logo');
@@ -410,7 +485,11 @@ export async function mount(container, supabaseInstance, user) {
     logoInputEl.addEventListener('change', logoChangeHandler);
     moduleListeners.push({ element: logoInputEl, type: 'change', handler: logoChangeHandler });
   }
-
+  // Métodos de pago: Agregar
+  const btnAgregarMetodoPago = container.querySelector('#btnAgregarMetodoPago');
+  if (btnAgregarMetodoPago) {
+    btnAgregarMetodoPago.onclick = agregarMetodoPago;
+  }
   // Guardado config
   const formEl = container.querySelector('#form-configuracion-hotel');
   const feedbackFormEl = container.querySelector('#config-feedback');
@@ -426,7 +505,6 @@ export async function mount(container, supabaseInstance, user) {
     moduleListeners.push({ element: formEl, type: 'submit', handler: formConfigSubmitHandler });
   }
 }
-
 export function unmount() {
   moduleListeners.forEach(({ element, type, handler }) => {
     if (element && typeof element.removeEventListener === 'function') {

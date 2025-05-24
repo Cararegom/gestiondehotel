@@ -17,7 +17,7 @@ function updateCardContent(containerEl, cardId, value, isCurrency = false, isLoa
     return;
   }
   if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
-    el.textContent = 'Error';
+    el.textContent = 'Error'; // O 'N/A', '-', etc.
     el.classList.add('text-red-500');
     el.classList.remove('text-green-600', 'text-blue-600');
   } else {
@@ -25,7 +25,7 @@ function updateCardContent(containerEl, cardId, value, isCurrency = false, isLoa
     el.classList.remove('text-red-500');
     if (typeof value === 'string' && value.includes('%')) {
         el.classList.add('text-blue-600');
-    } else if (isCurrency && Number(value) >= 0) {
+    } else if (isCurrency && Number(String(value).replace(/[^0-9.-]+/g,"")) >= 0) { // Convertir a número antes de comparar
         el.classList.add('text-green-600');
     }
   }
@@ -33,7 +33,7 @@ function updateCardContent(containerEl, cardId, value, isCurrency = false, isLoa
 
 async function fetchChartDataForDashboard(hotelId, supabaseInstance, numDays = 7) {
   const labels = [];
-  const dailyRevenueData = [];
+  const dailyRoomRevenueData = [];
   const dailyOcupacionData = []; // Sigue siendo mock
 
   const today = new Date();
@@ -44,39 +44,45 @@ async function fetchChartDataForDashboard(hotelId, supabaseInstance, numDays = 7
     labels.push(dateString);
   }
 
-  console.warn('Dashboard: fetchChartDataForDashboard usa N+1 consultas para ingresos. Considera RPC para producción.');
-
   try {
     const revenuePromises = labels.map(day => {
       const startOfDay = `${day}T00:00:00.000Z`;
       const endOfDay = `${day}T23:59:59.999Z`;
-      // Asumiendo que la tabla de pagos es 'pagos_reserva' y tiene 'fecha_pago' y 'monto'
-      return supabaseInstance.from('pagos_reserva') 
+      
+      // CORRECCIÓN SUGERIDA:
+      // Se añadió 'concepto.ilike.Estadía en%' (con acento) a la condición .or()
+      // Verifica que estos conceptos coincidan con los que usas en tu tabla 'caja'
+      const orClause = 'concepto.ilike.Alquiler de%,concepto.ilike.Extensión de%,concepto.ilike.Estadia en%,concepto.ilike.Estadía en%,concepto.ilike.Noche adicional%';
+      // Si tienes otros conceptos para ingresos de habitación, añádelos aquí. Ejemplo:
+      // const orClause = 'concepto.ilike.Alquiler de Habitación%,concepto.ilike.Estadía completa%,...';
+
+      return supabaseInstance.from('caja')
         .select('monto')
         .eq('hotel_id', hotelId)
-        .gte('fecha_pago', startOfDay) 
-        .lte('fecha_pago', endOfDay)
+        .eq('tipo', 'ingreso')
+        .gte('fecha_movimiento', startOfDay)
+        .lte('fecha_movimiento', endOfDay)
+        .or(orClause) // Usar la variable orClause
         .then(({ data, error }) => {
           if (error) {
-            console.warn(`Error obteniendo ingresos para ${day}:`, error.message);
+            console.warn(`Error obteniendo ingresos de habitaciones para ${day} desde 'caja':`, error.message);
             return 0;
           }
-          return data ? data.reduce((sum, payment) => sum + (payment.monto || 0), 0) : 0;
+          return data ? data.reduce((sum, entry) => sum + (entry.monto || 0), 0) : 0;
         });
     });
     const revenues = await Promise.all(revenuePromises);
-    dailyRevenueData.push(...revenues);
+    dailyRoomRevenueData.push(...revenues);
 
-    console.warn("Dashboard: Datos de gráfico de ocupación son actualmente MOCK.");
     labels.forEach(() => dailyOcupacionData.push(Math.floor(Math.random() * 71) + 20));
 
   } catch (e) {
     console.error("Error obteniendo datos para gráficos del dashboard:", e);
-    if (dailyRevenueData.length < numDays) dailyRevenueData.push(...new Array(numDays - dailyRevenueData.length).fill(0));
+    if (dailyRoomRevenueData.length < numDays) dailyRoomRevenueData.push(...new Array(numDays - dailyRoomRevenueData.length).fill(0));
     if (dailyOcupacionData.length < numDays) dailyOcupacionData.push(...new Array(numDays - dailyOcupacionData.length).fill(0));
   }
   
-  return { labels, dailyRevenueData, dailyOcupacionData };
+  return { labels, dailyRevenueData: dailyRoomRevenueData, dailyOcupacionData };
 }
 
 async function renderDashboardCharts(containerEl, hotelId, supabaseInstance) {
@@ -102,7 +108,7 @@ async function renderDashboardCharts(containerEl, hotelId, supabaseInstance) {
       data: {
         labels: chartData.labels,
         datasets: [{
-          label: 'Ingresos por Pagos (Últimos 7 Días)',
+          label: 'Ingresos por Habitaciones (Últimos 7 Días)',
           data: chartData.dailyRevenueData,
           borderColor: 'rgb(75, 192, 192)',
           backgroundColor: 'rgba(75, 192, 192, 0.2)',
@@ -144,7 +150,7 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
   if (dashboardErrorMainDiv) clearAppFeedback(dashboardErrorMainDiv);
 
   ['card-reservas-hoy', 'card-ingresos-hoy', 'card-ocupacion', 'card-ventas-tienda']
-    .forEach(id => updateCardContent(containerEl, id, null, false, true));
+    .forEach(id => updateCardContent(containerEl, id, null, id === 'card-ingresos-hoy' || id === 'card-ventas-tienda', true));
   const listCheckoutsEl = containerEl.querySelector('#list-next-checkouts');
   if (listCheckoutsEl) listCheckoutsEl.innerHTML = '<li><span class="placeholder-loading text-gray-400">Cargando check-outs...</span></li>';
 
@@ -152,34 +158,57 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
     const today = new Date();
     const inicioDiaUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 0, 0, 0, 0)).toISOString();
     const finDiaUTC = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate(), 23, 59, 59, 999)).toISOString();
-    const inicioProximos7Dias = inicioDiaUTC;
-    const finProximos7Dias = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 7, 23, 59, 59, 999)).toISOString();
+    const inicioSiguientes7Dias = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 1, 0, 0, 0, 0)).toISOString();
+    const finSiguientes7Dias = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + 7, 23, 59, 59, 999)).toISOString();
+
+    // CORRECCIÓN SUGERIDA:
+    // Se añadió 'concepto.ilike.Estadía en%' (con acento) a la condición .or()
+    // Verifica que estos conceptos coincidan con los que usas en tu tabla 'caja'
+    const orClauseIngresosHabitaciones = 'concepto.ilike.Alquiler de%,concepto.ilike.Extensión de%,concepto.ilike.Estadia en%,concepto.ilike.Estadía en%,concepto.ilike.Noche adicional%';
+    // Si tienes otros conceptos para ingresos de habitación, añádelos aquí. Ejemplo:
+    // const orClauseIngresosHabitaciones = 'concepto.ilike.Alquiler de Habitación%,concepto.ilike.Estadía completa%,...';
+
 
     const [
-        reservasHoyResult, ingresosPagosHoyResult, habitacionesTotalResult,
-        habitacionesOcupadasResult, ventasTiendaHoyResult, proximosCheckoutsResult
+        reservasHoyResult, 
+        ingresosHabitacionesHoyResult, 
+        habitacionesTotalResult,
+        habitacionesOcupadasResult, 
+        ventasTiendaHoyResult, 
+        proximosCheckoutsResult
     ] = await Promise.all([
-        supabaseInstance.from('reservas').select('id', { count: 'exact', head: false }).eq('hotel_id', hotelId).gte('fecha_inicio', inicioDiaUTC).lte('fecha_inicio', finDiaUTC).in('estado', ['confirmada', 'check_in']),
-        supabaseInstance.from('pagos_reserva').select('monto').eq('hotel_id', hotelId).gte('fecha_pago', inicioDiaUTC).lte('fecha_pago', finDiaUTC),
-        supabaseInstance.from('habitaciones').select('id', { count: 'exact', head: false }).eq('hotel_id', hotelId).eq('activo', true),
-        supabaseInstance.from('reservas').select('id', { count: 'exact', head: false }).eq('hotel_id', hotelId).eq('estado', 'check_in'),
-        supabaseInstance.from('ventas_tienda').select('total_venta').eq('hotel_id', hotelId).gte('creado_en', inicioDiaUTC).lte('creado_en', finDiaUTC), // Asumiendo 'creado_en' para fecha de venta
-        supabaseInstance.from('reservas')
-            .select('id, cliente_nombre, fecha_fin, habitaciones(nombre)') // Usar cliente_nombre de reservas directamente
+        supabaseInstance.from('reservas').select('id', { count: 'exact', head: false }).eq('hotel_id', hotelId).lte('fecha_inicio', finDiaUTC).gte('fecha_fin', inicioDiaUTC).in('estado', ['activa', 'confirmada', 'check_in']),
+        
+        supabaseInstance.from('caja')
+            .select('monto')
             .eq('hotel_id', hotelId)
-            .gte('fecha_fin', inicioProximos7Dias)
-            .lte('fecha_fin', finProximos7Dias)
-            .in('estado', ['confirmada', 'check_in'])
+            .eq('tipo', 'ingreso')
+            .gte('fecha_movimiento', inicioDiaUTC)
+            .lte('fecha_movimiento', finDiaUTC)
+            .or(orClauseIngresosHabitaciones), // Usar la variable orClauseIngresosHabitaciones
+        
+        supabaseInstance.from('habitaciones').select('id', { count: 'exact', head: false }).eq('hotel_id', hotelId).eq('activo', true),
+        
+        supabaseInstance.from('habitaciones').select('id', { count: 'exact', head: false }).eq('hotel_id', hotelId).eq('estado', 'ocupada'),
+        
+        supabaseInstance.from('ventas_tienda').select('total_venta').eq('hotel_id', hotelId).gte('fecha', inicioDiaUTC).lte('fecha', finDiaUTC),
+        
+        supabaseInstance.from('reservas')
+            .select('id, cliente_nombre, fecha_fin, habitaciones(nombre)') 
+            .eq('hotel_id', hotelId)
+            .gte('fecha_fin', inicioDiaUTC)
+            .lte('fecha_fin', finSiguientes7Dias)
+            .in('estado', ['activa', 'check_in', 'confirmada'])
             .order('fecha_fin', { ascending: true }).limit(5)
     ]);
     
-    if (reservasHoyResult.error) console.error("Error fetching 'Reservas Hoy':", reservasHoyResult.error);
+    if (reservasHoyResult.error) console.error("Error fetching 'Reservas Activas Hoy':", reservasHoyResult.error);
     updateCardContent(containerEl, 'card-reservas-hoy', reservasHoyResult.error ? null : (reservasHoyResult.count || 0));
     
-    if (ingresosPagosHoyResult.error) console.error("Error fetching 'Ingresos Hoy':", ingresosPagosHoyResult.error);
-    const totalIngresosHoy = ingresosPagosHoyResult.error ? null : (ingresosPagosHoyResult.data?.reduce((sum, p) => sum + (p.monto || 0), 0) || 0);
-    updateCardContent(containerEl, 'card-ingresos-hoy', totalIngresosHoy, true);
-    
+    if (ingresosHabitacionesHoyResult.error) console.error("Error fetching 'Ingresos Habitaciones Hoy':", ingresosHabitacionesHoyResult.error);
+    const totalIngresosHabitacionesHoy = ingresosHabitacionesHoyResult.error ? null : (ingresosHabitacionesHoyResult.data?.reduce((sum, p) => sum + (p.monto || 0), 0) || 0);
+    updateCardContent(containerEl, 'card-ingresos-hoy', totalIngresosHabitacionesHoy, true);
+        
     if (habitacionesTotalResult.error) console.error("Error fetching 'Total Habitaciones':", habitacionesTotalResult.error);
     const totalHab = habitacionesTotalResult.error ? null : (habitacionesTotalResult.count || 0);
     
@@ -198,7 +227,7 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
         console.error("Error fetching 'Próximos Checkouts':", proximosCheckoutsResult.error);
         listCheckoutsEl.innerHTML = '<li><span class="text-red-500">Error al cargar check-outs.</span></li>';
       } else if (!proximosCheckoutsResult.data || proximosCheckoutsResult.data.length === 0) {
-        listCheckoutsEl.innerHTML = '<li>No hay check-outs próximos en los siguientes 7 días.</li>';
+        listCheckoutsEl.innerHTML = '<li>No hay check-outs próximos.</li>';
       } else {
         proximosCheckoutsResult.data.forEach(r => {
           const li = document.createElement('li');
@@ -220,7 +249,7 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
     console.error("Error cargando datos del dashboard:", err);
     if (dashboardErrorMainDiv) showAppFeedback(dashboardErrorMainDiv, `Error al cargar datos: ${err.message || "Error desconocido."}`, 'error', true);
     ['card-reservas-hoy', 'card-ingresos-hoy', 'card-ocupacion', 'card-ventas-tienda']
-        .forEach(id => updateCardContent(containerEl, id, null));
+        .forEach(id => updateCardContent(containerEl, id, null, id === 'card-ingresos-hoy' || id === 'card-ventas-tienda'));
     if (listCheckoutsEl) listCheckoutsEl.innerHTML = '<li><span class="text-red-500">Error al cargar datos.</span></li>';
   }
 }
@@ -236,11 +265,11 @@ export async function mount(container, supabaseInstance, currentUser) {
 
     <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 dashboard-cards">
       <div class="card dashboard-card p-4 rounded-lg shadow-md bg-white">
-        <h3 class="text-sm font-medium text-gray-500 mb-1">Reservas para Hoy</h3>
+        <h3 class="text-sm font-medium text-gray-500 mb-1">Reservas Activas Hoy</h3>
         <p id="card-reservas-hoy" class="dashboard-metric text-3xl font-bold text-gray-800"><span class="placeholder-loading text-gray-400">Cargando...</span></p>
       </div>
       <div class="card dashboard-card p-4 rounded-lg shadow-md bg-white">
-        <h3 class="text-sm font-medium text-gray-500 mb-1">Ingresos de Hoy (Pagos)</h3>
+        <h3 class="text-sm font-medium text-gray-500 mb-1">Ingresos Habitaciones Hoy</h3>
         <p id="card-ingresos-hoy" class="dashboard-metric text-3xl font-bold text-gray-800"><span class="placeholder-loading text-gray-400">Cargando...</span></p>
       </div>
       <div class="card dashboard-card p-4 rounded-lg shadow-md bg-white">
@@ -255,7 +284,7 @@ export async function mount(container, supabaseInstance, currentUser) {
 
     <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 dashboard-charts">
       <div class="card chart-card p-4 rounded-lg shadow-md bg-white">
-          <div class="card-header mb-2 border-b pb-2"><h3 class="text-lg font-semibold text-gray-700">Ingresos (Últimos 7 Días)</h3></div>
+          <div class="card-header mb-2 border-b pb-2"><h3 class="text-lg font-semibold text-gray-700">Ingresos Habitaciones (Últimos 7 Días)</h3></div>
           <div id="dashboard-charts-error-revenue" class="feedback-message error-indicator mb-2" style="display:none;" role="alert"></div>
           <div class="chart-container" style="height:300px; position: relative;">
               <canvas id="chart-revenue"></canvas>
@@ -271,7 +300,7 @@ export async function mount(container, supabaseInstance, currentUser) {
     </section>
 
     <section class="dashboard-recent card p-4 rounded-lg shadow-md bg-white mb-6">
-      <div class="card-header mb-3 border-b pb-2"><h2 class="text-lg font-semibold text-gray-700">Próximos Check-Out (Siguientes 7 días)</h2></div>
+      <div class="card-header mb-3 border-b pb-2"><h2 class="text-lg font-semibold text-gray-700">Próximos Check-Out (Hoy y Siguientes 7 días)</h2></div>
       <ul id="list-next-checkouts" class="list-unstyled card-body space-y-2" style="padding-left: 0;">
         <li><span class="placeholder-loading text-gray-400">Cargando...</span></li>
       </ul>
@@ -282,6 +311,9 @@ export async function mount(container, supabaseInstance, currentUser) {
       <div class="card-body atajos-buttons flex flex-wrap gap-3">
         <button class="button button-primary py-2 px-4 rounded-md flex items-center text-sm" data-navegar="#/reservas">
             <span class="mr-2">📅</span> Nueva Reserva
+        </button>
+        <button class="button button-accent py-2 px-4 rounded-md flex items-center text-sm" data-navegar="#/mapa-habitaciones">
+            <span class="mr-2">🗺️</span> Mapa Habitaciones
         </button>
         <button class="button button-accent py-2 px-4 rounded-md flex items-center text-sm" data-navegar="#/caja">
             <span class="mr-2">💰</span> Ir a Caja
@@ -329,6 +361,7 @@ export async function mount(container, supabaseInstance, currentUser) {
       if (chartErrorOcuDiv) showAppFeedback(chartErrorOcuDiv, 'Error al cargar librería de gráficos (Ocupación).', 'error', true);
     };
     document.head.appendChild(chartJsScript);
+    moduleDashboardListeners.push({ element: chartJsScript, type: 'remove-on-unmount' });
   } else {
     renderDashboardCharts(container, hotelId, supabaseInstance);
   }
@@ -360,10 +393,11 @@ export function unmount(container) {
   }
 
   moduleDashboardListeners.forEach(({ element, type, handler }) => {
-    if (element && typeof element.removeEventListener === 'function') {
+    if (type === 'remove-on-unmount' && element && element.parentNode) {
+      // element.parentNode.removeChild(element); // Opcional
+    } else if (element && typeof element.removeEventListener === 'function') {
       element.removeEventListener(type, handler);
     }
   });
   moduleDashboardListeners = [];
-  console.log('Dashboard module unmounted, charts destroyed and listeners removed.');
 }
