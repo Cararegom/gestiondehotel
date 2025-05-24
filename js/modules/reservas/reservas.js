@@ -97,17 +97,10 @@ async function handleFormSubmit(event) {
     } else {
       await createBooking(bookingPayload);
     }
-    try {
-    // ... (lógica existente) ...
-
-    if (state.isEditMode) {
-      await updateBooking(bookingPayload);
-    } else {
-      await createBooking(bookingPayload);
-    }
-
+   
     const successMsg = `¡Reserva ${state.isEditMode ? 'actualizada' : 'creada'} con éxito!`;
     showSuccess(ui.feedbackDiv, successMsg);
+    await renderReservas();
 
     // --- LÍNEA A AÑADIR ---
     // Notifica a otros módulos (como el mapa) que los datos han cambiado.
@@ -121,15 +114,6 @@ async function handleFormSubmit(event) {
   }
     resetFormToCreateMode();
     showSuccess(ui.feedbackDiv, `¡Reserva ${state.isEditMode ? 'actualizada' : 'creada'} con éxito!`);
-
-  } catch (error) {
-    console.error("Error en el proceso de reserva:", error);
-    showError(ui.feedbackDiv, error.message);
-  } finally {
-    const buttonText = state.isEditMode ? "Actualizar Reserva" : "Registrar Reserva";
-    setFormLoadingState(ui.form, false, ui.submitButton, buttonText);
-    await renderReservas();
-  }
 }
 
 /**
@@ -772,98 +756,189 @@ export async function mount(container, supabaseClient, user, hotelId) {
 
   // --- Renderizado de Plantilla HTML ---
   container.innerHTML = `
-    <div class="max-w-4xl mx-auto mt-7 px-4">
-      <h2 id="form-title" class="text-2xl md:text-3xl font-bold mb-6 text-blue-800">Registrar Nueva Reserva</h2>
-      <form id="reserva-form" class="space-y-5 bg-blue-50 rounded-xl p-6 border border-blue-200 mb-8 shadow-md">
-        <fieldset class="border border-blue-200 p-4 rounded-md">
-          <legend class="text-lg font-semibold text-blue-700 px-2">Datos del Cliente</legend>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-            <div>
-              <label for="cliente_nombre" class="font-semibold text-sm text-gray-700">Nombre completo</label>
-              <input name="cliente_nombre" id="cliente_nombre" class="form-control" required maxlength="120" />
-            </div>
-            <div>
-              <label for="telefono" class="font-semibold text-sm text-gray-700">Teléfono</label>
-              <input name="telefono" id="telefono" type="tel" class="form-control" maxlength="30" />
-            </div>
+  <div class="max-w-4xl mx-auto mt-7 px-4">
+    <h2 id="form-title" class="text-2xl md:text-3xl font-bold mb-6 text-blue-800">Registrar Nueva Reserva</h2>
+    <form id="reserva-form" class="space-y-5 bg-blue-50 rounded-xl p-6 border border-blue-200 mb-8 shadow-md">
+      <fieldset class="border border-blue-200 p-4 rounded-md">
+        <legend class="text-lg font-semibold text-blue-700 px-2">Datos del Cliente</legend>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <div>
+            <label for="cliente_nombre" class="font-semibold text-sm text-gray-700">Nombre completo</label>
+            <input name="cliente_nombre" id="cliente_nombre" class="form-control" required maxlength="120" />
           </div>
-        </fieldset>
-        <fieldset class="border border-blue-200 p-4 rounded-md">
-          <legend class="text-lg font-semibold text-blue-700 px-2">Detalles de la Reserva</legend>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5 mt-2">
-            <div>
-              <label for="fecha_entrada" class="font-semibold text-sm text-gray-700">Fecha y hora de llegada</label>
-              <input type="datetime-local" name="fecha_entrada" id="fecha_entrada" class="form-control" required />
-            </div>
-            <div>
-              <label for="tipo_calculo_duracion" class="font-semibold text-sm text-gray-700">Calcular duración por</label>
-              <select name="tipo_calculo_duracion" id="tipo_calculo_duracion" class="form-control" required>
-                <option value="noches_manual">Noches (manual)</option>
-                <option value="tiempo_predefinido">Tiempo predefinido</option>
-              </select>
-            </div>
-            <div id="noches-manual-container">
-              <label for="cantidad_noches" class="font-semibold text-sm text-gray-700">Cantidad de noches</label>
-              <input name="cantidad_noches" id="cantidad_noches" type="number" min="1" max="90" value="1" class="form-control" />
-            </div>
-            <div id="tiempo-predefinido-container" style="display:none;">
-              <label for="tiempo_estancia_id" class="font-semibold text-sm text-gray-700">Selecciona tiempo de estancia</label>
-              <select name="tiempo_estancia_id" id="tiempo_estancia_id" class="form-control"></select>
-            </div>
-            <div>
-              <label for="habitacion_id" class="font-semibold text-sm text-gray-700">Habitación</label>
-              <select name="habitacion_id" id="habitacion_id" class="form-control" required></select>
-            </div>
-            <div>
-              <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes</label>
-              <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="1" class="form-control" required />
-            </div>
+          <div>
+            <label for="telefono" class="font-semibold text-sm text-gray-700">Teléfono</label>
+            <input name="telefono" id="telefono" type="tel" class="form-control" maxlength="30" />
           </div>
-        </fieldset>
-        <fieldset class="border border-blue-200 p-4 rounded-md">
-          <legend class="text-lg font-semibold text-blue-700 px-2">Pago y Adicionales</legend>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5 mt-2">
-            <div>
-              <label for="metodo_pago_id" class="font-semibold text-sm text-gray-700">Método de Pago (Abono)</label>
-              <select name="metodo_pago_id" id="metodo_pago_id" class="form-control"></select>
-            </div>
-            <div>
-              <label for="monto_abono" class="font-semibold text-sm text-gray-700">Abono inicial (opcional)</label>
-              <input name="monto_abono" id="monto_abono" type="number" min="0" step="1000" class="form-control" placeholder="Valor a abonar" />
-            </div>
-            <div class="md:col-span-2">
-              <label for="notas" class="font-semibold text-sm text-gray-700">Notas Adicionales</label>
-              <textarea name="notas" id="notas" class="form-control" maxlength="500" rows="2" placeholder="Ej: Llegada tardía, solicitud especial..."></textarea>
-            </div>
-          </div>
-        </fieldset>
-        <div class="flex flex-col sm:flex-row gap-3 pt-2">
-            <button type="submit" id="submit-button" class="button button-primary w-full sm:w-auto flex-grow">Registrar Reserva</button>
-            <button type="button" id="cancel-edit-button" class="button button-secondary w-full sm:w-auto" style="display:none;">Cancelar Edición</button>
         </div>
-      </form>
-      <div id="reserva-feedback" class="mb-6"></div>
-      <div id="reservas-list" class="mt-8"></div>
-    </div>
-  `;
+      </fieldset>
+      <fieldset class="border border-blue-200 p-4 rounded-md">
+        <legend class="text-lg font-semibold text-blue-700 px-2">Detalles de la Reserva</legend>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5 mt-2">
+          <div>
+            <label for="fecha_entrada" class="font-semibold text-sm text-gray-700">Fecha y hora de llegada</label>
+            <input type="datetime-local" name="fecha_entrada" id="fecha_entrada" class="form-control" required />
+          </div>
+          <div>
+            <label for="tipo_calculo_duracion" class="font-semibold text-sm text-gray-700">Calcular duración por</label>
+            <select name="tipo_calculo_duracion" id="tipo_calculo_duracion" class="form-control" required>
+              <option value="noches_manual">Noches (manual)</option>
+              <option value="tiempo_predefinido">Tiempo predefinido</option>
+            </select>
+          </div>
+          <div id="noches-manual-container">
+            <label for="cantidad_noches" class="font-semibold text-sm text-gray-700">Cantidad de noches</label>
+            <input name="cantidad_noches" id="cantidad_noches" type="number" min="1" max="90" value="1" class="form-control" />
+          </div>
+          <div id="tiempo-predefinido-container" style="display:none;">
+            <label for="tiempo_estancia_id" class="font-semibold text-sm text-gray-700">Selecciona tiempo de estancia</label>
+            <select name="tiempo_estancia_id" id="tiempo_estancia_id" class="form-control"></select>
+          </div>
+          <div>
+            <label for="habitacion_id" class="font-semibold text-sm text-gray-700">Habitación</label>
+            <select name="habitacion_id" id="habitacion_id" class="form-control" required></select>
+          </div>
+          <div>
+            <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes</label>
+            <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="1" class="form-control" required />
+          </div>
+        </div>
+      </fieldset>
+      <fieldset class="border border-blue-200 p-4 rounded-md">
+        <legend class="text-lg font-semibold text-blue-700 px-2">Pago y Adicionales</legend>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5 mt-2">
+          <div>
+            <label for="tipo_pago" class="font-semibold text-sm text-gray-700">Tipo de Pago</label>
+            <select id="tipo_pago" name="tipo_pago" class="form-control" required>
+              <option value="parcial">Pago parcial (abono)</option>
+              <option value="completo">Pago completo</option>
+            </select>
+          </div>
+          <div>
+            <label for="metodo_pago_id" class="font-semibold text-sm text-gray-700">Método de Pago</label>
+            <select name="metodo_pago_id" id="metodo_pago_id" class="form-control"></select>
+          </div>
+          <!-- Solo sale si escoge pago parcial -->
+          <div id="abono-container" class="md:col-span-2">
+            <label for="monto_abono" class="font-semibold text-sm text-gray-700">Valor a abonar</label>
+            <input name="monto_abono" id="monto_abono" type="number" min="0" step="1000" class="form-control" placeholder="Valor a abonar" />
+          </div>
+          <!-- Solo sale si escoge pago completo -->
+          <div id="total-pago-completo" class="md:col-span-2" style="display:none;">
+            <div class="text-center py-4">
+              <span class="text-2xl font-bold text-green-600">
+                Total a pagar: <span id="valor-total-pago"></span>
+              </span>
+            </div>
+          </div>
+          <div class="md:col-span-2">
+            <label for="notas" class="font-semibold text-sm text-gray-700">Notas Adicionales</label>
+            <textarea name="notas" id="notas" class="form-control" maxlength="500" rows="2" placeholder="Ej: Llegada tardía, solicitud especial..."></textarea>
+          </div>
+        </div>
+      </fieldset>
+      <div class="flex flex-col sm:flex-row gap-3 pt-2">
+        <button type="submit" id="submit-button" class="button button-primary w-full sm:w-auto flex-grow">Registrar Reserva</button>
+        <button type="button" id="cancel-edit-button" class="button button-secondary w-full sm:w-auto" style="display:none;">Cancelar Edición</button>
+      </div>
+    </form>
+    <div id="reserva-feedback" class="mb-6"></div>
+    <div id="reservas-list" class="mt-8"></div>
+  </div>
+`;
 
-  // --- Inicialización de la UI y Eventos ---
-  ui.init(container);
+// ------ JS QUE VA JUSTO DESPUÉS DEL innerHTML ------
 
-  ui.form.onsubmit = handleFormSubmit;
-  ui.cancelEditButton.onclick = () => resetFormToCreateMode();
-  ui.reservasListEl.addEventListener('click', handleListActions);
+// Elementos principales del pago
+const tipoPagoSelect = document.getElementById('tipo_pago');
+const abonoContainer = document.getElementById('abono-container');
+const totalPagoCompleto = document.getElementById('total-pago-completo');
+const valorTotalPago = document.getElementById('valor-total-pago');
 
-  ui.tipoCalculoDuracionEl.onchange = () => {
-    const esNochesManual = ui.tipoCalculoDuracionEl.value === 'noches_manual';
-    ui.nochesManualContainer.style.display = esNochesManual ? '' : 'none';
-    ui.cantidadNochesInput.required = esNochesManual;
-    ui.tiempoPredefinidoContainer.style.display = esNochesManual ? 'none' : '';
-    ui.tiempoEstanciaIdSelect.required = !esNochesManual;
-  };
-  ui.tipoCalculoDuracionEl.dispatchEvent(new Event('change'));
+// Otros elementos usados en el cálculo (asegúrate que todos existen)
+const habitacionSelect = document.getElementById('habitacion_id');
+const cantidadNochesInput = document.getElementById('cantidad_noches');
+const tipoCalculoDuracionEl = document.getElementById('tipo_calculo_duracion');
+const tiempoEstanciaIdSelect = document.getElementById('tiempo_estancia_id');
 
-  // --- Carga de Datos Inicial ---
-  configureFechaEntrada(ui.fechaEntradaInput);
-  await loadInitialData();
+// Función para calcular el total de la reserva
+function calcularTotalReserva() {
+  let total = 0;
+
+  // Precio habitación
+  const habitacionOption = habitacionSelect.options[habitacionSelect.selectedIndex];
+  let precioHabitacion = habitacionOption ? (parseInt(habitacionOption.getAttribute('data-precio')) || 0) : 0;
+
+  // Tipo de cálculo: noches manual o tiempo predefinido
+  const tipoCalculo = tipoCalculoDuracionEl.value;
+  if (tipoCalculo === 'noches_manual') {
+    const cantidadNoches = parseInt(cantidadNochesInput.value) || 1;
+    total = precioHabitacion * cantidadNoches;
+  } else {
+    const tiempoOption = tiempoEstanciaIdSelect.options[tiempoEstanciaIdSelect.selectedIndex];
+    total = tiempoOption ? (parseInt(tiempoOption.getAttribute('data-precio')) || 0) : 0;
+  }
+
+  // --- Lógica de huéspedes extra (ejemplo) ---
+  const capacidadBase = habitacionOption ? (parseInt(habitacionOption.getAttribute('data-capacidad-base')) || 1) : 1;
+  const precioExtra = habitacionOption ? (parseInt(habitacionOption.getAttribute('data-precio-extra')) || 0) : 0;
+  const cantidadHuespedes = parseInt(document.getElementById('cantidad_huespedes').value) || 1;
+  if (cantidadHuespedes > capacidadBase) {
+    const extra = cantidadHuespedes - capacidadBase;
+    if (tipoCalculo === 'noches_manual') {
+      const cantidadNoches = parseInt(cantidadNochesInput.value) || 1;
+      total += extra * precioExtra * cantidadNoches;
+    } else {
+      total += extra * precioExtra;
+    }
+  }
+  // --- Fin lógica huéspedes extra ---
+
+  window.__totalReservaCalculado = total;
+  valorTotalPago.textContent = "$" + total.toLocaleString("es-CO");
+}
+
+// Evento al cambiar el tipo de pago
+tipoPagoSelect.addEventListener('change', function () {
+  if (this.value === 'completo') {
+    abonoContainer.style.display = 'none';
+    totalPagoCompleto.style.display = 'block';
+    valorTotalPago.textContent = "$" + calcularTotalReserva().toLocaleString("es-CO");
+  } else {
+    abonoContainer.style.display = 'block';
+    totalPagoCompleto.style.display = 'none';
+  }
+});
+
+// Eventos para recalcular el total automáticamente
+habitacionSelect.addEventListener('change', calcularTotalReserva);
+cantidadNochesInput.addEventListener('input', calcularTotalReserva);
+tipoCalculoDuracionEl.addEventListener('change', calcularTotalReserva);
+tiempoEstanciaIdSelect.addEventListener('change', calcularTotalReserva);
+document.getElementById('cantidad_huespedes').addEventListener('input', calcularTotalReserva);
+tipoPagoSelect.addEventListener('change', calcularTotalReserva);
+
+// Mostrar correcto al cargar
+tipoPagoSelect.dispatchEvent(new Event('change'));
+calcularTotalReserva();
+
+// --- Inicialización de la UI y Eventos ---
+ui.init(container);
+
+ui.form.onsubmit = handleFormSubmit;
+ui.cancelEditButton.onclick = () => resetFormToCreateMode();
+ui.reservasListEl.addEventListener('click', handleListActions);
+
+ui.tipoCalculoDuracionEl.onchange = () => {
+  const esNochesManual = ui.tipoCalculoDuracionEl.value === 'noches_manual';
+  ui.nochesManualContainer.style.display = esNochesManual ? '' : 'none';
+  ui.cantidadNochesInput.required = esNochesManual;
+  ui.tiempoPredefinidoContainer.style.display = esNochesManual ? 'none' : '';
+  ui.tiempoEstanciaIdSelect.required = !esNochesManual;
+};
+ui.tipoCalculoDuracionEl.dispatchEvent(new Event('change'));
+
+// --- Carga de Datos Inicial ---
+configureFechaEntrada(ui.fechaEntradaInput);
+await loadInitialData();
 }

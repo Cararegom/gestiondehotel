@@ -1,7 +1,12 @@
 // js/modules/mapa_habitaciones/mapa_habitaciones.js
 
 // ======================= BLOQUE PRINCIPAL ========================
-let currentRooms = []; 
+let containerGlobal = null;
+let supabaseGlobal = null;
+let currentUserGlobal = null;
+let hotelIdGlobal = null;
+
+let currentRooms = [];
 let cronometrosInterval = {};
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
@@ -71,6 +76,10 @@ async function getMetodosPago(supabase, hotelId) {
 
 // ======================= LÓGICA DE RENDERIZADO DE HABITACIONES ===========================
 export async function mount(container, supabase, currentUser, hotelId) {
+    containerGlobal = container;
+    supabaseGlobal = supabase;
+    currentUserGlobal = currentUser;
+    hotelIdGlobal = hotelId;
     container.innerHTML = `
         <div class="mb-8 px-4 md:px-0">
             <h2 class="text-3xl font-bold text-gray-800 flex items-center">
@@ -85,8 +94,14 @@ export async function mount(container, supabase, currentUser, hotelId) {
         <div id="modal-container" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto" style="display:none;"></div>
     `;
     await renderRooms(container, supabase, currentUser, hotelId);
+    
 }
-
+document.addEventListener('datosActualizados', () => {
+    // Solo refresca si todo está listo
+    if (containerGlobal && supabaseGlobal && currentUserGlobal && hotelIdGlobal) {
+        renderRooms(containerGlobal, supabaseGlobal, currentUserGlobal, hotelIdGlobal);
+    }
+});
 export function unmount() {
     Object.values(cronometrosInterval).forEach(clearInterval);
     cronometrosInterval = {};
@@ -98,6 +113,12 @@ export function unmount() {
 }
 
 async function renderRooms(container, supabase, currentUser, hotelId) {
+    console.log("renderRooms se llamó con container:", container);
+if (!container) {
+  console.error("renderRooms: container es null o indefinido. Verifica la llamada a mount o el event listener.");
+  return;
+}
+
     const { data: habitaciones, error } = await supabase
         .from('habitaciones')
         .select('*, precio') 
@@ -109,9 +130,13 @@ async function renderRooms(container, supabase, currentUser, hotelId) {
         return;
     }
 
-    currentRooms = habitaciones; 
-    const listEl = container.querySelector("#room-map-list");
-    listEl.innerHTML = '';
+    currentRooms = habitaciones;
+const listEl = container.querySelector("#room-map-list");
+if (!listEl) {
+  console.error("No se encontró el div #room-map-list dentro del container. Corrige el template HTML.");
+  return;
+}
+listEl.innerHTML = '';
 
     if (habitaciones.length === 0) {
         listEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones configuradas para este hotel.</div>`;
@@ -221,41 +246,44 @@ async function showHabitacionOpcionesModal(room, supabase, currentUser, hotelId,
   }
 
   // Botón de check-in para reservas activas que ya puedan ingresar
-  let reservaFutura = null;
-  if (room.estado === "reservada") {
-    // Buscar la reserva activa para esta habitación
-    const { data, error } = await supabase
-      .from('reservas')
-      .select('*')
-      .eq('habitacion_id', room.id)
-      .eq('estado', 'reservada')
-      .order('fecha_inicio', { ascending: false })
-      .limit(1)
-      .single();
+let reservaFutura = null;
+if (room.estado === "reservada") {
+  // Buscar la reserva activa para esta habitación
+  const { data, error } = await supabase
+    .from('reservas')
+    .select('*')
+    .eq('habitacion_id', room.id)
+    .eq('estado', 'reservada')
+    .order('fecha_inicio', { ascending: false })
+    .limit(1)
+    .single();
 
-    if (!error && data) {
-      reservaFutura = data;
-      const fechaInicio = new Date(reservaFutura.fecha_inicio);
-      const ahora = new Date();
-      // Permitir check-in si la fecha de inicio es hoy o ya pasó
-      if (fechaInicio <= ahora) {
-        botonesHtml += `<button id="btn-checkin-reserva" class="button w-full mb-2 py-2.5" style="background:#059669;color:white;font-weight:bold;"><span style="font-size:1.2em">✅</span> Check-in ahora</button>`;
-      } else {
-        botonesHtml += `<div class="text-center text-xs text-gray-500 mb-2"><span style="font-size:1.1em">⏳</span> Check-in habilitado desde: ${fechaInicio.toLocaleString('es-CO')}</div>`;
-      }
-      // Info del huésped en la reserva
-      botonesHtml += `
-        <div class="bg-gray-50 rounded p-2 mb-2 text-xs">
-          <b>Reserva:</b> ${reservaFutura.cliente_nombre} <br>
-          <b>Tel:</b> ${reservaFutura.telefono} <br>
-          <b>Huéspedes:</b> ${reservaFutura.cantidad_huespedes} <br>
-          <b>Llegada:</b> ${fechaInicio.toLocaleString('es-CO')}
-        </div>
-      `;
+  if (!error && data) {
+    reservaFutura = data;
+    const fechaInicio = new Date(reservaFutura.fecha_inicio);
+    const ahora = new Date();
+    const diferenciaMin = (fechaInicio - ahora) / (60 * 1000); // minutos
+
+    // Permitir check-in si falta 120 minutos o menos (2 horas), o si ya pasó la fecha de inicio
+    if (diferenciaMin <= 120) {
+      botonesHtml += `<button id="btn-checkin-reserva" class="button w-full mb-2 py-2.5" style="background:#059669;color:white;font-weight:bold;"><span style="font-size:1.2em">✅</span> Check-in ahora</button>`;
     } else {
-      botonesHtml += `<div class="text-xs text-red-500 mb-2">No se encontró la reserva activa para check-in.</div>`;
+      botonesHtml += `<div class="text-center text-xs text-gray-500 mb-2"><span style="font-size:1.1em">⏳</span> Check-in habilitado desde: ${new Date(fechaInicio.getTime() - 2 * 60 * 60 * 1000).toLocaleString('es-CO')} (2 horas antes)</div>`;
     }
+    // Info del huésped en la reserva
+    botonesHtml += `
+      <div class="bg-gray-50 rounded p-2 mb-2 text-xs">
+        <b>Reserva:</b> ${reservaFutura.cliente_nombre} <br>
+        <b>Tel:</b> ${reservaFutura.telefono} <br>
+        <b>Huéspedes:</b> ${reservaFutura.cantidad_huespedes} <br>
+        <b>Llegada:</b> ${fechaInicio.toLocaleString('es-CO')}
+      </div>
+    `;
+  } else {
+    botonesHtml += `<div class="text-xs text-red-500 mb-2">No se encontró la reserva activa para check-in.</div>`;
   }
+}
+
 
   // Botón info huésped si no está libre ni en mantenimiento
   if (room.estado !== "libre" && room.estado !== "mantenimiento") {
@@ -386,21 +414,145 @@ async function showHabitacionOpcionesModal(room, supabase, currentUser, hotelId,
 
   // =================== BOTÓN VER CONSUMOS (igual que antes)
   setupButtonListener('btn-ver-consumos', async () => {
-    // ... (igual que tu código actual)
-    // Pega aquí tu lógica de consumos
-  });
+    // 1. Buscar la reserva activa
+    const { data: reserva, error: errRes } = await supabase
+        .from('reservas')
+        .select('id, cliente_nombre, monto_total')
+        .eq('habitacion_id', room.id)
+        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+        .order('fecha_inicio', { ascending: false })
+        .limit(1)
+        .single();
+
+    if (errRes || !reserva) {
+        mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos");
+        return;
+    }
+
+    // 2. Buscar ventas de tienda asociadas a esa reserva
+    const { data: ventasTienda, error: errVentas } = await supabase
+        .from('ventas_tienda')
+        .select('id, total_venta')
+        .eq('reserva_id', reserva.id);
+
+    // 3. Buscar los detalles de ventas (productos vendidos en tienda)
+    let detalles = [];
+    let totalTienda = 0;
+
+    if (ventasTienda && ventasTienda.length > 0) {
+        const ventaIds = ventasTienda.map(v => v.id);
+        // Supabase no permite más de 1000 elementos en .in, pero para hotel nunca será tanto.
+        const { data: detallesVentas, error: errDetalles } = await supabase
+            .from('detalle_ventas_tienda')
+            .select('producto_id, cantidad, precio_unitario_venta, subtotal, producto:producto_id (nombre)')
+            .in('venta_id', ventaIds);
+
+        if (detallesVentas && detallesVentas.length > 0) {
+            detalles = detallesVentas;
+            totalTienda = detallesVentas.reduce((sum, det) => sum + (det.subtotal || 0), 0);
+        }
+    }
+
+    // 4. Mostrar resumen
+    let html = `<b>Consumos habitación:</b><ul>`;
+    let totalGeneral = 0;
+
+    // Estancia habitación
+    html += `<li>Estancia: <b>${formatCurrency(reserva.monto_total)}</b></li>`;
+    totalGeneral += reserva.monto_total || 0;
+
+    // Tienda
+    if (detalles.length > 0) {
+        html += `<li style="margin-top:8px;"><b>Consumos Tienda:</b><ul>`;
+        detalles.forEach(t => {
+            html += `<li>${t.cantidad} x ${(t.producto?.nombre || 'Producto')} = <b>${formatCurrency(t.subtotal)}</b></li>`;
+        });
+        html += `</ul><b>Total Tienda:</b> ${formatCurrency(totalTienda)}</li>`;
+        totalGeneral += totalTienda;
+    } else if (ventasTienda && ventasTienda.length > 0) {
+        html += `<li><b>Total Tienda:</b> ${formatCurrency(ventasTienda.reduce((sum, v) => sum + (v.total_venta || 0), 0))}</li>`;
+        totalGeneral += ventasTienda.reduce((sum, v) => sum + (v.total_venta || 0), 0);
+    }
+
+    html += `</ul><hr><b style="font-size:1.1em;">Total a pagar: ${formatCurrency(totalGeneral)}</b>`;
+
+    mostrarInfoModalGlobal(html, "Consumos Estancia + Tienda");
+});
+
+
 
   // =================== BOTÓN FACTURAR (igual que antes)
   setupButtonListener('btn-facturar', async () => {
-    // ... (igual que tu código actual)
-    // Pega aquí tu lógica de facturación
-  });
+    // 1. Buscar reserva activa
+    const { data: reserva } = await supabase
+      .from('reservas')
+      .select('id, cliente_nombre, monto_total, fecha_inicio, fecha_fin')
+      .eq('habitacion_id', room.id)
+      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+      .order('fecha_inicio', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (!reserva) {
+      mostrarInfoModalGlobal("No hay reserva activa para facturar.", "Facturación");
+      return;
+    }
+
+    // 2. Buscar ventas de tienda asociadas a esa reserva
+    const { data: ventasTienda } = await supabase
+      .from('ventas_tienda')
+      .select('id, total_venta')
+      .eq('reserva_id', reserva.id);
+
+    let totalTienda = ventasTienda?.reduce((sum, v) => sum + (v.total_venta || 0), 0) || 0;
+
+    // 3. Detalles del resumen
+    let totalGeneral = (reserva.monto_total || 0) + totalTienda;
+
+    let html = `
+        <b>Factura Estancia + Consumos</b>
+        <br>
+        <b>Huésped:</b> ${reserva.cliente_nombre}<br>
+        <b>Fecha:</b> ${formatDateTime(reserva.fecha_inicio)} - ${formatDateTime(reserva.fecha_fin)}<br>
+        <b>Estancia:</b> ${formatCurrency(reserva.monto_total)}<br>
+        ${totalTienda > 0 ? `<b>Consumos Tienda:</b> ${formatCurrency(totalTienda)}<br>` : ''}
+        <hr>
+        <b style="font-size:1.3em;color:green;">Total a pagar: ${formatCurrency(totalGeneral)}</b><br><br>
+        <button onclick="window.print()" class="button button-primary">Imprimir Recibo</button>
+    `;
+
+    mostrarInfoModalGlobal(html, "Factura");
+});
+
 
   // =================== BOTÓN INFO HUÉSPED (igual que antes)
-  setupButtonListener('btn-info-huesped', async () => {
-    // ... (igual que tu código actual)
-    // Pega aquí tu lógica de info de huésped
-  });
+ setupButtonListener('btn-info-huesped', async () => {
+    // Buscar la reserva activa
+    const { data: reserva, error: errRes } = await supabase
+        .from('reservas')
+        .select('cliente_nombre, telefono, cantidad_huespedes, fecha_inicio, fecha_fin, notas')
+        .eq('habitacion_id', room.id)
+        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+        .order('fecha_inicio', { ascending: false })
+        .limit(1)
+        .single();
+
+    if (errRes || !reserva) {
+        mostrarInfoModalGlobal("No hay información del huésped disponible.", "Huésped");
+        return;
+    }
+
+    let html = `
+        <b>Nombre:</b> ${reserva.cliente_nombre}<br>
+        <b>Teléfono:</b> ${reserva.telefono}<br>
+        <b>Huéspedes:</b> ${reserva.cantidad_huespedes}<br>
+        <b>Check-in:</b> ${formatDateTime(reserva.fecha_inicio)}<br>
+        <b>Check-out:</b> ${formatDateTime(reserva.fecha_fin)}<br>
+        ${reserva.notas ? `<b>Notas:</b> ${reserva.notas}<br>` : ''}
+    `;
+
+    mostrarInfoModalGlobal(html, "Información del Huésped");
+});
 
 }
 

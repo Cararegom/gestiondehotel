@@ -10,7 +10,13 @@
   --color-text-main: #22223b;
 }
 
-/* ======== LAYOUT SPA GENERAL ======== */
+/* ======== GLOBAL RESETS & DEFAULTS ======== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 html, body {
   height: 100%;
   margin: 0;
@@ -18,26 +24,34 @@ html, body {
   font-family: 'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif;
   background: var(--color-bg-main);
   color: var(--color-text-main);
+  /* Consider adding a default line-height for better readability */
+  line-height: 1.5;
 }
+
+/* ======== LAYOUT SPA GENERAL ======== */
 #main-wrapper {
   display: flex;
   min-height: 100vh;
-  height: 100vh;
+  /* Using height: 100vh ensures it tries to fill the viewport height exactly. */
+  /* width: 100vw can sometimes cause issues with scrollbars; often width: 100% on body/html is enough. */
+  /* However, if this works for your layout, it's acceptable. */
   width: 100vw;
   background: var(--color-bg-main);
 }
+
 #sidebar {
   width: 250px;
-  min-width: 180px;
+  min-width: 180px; /* Ensures sidebar doesn't get too small before media query kicks in */
   background: var(--color-sidebar);
   color: #fff;
   display: flex;
   flex-direction: column;
   padding: 1.2rem 1rem 1rem 1rem;
   box-shadow: 1px 0 18px 0 rgba(30,41,59,0.08);
-  z-index: 2;
-  position: relative;
+  z-index: 2; /* Ensure sidebar is above main content if overlapping could occur */
+  position: relative; /* For z-index to work effectively if not a direct child of stacking context */
 }
+
 #sidebar a {
   color: #e2e8f0;
   text-decoration: none;
@@ -45,45 +59,101 @@ html, body {
   display: flex;
   align-items: center;
   border-radius: 8px;
-  transition: background 0.18s;
+  transition: background 0.18s, color 0.18s;
   font-weight: 500;
-  gap: 8px;
+  gap: 8px; /* Modern way to space icon and text */
 }
-#sidebar a.active, #sidebar a:hover {
+
+#sidebar a.active,
+#sidebar a:hover {
   background: var(--color-primary);
   color: #fff;
 }
+
 #sidebar svg {
-  margin-right: 10px;
+  margin-right: 10px; /* Retained as per original, but `gap` on `a` tag is often preferred */
   height: 1.3em;
   width: 1.3em;
-  flex-shrink: 0;
+  flex-shrink: 0; /* Prevents icons from shrinking if text is long */
 }
+
 #main-content-area {
-  flex: 1 1 0;
+  flex: 1 1 0; /* Allows this area to grow and shrink */
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  min-width: 0; /* Crucial for flex children to prevent overflow */
   background: var(--color-bg-main);
-  overflow: hidden;
+  /* Removed overflow: hidden; to allow #app-container to manage its own scroll */
 }
+
 #app-container, main#app-container {
-  flex: 1 1 0;
-  min-height: 0;
-  background: #f7fafc;
+  flex: 1 1 0; /* Allows app-container to fill main-content-area */
+  min-height: 0; /* Important for nested flex scrolling */
+  background: #f7fafc; /* Slightly different from --color-bg-main, ensure this is intended */
   padding: 28px 20px;
-  overflow-x: auto;
-  box-sizing: border-box;
+  overflow-x: auto; /* Allow horizontal scrolling if content overflows */
+  overflow-y: auto; /* Allow vertical scrolling for the main app content */
+  /* box-sizing: border-box; was here, moved to global reset */
   z-index: 1;
 }
+
+/* ======== RESPONSIVE LAYOUT ADJUSTMENTS ======== */
 @media (max-width: 900px) {
-  #sidebar { min-width: 70px; width: 70px; padding: 10px 5px;}
-  #sidebar span, #sidebar .sidebar-text { display: none; }
-  #main-wrapper { flex-direction: column; }
-  #sidebar { flex-direction: row; width: 100vw; min-width: 0; min-height: 54px; }
-  #main-content-area { min-height: calc(100vh - 54px); }
-  #app-container, main#app-container { padding: 10px 5px; }
+  #main-wrapper {
+    flex-direction: column; /* Stack sidebar (now top bar) and content vertically */
+  }
+
+  #sidebar {
+    flex-direction: row; /* Sidebar becomes a horizontal top bar */
+    width: 100vw;
+    min-width: 0;
+    height: 54px; /* Fixed height for the top bar */
+    min-height: 54px; /* Ensure it doesn't shrink below this */
+    padding: 0 10px; /* Adjusted padding for horizontal layout */
+    align-items: center; /* Vertically align items in the top bar */
+    /* Consider justify-content if you want to space out links, e.g., justify-content: space-around; */
+  }
+
+  /* Hide text labels in the top bar, show only icons */
+  #sidebar span,
+  #sidebar .sidebar-text {
+    display: none;
+  }
+
+  #sidebar a {
+    padding: 8px 12px; /* Adjust padding for links in horizontal bar */
+  }
+
+  #sidebar svg {
+    margin-right: 0; /* Remove or adjust margin if only icons are shown */
+  }
+
+  #main-content-area {
+    min-height: calc(100vh - 54px); /* Account for top bar height */
+    height: calc(100vh - 54px); /* Ensure it fills the remaining space */
+  }
+
+  #app-container, main#app-container {
+    padding: 15px 10px; /* Slightly reduced padding for smaller screens */
+  }
 }
+
+@media (max-width: 600px) {
+  #sidebar {
+    display: none; /* Completely hide sidebar on very small screens */
+  }
+
+  #main-content-area {
+    padding: 0; /* Remove padding if sidebar is gone and content should be edge-to-edge */
+    min-height: 100vh; /* Occupy full viewport height */
+    height: 100vh;
+  }
+
+  #app-container, main#app-container {
+    padding: 10px 5px; /* Minimal padding for app content */
+  }
+}
+
 
 /* ======== NOTIFICACIONES Y OVERLAYS ======== */
 #notificaciones-campanita-container {
@@ -92,6 +162,7 @@ html, body {
   right: 1.2rem;
   z-index: 1000;
 }
+
 #app-global-feedback-banner {
   position: fixed;
   top: 1rem;
@@ -100,7 +171,7 @@ html, body {
   border-radius: 0.375rem;
   box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
   z-index: 1050;
-  display: none;
+  display: none; /* Controlled by JavaScript */
   max-width: 400px;
 }
 .app-global-feedback.success { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
@@ -110,9 +181,9 @@ html, body {
 
 #app-global-loading-overlay {
   position: fixed;
-  inset: 0;
+  inset: 0; /* shorthand for top, right, bottom, left = 0 */
   background-color: rgba(0,0,0,0.4);
-  display: flex;
+  display: flex; /* Changed from none to flex by JS */
   align-items: center;
   justify-content: center;
   z-index: 2000;
@@ -123,12 +194,16 @@ html, body {
 #app-global-loading-overlay .spinner {
   border: 4px solid rgba(255,255,255,0.3);
   border-radius: 50%;
-  border-top-color: white;
+  border-top-color: white; /* Or var(--color-primary) for branded spinner */
   width: 40px;
   height: 40px;
   animation: spin 1s linear infinite;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* ======== CARDS, TABLAS Y CONTENEDORES ======== */
 .card {
@@ -140,85 +215,122 @@ html, body {
 }
 .card-header {
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--color-card-border); /* Use variable for consistency */
   font-size: 1.22rem;
   font-weight: 600;
-  background: #f3f6fc;
+  background: #f3f6fc; /* Consider making this a CSS variable if used elsewhere */
 }
 .card-body {
   padding: 1.5rem;
 }
+
 .table {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 1.5rem;
-  background: #fff;
+  background: var(--color-card-bg); /* Consistent with card background */
 }
-.table th, .table td {
-  border: 1px solid #e2e8f0;
+.table th,
+.table td {
+  border: 1px solid var(--color-card-border); /* Use variable */
   padding: 0.65rem 1rem;
   text-align: left;
 }
 .table th {
-  background: #f1f5f9;
+  background: #f1f5f9; /* Consider making this a CSS variable */
   font-weight: 600;
 }
 
 /* ======== FORMULARIOS ======== */
-.form-group { margin-bottom: 1.1rem; }
-.form-label  { display: block; margin-bottom: 0.45rem; font-weight: 500; color: #2c3e50; }
+.form-group {
+  margin-bottom: 1.1rem;
+}
+.form-label {
+  display: block;
+  margin-bottom: 0.45rem;
+  font-weight: 500;
+  color: #2c3e50; /* Consider var(--color-text-main) or a new variable */
+}
 .form-control {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid #cbd5e0;
+  border: 1px solid #cbd5e0; /* Consider var(--color-card-border) or new variable */
   border-radius: 0.375rem;
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
   font-size: 1rem;
-  background: #fff;
+  background: var(--color-card-bg); /* Consistent background */
+  color: var(--color-text-main); /* Ensure text color is inherited or set */
 }
 .form-control:focus {
   border-color: var(--color-primary);
-  outline: none;
+  outline: 2px solid transparent; /* Modern focus outline */
+  box-shadow: 0 0 0 2px var(--color-primary-light, rgba(29, 78, 216, 0.3)); /* Example focus ring, define --color-primary-light */
 }
 
 /* ======== BOTONES ======== */
 .button {
   padding: 0.5rem 1.1rem;
   border-radius: 0.375rem;
-  border: none;
+  border: 1px solid transparent; /* Add transparent border for consistent sizing on hover/focus if border is added then */
   cursor: pointer;
   font-weight: 500;
-  transition: background 0.18s, color 0.18s;
+  transition: background 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s;
   font-size: 1rem;
+  text-align: center;
+  display: inline-flex; /* For aligning text/icons if any */
+  align-items: center;
+  justify-content: center;
 }
+.button:focus {
+  outline: 2px solid transparent;
+  box-shadow: 0 0 0 3px var(--color-primary-light, rgba(29, 78, 216, 0.4)); /* Example focus ring */
+}
+
 .button-primary {
   background: var(--color-primary);
   color: #fff;
 }
 .button-primary:hover {
-  background: #2563eb;
+  background: #2563eb; /* Darken primary */
 }
+.button-primary:focus {
+  box-shadow: 0 0 0 3px var(--color-primary-light, rgba(59, 130, 246, 0.4)); /* Lighter for primary */
+}
+
 .button-secondary {
   background: var(--color-secondary);
-  color: #fff;
+  color: #fff; /* Ensure contrast, #fff might be too light on yellow. Consider a dark text. */
 }
 .button-secondary:hover {
-  background: #b45309;
+  background: #d97706; /* Darken secondary */
 }
+.button-secondary:focus {
+  box-shadow: 0 0 0 3px var(--color-secondary-light, rgba(245, 158, 11, 0.4));
+}
+
+
 .button-accent {
   background: var(--color-accent);
   color: #fff;
 }
 .button-accent:hover {
-  background: #059669;
+  background: #059669; /* Darken accent */
 }
+.button-accent:focus {
+  box-shadow: 0 0 0 3px var(--color-accent-light, rgba(16, 185, 129, 0.4));
+}
+
 .button-danger {
   background: #ef4444;
   color: #fff;
 }
 .button-danger:hover {
-  background: #991b1b;
+  background: #dc2626; /* Darken danger */
 }
+.button-danger:focus {
+  box-shadow: 0 0 0 3px var(--color-danger-light, rgba(239, 68, 68, 0.4));
+}
+
 
 /* ======== UTILIDADES Y COSAS EXTRA ======== */
 .text-center { text-align: center; }
@@ -227,31 +339,41 @@ html, body {
 .mt-auto { margin-top: auto; }
 .px-4 { padding-left: 1rem; padding-right: 1rem; }
 .p-4 { padding: 1rem; }
-.md\:p-6 { padding: 1.5rem; }
-.space-x-2 > * + * { margin-left: 0.5rem; }
+.md\:p-6 { /* This is a Tailwind-like class, ensure you have a system for this or use standard CSS */
+  /* Assuming this means "padding: 1.5rem on medium screens and up" */
+  /* This would typically be handled by a utility class system or more specific media queries */
+}
+@media (min-width: 768px) { /* Example for md: breakpoint */
+  .md\:p-6 {
+    padding: 1.5rem;
+  }
+}
+
+.space-x-2 > * + * {
+  margin-left: 0.5rem; /* For horizontal spacing between direct children */
+}
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
-.flex-1 { flex: 1 1 0; }
+.flex-1 { flex: 1 1 0%; } /* Added % for clarity, 0 is fine too */
 
+/* Custom Scrollbar (Webkit only) */
 ::-webkit-scrollbar {
   width: 8px;
-  background: #f7fafc;
+  height: 8px; /* For horizontal scrollbars too */
+  background: var(--color-bg-main);
 }
 ::-webkit-scrollbar-thumb {
-  background: #e2e8f0;
+  background: #cbd5e0; /* Slightly darker than original for better visibility */
   border-radius: 5px;
 }
+::-webkit-scrollbar-thumb:hover {
+  background: #a0aec0; /* Darker on hover */
+}
+
 
 /* ======== ICONOS/IMÁGENES ======== */
 img, svg {
   vertical-align: middle;
   max-width: 100%;
+  height: auto; /* Maintain aspect ratio for images */
 }
-
-/* ======== AJUSTES RESPONSIVE EXTRAS ======== */
-@media (max-width: 600px) {
-  #sidebar { display: none; }
-  #main-content-area { padding: 0 !important; }
-  #app-container, main#app-container { padding: 5px !important; }
-}
-

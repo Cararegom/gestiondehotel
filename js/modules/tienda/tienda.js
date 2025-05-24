@@ -274,18 +274,33 @@ async function registrarVentaPOS() {
       }
     }
     let total = posCarrito.reduce((a,b)=>a+b.precio_venta*b.cantidad,0);
+let reservaId = null;
+if (habitacion_id) {
+    // Buscar reserva activa en esa habitación
+    const { data: reservasActivas } = await currentSupabase
+        .from('reservas')
+        .select('id')
+        .eq('habitacion_id', habitacion_id)
+        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+        .order('fecha_inicio', { ascending: false })
+        .limit(1);
 
+    if (reservasActivas && reservasActivas.length > 0) {
+        reservaId = reservasActivas[0].id;
+    }
+}
     // Crear venta_tienda (principal)
     let ventaPayload = {
-      hotel_id: currentHotelId,
-      usuario_id: currentUser.id,
-      habitacion_id: habitacion_id,
-      metodo_pago_id: metodo_pago_id,
-      cliente_temporal,
-      total_venta: total,
-      fecha: new Date().toISOString(),
-      creado_en: new Date().toISOString()
-    };
+  hotel_id: currentHotelId,
+  usuario_id: currentUser.id,
+  habitacion_id: habitacion_id,
+  reserva_id: reservaId, // 👈 ESTA LÍNEA ASOCIA LA VENTA A LA RESERVA ACTIVA
+  metodo_pago_id: metodo_pago_id,
+  cliente_temporal,
+  total_venta: total,
+  fecha: new Date().toISOString(),
+  creado_en: new Date().toISOString()
+};
      console.log('Debug venta POS:', {
   hotel_id: currentHotelId,
   usuario_id: currentUser.id,
