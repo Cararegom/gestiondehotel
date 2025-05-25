@@ -47,6 +47,50 @@ async function getHorariosHotel(supabase, hotelId) {
         checkout: data.checkout_hora || "12:00"
     };
 }
+async function puedeHacerCheckIn(reservaId) {
+  // Usa las globales (asumiendo que están correctamente inicializadas en mount)
+  const supabase = supabaseGlobal;
+
+  // Busca la reserva y su monto total
+  const { data: reserva, error } = await supabase
+    .from('reservas')
+    .select('id, monto_total')
+    .eq('id', reservaId)
+    .single();
+
+  if (error || !reserva) {
+    alert('Error obteniendo reserva.');
+    return false;
+  }
+
+  // Suma los pagos realizados (puede que el abono esté en otra tabla)
+  const { data: pagos, error: errPagos } = await supabase
+    .from('pagos_reserva')
+    .select('monto')
+    .eq('reserva_id', reservaId);
+
+  if (errPagos) {
+    alert('Error consultando pagos.');
+    return false;
+  }
+
+  // Suma todos los pagos
+  const totalPagado = pagos ? pagos.reduce((sum, p) => sum + Number(p.monto), 0) : 0;
+
+  if (totalPagado >= reserva.monto_total) {
+  return true;
+} else {
+  Swal.fire({
+    icon: 'warning',
+    title: 'No se puede hacer Check-in',
+    text: 'El pago está incompleto.',
+    confirmButtonColor: '#1d4ed8'
+  });
+  return false;
+}
+
+}
+
 
 async function getTiemposEstancia(supabase, hotelId) {
     const { data, error } = await supabase.from('tiempos_estancia')
@@ -80,22 +124,31 @@ export async function mount(container, supabase, currentUser, hotelId) {
     supabaseGlobal = supabase;
     currentUserGlobal = currentUser;
     hotelIdGlobal = hotelId;
+
     container.innerHTML = `
         <div class="mb-8 px-4 md:px-0">
             <h2 class="text-3xl font-bold text-gray-800 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-9 w-9 mr-3 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
                 Mapa de Habitaciones
             </h2>
         </div>
         <div id="room-map-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-4 md:px-0"></div>
         <div id="modal-container" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto" style="display:none;"></div>
     `;
-    await renderRooms(container, supabase, currentUser, hotelId);
-    
+
+    // IMPORTANTE: el roomsListEl se busca después de inyectar el HTML
+    const roomsListEl = container.querySelector("#room-map-list");
+    if (!roomsListEl) {
+        console.error("No se encontró el div #room-map-list dentro del container. Corrige el template HTML.");
+        return;
+    }
+
+    // Llama a renderRooms pasando el roomsListEl
+    await renderRooms(roomsListEl, supabase, currentUser, hotelId);
 }
+
+
+
+
 document.addEventListener('datosActualizados', () => {
     // Solo refresca si todo está listo
     if (containerGlobal && supabaseGlobal && currentUserGlobal && hotelIdGlobal) {
@@ -112,12 +165,12 @@ export function unmount() {
     }
 }
 
-async function renderRooms(container, supabase, currentUser, hotelId) {
-    console.log("renderRooms se llamó con container:", container);
-if (!container) {
-  console.error("renderRooms: container es null o indefinido. Verifica la llamada a mount o el event listener.");
-  return;
-}
+async function renderRooms(listEl, supabase, currentUser, hotelId) {
+    // Este listEl YA es el div donde se pintan las tarjetas de habitaciones
+    if (!listEl) {
+        console.error("renderRooms: listEl es null o indefinido. Verifica que se esté pasando correctamente desde mount.");
+        return;
+    }
 
     const { data: habitaciones, error } = await supabase
         .from('habitaciones')
@@ -126,30 +179,26 @@ if (!container) {
         .order('nombre', { ascending: true });
 
     if (error) {
-        container.querySelector("#room-map-list").innerHTML = `<div class="col-span-full text-red-600 p-4 bg-red-100 rounded-md">Error cargando habitaciones: ${error.message}</div>`;
+        listEl.innerHTML = `<div class="col-span-full text-red-600 p-4 bg-red-100 rounded-md">Error cargando habitaciones: ${error.message}</div>`;
         return;
     }
 
     currentRooms = habitaciones;
-const listEl = container.querySelector("#room-map-list");
-if (!listEl) {
-  console.error("No se encontró el div #room-map-list dentro del container. Corrige el template HTML.");
-  return;
-}
-listEl.innerHTML = '';
+    listEl.innerHTML = '';
 
-    if (habitaciones.length === 0) {
+    if (!habitaciones || habitaciones.length === 0) {
         listEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones configuradas para este hotel.</div>`;
         return;
     }
 
     habitaciones.forEach(room => {
-        listEl.appendChild(roomCard(room, supabase, currentUser, hotelId, container));
+        listEl.appendChild(roomCard(room, supabase, currentUser, hotelId, listEl));
         if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
             startCronometro(room, supabase, hotelId, listEl);
         }
     });
 }
+
 
 // ================== CARD DE HABITACIÓN (VISUAL MEJORADO v3 - CORRECCIÓN BADGE) ===================
 function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
@@ -353,7 +402,11 @@ if (room.estado === "reservada") {
 
   if (reservaFutura && modalContent.querySelector('#btn-checkin-reserva')) {
     setupButtonListener('btn-checkin-reserva', async () => {
-      // Cambiar estado de reserva a activa y habitación a ocupada
+      // 1. Validar que el pago esté completo antes de permitir el check-in
+      const ok = await puedeHacerCheckIn(reservaFutura.id);
+      if (!ok) return; // Si no está completo, sale y muestra alerta
+
+      // 2. Si el pago está completo, hacer el check-in como siempre
       await supabase.from('reservas').update({
         estado: 'activa',
         fecha_inicio: new Date().toISOString()
@@ -543,13 +596,14 @@ if (room.estado === "reservada") {
     }
 
     let html = `
-        <b>Nombre:</b> ${reserva.cliente_nombre}<br>
-        <b>Teléfono:</b> ${reserva.telefono}<br>
-        <b>Huéspedes:</b> ${reserva.cantidad_huespedes}<br>
-        <b>Check-in:</b> ${formatDateTime(reserva.fecha_inicio)}<br>
-        <b>Check-out:</b> ${formatDateTime(reserva.fecha_fin)}<br>
-        ${reserva.notas ? `<b>Notas:</b> ${reserva.notas}<br>` : ''}
-    `;
+  <b>🆔 Nombre:</b> ${reserva.cliente_nombre}<br>
+  <b>📞 Teléfono:</b> ${reserva.telefono}<br>
+  <b>🧑‍🤝‍🧑 Huéspedes:</b> ${reserva.cantidad_huespedes}<br>
+  <b>🟢 Check-in:</b> ${formatDateTime(reserva.fecha_inicio)}<br>
+  <b>🔴 Check-out:</b> ${formatDateTime(reserva.fecha_fin)}<br>
+  ${reserva.notas ? `<b>📝 Notas:</b> ${reserva.notas}<br>` : ''}
+`;
+
 
     mostrarInfoModalGlobal(html, "Información del Huésped");
 });

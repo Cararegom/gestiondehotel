@@ -8,7 +8,7 @@ import {
   hideGlobalLoading,
   setFormLoadingState 
 } from '../../uiUtils.js';
-import { registrarEnBitacora } from '../../services/bitacoraservice.js';
+
 
 let moduleListeners = [];
 let currentSupabaseInstance = null;

@@ -3,55 +3,54 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión Hotelera</title>
+    <title>Gestión de Hotel</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Si quieres mantener Tailwind para prototipos, ok, pero en producción lo ideal es solo tu CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'primary': '#1d4ed8',
-                        'secondary': '#f59e0b',
-                        'accent': '#10b981',
-                    }
-                }
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'primary': '#1d4ed8',
+              'secondary': '#f59e0b',
+              'accent': '#10b981',
             }
+          }
         }
+      }
     </script>
 </head>
 <body>
-  <!-- WRAPPER PRINCIPAL FLEXIBLE -->
   <div id="main-wrapper" style="display: flex; height: 100vh;">
-    <!-- SIDEBAR IZQUIERDO -->
-    <aside id="sidebar">
-        <a href="#" class="text-white flex items-center space-x-2 px-4" style="text-decoration:none;">
-            <span class="text-2xl font-extrabold">HotelSys</span>
-        </a>
-        <nav id="main-nav" class="flex-grow"></nav>
-        <div id="user-info-nav" class="mt-auto"></div>
-    </aside>
+    <aside id="sidebar" class="bg-[#2a3647] min-w-[200px] flex flex-col items-center py-4" style="height: 100vh;">
+  <a href="#" class="flex items-center justify-center px-4 py-3" style="text-decoration:none;">
+    <img src="icons/logo.jpeg"
+      alt="Gestión de Hotel"
+      style="max-width:140px; width:100%; height:auto; display:block;" />
+  </a>
+  <nav id="main-nav" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
+  <div id="user-info-nav" class="mt-auto w-full"></div>
+</aside>
 
-    <!-- CONTENIDO PRINCIPAL -->
     <div id="main-content-area" style="flex:1; display:flex; flex-direction:column; min-width:0; background:#f7fafc; overflow:hidden;">
-        <!-- Notificaciones (campanita) -->
-        <div id="notificaciones-campanita-container" style="position:fixed; top:1rem; right:1rem; z-index:50;"></div>
-        <!-- Feedback global -->
-        <div id="app-global-feedback-banner" class="app-global-feedback" style="display:none;"></div>
-        <!-- Área principal donde los módulos montan su HTML -->
-        <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-6">
-            <p class="text-center text-gray-500">Cargando aplicación...</p>
-        </main>
+      <div id="notificaciones-campanita-container" style="position:fixed; top:1rem; right:1rem; z-index:50;"></div>
+      <div id="app-global-feedback-banner" class="app-global-feedback" style="display:none;"></div>
+      <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-6">
+        <p class="text-center text-gray-500">Cargando aplicación...</p>
+      </main>
     </div>
   </div>
 
-  <!-- Overlay de loading global -->
   <div id="app-global-loading-overlay" style="display:none;">
       <div class="spinner"></div>
       <p id="global-loading-message">Cargando...</p>
   </div>
-
-  <script type="module" src="/js/main.js"></script>
+// Incluye html2pdf.js en tu HTML:
+// <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+  
+  <script type="module" src="js/main.js"></script>
 </body>
 </html>

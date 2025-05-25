@@ -1,6 +1,7 @@
 // js/uiUtils.js
 
-import { APP_CONFIG, I18N_TEXTS } from './config.js'; // Asegúrate que config.js esté en la misma carpeta
+import { APP_CONFIG, I18N_TEXTS } from './config.js';
+// <-- CAMBIO: Se ELIMINÓ la línea "import Swal from 'sweetalert2';" de aquí.
 
 // --- FEEDBACK GLOBAL ---
 export function showAppFeedback(message, type = 'info', autoHide = true, duration = 5000) {
@@ -48,19 +49,29 @@ export function showLoading(element, message = 'Cargando...') {
   }
 }
 
-export function showError(element, message, typeClass = 'error-indicator') {
+/**
+ * Muestra un modal de error estético (SweetAlert2) y también un mensaje en la página.
+ * @param {HTMLElement} element - El div donde se mostrará el mensaje en la página.
+ * @param {string} message - El mensaje de error.
+ */
+export function showError(element, message) {
+  // 1. Muestra el modal estético usando la variable global 'Swal'
+  Swal.fire({
+    icon: 'error',
+    title: 'Ocurrió un Error',
+    text: message,
+    confirmButtonText: 'OK',
+    confirmButtonColor: '#3085d6'
+  });
+
+  // 2. Muestra también el mensaje en la página como recordatorio
   if (element) {
     element.textContent = message;
-    let alertClasses = 'bg-red-100 border-red-300 text-red-700';
-    if (typeClass === 'success-indicator') alertClasses = 'bg-green-100 border-green-300 text-green-700';
-    else if (typeClass === 'info-indicator') alertClasses = 'bg-blue-100 border-blue-300 text-blue-700';
-    element.className = `feedback-message p-3 my-3 text-sm rounded-md border ${alertClasses} visible`;
+    element.className = 'feedback-message p-3 my-3 text-sm rounded-md border bg-red-100 border-red-300 text-red-700 visible';
     element.style.display = 'block';
-    element.setAttribute('aria-live', typeClass === 'error-indicator' ? 'assertive' : 'polite');
-    if (typeClass === 'error-indicator') {
-        element.setAttribute('tabindex', '-1'); 
-        element.focus();
-    }
+    element.setAttribute('aria-live', 'assertive');
+    element.setAttribute('tabindex', '-1'); 
+    element.focus();
   }
 }
 
@@ -75,9 +86,6 @@ export function clearFeedback(element) {
 }
 
 // --- FORMULARIO CARGANDO (para deshabilitar mientras procesa) ---
-/**
- * Deshabilita/habilita todos los campos del formulario mientras guarda, y actualiza el botón.
- */
 export function setFormLoadingState(formEl, isLoading, buttonEl, originalButtonText, loadingButtonText = 'Procesando...') {
   if (!formEl) {
     console.warn("setFormLoadingState: formEl no proporcionado.");
@@ -147,6 +155,7 @@ export function hideGlobalLoading() {
   const overlay = document.getElementById('app-global-loading-overlay');
   if (overlay) overlay.style.display = 'none';
 }
+
 // --- FEEDBACK DE ÉXITO GLOBAL ---
 export function showSuccess(element, message, autoHide = true, duration = 4000) {
   if (element) {
