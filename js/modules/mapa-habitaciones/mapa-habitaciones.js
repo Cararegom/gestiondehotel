@@ -8,7 +8,7 @@ let hotelIdGlobal = null;
 
 let currentRooms = [];
 let cronometrosInterval = {};
-import { registrarEnBitacora } from '../../services/bitacoraservice.js';
+
 
 // --- Funciones auxiliares de formato ---
 function formatCurrency(value, currency = 'COP') {
@@ -596,7 +596,7 @@ if (room.estado === "reservada") {
     }
 
     let html = `
-  <b>🆔 Nombre:</b> ${reserva.cliente_nombre}<br>
+  <b>👤 Nombre:</b> ${reserva.cliente_nombre}<br>
   <b>📞 Teléfono:</b> ${reserva.telefono}<br>
   <b>🧑‍🤝‍🧑 Huéspedes:</b> ${reserva.cantidad_huespedes}<br>
   <b>🟢 Check-in:</b> ${formatDateTime(reserva.fecha_inicio)}<br>
