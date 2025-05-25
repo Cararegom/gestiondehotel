@@ -106,7 +106,6 @@ async function renderPOS() {
     <div style="display:flex;flex-wrap:wrap;gap:18px;">
       <div style="flex:1;min-width:340px;max-width:480px;">
         <h4>Productos disponibles</h4>
-        {/* Asegúrate que este input tenga el ID correcto */}
         <input id="buscadorPOS" placeholder="Buscar producto..." style="width:100%;margin-bottom:8px;padding:6px 12px;font-size:15px;border-radius:4px;border:1px solid #ccc;">
         <div id="productosPOS" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;"></div>
       </div>
