@@ -7,7 +7,7 @@ import {
   formatCurrency,
   formatDateTime
 } from '../../uiUtils.js';
-import { registrarEnBitacora } from '../../services/BitacoraService.js';
+
 
 
 

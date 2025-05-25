@@ -7,7 +7,7 @@ import {
   showAppFeedback,
   clearAppFeedback
 } from '../../uiUtils.js';
-import { registrarEnBitacora } from '../../services/bitacoraservice.js';
+
 
 let moduleListeners = [];
 let currentHotelId = null;
