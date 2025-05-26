@@ -65,13 +65,24 @@ let posFiltro = '';
 
 async function cargarDatosPOS() {
   // Productos disponibles para venta
-  let {data: productos} = await currentSupabase
-    .from('productos_tienda')
-    .select('id, nombre, precio_venta, imagen_url, stock_actual, categoria_id')
-    .eq('hotel_id', currentHotelId)
-    .eq('activo', true)
-    .gt('stock_actual', 0);
-  posProductos = productos || [];
+  let { data: productos } = await currentSupabase
+  .from('productos_tienda')
+  .select('id, nombre, precio_venta, imagen_url, stock_actual, categoria_id, codigo_barras')
+  .eq('hotel_id', currentHotelId)
+  .eq('activo', true)
+  .gt('stock_actual', 0);
+
+// 2. Obtener categorías
+let { data: categorias } = await currentSupabase
+  .from('categorias_producto')
+  .select('id, nombre');
+
+// 3. Relacionar categorías con productos
+const catMap = Object.fromEntries((categorias || []).map(cat => [cat.id, cat.nombre]));
+posProductos = (productos || []).map(p => ({
+  ...p,
+  categoria_nombre: catMap[p.categoria_id] || 'Sin Cat.'
+}));
 
   // Métodos de pago
   let {data: metodos} = await currentSupabase
@@ -99,38 +110,110 @@ async function renderPOS() {
 
   // HTML del POS
   cont.innerHTML = `
-  <div>
-  <input type="text" id="buscadorPOS" placeholder="Buscar producto o categoría..." />
-  <div id="productosPOS"></div>
-</div>
-    <div style="display:flex;flex-wrap:wrap;gap:18px;">
-      <div style="flex:1;min-width:340px;max-width:480px;">
-        <h4>Productos disponibles</h4>
-        <input id="buscadorPOS" placeholder="Buscar producto..." style="width:100%;margin-bottom:8px;padding:6px 12px;font-size:15px;border-radius:4px;border:1px solid #ccc;">
-        <div id="productosPOS" style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:10px;"></div>
-      </div>
-      <div style="min-width:340px;">
-        <h4>Carrito de venta</h4>
-        <table style="width:100%;font-size:13px;margin-bottom:8px;">
-          <thead>
-            <tr style="background:#f1f1f1;"><th>Producto</th><th>Cant.</th><th>Precio</th><th>Subtotal</th><th></th></tr>
-          </thead>
-          <tbody id="carritoPOS"></tbody>
-        </table>
-        <div style="text-align:right;font-weight:bold;">Total: <span id="totalPOS">$0</span></div>
-        <div style="display:flex;gap:6px;margin:10px 0;">
-          <select id="modoPOS" style="flex:1;">
-            <option value="inmediato">Pago Inmediato</option>
-            <option value="habitacion">Cargar a Habitación</option>
-          </select>
-          <select id="metodoPOS" style="flex:1;"></select>
-          <select id="habitacionPOS" style="flex:1;display:none"></select>
-          <input id="clientePOS" placeholder="Cliente (opcional)" style="flex:1;" />
-          <button id="btnVentaPOS" style="background:#4CAF50;color:#fff;border:none;padding:6px 12px;border-radius:4px;">Vender</button>
-        </div>
-        <div id="msgPOS" style="color:red;"></div>
-      </div>
+    <div style="
+  display: flex; 
+  
+  
+  flex-wrap: wrap; 
+  gap: 32px; 
+  align-items: flex-start; 
+  justify-content: center;
+  background: #f3f6fa; 
+  border-radius: 16px; 
+  padding: 32px 18px 26px 18px; 
+  box-shadow: 0 6px 32px #23408c12;
+  margin-top:20px;
+">
+  <!-- PRODUCTOS -->
+  <div style="
+    flex: 1 1 340px; 
+    max-width: 460px; 
+    background: #fff; 
+    border-radius: 16px; 
+    box-shadow: 0 2px 18px #b6d0f912; 
+    padding: 28px 22px 28px 22px; 
+    min-width: 320px;
+    margin-bottom: 12px;
+  ">
+    <h2 style="font-size: 1.4rem; color: #2563eb; font-weight: bold; margin-bottom: 22px; letter-spacing: 1px;">
+      <span style="font-size:1.1em;">🛒</span> Productos disponibles
+    </h2>
+    <input id="buscadorPOS" 
+      placeholder="🔍 Buscar producto, categoría o código..." 
+      style="
+        width:100%;margin-bottom:16px;padding:11px 15px;font-size:16px;
+        border-radius:9px;border:1.5px solid #cbd5e1; background:#f9fafb; 
+        outline:none; box-shadow:0 1px 6px #2563eb11; transition: border .2s;
+      "
+      onfocus="this.style.borderColor='#2563eb'"
+      onblur="this.style.borderColor='#cbd5e1'"
+    >
+    <div id="productosPOS" 
+      style="
+        display: grid;
+        grid-template-columns: repeat(auto-fill,minmax(180px,1fr));
+        gap:18px;
+        margin-bottom:8px;
+      ">
+      <!-- Aquí van las tarjetas de productos generadas por JS -->
     </div>
+  </div>
+
+  <!-- CARRITO Y VENTA -->
+  <div style="
+    min-width:340px; 
+    max-width: 410px; 
+    flex: 1 1 340px; 
+    background: #fff; 
+    border-radius: 16px; 
+    box-shadow: 0 2px 14px #b6d0f922; 
+    padding: 28px 24px;
+  ">
+    <h2 style="font-size: 1.4rem; color: #22c55e; font-weight: bold; margin-bottom: 16px; letter-spacing: 1px;">
+      <span style="font-size:1.1em;">🛍️</span> Carrito de venta
+    </h2>
+    <table style="width:100%;font-size:15px;margin-bottom:14px;border-radius:10px;overflow:hidden;">
+      <thead>
+        <tr style="background:#f1f5f9;">
+          <th>Producto</th>
+          <th>Cant.</th>
+          <th>Precio</th>
+          <th>Subtotal</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="carritoPOS">
+        <!-- Aquí van los items del carrito -->
+      </tbody>
+    </table>
+    <div style="text-align:right;font-size:1.15rem;font-weight:700;margin-bottom:14px;">
+      Total: <span id="totalPOS" style="color:#1d4ed8">$0</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <select id="modoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;">
+        <option value="inmediato">Pago Inmediato</option>
+        <option value="habitacion">Cargar a Habitación</option>
+      </select>
+      <select id="metodoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
+      <select id="habitacionPOS" style="flex:1;display:none;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
+    </div>
+    <input id="clientePOS" placeholder="Cliente (opcional)" 
+      style="width:100%;margin-bottom:12px;padding:8px 12px;font-size:1rem;border-radius:7px;border:1.5px solid #e5e7eb;">
+    <button id="btnVentaPOS" style="
+      width:100%;
+      background:linear-gradient(90deg,#22c55e,#38bdf8 92%);
+      color:#fff;font-size:1.13rem;font-weight:700;
+      border:none;padding:13px 0;border-radius:9px;box-shadow:0 2px 6px #22c55e33;
+      margin-bottom:4px;letter-spacing:0.8px;cursor:pointer;
+      transition: background .18s;
+    "
+    onmouseover="this.style.background='linear-gradient(90deg,#38bdf8,#22c55e 92%)'"
+    onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#38bdf8 92%)'"
+    >Registrar Venta</button>
+    <div id="msgPOS" style="color:#e11d48;margin-top:10px;font-weight:bold;min-height:28px;"></div>
+  </div>
+</div>
+
   `;
 
   // --- MUEVE LA ASIGNACIÓN DE EVENTOS AQUÍ, DESPUÉS DE ESTABLECER innerHTML ---
@@ -184,67 +267,96 @@ async function renderPOS() {
   };
   document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
 }
+function renderMetodosPagoPOS() {
+  const sel = document.getElementById('metodoPOS');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Selecciona método de pago...</option>';
+  posMetodosPago.forEach(m => {
+    sel.innerHTML += `<option value="${m.id}">${m.nombre}</option>`;
+  });
+}
 
 function renderProductosPOS() {
   const cont = document.getElementById('productosPOS');
-  if (!cont) {
-    console.error('No se encontró el contenedor #productosPOS');
-    return;
-  }
+  if (!cont) return;
   cont.innerHTML = '';
+
+  // Permitir búsqueda por nombre, código de barras y categoría
   let productosFiltrados = posProductos;
   if (posFiltro && posFiltro.trim()) {
-    productosFiltrados = productosFiltrados.filter(p => (p.nombre||'').toLowerCase().includes(posFiltro));
+    const fil = posFiltro.trim().toLowerCase();
+    productosFiltrados = productosFiltrados.filter(p =>
+      (p.nombre || '').toLowerCase().includes(fil) ||
+      (p.categoria_nombre || '').toLowerCase().includes(fil) ||
+      (p.codigo_barras || '').toLowerCase().includes(fil)
+    );
   }
+
   if(productosFiltrados.length === 0) {
     cont.innerHTML = `<div style="color:#888;">No hay productos encontrados</div>`;
     return;
   }
+
   productosFiltrados.forEach(prod => {
     let card = document.createElement('div');
     card.style = `
-      border:1px solid #e1e1e1;
-      padding:8px;
-      border-radius:7px;
-      background:#fff;
-      min-width:160px;
-      max-width:210px;
-      text-align:center;
-      box-shadow:1px 2px 6px #eee;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      gap:8px;
+      border: 1px solid #e5e7eb;
+      padding: 14px 12px 16px 12px;
+      border-radius: 14px;
+      background: #fff;
+      width: 100%;
+      max-width: 220px;
+      text-align: center;
+      box-shadow: 0 2px 12px #8bb5e628;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      transition: box-shadow 0.23s, transform 0.18s;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     `;
+    card.onmouseover = () => {
+      card.style.boxShadow = "0 8px 20px #2dd4b680";
+      card.style.transform = "translateY(-5px) scale(1.025)";
+    };
+    card.onmouseout = () => {
+      card.style.boxShadow = "0 2px 12px #8bb5e628";
+      card.style.transform = "none";
+    };
+
     card.innerHTML = `
-      <img src="${prod.imagen_url || 'https://via.placeholder.com/200x200?text=Sin+Imagen'}" style="width:200px;height:200px;object-fit:contain;border-radius:6px;border:1px solid #eee;background:#f9f9f9;">
-      <div style="font-weight:bold;word-break:break-all;">${prod.nombre}</div>
-      <div style="font-size:13px;color:#0a5;">$${prod.precio_venta}</div>
-      <div style="font-size:12px;color:#666;">Stock: ${prod.stock_actual}</div>
-      <button onclick="window.addToCartPOS('${prod.id}')" style="margin-top:5px;background:#337ab7;color:#fff;border:none;padding:4px 10px;border-radius:3px;cursor:pointer;">Agregar</button>
+      <img src="${prod.imagen_url || 'https://via.placeholder.com/180x180?text=Sin+Imagen'}" 
+           style="width:170px;height:140px;object-fit:contain;border-radius:8px;background:#f7fafc;margin-bottom:5px;">
+      <div style="font-weight:600;color:#1e293b;word-break:break-all;margin-bottom:2px;">
+        ${prod.nombre}
+      </div>
+      <div style="font-size:13px;color:#64748b;word-break:break-all;margin-bottom:2px;">
+        <span style="font-weight:500;">Categoría:</span> ${prod.categoria_nombre || 'Sin Cat.'}
+      </div>
+      <div style="font-size:13px;color:#334155;word-break:break-all;margin-bottom:2px;">
+        <span style="font-weight:500;">Código:</span> ${prod.codigo_barras || '-'}
+      </div>
+      <div style="font-size:1.05em;color:#22c55e;font-weight:bold;">$${prod.precio_venta}</div>
+      <div style="font-size:13px;color:#666;">Stock: ${prod.stock_actual}</div>
+      <button class="agregar-btn-pos" style="
+        margin-top:7px;background:linear-gradient(90deg,#2563eb,#22d3ee);
+        color:#fff;border:none;padding:7px 15px;border-radius:6px;cursor:pointer;
+        font-weight:600;box-shadow:0 1px 3px #1d4ed840;transition:background 0.18s;
+      ">
+        Agregar
+      </button>
     `;
+
+    // Agregar evento (no uses window para evitar problemas de scope)
+    card.querySelector('.agregar-btn-pos').onclick = () => addToCartPOS(prod.id);
+
     cont.appendChild(card);
   });
 }
-
-window.addToCartPOS = (id)=>{
-  const prod = posProductos.find(p=>p.id===id);
-  if(!prod) return;
-  let item = posCarrito.find(i=>i.id===id);
-  if(item){
-    if(item.cantidad < prod.stock_actual) item.cantidad++;
-  }else{
-    posCarrito.push({...prod, cantidad:1});
-  }
-  renderCarritoPOS();
-};
-
 function renderCarritoPOS() {
   const tbody = document.getElementById('carritoPOS');
-  if (!tbody) {
-    console.error('No se encontró el tbody #carritoPOS');
-    return;
-  }
+  if (!tbody) return;
   tbody.innerHTML = '';
   let total = 0;
   posCarrito.forEach(item => {
@@ -255,19 +367,20 @@ function renderCarritoPOS() {
       <td>${item.nombre}</td>
       <td>
         <input type="number" min="1" max="${item.stock_actual}" value="${item.cantidad}" style="width:40px;"
-          onchange="window.updateQtyPOS('${item.id}',this.value)">
+          onchange="updateQtyPOS('${item.id}',this.value)">
       </td>
       <td>$${item.precio_venta}</td>
       <td>$${subtotal}</td>
-      <td><button onclick="window.removeCartPOS('${item.id}')" style="color:#e11;">X</button></td>
+      <td><button onclick="removeCartPOS('${item.id}')" style="color:#e11;">X</button></td>
     `;
     tbody.appendChild(tr);
   });
-  const totalEl = document.getElementById('totalPOS');
-  if (totalEl) totalEl.textContent = `$${total}`;
+  document.getElementById('totalPOS').textContent = `$${total}`;
 }
 
-window.updateQtyPOS = (id, val)=>{
+// Declarar funciones auxiliares en window si usas atributos en HTML (mejor práctica para apps modulares: usar solo eventos JS)
+// Así:
+window.updateQtyPOS = function(id, val){
   let item = posCarrito.find(i=>i.id===id);
   if(item){
     let v = parseInt(val);
@@ -275,33 +388,28 @@ window.updateQtyPOS = (id, val)=>{
     renderCarritoPOS();
   }
 };
-
-window.removeCartPOS = (id)=>{
+window.removeCartPOS = function(id){
   posCarrito = posCarrito.filter(i=>i.id!==id);
   renderCarritoPOS();
 };
 
-function renderMetodosPagoPOS() {
-  let sel = document.getElementById('metodoPOS');
-  if (!sel) {
-    console.error('No se encontró el select #metodoPOS');
-    return;
+// Debajo declara tu addToCartPOS:
+function addToCartPOS(id){
+  const prod = posProductos.find(p=>p.id===id);
+  if(!prod) return;
+  let item = posCarrito.find(i=>i.id===id);
+  if(item){
+    if(item.cantidad < prod.stock_actual) item.cantidad++;
+  }else{
+    posCarrito.push({...prod, cantidad:1});
   }
-  sel.innerHTML = '';
-  posMetodosPago.forEach(m=>{
-    let opt = document.createElement('option');
-    opt.value = m.id;
-    opt.textContent = m.nombre;
-    sel.appendChild(opt);
-  });
+  renderCarritoPOS();
 }
+
+
 
 function renderHabitacionesPOS() {
   let sel = document.getElementById('habitacionPOS');
-  if (!sel) {
-    console.error('No se encontró el select #habitacionPOS');
-    return;
-  }
   sel.innerHTML = '';
   posHabitacionesOcupadas.forEach(h=>{
     let opt = document.createElement('option');
@@ -311,39 +419,34 @@ function renderHabitacionesPOS() {
   });
 }
 
+// <-- AGREGA ESTA LINEA DESPUÉS DE LA FUNCIÓN
+window.addToCartPOS = addToCartPOS;
 // ----- Registrar venta -----
 async function registrarVentaPOS() {
   try {
     if(posCarrito.length === 0) {
-      const msg = document.getElementById('msgPOS');
-      if (msg) msg.textContent = "Carrito vacío";
+      document.getElementById('msgPOS').textContent = "Carrito vacío";
       return;
     }
-    const modoEl = document.getElementById('modoPOS');
-    const metodoPagoEl = document.getElementById('metodoPOS');
-    const habitacionEl = document.getElementById('habitacionPOS');
-    const clienteEl = document.getElementById('clientePOS');
-    const msgEl = document.getElementById('msgPOS');
-
-    const modo = modoEl ? modoEl.value : null;
+    const modo = document.getElementById('modoPOS').value;
     let metodo_pago_id = null, habitacion_id = null, cliente_temporal = null;
     if(modo === 'inmediato') {
-      metodo_pago_id = metodoPagoEl ? metodoPagoEl.value : null;
+      metodo_pago_id = document.getElementById('metodoPOS').value;
       if (metodo_pago_id === "") metodo_pago_id = null;
-      cliente_temporal = clienteEl ? clienteEl.value : null;
+      cliente_temporal = document.getElementById('clientePOS').value || null;
     } else {
-      habitacion_id = habitacionEl ? habitacionEl.value : null;
+      habitacion_id = document.getElementById('habitacionPOS').value;
       if (habitacion_id === "") habitacion_id = null;
       if(!habitacion_id) {
-        if (msgEl) msgEl.textContent = "Selecciona una habitación";
+        document.getElementById('msgPOS').textContent = "Selecciona una habitación";
         return;
       }
     }
     let total = posCarrito.reduce((a,b)=>a+b.precio_venta*b.cantidad,0);
-    let reservaId = null;
-    if (habitacion_id) {
-      // Buscar reserva activa en esa habitación
-      const { data: reservasActivas } = await currentSupabase
+let reservaId = null;
+if (habitacion_id) {
+    // Buscar reserva activa en esa habitación
+    const { data: reservasActivas } = await currentSupabase
         .from('reservas')
         .select('id')
         .eq('habitacion_id', habitacion_id)
@@ -351,26 +454,37 @@ async function registrarVentaPOS() {
         .order('fecha_inicio', { ascending: false })
         .limit(1);
 
-      if (reservasActivas && reservasActivas.length > 0) {
+    if (reservasActivas && reservasActivas.length > 0) {
         reservaId = reservasActivas[0].id;
-      }
     }
+}
     // Crear venta_tienda (principal)
     let ventaPayload = {
-      hotel_id: currentHotelId,
-      usuario_id: currentUser.id,
-      habitacion_id: habitacion_id,
-      reserva_id: reservaId, // 👈 ESTA LÍNEA ASOCIA LA VENTA A LA RESERVA ACTIVA
-      metodo_pago_id: metodo_pago_id,
-      cliente_temporal,
-      total_venta: total,
-      fecha: new Date().toISOString(),
-      creado_en: new Date().toISOString()
-    };
-    console.log('Debug venta POS:', ventaPayload);
+  hotel_id: currentHotelId,
+  usuario_id: currentUser.id,
+  habitacion_id: habitacion_id,
+  reserva_id: reservaId, // 👈 ESTA LÍNEA ASOCIA LA VENTA A LA RESERVA ACTIVA
+  metodo_pago_id: metodo_pago_id,
+  cliente_temporal,
+  total_venta: total,
+  fecha: new Date().toISOString(),
+  creado_en: new Date().toISOString()
+};
+     console.log('Debug venta POS:', {
+  hotel_id: currentHotelId,
+  usuario_id: currentUser.id,
+  habitacion_id: habitacion_id,
+  metodo_pago_id: metodo_pago_id,
+  cliente_temporal,
+  total_venta: total,
+  fecha: new Date().toISOString(),
+  creado_en: new Date().toISOString()
+});
     let {data: ventas, error} = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
     if(error || !ventas?.[0]) throw new Error("Error guardando venta");
     let ventaId = ventas[0].id;
+
+   
 
     // Detalle y stock
     for(let item of posCarrito){
@@ -388,36 +502,30 @@ async function registrarVentaPOS() {
         stock_actual: item.stock_actual-item.cantidad
       }).eq('id',item.id);
     }
-    // Caja (validar recibidoTotal y compraId según tu lógica, aquí puedes poner chequeo)
-    /*
+    // Caja
     await currentSupabase.from('caja').insert([{
       hotel_id: currentHotelId,
-      tipo: 'egreso',
-      monto: recibidoTotal,
-      concepto: parcial ? 'Compra a proveedor (recepción parcial)' : 'Compra a proveedor (total)',
+      tipo: 'ingreso',
+      monto: total,
+      concepto: 'Venta de tienda',
       fecha_movimiento: new Date().toISOString(),
+      metodo_pago_id: metodo_pago_id,
       usuario_id: currentUser.id,
-      compra_tienda_id: compraId || null,
+      venta_tienda_id: ventaId,
       creado_en: new Date().toISOString()
     }]);
-    */
-
     // Limpia
     posCarrito = [];
     renderCarritoPOS();
     await cargarDatosPOS();
     renderProductosPOS();
-    if (msgEl) {
-      msgEl.textContent = "¡Venta registrada!";
-      setTimeout(()=>{msgEl.textContent="";},1700);
-    }
+    document.getElementById('msgPOS').textContent = "¡Venta registrada!";
+    setTimeout(()=>{document.getElementById('msgPOS').textContent="";},1700);
 
   }catch(err){
-    const msg = document.getElementById('msgPOS');
-    if (msg) msg.textContent = err.message;
+    document.getElementById('msgPOS').textContent = err.message;
   }
 }
-
 // =============== FIN BLOQUE POS ===============
 
 
@@ -428,33 +536,65 @@ let inventarioProductos = [];
 async function renderInventario() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <h4>Inventario de Productos</h4>
-      <button id="btnNuevoProducto" style="background:#337ab7;color:#fff;padding:6px 14px;border:none;border-radius:4px;">Agregar Producto</button>
-    </div>
-    <input id="buscarInventario" placeholder="Buscar producto..." style="width:230px;margin-bottom:10px;"/>
-    <div style="overflow-x:auto;">
-      <table style="width:100%;font-size:13px;border:1px solid #eee;">
-        <thead>
-          <tr style="background:#f7f7f7;">
-            <th>Nombre</th>
-            <th>Código</th>
-            <th>Categoría</th>
-            <th>Proveedor</th>
-            <th>Precio Compra</th>
-            <th>Precio Venta</th>
-            <th>Stock Actual</th>
-            <th>Stock Mín</th>
-            <th>Stock Máx</th>
-            <th>Estado</th>
-            <th>Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="invProductos"></tbody>
-      </table>
-    </div>
-    <div id="modalProductoInv" style="display:none"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+  <h2 style="font-size:1.35rem;font-weight:700;color:#1d4ed8;display:flex;align-items:center;gap:9px;">
+    <svg width="23" height="23" fill="#1d4ed8"><use href="#icon-box"></use></svg>
+    Inventario de Productos
+  </h2>
+  <button id="btnNuevoProducto" 
+    style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;
+           padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;
+           box-shadow:0 1px 4px #22c55e55;transition:background 0.2s;">
+    + Agregar Producto
+  </button>
+</div>
+
+<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+  <input id="buscarInventario" placeholder="Buscar por nombre, código, categoría, proveedor..." 
+    style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
+  <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;">
+    <option value="">Todas las Categorías</option>
+    <!-- Rellena dinámicamente las opciones -->
+  </select>
+</div>
+
+<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 8px #0001;">
+  <table style="width:100%;font-size:14px;border-collapse:collapse;">
+    <thead>
+      <tr style="background:#f3f4f6;">
+        <th style="padding:12px;">Nombre</th>
+        <th style="padding:12px;">Código</th>
+        <th style="padding:12px;">Categoría</th>
+        <th style="padding:12px;">Proveedor</th>
+        <th style="padding:12px;">Precio Compra</th>
+        <th style="padding:12px;">Precio Venta</th>
+        <th style="padding:12px;">Stock Actual</th>
+        <th style="padding:12px;">Stock Mín</th>
+        <th style="padding:12px;">Stock Máx</th>
+        <th style="padding:12px;">Estado</th>
+        <th style="padding:12px;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="invProductos"></tbody>
+  </table>
+</div>
+<div id="modalProductoInv" style="display:none"></div>
+
+  `
+ const selectFiltroCat = document.getElementById('filtroCategoriaInv');
+if (selectFiltroCat) {
+  selectFiltroCat.innerHTML = `
+    <option value="">Todas las categorías</option>
+    ${categoriasCache.map(cat => `<option value="${cat.id}">${cat.nombre}</option>`).join('')}
   `;
+  selectFiltroCat.onchange = function() {
+    filtrarYRenderInventario();
+  }
+}
+
+
+
+
   document.getElementById('btnNuevoProducto').onclick = ()=>showModalProducto();
   document.getElementById('buscarInventario').oninput = (e)=>renderTablaInventario(e.target.value);
 
@@ -485,6 +625,17 @@ async function cargarCategoriasYProveedores() {
     .eq('activo', true);
   proveedoresCache = prov || [];
 }
+// Afuera de renderInventario, pon esto:
+function filtrarYRenderInventario() {
+  const categoriaSeleccionada = document.getElementById('filtroCategoriaInv').value;
+  let productos = inventarioProductos;
+  if (categoriaSeleccionada) {
+    productos = productos.filter(p => p.categoria_id === categoriaSeleccionada);
+  }
+  // Si tienes filtro de búsqueda, agrégalo aquí también.
+  // Finalmente renderiza:
+  renderTablaInventario(productos);
+}
 
 function renderTablaInventario(filtro = '') {
   let tbody = document.getElementById('invProductos');
@@ -494,26 +645,41 @@ function renderTablaInventario(filtro = '') {
     lista = lista.filter(p => (p.nombre||'').toLowerCase().includes(filtro.toLowerCase()));
   }
   tbody.innerHTML = '';
-  lista.forEach(p => {
-    let categoria = categoriasCache.find(cat=>cat.id===p.categoria_id)?.nombre || '';
-    let proveedor = proveedoresCache.find(pr=>pr.id===p.proveedor_id)?.nombre || '';
-    let tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${p.nombre}</td>
-      <td>${p.codigo_barras||''}</td>
-      <td>${categoria}</td>
-      <td>${proveedor}</td>
-      <td>$${p.precio||0}</td>
-      <td>$${p.precio_venta||0}</td>
-      <td>${p.stock_actual||0}</td>
-      <td>${p.stock_minimo||0}</td>
-      <td>${p.stock_maximo||0}</td>
-      <td>${p.activo ? 'Activo' : 'Inactivo'}</td>
-      <td>
-        <button onclick="window.showModalProducto('${p.id}')">✏️</button>
-        <button onclick="window.toggleActivoProducto('${p.id}',${!p.activo})">${p.activo?'❌':'✅'}</button>
-      </td>
-    `;
+lista.forEach(p => {
+  let categoria = categoriasCache.find(cat => cat.id === p.categoria_id)?.nombre || '—';
+  let proveedor = proveedoresCache.find(pr => pr.id === p.proveedor_id)?.nombre || '—';
+  let tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td style="padding:10px 8px;">${p.nombre}</td>
+    <td style="padding:10px 8px;text-align:center;">${p.codigo_barras || '—'}</td>
+    <td style="padding:10px 8px;text-align:center;">${categoria}</td>
+    <td style="padding:10px 8px;text-align:center;">${proveedor}</td>
+    <td style="padding:10px 8px;text-align:right;">$${p.precio ? Number(p.precio).toLocaleString('es-CO') : 0}</td>
+    <td style="padding:10px 8px;text-align:right;">$${p.precio_venta ? Number(p.precio_venta).toLocaleString('es-CO') : 0}</td>
+    <td style="padding:10px 8px;text-align:center;font-weight:600;color:${p.stock_actual < (p.stock_min || 0) ? '#f43f5e' : '#22c55e'};">
+      ${p.stock_actual || 0}
+    </td>
+    <td style="padding:10px 8px;text-align:center;">${p.stock_min || 0}</td>
+    <td style="padding:10px 8px;text-align:center;">${p.stock_max || 0}</td>
+    <td style="padding:10px 8px;text-align:center;">
+      <span style="font-weight:bold;color:${p.activo ? '#22c55e' : '#f43f5e'};">
+        ${p.activo ? 'Activo' : 'Inactivo'}
+      </span>
+    </td>
+    <td style="padding:10px 8px;text-align:center;">
+      <button onclick="window.showModalProducto('${p.id}')" 
+        style="background:#e0e7ff;color:#1d4ed8;border:none;border-radius:6px;padding:5px 10px;margin-right:4px;cursor:pointer;" title="Editar">
+        <svg width="16" height="16" fill="#1d4ed8" style="vertical-align:middle;"><use href="#icon-edit"></use></svg>
+      </button>
+      <button onclick="window.toggleActivoProducto('${p.id}',${!p.activo})" 
+        style="background:${p.activo ? '#fee2e2' : '#bbf7d0'};color:${p.activo ? '#f43f5e' : '#16a34a'};border:none;border-radius:6px;padding:5px 10px;cursor:pointer;" title="${p.activo ? 'Desactivar' : 'Activar'}">
+        <svg width="16" height="16" fill="${p.activo ? '#f43f5e' : '#16a34a'}" style="vertical-align:middle;">
+          <use href="#${p.activo ? 'icon-x' : 'icon-check'}"></use>
+        </svg>
+      </button>
+    </td>
+  `;
+
     tbody.appendChild(tr);
   });
 }
@@ -524,34 +690,112 @@ async function showModalProducto(productoId = null) {
   let prod = productoId ? inventarioProductos.find(p=>p.id===productoId) : null;
   modal.style.display = 'block';
   modal.innerHTML = `
-    <div style="background:#fff;border-radius:7px;box-shadow:2px 3px 12px #2225;max-width:400px;margin:auto;padding:30px;position:relative;">
-      <button onclick="window.closeModalProducto()" style="position:absolute;right:10px;top:6px;background:none;font-size:18px;">&times;</button>
-      <h4 style="margin-bottom:18px;">${productoId ? 'Editar' : 'Nuevo'} Producto</h4>
-      <input id="prodNombre" placeholder="Nombre" value="${prod?.nombre||''}" style="width:100%;margin-bottom:8px;"/>
-      <input id="prodCodigo" placeholder="Código de barras" value="${prod?.codigo_barras||''}" style="width:100%;margin-bottom:8px;"/>
-      <select id="prodCategoria" style="width:100%;margin-bottom:8px;">
-        <option value="">Categoría</option>
-        ${categoriasCache.map(cat=>`<option value="${cat.id}"${prod?.categoria_id===cat.id?' selected':''}>${cat.nombre}</option>`).join('')}
-      </select>
-      <select id="prodProveedor" style="width:100%;margin-bottom:8px;">
-        <option value="">Proveedor</option>
-        ${proveedoresCache.map(prov=>`<option value="${prov.id}"${prod?.proveedor_id===prov.id?' selected':''}>${prov.nombre}</option>`).join('')}
-      </select>
-      <input id="prodPrecio" type="number" placeholder="Precio compra" value="${prod?.precio||''}" style="width:100%;margin-bottom:8px;" />
-      <input id="prodPrecioVenta" type="number" placeholder="Precio venta" value="${prod?.precio_venta||''}" style="width:100%;margin-bottom:8px;" />
-      <input id="prodStock" type="number" placeholder="Stock actual" value="${prod?.stock_actual||''}" style="width:100%;margin-bottom:8px;" />
-      <input id="prodStockMin" type="number" placeholder="Stock mínimo" value="${prod?.stock_minimo||''}" style="width:100%;margin-bottom:8px;" />
-      <input id="prodStockMax" type="number" placeholder="Stock máximo" value="${prod?.stock_maximo||''}" style="width:100%;margin-bottom:8px;" />
-      <input id="prodImagenUrl" placeholder="URL Imagen (opcional)" value="${prod?.imagen_url||''}" style="width:100%;margin-bottom:8px;" />
-      <label style="font-size:13px;">Subir Imagen:
-        <input type="file" id="prodImagenArchivo" accept="image/*" style="width:100%;margin-bottom:8px;" />
-      </label>
-      <textarea id="prodDescripcion" placeholder="Descripción" style="width:100%;margin-bottom:8px;">${prod?.descripcion||''}</textarea>
-      <div style="margin-top:8px;text-align:right;">
-        <button id="btnGuardarProducto" style="background:#4CAF50;color:#fff;padding:7px 15px;border:none;border-radius:4px;">${productoId?'Actualizar':'Crear'}</button>
+  <div style="
+    background:#fff;
+    border-radius:18px;
+    box-shadow:0 8px 40px #1d4ed828;
+    max-width:430px;
+    width:95vw;
+    margin:auto;
+    padding:34px 26px 22px 26px;
+    position:relative;
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+    ">
+    <button onclick="window.closeModalProducto()" 
+      style="
+        position:absolute;right:14px;top:10px;
+        background:none;border:none;font-size:25px;color:#64748b;cursor:pointer;
+        transition:color 0.18s;
+      "
+      onmouseover="this.style.color='#f43f5e'" onmouseout="this.style.color='#64748b'"
+      title="Cerrar">&times;</button>
+
+    <h2 style="margin-bottom:19px;text-align:center;font-size:1.22rem;font-weight:700;color:#1d4ed8;">
+      ${productoId ? 'Editar' : 'Nuevo'} Producto
+    </h2>
+    <form id="formProductoInv" autocomplete="off">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px 16px;">
+        <div style="grid-column:1/3;">
+          <label style="font-weight:500;">Nombre</label>
+          <input id="prodNombre" required placeholder="Nombre" value="${prod?.nombre||''}"
+            style="width:100%;padding:8px 11px;margin-top:2px;margin-bottom:3px;border:1.5px solid #cbd5e1;border-radius:6px;font-size:1em;">
+        </div>
+        <div>
+          <label style="font-weight:500;">Código de barras</label>
+          <input id="prodCodigo" placeholder="Código de barras" value="${prod?.codigo_barras||''}" 
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+        <div>
+          <label style="font-weight:500;">Categoría</label>
+          <select id="prodCategoria" required style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <option value="">Selecciona...</option>
+            ${categoriasCache.map(cat=>`<option value="${cat.id}"${prod?.categoria_id===cat.id?' selected':''}>${cat.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-weight:500;">Proveedor</label>
+          <select id="prodProveedor" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <option value="">Selecciona...</option>
+            ${proveedoresCache.map(prov=>`<option value="${prov.id}"${prod?.proveedor_id===prov.id?' selected':''}>${prov.nombre}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-weight:500;">Precio compra</label>
+          <input id="prodPrecio" type="number" min="0" step="any" placeholder="Precio compra" value="${prod?.precio||''}"
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+        <div>
+          <label style="font-weight:500;">Precio venta</label>
+          <input id="prodPrecioVenta" type="number" min="0" step="any" placeholder="Precio venta" value="${prod?.precio_venta||''}"
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+        <div>
+          <label style="font-weight:500;">Stock actual</label>
+          <input id="prodStock" type="number" min="0" placeholder="Stock actual" value="${prod?.stock_actual||''}" 
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+        <div>
+          <label style="font-weight:500;">Stock mínimo</label>
+          <input id="prodStockMin" type="number" min="0" placeholder="Stock mínimo" value="${prod?.stock_min||''}" 
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+        <div>
+          <label style="font-weight:500;">Stock máximo</label>
+          <input id="prodStockMax" type="number" min="0" placeholder="Stock máximo" value="${prod?.stock_max||''}" 
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+        <div style="grid-column:1/3;">
+          <label style="font-weight:500;">Imagen (URL)</label>
+          <input id="prodImagenUrl" type="text" placeholder="https://..." value="${prod?.imagen_url||''}" 
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+          <div id="previewImagen" style="margin-top:8px;text-align:center;">
+            ${prod?.imagen_url ? `<img src="${prod.imagen_url}" alt="Imagen" style="max-width:95px;max-height:80px;border-radius:6px;border:1px solid #eee;background:#f7f7f7;">` : ''}
+          </div>
+          <label style="font-size:13px;display:block;margin-top:7px;margin-bottom:0;">
+            <span style="color:#64748b;">Subir Imagen:</span>
+            <input type="file" id="prodImagenArchivo" accept="image/*" style="margin-top:3px;">
+          </label>
+        </div>
+        <div style="grid-column:1/3;">
+          <label style="font-weight:500;">Descripción</label>
+          <textarea id="prodDescripcion" rows="2" placeholder="Descripción" 
+            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">${prod?.descripcion||''}</textarea>
+        </div>
       </div>
-    </div>
-  `;
+      <div style="margin-top:23px;display:flex;gap:14px;justify-content:center;">
+        <button id="btnGuardarProducto" type="submit"
+          style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #22c55e22;cursor:pointer;">
+          ${productoId ? 'Actualizar' : 'Crear'}
+        </button>
+        <button type="button" onclick="window.closeModalProducto()"
+          style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #64748b15;cursor:pointer;">
+          Cancelar
+        </button>
+      </div>
+    </form>
+  </div>
+`;
+
   document.getElementById('btnGuardarProducto').onclick = ()=>saveProductoInv(productoId);
 }
 
@@ -619,22 +863,41 @@ let categoriasLista = [];
 async function renderCategorias() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <h4>Categorías de Productos</h4>
-      <button id="btnNuevaCategoria" style="background:#337ab7;color:#fff;padding:6px 14px;border:none;border-radius:4px;">Agregar Categoría</button>
-    </div>
-    <table style="width:100%;font-size:14px;border:1px solid #eee;">
-      <thead>
-        <tr style="background:#f7f7f7;">
-          <th>Nombre</th>
-          <th>Descripción</th>
-          <th>Estado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody id="bodyCategorias"></tbody>
-    </table>
-    <div id="modalCategoria" style="display:none"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+  <h3 style="color:#1d4ed8;font-size:1.4em;font-weight:bold;letter-spacing:.5px;margin:0;">📦 Categorías de Productos</h3>
+  <button id="btnNuevaCategoria" 
+    style="
+      background:linear-gradient(90deg,#22c55e,#1d4ed8);
+      color:#fff;padding:10px 20px;
+      border:none;
+      border-radius:7px;
+      font-size:1em;
+      font-weight:600;
+      box-shadow:0 1px 8px #1d4ed820;
+      transition:background 0.2s;
+      cursor:pointer;
+    "
+    onmouseover="this.style.background='linear-gradient(90deg,#1d4ed8,#22c55e)'"
+    onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#1d4ed8)'"
+  >+ Agregar Categoría</button>
+</div>
+
+<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 16px #0001;">
+  <table style="width:100%;font-size:1em;border-collapse:collapse;overflow:hidden;">
+    <thead>
+      <tr style="background:#f1f5f9;color:#222;">
+        <th style="padding:13px 10px;text-align:left;">Nombre</th>
+        <th style="padding:13px 10px;text-align:left;">Descripción</th>
+        <th style="padding:13px 10px;text-align:center;">Estado</th>
+        <th style="padding:13px 10px;text-align:center;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="bodyCategorias"></tbody>
+  </table>
+</div>
+
+<div id="modalCategoria" style="display:none"></div>
+
   `;
   document.getElementById('btnNuevaCategoria').onclick = ()=>showModalCategoria();
 
@@ -653,15 +916,60 @@ function renderTablaCategorias() {
   tbody.innerHTML = '';
   categoriasLista.forEach(cat => {
     let tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${cat.nombre}</td>
-      <td>${cat.descripcion||''}</td>
-      <td>${cat.activa?'Activa':'Inactiva'}</td>
-      <td>
-        <button onclick="window.showModalCategoria('${cat.id}')">✏️</button>
-        <button onclick="window.toggleEstadoCategoria('${cat.id}',${!cat.activa})">${cat.activa?'❌':'✅'}</button>
-      </td>
-    `;
+   tr.innerHTML = `
+  <td style="padding:12px 10px;font-weight:500;color:#1e293b;">
+    ${cat.nombre}
+  </td>
+  <td style="padding:12px 10px;color:#475569;">
+    ${cat.descripcion || '<span style="color:#aaa;">Sin descripción</span>'}
+  </td>
+  <td style="padding:12px 0;text-align:center;">
+    <span style="
+      display:inline-block;
+      padding:4px 14px;
+      border-radius:16px;
+      font-size:0.93em;
+      font-weight:600;
+      ${cat.activa ? 'background:#dcfce7;color:#15803d;' : 'background:#fee2e2;color:#b91c1c;'}
+    ">
+      ${cat.activa ? 'Activa' : 'Inactiva'}
+    </span>
+  </td>
+  <td style="padding:12px 0;text-align:center;">
+    <button onclick="window.showModalCategoria('${cat.id}')"
+      title="Editar"
+      style="
+        background:#e0e7ff;
+        border:none;
+        border-radius:5px;
+        padding:6px 12px;
+        margin-right:5px;
+        font-size:1em;
+        cursor:pointer;
+        transition:background 0.2s;
+      "
+      onmouseover="this.style.background='#c7d2fe'"
+      onmouseout="this.style.background='#e0e7ff'"
+    >✏️</button>
+    <button onclick="window.toggleEstadoCategoria('${cat.id}',${!cat.activa})"
+      title="${cat.activa ? 'Desactivar' : 'Activar'}"
+      style="
+        background:${cat.activa ? '#fee2e2' : '#dcfce7'};
+        border:none;
+        border-radius:5px;
+        padding:6px 12px;
+        font-size:1.15em;
+        cursor:pointer;
+        transition:background 0.2s;
+      "
+      onmouseover="this.style.background='${cat.activa ? '#fecaca' : '#bbf7d0'}'"
+      onmouseout="this.style.background='${cat.activa ? '#fee2e2' : '#dcfce7'}'"
+    >
+      ${cat.activa ? '❌' : '✅'}
+    </button>
+  </td>
+`;
+
     tbody.appendChild(tr);
   });
 }
@@ -671,16 +979,64 @@ async function showModalCategoria(categoriaId=null) {
   let cat = categoriaId ? categoriasLista.find(c=>c.id===categoriaId) : null;
   modal.style.display = 'block';
   modal.innerHTML = `
-    <div style="background:#fff;border-radius:7px;box-shadow:2px 3px 12px #2225;max-width:340px;margin:auto;padding:24px;position:relative;">
-      <button onclick="window.closeModalCategoria()" style="position:absolute;right:8px;top:4px;background:none;font-size:18px;">&times;</button>
-      <h4>${categoriaId?'Editar':'Nueva'} Categoría</h4>
-      <input id="catNombre" placeholder="Nombre" value="${cat?.nombre||''}" style="width:100%;margin-bottom:8px;" />
-      <input id="catDescripcion" placeholder="Descripción" value="${cat?.descripcion||''}" style="width:100%;margin-bottom:8px;" />
-      <div style="margin-top:8px;text-align:right;">
-        <button id="btnGuardarCategoria" style="background:#4CAF50;color:#fff;padding:7px 15px;border:none;border-radius:4px;">${categoriaId?'Actualizar':'Crear'}</button>
-      </div>
+  <div style="
+    background:#fff;
+    border-radius:14px;
+    box-shadow:0 4px 24px #0002;
+    max-width:370px;
+    margin:auto;
+    padding:36px 26px 24px 26px;
+    position:relative;
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  ">
+    <button onclick="window.closeModalCategoria()"
+      style="
+        position:absolute;
+        right:14px;top:10px;
+        background:none;
+        font-size:23px;
+        border:none;
+        color:#64748b;
+        cursor:pointer;
+        transition:color 0.2s;
+      "
+      onmouseover="this.style.color='#e11d48'"
+      onmouseout="this.style.color='#64748b'"
+      title="Cerrar">&times;</button>
+    <h3 style="margin-bottom:22px;color:#2563eb;letter-spacing:0.5px;font-weight:700;">
+      ${categoriaId ? 'Editar' : 'Nueva'} Categoría
+    </h3>
+    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Nombre</label>
+    <input id="catNombre"
+      placeholder="Nombre de la categoría"
+      value="${cat?.nombre||''}"
+      style="width:100%;margin-bottom:18px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
+    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Descripción</label>
+    <input id="catDescripcion"
+      placeholder="Descripción (opcional)"
+      value="${cat?.descripcion||''}"
+      style="width:100%;margin-bottom:24px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
+    <div style="margin-top:8px;text-align:right;">
+      <button id="btnGuardarCategoria"
+        style="
+          background:linear-gradient(90deg,#22c55e,#16a34a);
+          color:#fff;
+          font-size:1em;
+          font-weight:600;
+          padding:10px 28px;
+          border:none;
+          border-radius:7px;
+          box-shadow:0 1px 4px #22c55e44;
+          cursor:pointer;
+          transition:background 0.19s;
+        "
+        onmouseover="this.style.background='linear-gradient(90deg,#2563eb,#38bdf8)'"
+        onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
+      >${categoriaId ? 'Actualizar' : 'Crear'}</button>
     </div>
-  `;
+  </div>
+`;
+
   document.getElementById('btnGuardarCategoria').onclick = ()=>saveCategoria(categoriaId);
 }
 window.closeModalCategoria = ()=>{document.getElementById('modalCategoria').style.display='none';};
@@ -713,25 +1069,42 @@ let proveedoresLista = [];
 async function renderProveedores() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <h4>Proveedores</h4>
-      <button id="btnNuevoProveedor" style="background:#337ab7;color:#fff;padding:6px 14px;border:none;border-radius:4px;">Agregar Proveedor</button>
-    </div>
-    <table style="width:100%;font-size:14px;border:1px solid #eee;">
-      <thead>
-        <tr style="background:#f7f7f7;">
-          <th>Nombre</th>
-          <th>Contacto</th>
-          <th>Teléfono</th>
-          <th>Email</th>
-          <th>NIT</th>
-          <th>Estado</th>
-          <th>Acciones</th>
-        </tr>
-      </thead>
-      <tbody id="bodyProveedores"></tbody>
-    </table>
-    <div id="modalProveedor" style="display:none"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+  <h3 style="color:#1d4ed8;font-size:1.3em;font-weight:bold;letter-spacing:.5px;margin:0;">📦 Proveedores</h3>
+  <button id="btnNuevoProveedor"
+    style="
+      background:linear-gradient(90deg,#22c55e,#1d4ed8);
+      color:#fff;padding:10px 20px;
+      border:none;
+      border-radius:7px;
+      font-size:1em;
+      font-weight:600;
+      box-shadow:0 1px 8px #1d4ed820;
+      transition:background 0.2s;
+      cursor:pointer;
+    "
+    onmouseover="this.style.background='linear-gradient(90deg,#1d4ed8,#22c55e)'"
+    onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#1d4ed8)'"
+  >+ Agregar Proveedor</button>
+</div>
+
+<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 16px #0001;">
+  <table style="width:100%;font-size:1em;border-collapse:collapse;overflow:hidden;">
+    <thead>
+      <tr style="background:#f1f5f9;color:#222;">
+        <th style="padding:13px 10px;text-align:left;">Nombre</th>
+        <th style="padding:13px 10px;text-align:left;">Contacto</th>
+        <th style="padding:13px 10px;text-align:center;">Teléfono</th>
+        <th style="padding:13px 10px;text-align:left;">Email</th>
+        <th style="padding:13px 10px;text-align:center;">NIT</th>
+        <th style="padding:13px 10px;text-align:center;">Estado</th>
+        <th style="padding:13px 10px;text-align:center;">Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="bodyProveedores"></tbody>
+  </table>
+</div>
+<div id="modalProveedor" style="display:none"></div>
   `;
   document.getElementById('btnNuevoProveedor').onclick = ()=>showModalProveedor();
 
@@ -801,17 +1174,68 @@ function renderTablaProveedores(){
     const id = pr.id; // Asumimos que el id siempre existirá si el objeto 'pr' existe
 
     tr.innerHTML = `
-      <td>${pr.nombre}</td>
-      <td>${pr.contacto_nombre || ''}</td>
-      <td>${pr.telefono || ''}</td>
-      <td>${pr.email || ''}</td>
-      <td>${pr.nit || ''}</td>
-      <td>${pr.activo ? 'Activo' : 'Inactivo'}</td>
-      <td>
-        <button onclick="window.showModalProveedor('${id}')" style="margin-right:5px;border:none;background:transparent;cursor:pointer;" title="Editar">✏️</button>
-        <button onclick="window.toggleEstadoProveedor('${id}',${!pr.activo})" style="border:none;background:transparent;cursor:pointer;" title="${pr.activo ? 'Desactivar' : 'Activar'}">${pr.activo?'❌':'✅'}</button>
-      </td>
-    `;
+  <td style="padding:12px 10px;font-weight:500;color:#1e293b;">
+    ${pr.nombre}
+  </td>
+  <td style="padding:12px 10px;color:#334155;">
+    ${pr.contacto_nombre || '<span style="color:#aaa;">Sin contacto</span>'}
+  </td>
+  <td style="padding:12px 10px;text-align:center;color:#0ea5e9;">
+    ${pr.telefono || '<span style="color:#aaa;">-</span>'}
+  </td>
+  <td style="padding:12px 10px;color:#64748b;">
+    ${pr.email || '<span style="color:#aaa;">-</span>'}
+  </td>
+  <td style="padding:12px 10px;text-align:center;">
+    ${pr.nit || '<span style="color:#aaa;">-</span>'}
+  </td>
+  <td style="padding:12px 0;text-align:center;">
+    <span style="
+      display:inline-block;
+      padding:4px 14px;
+      border-radius:16px;
+      font-size:0.93em;
+      font-weight:600;
+      ${pr.activo ? 'background:#dcfce7;color:#15803d;' : 'background:#fee2e2;color:#b91c1c;'}
+    ">
+      ${pr.activo ? 'Activo' : 'Inactivo'}
+    </span>
+  </td>
+  <td style="padding:12px 0;text-align:center;">
+    <button onclick="window.showModalProveedor('${id}')"
+      title="Editar"
+      style="
+        background:#e0e7ff;
+        border:none;
+        border-radius:5px;
+        padding:6px 12px;
+        margin-right:5px;
+        font-size:1em;
+        cursor:pointer;
+        transition:background 0.2s;
+      "
+      onmouseover="this.style.background='#c7d2fe'"
+      onmouseout="this.style.background='#e0e7ff'"
+    >✏️</button>
+    <button onclick="window.toggleEstadoProveedor('${id}',${!pr.activo})"
+      title="${pr.activo ? 'Desactivar' : 'Activar'}"
+      style="
+        background:${pr.activo ? '#fee2e2' : '#dcfce7'};
+        border:none;
+        border-radius:5px;
+        padding:6px 12px;
+        font-size:1.15em;
+        cursor:pointer;
+        transition:background 0.2s;
+      "
+      onmouseover="this.style.background='${pr.activo ? '#fecaca' : '#bbf7d0'}'"
+      onmouseout="this.style.background='${pr.activo ? '#fee2e2' : '#dcfce7'}'"
+    >
+      ${pr.activo ? '❌' : '✅'}
+    </button>
+  </td>
+`;
+
     tbody.appendChild(tr);
   });
   console.log(`[Proveedores] Tabla renderizada con ${proveedoresLista.length} proveedores.`);
@@ -839,19 +1263,79 @@ async function showModalProveedor(proveedorId = null) {
 
   modal.style.display = 'block';
   modal.innerHTML = `
-    <div style="background:#fff;border-radius:7px;box-shadow:2px 3px 12px #2225;max-width:370px;margin:auto;padding:24px;position:relative;">
-      <button onclick="window.closeModalProveedor()" style="position:absolute;right:8px;top:4px;background:none;border:none;font-size:18px;cursor:pointer;">&times;</button>
-      <h4 style="margin-top:0;margin-bottom:18px;font-size:1.2em;">${proveedorId ? 'Editar' : 'Nuevo'} Proveedor</h4>
-      <input id="provNombre" placeholder="Nombre" value="${pr?.nombre || ''}" style="width:100%;margin-bottom:8px;padding:6px;border:1px solid #ccc;border-radius:3px;" />
-      <input id="provContacto" placeholder="Nombre contacto" value="${pr?.contacto_nombre || ''}" style="width:100%;margin-bottom:8px;padding:6px;border:1px solid #ccc;border-radius:3px;" />
-      <input id="provTelefono" placeholder="Teléfono" value="${pr?.telefono || ''}" style="width:100%;margin-bottom:8px;padding:6px;border:1px solid #ccc;border-radius:3px;" />
-      <input id="provEmail" placeholder="Email" value="${pr?.email || ''}" style="width:100%;margin-bottom:8px;padding:6px;border:1px solid #ccc;border-radius:3px;" />
-      <input id="provNIT" placeholder="NIT" value="${pr?.nit || ''}" style="width:100%;margin-bottom:8px;padding:6px;border:1px solid #ccc;border-radius:3px;" />
-      <div style="margin-top:15px;text-align:right;">
-        <button id="btnGuardarProveedor" style="background:#4CAF50;color:#fff;padding:8px 15px;border:none;border-radius:4px;cursor:pointer;">${proveedorId ? 'Actualizar' : 'Crear'}</button>
-      </div>
+  <div style="
+    background:#fff;
+    border-radius:14px;
+    box-shadow:0 4px 24px #0002;
+    max-width:390px;
+    margin:auto;
+    padding:38px 28px 24px 28px;
+    position:relative;
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  ">
+    <button onclick="window.closeModalProveedor()"
+      style="
+        position:absolute;
+        right:14px;top:10px;
+        background:none;
+        font-size:23px;
+        border:none;
+        color:#64748b;
+        cursor:pointer;
+        transition:color 0.2s;
+      "
+      onmouseover="this.style.color='#e11d48'"
+      onmouseout="this.style.color='#64748b'"
+      title="Cerrar">&times;</button>
+    <h3 style="margin-bottom:22px;color:#2563eb;letter-spacing:0.5px;font-weight:700;">
+      ${proveedorId ? 'Editar' : 'Nuevo'} Proveedor
+    </h3>
+    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Nombre</label>
+    <input id="provNombre"
+      placeholder="Nombre del proveedor"
+      value="${pr?.nombre || ''}"
+      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
+    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Contacto</label>
+    <input id="provContacto"
+      placeholder="Nombre contacto"
+      value="${pr?.contacto_nombre || ''}"
+      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
+    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Teléfono</label>
+    <input id="provTelefono"
+      placeholder="Teléfono"
+      value="${pr?.telefono || ''}"
+      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
+    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Email</label>
+    <input id="provEmail"
+      placeholder="Correo electrónico"
+      value="${pr?.email || ''}"
+      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
+    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">NIT</label>
+    <input id="provNIT"
+      placeholder="NIT"
+      value="${pr?.nit || ''}"
+      style="width:100%;margin-bottom:20px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
+    <div style="margin-top:8px;text-align:right;">
+      <button id="btnGuardarProveedor"
+        style="
+          background:linear-gradient(90deg,#22c55e,#16a34a);
+          color:#fff;
+          font-size:1em;
+          font-weight:600;
+          padding:10px 28px;
+          border:none;
+          border-radius:7px;
+          box-shadow:0 1px 4px #22c55e44;
+          cursor:pointer;
+          transition:background 0.19s;
+        "
+        onmouseover="this.style.background='linear-gradient(90deg,#2563eb,#38bdf8)'"
+        onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
+      >${proveedorId ? 'Actualizar' : 'Crear'}</button>
     </div>
-  `;
+  </div>
+`;
+
   document.getElementById('btnGuardarProveedor').onclick = () => saveProveedor(proveedorId);
 }
 
@@ -933,34 +1417,62 @@ async function renderListaCompras() {
 
 
   cont.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <h4>Lista de Compras Sugerida</h4>
-      <button id="btnExportarListaCompra" style="background:#337ab7;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;">Exportar Excel</button>
-    </div>
-    <div style="margin-bottom:10px;">
-      <label style="font-weight:500;">Filtrar por proveedor:</label>
-      <select id="selectProveedorCompra" style="margin-left:10px;padding:6px 14px;border-radius:4px;border:1px solid #ccc;min-width:180px;">
-        <option value="">-- Todos los proveedores --</option>
-        ${(proveedoresCache || []).map(pr => `
-          <option value="${pr.id}">${pr.nombre}</option>
-        `).join('')}
-      </select>
-    </div>
-    <div style="overflow-x:auto;">
-      <table style="width:100%;font-size:14px;border:1px solid #eee;border-collapse:collapse;">
-        <thead>
-          <tr style="background:#f7f7f7;">
-            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Producto</th>
-            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Stock Actual</th>
-            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Stock Mín.</th>
-            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Stock Máx.</th>
-            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Sugerido Comprar</th>
-            <th style="padding:8px;border:1px solid #ddd;text-align:left;">Proveedor</th>
-          </tr>
-        </thead>
-        <tbody id="bodyListaCompras"></tbody>
-      </table>
-    </div>
+   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <h3 style="color:#2563eb;font-size:1.23em;font-weight:700;margin:0;">📋 Lista de Compras Sugerida</h3>
+  <button id="btnExportarListaCompra"
+    style="
+      background:linear-gradient(90deg,#22c55e,#1d4ed8);
+      color:#fff;
+      padding:10px 22px;
+      border:none;
+      border-radius:7px;
+      font-size:1em;
+      font-weight:600;
+      box-shadow:0 1px 8px #1d4ed820;
+      transition:background 0.2s;
+      cursor:pointer;
+    "
+    onmouseover="this.style.background='linear-gradient(90deg,#1d4ed8,#22c55e)'"
+    onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#1d4ed8)'"
+  >⬇️ Exportar Excel</button>
+</div>
+
+<div style="margin-bottom:16px;">
+  <label style="font-weight:600;color:#334155;margin-right:10px;">Filtrar por proveedor:</label>
+  <select id="selectProveedorCompra"
+    style="
+      padding:9px 18px;
+      border-radius:7px;
+      border:1.5px solid #cbd5e1;
+      min-width:200px;
+      font-size:1em;
+      background:#f9fafb;
+      font-weight:500;
+      color:#2563eb;
+      margin-left:0;
+    ">
+    <option value="">-- Todos los proveedores --</option>
+    ${(proveedoresCache || []).map(pr => `
+      <option value="${pr.id}">${pr.nombre}</option>
+    `).join('')}
+  </select>
+</div>
+
+<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 16px #0001;">
+  <table style="width:100%;font-size:1em;border-collapse:collapse;overflow:hidden;">
+    <thead>
+      <tr style="background:#f1f5f9;color:#222;">
+        <th style="padding:13px 10px;text-align:left;">Producto</th>
+        <th style="padding:13px 10px;text-align:right;">Stock Actual</th>
+        <th style="padding:13px 10px;text-align:right;">Stock Mín.</th>
+        <th style="padding:13px 10px;text-align:right;">Stock Máx.</th>
+        <th style="padding:13px 10px;text-align:right;">Sugerido Comprar</th>
+        <th style="padding:13px 10px;text-align:left;">Proveedor</th>
+      </tr>
+    </thead>
+    <tbody id="bodyListaCompras"></tbody>
+  </table>
+</div>
   `;
 
   const btnExportar = document.getElementById('btnExportarListaCompra');
@@ -1014,13 +1526,33 @@ function renderTablaListaCompras() {
 
     let tr = document.createElement('tr');
     tr.innerHTML = `
-      <td style="padding:8px;border:1px solid #ddd;">${p.nombre}</td>
-      <td style="padding:8px;border:1px solid #ddd;">${p.stock_actual || 0}</td>
-      <td style="padding:8px;border:1px solid #ddd;">${p.stock_minimo || 0}</td>
-      <td style="padding:8px;border:1px solid #ddd;">${p.stock_maximo || 0}</td>
-      <td style="padding:8px;border:1px solid #ddd;font-weight:bold;">${cantidadASugerir > 0 ? cantidadASugerir : '-'}</td>
-      <td style="padding:8px;border:1px solid #ddd;">${proveedor}</td>
-    `;
+  <td style="padding:12px 10px;border-bottom:1px solid #f1f5f9;font-weight:500;color:#334155;">
+    ${p.nombre}
+  </td>
+  <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
+    ${p.stock_actual || 0}
+  </td>
+  <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
+    ${p.stock_minimo || 0}
+  </td>
+  <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
+    ${p.stock_maximo || 0}
+  </td>
+  <td style="
+      padding:12px 10px;text-align:right;font-weight:700;border-bottom:1px solid #f1f5f9;
+      ${cantidadASugerir > 0 ? 'color:#fff;background:#facc15;border-radius:7px;' : 'color:#64748b;'}
+    ">
+    ${cantidadASugerir > 0
+      ? `<span style="padding:5px 18px;border-radius:14px;background:#facc15;color:#a16207;display:inline-block;">
+          +${cantidadASugerir}
+        </span>`
+      : '<span style="color:#aaa;">—</span>'}
+  </td>
+  <td style="padding:12px 10px;color:#2563eb;border-bottom:1px solid #f1f5f9;">
+    ${proveedor ? `<span style="font-weight:600;">${proveedor}</span>` : '<span style="color:#aaa;">Sin proveedor</span>'}
+  </td>
+`;
+
     tbody.appendChild(tr);
   });
 }
@@ -1053,12 +1585,38 @@ function renderCarritoCompra() {
     total += subtotal;
     let tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${item.nombre}</td>
-      <td>${item.cantidad}</td>
-      <td>$${item.precio}</td>
-      <td>$${subtotal}</td>
-      <td><button onclick="window.eliminarItemCompra('${item.id}')">X</button></td>
-    `;
+  <td style="padding:12px 10px;font-weight:500;color:#1e293b;">
+    ${item.nombre}
+  </td>
+  <td style="padding:12px 10px;text-align:center;color:#0ea5e9;">
+    ${item.cantidad}
+  </td>
+  <td style="padding:12px 10px;text-align:right;color:#22c55e;">
+    $${parseFloat(item.precio).toLocaleString('es-CO', { minimumFractionDigits: 0 })}
+  </td>
+  <td style="padding:12px 10px;text-align:right;font-weight:600;">
+    $${parseFloat(subtotal).toLocaleString('es-CO', { minimumFractionDigits: 0 })}
+  </td>
+  <td style="padding:10px 0;text-align:center;">
+    <button onclick="window.eliminarItemCompra('${item.id}')"
+      style="
+        background:#fee2e2;
+        color:#b91c1c;
+        border:none;
+        border-radius:6px;
+        padding:7px 14px;
+        font-weight:bold;
+        font-size:1.03em;
+        cursor:pointer;
+        transition:background 0.19s;
+      "
+      onmouseover="this.style.background='#fecaca'"
+      onmouseout="this.style.background='#fee2e2'"
+      title="Eliminar"
+    >✖️</button>
+  </td>
+`;
+
     tbody.appendChild(tr);
   });
   let totalEl = document.getElementById('totalCompra');
@@ -1074,6 +1632,7 @@ window.eliminarItemCompra = (id)=>{
 // 3. Renderiza los productos disponibles para compras (por proveedor/categoría/nombre)
 function renderProductosCompra() {
   let proveedorSel = document.getElementById('selectProveedorCompraForm')?.value;
+  let filtro = (window.compraProveedorFiltro || '').trim().toLowerCase();
   let list = [];
 
   // Si NO hay proveedor seleccionado, muestra mensaje y NO muestra productos
@@ -1085,16 +1644,92 @@ function renderProductosCompra() {
   // Si hay proveedor, filtra los productos por proveedor_id
   list = productosCache.filter(p => p.proveedor_id === proveedorSel);
 
-  let html = list.map(p => `
-    <div class="my-1 flex gap-2 items-center">
-      <span class="w-36 inline-block">${p.nombre} <span class="text-xs text-gray-500">${p.categoria_nombre || ''}</span></span>
-      <input type="number" id="cantidad_${p.id}" class="input" placeholder="Cantidad" style="width:70px;">
-      <input type="number" id="precio_${p.id}" class="input" placeholder="Precio compra" style="width:90px;">
-      <button onclick="window.agregarProductoCompra('${p.id}')" class="bg-gray-200 px-2 rounded">Agregar</button>
-      <div id="msgCompra" class="text-green-600 mt-3"></div>
-    </div>
-  `).join('');
-  document.getElementById('productosCompraList').innerHTML = html;
+  // Si hay filtro, filtra aún más por nombre, categoría, código de barras
+  if (filtro) {
+    list = list.filter(p =>
+      (p.nombre || '').toLowerCase().includes(filtro) ||
+      (p.categoria_nombre || '').toLowerCase().includes(filtro) ||
+      (p.codigo_barras || '').toLowerCase().includes(filtro)
+    );
+  }
+
+  // Render
+  if (!list.length) {
+  document.getElementById('productosCompraList').innerHTML = `<div style="color:#999; padding:12px;">No hay productos para este proveedor${filtro ? " o filtro" : ""}.</div>`;
+  return;
+}
+
+let productosHtml = list.map(p => `
+  <div style="
+      display:flex;
+      align-items:center;
+      gap:16px;
+      padding:10px 0 12px 0;
+      border-bottom:1px solid #f1f5f9;
+      font-size:1em;
+      font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+    ">
+    <span style="flex:1 1 180px; font-weight:600; color:#1e293b;">
+      ${p.nombre}
+      <span style="font-size:0.87em; color:#64748b; font-weight:400; margin-left:7px;">
+        ${p.categoria_nombre || ''}
+      </span>
+    </span>
+    <input type="number"
+  id="cantidad_${p.id}"
+  min="1"
+  class="input"
+  placeholder="Cantidad"
+  style="
+    width:140px;
+    min-width:120px;
+    padding:7px 9px;
+    border-radius:6px;
+    border:1.5px solid #cbd5e1;
+    background:#f9fafb;
+    font-size:1em;
+    margin-right:6px;
+    text-align:center;
+  ">
+
+<input type="number"
+  id="precio_${p.id}"
+  min="0"
+  step="0.01"
+  class="input"
+  placeholder="Precio compra"
+  style="
+    width:160px;
+    min-width:120px;
+    padding:7px 9px;
+    border-radius:6px;
+    border:1.5px solid #cbd5e1;
+    background:#f9fafb;
+    font-size:1em;
+    margin-right:6px;
+    text-align:center;
+  ">
+    <button onclick="window.agregarProductoCompra('${p.id}')"
+      style="
+        background:linear-gradient(90deg,#1d4ed8,#22c55e);
+        color:#fff;
+        border:none;
+        border-radius:6px;
+        padding:7px 19px;
+        font-size:1em;
+        font-weight:600;
+        box-shadow:0 1px 4px #22c55e22;
+        cursor:pointer;
+        transition:background 0.16s;
+      "
+      onmouseover="this.style.background='linear-gradient(90deg,#22c55e,#1d4ed8)'"
+      onmouseout="this.style.background='linear-gradient(90deg,#1d4ed8,#22c55e)'"
+    >Agregar</button>
+  </div>
+`).join('');
+
+document.getElementById('productosCompraList').innerHTML = productosHtml;
+
 }
 
 
@@ -1153,7 +1788,48 @@ async function registrarCompraProveedor() {
       }]);
     }
 
-    alert('Compra registrada. Puedes recibir el pedido cuando llegue para actualizar inventario y caja.');
+    function mostrarAlertaCompraExitosa(msg) {
+  // Si ya existe una alerta, elimínala
+  let alertaExistente = document.getElementById('miAlertaCompra');
+  if (alertaExistente) alertaExistente.remove();
+
+  const alerta = document.createElement('div');
+  alerta.id = 'miAlertaCompra';
+  alerta.innerHTML = `
+    <div style="
+      position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center; z-index: 1000;">
+      <div style="
+        background: #fff;
+        padding: 34px 32px 22px 32px;
+        border-radius: 18px;
+        box-shadow: 0 6px 36px #1d4ed860;
+        text-align: center;
+        max-width: 350px;">
+        <div style="font-size: 2.3em; color: #22c55e;">✔️</div>
+        <div style="font-size:1.15em; color:#334155; margin:16px 0 10px 0; font-weight:600;">${msg || 'Compra registrada exitosamente'}</div>
+        <button onclick="document.getElementById('miAlertaCompra').remove()" style="
+          background: linear-gradient(90deg,#16a34a,#22c55e);
+          color: #fff;
+          font-weight:600;
+          border:none;
+          border-radius:6px;
+          padding:10px 30px;
+          margin-top:12px;
+          font-size:1.05em;
+          cursor:pointer;
+          box-shadow:0 2px 8px #22c55e20;
+          transition:background 0.18s;
+        ">OK</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(alerta);
+}
+
+// Usa así:
+mostrarAlertaCompraExitosa('¡Compra registrada! Puedes recibir el pedido cuando llegue para actualizar inventario y caja.');
+
 
     compraProveedorCarrito = [];
     renderCarritoCompra();
@@ -1183,36 +1859,139 @@ async function renderModuloCompras() {
 
   // --- ALERTAS: Si no hay productos o proveedores cargados ---
   if (!productosCache.length) {
-    cont.innerHTML = '<div class="text-red-500 font-bold">No hay productos cargados. Registra productos antes de realizar compras.</div>';
-    return;
-  }
-  if (!proveedoresCache.length) {
-    cont.innerHTML = '<div class="text-red-500 font-bold">No hay proveedores cargados. Registra proveedores antes de realizar compras.</div>';
-    return;
-  }
+  cont.innerHTML = `
+    <div style="
+      background: #fee2e2;
+      color: #b91c1c;
+      font-weight: 600;
+      border-radius: 10px;
+      padding: 18px 26px;
+      margin: 40px auto 0 auto;
+      max-width: 420px;
+      box-shadow: 0 2px 10px #ef444422;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      font-size: 1.07em;
+    ">
+      <span style="font-size:1.5em;">🚫</span>
+      No hay productos cargados.<br>
+      <span style="font-weight:400;">Registra productos antes de realizar compras.</span>
+    </div>
+  `;
+  return;
+}
+if (!proveedoresCache.length) {
+  cont.innerHTML = `
+    <div style="
+      background: #fef9c3;
+      color: #a16207;
+      font-weight: 600;
+      border-radius: 10px;
+      padding: 18px 26px;
+      margin: 40px auto 0 auto;
+      max-width: 420px;
+      box-shadow: 0 2px 10px #fde04799;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      font-size: 1.07em;
+    ">
+      <span style="font-size:1.5em;">⚠️</span>
+      No hay proveedores cargados.<br>
+      <span style="font-weight:400;">Registra proveedores antes de realizar compras.</span>
+    </div>
+  `;
+  return;
+}
+
 
   // --- FORMULARIO NORMAL ---
   cont.innerHTML = `
-    <h4 class="mb-2 font-bold text-lg">Registrar Compra a Proveedor</h4>
-    <div class="mb-2">
-      <label>Proveedor:
-        <select id="selectProveedorCompraForm">
+  <div style="background:#fff; border-radius:14px; box-shadow:0 3px 16px #0002; padding:30px 24px; max-width:520px; margin:auto;">
+    <h3 style="font-size:1.24em;color:#1d4ed8;font-weight:700;margin-bottom:18px;">
+      📝 Registrar Compra a Proveedor
+    </h3>
+    <div style="margin-bottom:15px;">
+      <label style="font-weight:600; color:#334155; margin-bottom:6px; display:block;">
+        Proveedor:
+        <select id="selectProveedorCompraForm"
+          style="
+            margin-top:6px;
+            width:100%;
+            padding:9px 13px;
+            border-radius:7px;
+            border:1.5px solid #cbd5e1;
+            background:#f9fafb;
+            font-size:1em;
+            font-weight:500;
+            color:#2563eb;
+          ">
           <option value="">Selecciona proveedor</option>
           ${proveedoresCache.map(pr => `<option value="${pr.id}">${pr.nombre}</option>`).join('')}
         </select>
       </label>
     </div>
-    <input id="buscarProductoCompra" class="input mb-2" placeholder="Buscar producto o categoría..."/>
-    <div id="productosCompraList"></div>
-    <h5 class="mt-4 font-semibold">Carrito de compra:</h5>
-    <table class="w-full border mb-2 text-xs">
-      <thead><tr><th>Producto</th><th>Cantidad</th><th>Precio compra</th><th>Subtotal</th><th></th></tr></thead>
-      <tbody id="carritoCompra"></tbody>
-    </table>
-    <div class="text-right mb-2">Total: <span id="totalCompra">$0</span></div>
-    <button id="btnRegistrarCompra" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Registrar Compra</button>
-    <div id="msgCompra" class="text-red-500 mt-2"></div>
-  `;
+    <input id="buscarProductoCompra"
+      placeholder="Buscar producto o categoría..."
+      style="
+        width:100%;
+        padding:9px 13px;
+        margin-bottom:13px;
+        border-radius:6px;
+        border:1.5px solid #d1d5db;
+        background:#f9fafb;
+        font-size:1em;
+        box-sizing: border-box;
+        transition:border 0.18s;
+        outline:none;
+      "
+      onfocus="this.style.borderColor='#2563eb'"
+      onblur="this.style.borderColor='#d1d5db'"
+    />
+    <div id="productosCompraList" style="margin-bottom:20px;"></div>
+    <h5 style="margin:18px 0 10px 0; font-size:1.09em; color:#0f766e; font-weight:600;">
+      🛒 Carrito de compra:
+    </h5>
+    <div style="overflow-x:auto;background:#f9fafb;border-radius:9px;">
+      <table style="width:100%;font-size:0.97em;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#e0f2fe;color:#0e7490;">
+            <th style="padding:8px 4px;">Producto</th>
+            <th style="padding:8px 4px;">Cantidad</th>
+            <th style="padding:8px 4px;">Precio compra</th>
+            <th style="padding:8px 4px;">Subtotal</th>
+            <th style="padding:8px 4px;"></th>
+          </tr>
+        </thead>
+        <tbody id="carritoCompra"></tbody>
+      </table>
+    </div>
+    <div style="text-align:right;font-size:1.08em;margin-top:10px;font-weight:600;">
+      Total: <span id="totalCompra" style="color:#16a34a;">$0</span>
+    </div>
+    <button id="btnRegistrarCompra"
+      style="
+        background:linear-gradient(90deg,#16a34a,#22c55e);
+        color:#fff;
+        font-size:1.07em;
+        padding:11px 36px;
+        border:none;
+        border-radius:7px;
+        margin-top:24px;
+        margin-bottom:8px;
+        font-weight:700;
+        cursor:pointer;
+        box-shadow:0 2px 8px #22c55e20;
+        transition:background 0.18s;
+      "
+      onmouseover="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
+      onmouseout="this.style.background='linear-gradient(90deg,#16a34a,#22c55e)'"
+    >Registrar Compra</button>
+    <div id="msgCompra" style="color:#e11d48;margin-top:18px;font-weight:bold;font-size:1em;"></div>
+  </div>
+`;
+
 
   document.getElementById('buscarProductoCompra').oninput = (e) => {
     compraProveedorFiltro = e.target.value.toLowerCase();
@@ -1232,7 +2011,30 @@ async function renderModuloCompras() {
 // 7. Renderiza la lista de compras pendientes
 async function renderComprasPendientes() {
   const cont = document.getElementById('contenidoTiendaTab');
-  cont.innerHTML = `<h4 class="mb-4 font-bold text-lg">Compras pendientes por recibir</h4><div id="comprasPendientesList"></div>`;
+  cont.innerHTML = `
+  <div style="
+    display:flex;
+    align-items:center;
+    gap:14px;
+    margin-bottom:23px;
+    padding:8px 0 6px 0;
+  ">
+    <span style="
+      display:inline-block;
+      background:#fef08a;
+      color:#b45309;
+      font-weight:700;
+      font-size:1.2em;
+      padding:8px 15px;
+      border-radius:10px;
+      box-shadow:0 1px 6px #fde04744;
+    ">
+      <span style="font-size:1.3em;">📦</span>
+      Compras pendientes por recibir
+    </span>
+  </div>
+  <div id="comprasPendientesList"></div>
+`;
 
   // Cargar compras pendientes/parciales
   const { data: compras, error } = await currentSupabase
@@ -1274,25 +2076,76 @@ function renderTarjetaCompraPendiente(compra) {
   let productosHtml = '';
   if (compra.detalles) {
     productosHtml = compra.detalles.map(det => `
-      <li>
-        ${det.nombre}: <b>${det.cantidad}</b> x $${det.precio_unitario}
+      <li style="padding:7px 0; border-bottom:1px solid #fef9c3;">
+        <span style="font-weight:600; color:#1e293b;">${det.nombre}:</span>
+        <b style="color:#0ea5e9; margin-left:3px;">${det.cantidad}</b>
+        <span style="color:#64748b;">x</span>
+        <span style="color:#059669;">$${parseFloat(det.precio_unitario).toLocaleString('es-CO')}</span>
         <br>
-        <label>Recibido:
-          <input type="number" id="recibido_${compra.id}_${det.producto_id}" value="${det.cantidad}" max="${det.cantidad}" min="0" style="width:60px;">
+        <label style="font-size:0.95em; color:#444;">
+          Recibido:
+          <input type="number"
+            id="recibido_${compra.id}_${det.producto_id}"
+            value="${det.cantidad}"
+            max="${det.cantidad}"
+            min="0"
+            style="
+              width:65px;
+              margin-left:7px;
+              padding:5px 7px;
+              border-radius:6px;
+              border:1.3px solid #cbd5e1;
+              background:#f9fafb;
+              text-align:center;
+            ">
         </label>
       </li>
     `).join('');
   }
+
   return `
-    <div class="border rounded-lg p-3 mb-5 bg-yellow-50 card-compra-pendiente" data-id="${compra.id}">
-      <div class="mb-2 font-semibold">Proveedor: ${getProveedorNombre(compra.proveedor_id)}</div>
-      <ul class="mb-2">${productosHtml}</ul>
-      <div class="mb-2 font-bold">Total: $${compra.total_compra}</div>
-      <button onclick="window.recibirPedido('${compra.id}')" class="bg-green-600 text-white px-3 py-1 rounded">Recibir pedido</button>
-      <span id="msgRecibido_${compra.id}" class="ml-3 text-xs text-gray-500"></span>
+    <div style="
+      border-radius:11px;
+      background:#fef9c3;
+      border:1.7px solid #fde047;
+      box-shadow:0 2px 10px #fde04738;
+      margin-bottom:23px;
+      padding:24px 18px 16px 18px;
+      max-width:520px;
+      font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+    " data-id="${compra.id}">
+      <div style="margin-bottom:11px; font-size:1.07em; font-weight:700; color:#b45309;">
+        <span style="font-size:1.25em;vertical-align:-4px;">🏢</span>
+        Proveedor: <span style="color:#2563eb;">${getProveedorNombre(compra.proveedor_id)}</span>
+      </div>
+      <ul style="list-style:disc inside;margin-bottom:13px;">
+        ${productosHtml}
+      </ul>
+      <div style="margin-bottom:13px; font-weight:700; font-size:1.1em; color:#166534;">
+        Total: $${parseFloat(compra.total_compra).toLocaleString('es-CO')}
+      </div>
+      <button onclick="window.recibirPedido('${compra.id}')"
+        style="
+          background:linear-gradient(90deg,#16a34a,#22c55e);
+          color:#fff;
+          font-size:1em;
+          padding:8px 28px;
+          border:none;
+          border-radius:7px;
+          font-weight:700;
+          cursor:pointer;
+          box-shadow:0 1px 5px #22c55e22;
+          transition:background 0.18s;
+          margin-right:13px;
+        "
+        onmouseover="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
+        onmouseout="this.style.background='linear-gradient(90deg,#16a34a,#22c55e)'"
+      >Recibir pedido</button>
+      <span id="msgRecibido_${compra.id}" style="margin-left:13px; font-size:0.99em; color:#64748b;"></span>
     </div>
   `;
 }
+
 
 // 10. Obtiene el nombre del proveedor por id (de tu cache)
 function getProveedorNombre(proveedorId) {
@@ -1301,87 +2154,115 @@ function getProveedorNombre(proveedorId) {
 }
 
 // 11. Lógica para recibir pedido (total o parcial)
+// 11. Lógica para recibir pedido (total o parcial)
 window.recibirPedido = async function(compraId) {
-  alert('Entrando a recibirPedido para: ' + compraId);
   try {
-    // 1. Carga detalles de productos de la compra
-    const { data: detalles, error: errorDetalles } = await currentSupabase
+    // Carga detalles de productos
+    const { data: detalles } = await currentSupabase
       .from('detalle_compras_tienda')
       .select('*')
       .eq('compra_id', compraId);
-
-    if (errorDetalles) {
-      alert('Error obteniendo detalles de compra: ' + errorDetalles.message);
-      return;
-    }
-
-    if (!detalles || detalles.length === 0) {
-      alert('No hay detalles de la compra para este pedido.');
-      return;
-    }
+    if (!detalles) throw new Error('No hay detalles de compra');
 
     let parcial = false;
     let recibidoTotal = 0;
 
-    // 2. Actualiza inventario y calcula total recibido
     for (let det of detalles) {
       let recibidoInput = document.getElementById(`recibido_${compraId}_${det.producto_id}`);
       let cantidadRecibida = Number(recibidoInput?.value || det.cantidad);
       if (cantidadRecibida < det.cantidad) parcial = true;
       recibidoTotal += cantidadRecibida * det.precio_unitario;
 
-      // Actualiza stock solo lo recibido
-      let prod = productosCache.find(p => p.id === det.producto_id);
-      if (prod) {
+      // Sumar solo lo recibido al stock y actualizar el precio de compra en inventario si cambió
+      let prod = productosCache.find(p=>p.id===det.producto_id);
+      if(prod){
         await currentSupabase.from('productos_tienda').update({
           stock_actual: (prod.stock_actual || 0) + cantidadRecibida,
-          // (Opcional) actualiza el precio de compra si varió
-          precio: det.precio_unitario
+          precio: det.precio_unitario   // <-- Actualiza el precio de compra
         }).eq('id', det.producto_id);
         prod.stock_actual = (prod.stock_actual || 0) + cantidadRecibida;
-        prod.precio = det.precio_unitario;
+        prod.precio = det.precio_unitario; // Actualiza cache local
       }
     }
 
-    // 3. Actualiza estado de compra
+    // --- Asegúrate de tener el proveedor con nombre ---
+    const { data: compraData } = await currentSupabase
+      .from('compras_tienda')
+      .select('proveedor_id')
+      .eq('id', compraId)
+      .single();
+
+    // OBTIENE EL NOMBRE DEL PROVEEDOR DIRECTO DE SUPABASE (no del cache)
+    let proveedorNombre = '';
+    if (compraData?.proveedor_id) {
+      const { data: prov } = await currentSupabase
+        .from('proveedores')
+        .select('nombre')
+        .eq('id', compraData.proveedor_id)
+        .single();
+      proveedorNombre = prov?.nombre || compraData.proveedor_id;
+    }
+
+    // Define el concepto mostrando el proveedor y si fue parcial o total
+    let concepto = parcial
+      ? `Compra a proveedor: ${proveedorNombre} (recepción parcial)`
+      : `Compra a proveedor: ${proveedorNombre} (total)`;
+
+    // Actualiza estado de compra
     await currentSupabase.from('compras_tienda').update({
       estado: parcial ? 'parcial' : 'recibida'
     }).eq('id', compraId);
 
-    // 4. Nombre del proveedor para la caja
-    let compra = (await currentSupabase.from('compras_tienda').select('proveedor_id').eq('id', compraId).single()).data;
-    let proveedor = proveedoresCache.find(p => p.id === compra.proveedor_id);
-    let nombreProveedor = proveedor ? proveedor.nombre : 'Proveedor';
-
-    // 5. Registra egreso en caja solo por lo recibido
-    const { error: errorCaja } = await currentSupabase.from('caja').insert([{
+    // Genera egreso en caja solo por lo recibido, mostrando el proveedor
+    await currentSupabase.from('caja').insert([{
       hotel_id: currentHotelId,
       tipo: 'egreso',
       monto: recibidoTotal,
-      concepto: (parcial ? 'Compra parcial a proveedor: ' : 'Compra total a proveedor: ') + nombreProveedor,
+      concepto: concepto,
       fecha_movimiento: new Date().toISOString(),
       usuario_id: currentUser.id,
+      compra_tienda_id: compraId,
       creado_en: new Date().toISOString()
     }]);
 
-    if (errorCaja) {
-      alert('Error insertando en caja: ' + errorCaja.message);
-      return;
+    // Mensaje de éxito visual (toast)
+    function toastExitoPedido(msg) {
+      let toast = document.createElement('div');
+      toast.innerHTML = `
+        <div style="
+          position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
+          background:#16a34a; color:#fff; padding:13px 27px; border-radius:7px;
+          font-weight:600; font-size:1.09em; box-shadow:0 2px 18px #16a34a33; z-index:9999;">
+          ✔️ ${msg || '¡Pedido recibido correctamente!'}
+        </div>
+      `;
+      toast.id = "toastExitoPedido";
+      document.body.appendChild(toast);
+      setTimeout(()=>{ toast.remove(); }, 2300);
     }
 
-    const msg = document.getElementById(`msgRecibido_${compraId}`);
-msg.textContent = '✅ Compra registrada y egreso generado en caja. ¡Listo!';
-msg.className = 'ml-3 text-sm font-bold text-green-700 bg-green-100 px-3 py-2 rounded shadow-sm border border-green-300';
-setTimeout(() => {
-  msg.textContent = '';
-  msg.className = '';
-}, 3000); // El mensaje desaparece después de 3 segundos
-  } catch (err) {
-    alert('Error general en recibirPedido: ' + err.message);
-    console.error('Error detalle:', err);
-  }
-}
+    toastExitoPedido('¡Pedido recibido! Inventario y caja actualizados.');
+    setTimeout(() => renderComprasPendientes(), 1200);
 
+  } catch (err) {
+    function toastError(msg) {
+      let toast = document.createElement('div');
+      toast.innerHTML = `
+        <div style="
+          position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
+          background:#dc2626; color:#fff; padding:13px 27px; border-radius:7px;
+          font-weight:600; font-size:1.09em; box-shadow:0 2px 18px #dc262655; z-index:9999;">
+          ❌ ${msg || 'Ocurrió un error.'}
+        </div>
+      `;
+      toast.id = "toastErrorPedido";
+      document.body.appendChild(toast);
+      setTimeout(()=>{ toast.remove(); }, 3200);
+    }
+
+    toastError('Error al recibir pedido: ' + (err.message || 'Error inesperado'));
+  }
+};
 
 
 
@@ -1440,25 +2321,68 @@ async function recargarProveedores() {
 
 function renderTablaCompras(compras) {
   let tabla = `
-    <table class="w-full border text-xs mt-4">
-      <thead><tr>
-        <th>Fecha</th><th>Proveedor</th><th>Total</th><th>Estado</th><th>Recibo</th>
-      </tr></thead>
+  <div style="overflow-x:auto;">
+    <table style="
+      width:100%; 
+      font-size:0.98em; 
+      border-collapse:collapse; 
+      margin-top:22px; 
+      background:#fff;
+      border-radius:13px;
+      box-shadow:0 2px 9px #64748b15;
+      overflow:hidden;
+      min-width:650px;
+    ">
+      <thead>
+        <tr style="background:#f1f5f9;color:#0f172a;">
+          <th style="padding:10px 5px; font-weight:700;">Fecha</th>
+          <th style="padding:10px 5px; font-weight:700;">Proveedor</th>
+          <th style="padding:10px 5px; font-weight:700;">Total</th>
+          <th style="padding:10px 5px; font-weight:700;">Estado</th>
+          <th style="padding:10px 5px; font-weight:700;">Recibo</th>
+        </tr>
+      </thead>
       <tbody>
-        ${compras.map(c=>`
-          <tr>
-            <td>${(c.fecha||'').slice(0,10)}</td>
-            <td>${getProveedorNombre(c.proveedor_id)}</td>
-            <td>$${c.total_compra}</td>
-            <td>${c.estado}</td>
-            <td>
-              <button onclick="window.descargarReciboCompra('${c.id}')" class="bg-gray-300 px-2 rounded">PDF</button>
+        ${compras.map(c => `
+          <tr style="border-bottom:1.5px solid #e5e7eb; background:${c.estado === 'pendiente' ? '#fef9c3' : '#fff'};">
+            <td style="padding:10px 5px; text-align:center;">${(c.fecha||'').slice(0,10)}</td>
+            <td style="padding:10px 5px;">${getProveedorNombre(c.proveedor_id)}</td>
+            <td style="padding:10px 5px; text-align:right; color:#059669; font-weight:600;">$${parseFloat(c.total_compra).toLocaleString('es-CO')}</td>
+            <td style="padding:10px 5px; text-align:center;">
+              <span style="
+                display:inline-block;
+                background:${c.estado === 'pendiente' ? '#fde68a' : '#bbf7d0'};
+                color:${c.estado === 'pendiente' ? '#a16207' : '#166534'};
+                border-radius:8px;
+                padding:3px 12px;
+                font-weight:600;
+                font-size:0.96em;
+              ">${c.estado.charAt(0).toUpperCase() + c.estado.slice(1)}</span>
+            </td>
+            <td style="padding:10px 5px; text-align:center;">
+              <button onclick="window.descargarReciboCompra('${c.id}')"
+                style="
+                  background:linear-gradient(90deg,#2563eb,#22d3ee);
+                  color:#fff;
+                  border:none;
+                  border-radius:7px;
+                  font-weight:600;
+                  padding:6px 16px;
+                  box-shadow:0 1px 3px #1e40af22;
+                  cursor:pointer;
+                  transition:background 0.18s;
+                "
+                onmouseover="this.style.background='linear-gradient(90deg,#22d3ee,#2563eb)'"
+                onmouseout="this.style.background='linear-gradient(90deg,#2563eb,#22d3ee)'"
+              >PDF</button>
             </td>
           </tr>
         `).join('')}
       </tbody>
     </table>
-  `;
+  </div>
+`;
+
   document.getElementById('tablaCompras').innerHTML = tabla;
 }
 
@@ -1468,22 +2392,61 @@ window.descargarReciboCompra = async function(compraId) {
   const { data: detalles } = await currentSupabase.from('detalle_compras_tienda').select('*').eq('compra_id', compraId);
   let proveedor = getProveedorNombre(compra.proveedor_id);
   let html = `
-    <h3>Recibo de compra #${compraId}</h3>
-    <b>Fecha:</b> ${compra.fecha} <br>
-    <b>Proveedor:</b> ${proveedor} <br>
-    <b>Total:</b> $${compra.total_compra} <br><br>
-    <table border="1" cellspacing="0" cellpadding="3">
-      <tr><th>Producto</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th></tr>
-      ${detalles.map(d=>`
-        <tr>
-          <td>${productosCache.find(p=>p.id===d.producto_id)?.nombre || "Producto"}</td>
-          <td>${d.cantidad}</td>
-          <td>$${d.precio_unitario}</td>
-          <td>$${d.cantidad * d.precio_unitario}</td>
+  <div style="
+    max-width:540px;
+    margin:auto;
+    background:#fff;
+    border-radius:11px;
+    box-shadow:0 3px 14px #2221;
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+    padding:36px 28px 24px 28px;
+    color:#222;
+  ">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:13px;">
+      <img src="URL_DE_TU_LOGO" alt="Logo" style="width:50px; height:50px; object-fit:contain; border-radius:7px;">
+      <h2 style="font-size:1.34em;color:#1d4ed8;margin:0;font-weight:800;letter-spacing:0.02em;">
+        Recibo de compra #${compraId}
+      </h2>
+    </div>
+    <div style="font-size:1.08em;margin-bottom:13px;">
+      <b>Fecha:</b> <span style="color:#2563eb">${(compra.fecha||'').slice(0,10)}</span> <br>
+      <b>Proveedor:</b> <span style="color:#166534">${proveedor}</span> <br>
+      <b>Total:</b> <span style="color:#059669;font-weight:700;">$${parseFloat(compra.total_compra).toLocaleString('es-CO')}</span>
+    </div>
+    <table style="
+      width:100%;
+      border-collapse:collapse;
+      font-size:0.99em;
+      margin-top:18px;
+      margin-bottom:8px;
+      background:#f8fafc;
+      border-radius:9px;
+      overflow:hidden;
+    ">
+      <thead>
+        <tr style="background:#e0e7ef;color:#334155;">
+          <th style="padding:8px 3px;">Producto</th>
+          <th style="padding:8px 3px;">Cantidad</th>
+          <th style="padding:8px 3px;">Precio</th>
+          <th style="padding:8px 3px;">Subtotal</th>
         </tr>
-      `).join('')}
+      </thead>
+      <tbody>
+        ${detalles.map(d => `
+          <tr>
+            <td style="padding:7px 3px;">${productosCache.find(p=>p.id===d.producto_id)?.nombre || "Producto"}</td>
+            <td style="padding:7px 3px;text-align:center;">${d.cantidad}</td>
+            <td style="padding:7px 3px;text-align:right;">$${parseFloat(d.precio_unitario).toLocaleString('es-CO')}</td>
+            <td style="padding:7px 3px;text-align:right;">$${(d.cantidad * d.precio_unitario).toLocaleString('es-CO')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
     </table>
-  `;
+    <div style="text-align:right;font-size:1.09em;font-weight:700;margin-top:13px;">
+      Total compra: <span style="color:#059669;">$${parseFloat(compra.total_compra).toLocaleString('es-CO')}</span>
+    </div>
+  </div>
+`;
   // html2pdf debe estar cargado en tu index.html
   html2pdf().from(html).save(`recibo_compra_${compraId}.pdf`);
 };

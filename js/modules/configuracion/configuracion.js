@@ -1,510 +1,509 @@
-// js/modules/configuracion/configuracion.js
-
 import {
-  showLoading, showError, clearFeedback, showAppFeedback
+  showError,
+  clearFeedback,
+  formatCurrency,
+  formatDateTime,
+  showGlobalLoading,
+  hideGlobalLoading,
+  setFormLoadingState 
 } from '../../uiUtils.js';
 
-// Estado global
 let moduleListeners = [];
 let currentSupabaseInstance = null;
-let currentModuleUser = null;
 let currentHotelId = null;
-let metodosPagoCache = [];
+let currentModuleUser = null;
+let currentContainerEl = null;
 
-// =============== SUBIR LOGO ===============
-async function subirLogo(logoFile, hotelId, supabaseInst) {
-  const fileName = `logos_hoteles/${hotelId}/${Date.now()}_${logoFile.name.replace(/\s/g, '_')}`;
-  const { error } = await supabaseInst.storage
-    .from('logos_hoteles')
-    .upload(fileName, logoFile, { cacheControl: '3600', upsert: true });
-  if (error) throw error;
-  const { data: publicUrlData } = supabaseInst.storage.from('logos_hoteles').getPublicUrl(fileName);
-  return publicUrlData?.publicUrl || null;
+const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb44ip8u876";
+
+// Calcular totales por método de pago (ingresos/egresos)
+function calcularTotalesPorMetodo(movimientos) {
+  const resumen = {};
+  movimientos.forEach(mv => {
+    const metodo = mv.metodos_pago?.nombre || 'N/A';
+    if (!resumen[metodo]) resumen[metodo] = { ingresos: 0, egresos: 0 };
+    if (mv.tipo === 'ingreso') resumen[metodo].ingresos += Number(mv.monto);
+    else if (mv.tipo === 'egreso') resumen[metodo].egresos += Number(mv.monto);
+  });
+  return resumen;
 }
 
-// =============== HTML PRINCIPAL ===============
-function generarHTMLConfiguracion() {
+// HTML premium para el reporte por correo
+// ... pega la función que te puse antes ...
+function generarHTMLReporteCierre(
+  movimientos,
+  totalIngresos,
+  totalEgresos,
+  balance,
+  usuarioNombre,
+  fechaCierre,
+  resumenPorMetodo
+) {
+  // Bloque resumen por método de pago
+  const resumenHtml = Object.entries(resumenPorMetodo).map(([metodo, totales]) => `
+    <tr>
+      <td style="padding:7px 18px;font-weight:500;">${metodo}</td>
+      <td style="padding:7px 18px;color:green;text-align:right;font-weight:500;">${formatCurrency(totales.ingresos)}</td>
+      <td style="padding:7px 18px;color:#c70000;text-align:right;font-weight:500;">${formatCurrency(totales.egresos)}</td>
+    </tr>
+  `).join('');
+
   return `
-    <div class="card configuracion-module shadow-lg rounded-lg">
-      <div class="card-header bg-gray-100 p-4 border-b">
-        <h2 class="text-xl font-semibold text-gray-800">Configuración del Hotel</h2>
+  <div style="max-width:730px;margin:auto;background:linear-gradient(135deg,#eef7ff 60%,#f5fcff);border-radius:18px;box-shadow:0 6px 38px #b0c4d277;padding:32px 18px 28px 18px;font-family:'Segoe UI',Arial,sans-serif;color:#212c44;">
+    <div style="text-align:center;">
+      <h2 style="color:#1869b6;font-weight:800;letter-spacing:-1px;font-size:2.1em;margin-bottom:4px;">Cierre de Caja</h2>
+      <div style="font-size:15px;color:#404b5c;margin-bottom:4px;">${fechaCierre}</div>
+      <div style="font-size:15px;color:#606b7a;font-weight:500;margin-bottom:15px;">Usuario: <span style="font-weight:700;color:#1869b6;">${usuarioNombre}</span></div>
+    </div>
+    <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:150px;background:#e4f6e9;padding:22px;border-radius:12px;text-align:center;">
+        <div style="font-size:15px;color:#217145;margin-bottom:2px;">Ingresos totales</div>
+        <div style="font-size:1.5em;color:green;font-weight:700;">${formatCurrency(totalIngresos)}</div>
       </div>
-      <div class="card-body p-4 md:p-6">
-        <div id="config-global-feedback" class="feedback-message mb-4" style="min-height: 24px;"></div>
-        <form id="form-configuracion-hotel" novalidate class="space-y-6">
-          <!-- ====== DATOS HOTEL ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Datos del Hotel</legend>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label for="hotel_nombre">Nombre del Hotel *</label>
-                <input type="text" name="hotel_nombre" id="hotel_nombre" class="form-control mt-1" required />
-              </div>
-              <div>
-                <label for="hotel_correo_institucional">Correo Institucional</label>
-                <input type="email" name="hotel_correo_institucional" id="hotel_correo_institucional" class="form-control mt-1" />
-              </div>
-              <div class="md:col-span-2">
-                <label for="hotel_direccion">Dirección</label>
-                <input type="text" name="hotel_direccion" id="hotel_direccion" class="form-control mt-1" />
-              </div>
-              <div>
-                <label for="hotel_telefonos">Teléfonos</label>
-                <input type="text" name="hotel_telefonos" id="hotel_telefonos" class="form-control mt-1" />
-              </div>
-              <div>
-                <label for="hotel_ciudad">Ciudad</label>
-                <input type="text" name="hotel_ciudad" id="hotel_ciudad" class="form-control mt-1" />
-              </div>
-              <div>
-                <label for="hotel_pais">País</label>
-                <input type="text" name="hotel_pais" id="hotel_pais" class="form-control mt-1" />
-              </div>
-            </div>
-          </fieldset>
-          <!-- ====== IMPRESIÓN Y TICKETS ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Impresión y Tickets</legend>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label for="encabezado_ticket_l1">Encabezado Línea 1</label>
-                <input name="encabezado_ticket_l1" id="encabezado_ticket_l1" class="form-control" />
-              </div>
-              <div>
-                <label for="encabezado_ticket_l2">Encabezado Línea 2</label>
-                <input name="encabezado_ticket_l2" id="encabezado_ticket_l2" class="form-control" />
-              </div>
-              <div>
-                <label for="encabezado_ticket_l3">Encabezado Línea 3</label>
-                <input name="encabezado_ticket_l3" id="encabezado_ticket_l3" class="form-control" />
-              </div>
-            </div>
-            <div class="mt-4">
-              <label for="pie_ticket">Pie de ticket</label>
-              <input name="pie_ticket" id="pie_ticket" class="form-control" />
-            </div>
-            <div class="mt-4 flex items-center">
-              <input type="checkbox" name="mostrar_logo_en_documentos" id="mostrar_logo_en_documentos" class="mr-2" />
-              <label for="mostrar_logo_en_documentos">¿Mostrar logo en documentos?</label>
-            </div>
-          </fieldset>
-          <!-- ====== IMPUESTOS Y FISCAL ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Impuestos y Fiscal</legend>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label for="nombre_impuesto_principal">Nombre Impuesto (Ej: IVA)</label>
-                <input name="nombre_impuesto_principal" id="nombre_impuesto_principal" class="form-control" />
-              </div>
-              <div>
-                <label for="porcentaje_impuesto_principal">Porcentaje Impuesto (%)</label>
-                <input name="porcentaje_impuesto_principal" id="porcentaje_impuesto_principal" type="number" step="0.01" class="form-control" />
-              </div>
-              <div class="md:col-span-2 flex items-center mt-4">
-                <input type="checkbox" name="impuestos_incluidos_en_precios" id="impuestos_incluidos_en_precios" class="mr-2" />
-                <label for="impuestos_incluidos_en_precios">¿Precios incluyen impuestos?</label>
-              </div>
-              <div>
-                <label for="nit_rut">NIT/RUT</label>
-                <input name="nit_rut" id="nit_rut" class="form-control" />
-              </div>
-              <div>
-                <label for="razon_social">Razón social</label>
-                <input name="razon_social" id="razon_social" class="form-control" />
-              </div>
-              <div>
-                <label for="regimen_tributario">Régimen tributario</label>
-                <input name="regimen_tributario" id="regimen_tributario" class="form-control" />
-              </div>
-              <div>
-                <label for="direccion_fiscal">Dirección fiscal</label>
-                <input name="direccion_fiscal" id="direccion_fiscal" class="form-control" />
-              </div>
-              <div>
-                <label for="telefono_fiscal">Teléfono fiscal</label>
-                <input name="telefono_fiscal" id="telefono_fiscal" class="form-control" />
-              </div>
-            </div>
-          </fieldset>
-          <!-- ====== PISCINA ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Piscina</legend>
-            <div class="flex items-center mb-4">
-              <input type="checkbox" name="piscina_activada" id="piscina_activada" class="mr-2" />
-              <label for="piscina_activada">¿Piscina activada?</label>
-            </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label for="piscina_horario_apertura">Horario apertura</label>
-                <input type="time" name="piscina_horario_apertura" id="piscina_horario_apertura" class="form-control" />
-              </div>
-              <div>
-                <label for="piscina_horario_cierre">Horario cierre</label>
-                <input type="time" name="piscina_horario_cierre" id="piscina_horario_cierre" class="form-control" />
-              </div>
-            </div>
-          </fieldset>
-          <!-- ====== PREFERENCIAS GENERALES ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Preferencias Generales</legend>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label for="moneda_local">Moneda Principal (Ej: COP, USD) *</label>
-                <input type="text" name="moneda_local" id="moneda_local" class="form-control" value="COP" required maxlength="3" />
-              </div>
-              <div>
-                <label for="formato_fecha">Formato fecha (Ej: DD/MM/YYYY)</label>
-                <input type="text" name="formato_fecha" id="formato_fecha" class="form-control" />
-              </div>
-              <div>
-                <label for="formato_hora">Formato hora (Ej: HH:mm)</label>
-                <input type="text" name="formato_hora" id="formato_hora" class="form-control" />
-              </div>
-              <div>
-                <label for="idioma_predeterminado">Idioma predeterminado (Ej: es, en)</label>
-                <input type="text" name="idioma_predeterminado" id="idioma_predeterminado" class="form-control" />
-              </div>
-            </div>
-          </fieldset>
-          <!-- ====== LEGALES ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Legales</legend>
-            <div class="mb-4">
-              <label for="politica_cancelacion">Política de Cancelación</label>
-              <textarea name="politica_cancelacion" id="politica_cancelacion" class="form-control"></textarea>
-            </div>
-            <div>
-              <label for="terminos_condiciones">Términos y condiciones</label>
-              <textarea name="terminos_condiciones" id="terminos_condiciones" class="form-control"></textarea>
-            </div>
-          </fieldset>
-          <!-- ====== LOGO HOTEL ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Logo del Hotel</legend>
-            <div class="form-group">
-              <label for="logo_uploader">Subir nuevo logo (PNG, JPG, max 2MB)</label>
-              <input type="file" id="logo_uploader" name="logo_uploader_file" class="form-control mt-1" accept="image/png, image/jpeg">
-              <img id="preview_logo" src="#" alt="Vista previa del logo" class="mt-3 max-h-32 rounded border" style="display:none;" />
-              <p id="no_logo_message" class="text-sm text-gray-500 mt-2">No hay logo cargado actualmente.</p>
-              <input type="hidden" id="logo_url_actual" name="logo_url_actual" />
-            </div>
-          </fieldset>
-          <!-- ====== METODOS DE PAGO ====== -->
-          <fieldset class="p-4 border rounded-md bg-gray-50">
-            <legend class="text-lg font-medium text-gray-900 px-2 mb-2">Métodos de Pago</legend>
-            <div style="margin-bottom:10px;">
-              <input id="nuevo_metodo_pago" placeholder="Nuevo método de pago" style="padding:6px 12px;margin-right:8px;border-radius:4px;border:1px solid #ccc;width:220px;" />
-              <button type="button" id="btnAgregarMetodoPago" style="background:#337ab7;color:#fff;padding:7px 15px;border:none;border-radius:4px;">Agregar</button>
-            </div>
-            <div id="metodosPagoLista"></div>
-          </fieldset>
-          <div id="config-feedback" class="feedback-message mt-4" style="min-height:24px;"></div>
-          <div class="form-actions mt-6">
-            <button type="submit" id="btn-guardar-configuracion" class="button button-primary py-2 px-4 rounded-md">Guardar Configuración</button>
-          </div>
-        </form>
+      <div style="flex:1;min-width:150px;background:#ffeaea;padding:22px;border-radius:12px;text-align:center;">
+        <div style="font-size:15px;color:#bd0f0f;margin-bottom:2px;">Egresos totales</div>
+        <div style="font-size:1.5em;color:#c70000;font-weight:700;">${formatCurrency(totalEgresos)}</div>
+      </div>
+      <div style="flex:1;min-width:150px;background:#e7f1ff;padding:22px;border-radius:12px;text-align:center;">
+        <div style="font-size:15px;color:#17518e;margin-bottom:2px;">Balance</div>
+        <div style="font-size:1.5em;font-weight:800;color:${balance < 0 ? '#c70000' : 'green'};">${formatCurrency(balance)}</div>
       </div>
     </div>
+    <div style="margin:0 auto 26px auto;max-width:420px;">
+      <h3 style="font-size:1.08em;color:#1869b6;margin-bottom:10px;margin-top:8px;text-align:left;">Resumen por método de pago</h3>
+      <table style="width:100%;border-radius:10px;background:white;box-shadow:0 1px 5px #b0c4d222;overflow:hidden;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#1869b6;color:#fff;">
+            <th style="padding:10px;">Método</th>
+            <th style="padding:10px;">Ingresos</th>
+            <th style="padding:10px;">Egresos</th>
+          </tr>
+        </thead>
+        <tbody>${resumenHtml}</tbody>
+      </table>
+    </div>
+    <h3 style="font-size:1.08em;color:#1869b6;margin-bottom:10px;margin-top:28px;">Detalle de movimientos del turno</h3>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;background:white;border-radius:8px;box-shadow:0 1px 5px #b0c4d233;">
+      <thead>
+        <tr style="background:#e9eef3;">
+          <th style="padding:8px;">Fecha</th>
+          <th style="padding:8px;">Tipo</th>
+          <th style="padding:8px;">Monto</th>
+          <th style="padding:8px;">Concepto</th>
+          <th style="padding:8px;">Método Pago</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${movimientos.map(mv => `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">${formatDateTime(mv.creado_en)}</td>
+            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">
+              <span style="font-weight:600;color:${mv.tipo === 'ingreso' ? 'green' : '#c70000'}">
+                ${mv.tipo.charAt(0).toUpperCase() + mv.tipo.slice(1)}
+              </span>
+            </td>
+            <td style="padding:8px;border-bottom:1px solid #f0f3f7;color:${mv.tipo === 'ingreso' ? 'green' : '#c70000'};text-align:right;">
+              ${formatCurrency(mv.monto)}
+            </td>
+            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">${mv.concepto || ''}</td>
+            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">${mv.metodos_pago?.nombre || 'N/A'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:40px;font-size:12px;text-align:center;color:#8b99b0;">
+      Gestión de Hotel &bull; Software de control hotelero &bull; <a href="https://gestiondehotel.com" style="color:#1869b6;text-decoration:none;">gestiondehotel.com</a>
+    </div>
+  </div>
   `;
 }
 
-// =============== CARGAR CONFIGURACION Y DATOS HOTEL ===============
-async function cargarConfiguracion(formEl, hotelId, supabaseInst, feedbackGlobalEl) {
-  if (!formEl) return;
-  const feedbackFormEl = formEl.querySelector('#config-feedback');
-  if (feedbackFormEl) showLoading(feedbackFormEl, 'Cargando configuración...');
-  else if (feedbackGlobalEl) showAppFeedback(feedbackGlobalEl, 'Cargando configuración...', 'info', 0);
+async function enviarReporteCierreCaja({ correos, asunto, htmlReporte, feedbackEl }) {
+  const btnCierreCaja = currentContainerEl.querySelector('#btn-cierre-caja');
+  if (btnCierreCaja) btnCierreCaja.disabled = true;
   try {
-    // Configuración específica del hotel
-    const { data: config, error: cfgError } = await supabaseInst
-      .from('configuracion_hotel')
-      .select('*')
+    const response = await fetch(EMAIL_REPORT_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        to: correos, 
+        subject: asunto,
+        html: htmlReporte
+      })
+    });
+    if (response.ok) {
+      showError(feedbackEl, '¡Reporte de cierre de caja enviado exitosamente!', 'success-indicator'); 
+    } else {
+      const errorData = await response.text();
+      showError(feedbackEl, `No se pudo enviar el reporte por email (Error ${response.status}): ${errorData}. Revise la consola.`);
+    }
+  } catch (error) {
+    showError(feedbackEl, 'Error de red al enviar el reporte: ' + error.message);
+  } finally {
+    if (btnCierreCaja) btnCierreCaja.disabled = false;
+  }
+}
+
+async function loadAndRenderMovements(
+  tBodyEl, supabaseInst, hotelId, feedbackGlobalEl,
+  startInputEl, endInputEl, tipoSelectEl,
+  spanIngresosEl, spanEgresosEl, spanBalanceEl
+) {
+  if (!tBodyEl || !supabaseInst || !hotelId || !feedbackGlobalEl || !startInputEl || !endInputEl || !tipoSelectEl || !spanIngresosEl || !spanEgresosEl || !spanBalanceEl) {
+      if (feedbackGlobalEl) showError(feedbackGlobalEl, "Error interno: No se pueden cargar movimientos (elementos faltantes).");
+      return;
+  }
+  tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-1">Cargando movimientos...</td></tr>`;
+  clearFeedback(feedbackGlobalEl);
+
+  try {
+    let query = supabaseInst
+      .from('caja')
+      .select('id,tipo,monto,concepto,creado_en,usuario_id,usuarios (nombre),metodo_pago_id,metodos_pago (nombre)')
       .eq('hotel_id', hotelId)
-      .maybeSingle();
-    if (cfgError && cfgError.code !== 'PGRST116') throw cfgError;
+      .eq('usuario_id', currentModuleUser.id)
+      .order('creado_en', { ascending: false });
 
-    // Datos generales del hotel
-    const { data: hotelData, error: hotelErr } = await supabaseInst
-      .from('hoteles')
-      .select('nombre, direccion, telefono, correo, ciudad, pais, logo_url')
-      .eq('id', hotelId)
-      .single();
-    if (hotelErr) throw hotelErr;
-
-    // Métodos de pago
-    await cargarMetodosPago(hotelId, supabaseInst);
-    renderMetodosPago();
-
-    // Poblado de campos (igual que antes)
-    const setVal = (name, val) => { if (formEl.elements[name]) formEl.elements[name].value = val || ''; };
-    const setCheck = (name, val) => { if (formEl.elements[name]) formEl.elements[name].checked = !!val; };
-    // HOTEL
-    setVal('hotel_nombre', hotelData.nombre);
-    setVal('hotel_correo_institucional', hotelData.correo);
-    setVal('hotel_direccion', hotelData.direccion);
-    setVal('hotel_telefonos', hotelData.telefono);
-    setVal('hotel_ciudad', hotelData.ciudad);
-    setVal('hotel_pais', hotelData.pais);
-
-    // LOGO
-    if (formEl.elements.logo_url_actual) {
-      const preview = formEl.querySelector('#preview_logo');
-      const noLogoMessage = formEl.querySelector('#no_logo_message');
-      let logo_url = config?.logo_url || hotelData.logo_url || '';
-      if (logo_url) {
-        if (preview) preview.src = logo_url;
-        if (preview) preview.style.display = 'block';
-        formEl.elements.logo_url_actual.value = logo_url;
-        if (noLogoMessage) noLogoMessage.style.display = 'none';
-      } else {
-        if (preview) { preview.src = '#'; preview.style.display = 'none'; }
-        if (noLogoMessage) noLogoMessage.style.display = 'block';
-        formEl.elements.logo_url_actual.value = '';
-      }
+    if (startInputEl.value) {
+      query = query.gte('creado_en', `${startInputEl.value}T00:00:00.000Z`);
+    }
+    if (endInputEl.value) {
+      query = query.lte('creado_en', `${endInputEl.value}T23:59:59.999Z`);
+    }
+    if (tipoSelectEl.value) {
+      query = query.eq('tipo', tipoSelectEl.value);
     }
 
-    // IMPRESIÓN / TICKETS
-    setVal('encabezado_ticket_l1', config?.encabezado_ticket_l1);
-    setVal('encabezado_ticket_l2', config?.encabezado_ticket_l2);
-    setVal('encabezado_ticket_l3', config?.encabezado_ticket_l3);
-    setVal('pie_ticket', config?.pie_ticket);
-    setCheck('mostrar_logo_en_documentos', config?.mostrar_logo_en_documentos);
+    const { data: movements, error } = await query;
+    if (error) throw error;
 
-    // IMPUESTOS Y FISCAL
-    setVal('nombre_impuesto_principal', config?.nombre_impuesto_principal);
-    setVal('porcentaje_impuesto_principal', config?.porcentaje_impuesto_principal);
-    setCheck('impuestos_incluidos_en_precios', config?.impuestos_incluidos_en_precios);
-    setVal('nit_rut', config?.nit_rut);
-    setVal('razon_social', config?.razon_social);
-    setVal('regimen_tributario', config?.regimen_tributario);
-    setVal('direccion_fiscal', config?.direccion_fiscal);
-    setVal('telefono_fiscal', config?.telefono_fiscal);
+    let ingresos = 0, egresos = 0;
+    tBodyEl.innerHTML = '';
 
-    // PISCINA
-    setCheck('piscina_activada', config?.piscina_activada);
-    setVal('piscina_horario_apertura', config?.piscina_horario_apertura);
-    setVal('piscina_horario_cierre', config?.piscina_horario_cierre);
+    if (!movements || movements.length === 0) {
+      tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-1">No hay movimientos registrados para los filtros seleccionados.</td></tr>`;
+    } else {
+      movements.forEach(mv => {
+        if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
+        else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
 
-    // PREFERENCIAS GENERALES
-    setVal('moneda_local', config?.moneda_local || 'COP');
-    setVal('formato_fecha', config?.formato_fecha);
-    setVal('formato_hora', config?.formato_hora);
-    setVal('idioma_predeterminado', config?.idioma_predeterminado);
+        const userName = mv.usuarios?.nombre || (mv.usuario_id ? `ID: ${mv.usuario_id.slice(0, 8)}...` : 'Sistema');
+        const metodoPagoNombre = mv.metodos_pago?.nombre || 'N/A';
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-gray-50";
+        tr.innerHTML = `
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm">
+            <span class="badge px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+              ${mv.tipo.charAt(0).toUpperCase() + mv.tipo.slice(1)}
+            </span>
+          </td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
+          <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${userName}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${metodoPagoNombre}</td>
+        `;
+        tBodyEl.appendChild(tr);
+      });
+    }
 
-    // LEGALES
-    setVal('politica_cancelacion', config?.politica_cancelacion);
-    setVal('terminos_condiciones', config?.terminos_condiciones);
-
-    if (feedbackFormEl) clearFeedback(feedbackFormEl);
-    else if (feedbackGlobalEl) showAppFeedback(feedbackGlobalEl, '', 'info', 0);
+    spanIngresosEl.textContent = formatCurrency(ingresos);
+    spanEgresosEl.textContent = formatCurrency(egresos);
+    const balance = ingresos - egresos;
+    spanBalanceEl.textContent = formatCurrency(balance);
+    spanBalanceEl.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
   } catch (err) {
-    if (feedbackFormEl) showError(feedbackFormEl, `Error al cargar configuración: ${err.message}`);
-    else if (feedbackGlobalEl) showAppFeedback(feedbackGlobalEl, `Error al cargar configuración: ${err.message}`, 'error', 0);
+    tBodyEl.innerHTML = `<tr><td colspan="6" class="text-red-600 text-center p-1">Error al cargar movimientos: ${err.message}</td></tr>`;
+    showError(feedbackGlobalEl, `Error al cargar datos de caja: ${err.message}`);
   }
 }
 
-// =============== MÉTODOS DE PAGO ===============
-async function cargarMetodosPago(hotelId, supabaseInst) {
-  let { data, error } = await supabaseInst
-    .from('metodos_pago')
-    .select('id, nombre, activo')
-    .eq('hotel_id', hotelId);
-  metodosPagoCache = data || [];
-}
-
-function renderMetodosPago() {
-  const listaDiv = document.getElementById('metodosPagoLista');
-  if (!listaDiv) return;
-  if (metodosPagoCache.length === 0) {
-    listaDiv.innerHTML = `<div style="color:#888;">No hay métodos de pago creados.</div>`;
-    return;
-  }
-  listaDiv.innerHTML = `
-    <ul style="list-style:none;padding:0;">
-      ${metodosPagoCache.map(m=>`
-        <li style="margin-bottom:6px;">
-          <span style="display:inline-block;width:140px;">${m.nombre}</span>
-          <button type="button" onclick="window.toggleMetodoPagoActivo('${m.id}', ${!m.activo})"
-            style="margin-left:12px;color:${m.activo?'#25a325':'#c62c2c'};font-weight:bold;border:none;background:none;cursor:pointer;">
-            ${m.activo ? 'Activo' : 'Inactivo'}
-          </button>
-          <button type="button" onclick="window.eliminarMetodoPago('${m.id}')" style="margin-left:10px;color:#e11;font-size:16px;border:none;background:none;cursor:pointer;">🗑️</button>
-        </li>
-      `).join('')}
-    </ul>
-  `;
-}
-
-window.toggleMetodoPagoActivo = async (id, activo) => {
-  await currentSupabaseInstance.from('metodos_pago').update({activo}).eq('id',id);
-  await cargarMetodosPago(currentHotelId, currentSupabaseInstance);
-  renderMetodosPago();
-};
-window.eliminarMetodoPago = async (id) => {
-  if (!confirm("¿Seguro de eliminar este método de pago?")) return;
-  await currentSupabaseInstance.from('metodos_pago').delete().eq('id',id);
-  await cargarMetodosPago(currentHotelId, currentSupabaseInstance);
-  renderMetodosPago();
-};
-
-async function agregarMetodoPago() {
-  const input = document.getElementById('nuevo_metodo_pago');
-  if (!input.value.trim()) return;
-  await currentSupabaseInstance.from('metodos_pago').insert([{
-    hotel_id: currentHotelId,
-    nombre: input.value.trim(),
-    activo: true
-  }]);
-  input.value = '';
-  await cargarMetodosPago(currentHotelId, currentSupabaseInstance);
-  renderMetodosPago();
-}
-
-// =============== GUARDAR CONFIGURACION ===============
-async function guardarConfiguracion(formEl, hotelId, supabaseInst, btnGuardarEl, feedbackFormEl, previewLogoEl, logoUrlActualInputEl) {
-  const formData = new FormData(formEl);
-  const datosHotel = {
-    nombre: formData.get('hotel_nombre')?.trim() || null,
-    correo: formData.get('hotel_correo_institucional')?.trim() || null,
-    direccion: formData.get('hotel_direccion')?.trim() || null,
-    telefono: formData.get('hotel_telefonos')?.trim() || null,
-    ciudad: formData.get('hotel_ciudad')?.trim() || null,
-    pais: formData.get('hotel_pais')?.trim() || null,
-  };
-  // Configuración completa
-  const configuracionHotelPayload = {
-    hotel_id: hotelId,
-    actualizado_en: new Date().toISOString(),
-
-    // Impresión/tickets
-    encabezado_ticket_l1: formData.get('encabezado_ticket_l1')?.trim() || null,
-    encabezado_ticket_l2: formData.get('encabezado_ticket_l2')?.trim() || null,
-    encabezado_ticket_l3: formData.get('encabezado_ticket_l3')?.trim() || null,
-    pie_ticket: formData.get('pie_ticket')?.trim() || null,
-    mostrar_logo_en_documentos: formEl.elements.mostrar_logo_en_documentos.checked,
-
-    // Impuestos y fiscal
-    nombre_impuesto_principal: formData.get('nombre_impuesto_principal')?.trim() || null,
-    porcentaje_impuesto_principal: formData.get('porcentaje_impuesto_principal') || null,
-    impuestos_incluidos_en_precios: formEl.elements.impuestos_incluidos_en_precios.checked,
-    nit_rut: formData.get('nit_rut')?.trim() || null,
-    razon_social: formData.get('razon_social')?.trim() || null,
-    regimen_tributario: formData.get('regimen_tributario')?.trim() || null,
-    direccion_fiscal: formData.get('direccion_fiscal')?.trim() || null,
-    telefono_fiscal: formData.get('telefono_fiscal')?.trim() || null,
-
-    // Piscina
-    piscina_activada: formEl.elements.piscina_activada.checked,
-    piscina_horario_apertura: formData.get('piscina_horario_apertura') || null,
-    piscina_horario_cierre: formData.get('piscina_horario_cierre') || null,
-
-    // Preferencias generales
-    moneda_local: formData.get('moneda_local')?.trim().toUpperCase() || 'COP',
-    formato_fecha: formData.get('formato_fecha')?.trim() || null,
-    formato_hora: formData.get('formato_hora')?.trim() || null,
-    idioma_predeterminado: formData.get('idioma_predeterminado')?.trim() || null,
-
-    // Legales
-    politica_cancelacion: formData.get('politica_cancelacion')?.trim() || null,
-    terminos_condiciones: formData.get('terminos_condiciones')?.trim() || null,
-  };
-
-  // Logo
-  const logoInputEl = formEl.elements.logo_uploader;
-  const logoFile = logoInputEl?.files?.[0];
-  let newLogoUrl = logoUrlActualInputEl?.value || null;
-  if (logoFile) {
-    try {
-      if (logoFile.size > 2 * 1024 * 1024) throw new Error("El logo supera los 2MB.");
-      newLogoUrl = await subirLogo(logoFile, hotelId, supabaseInst);
-      configuracionHotelPayload.logo_url = newLogoUrl;
-      datosHotel.logo_url = newLogoUrl;
-    } catch (err) {
-      showError(feedbackFormEl, `Error al subir logo: ${err.message}`);
-    }
-  } else {
-    configuracionHotelPayload.logo_url = newLogoUrl;
-    datosHotel.logo_url = newLogoUrl;
-  }
-  // Guardar en DB
+async function popularMetodosPagoSelect(selectEl, supabaseInst, feedbackGlobalEl) {
+  if (!selectEl || !supabaseInst) return;
+  selectEl.innerHTML = '<option value="">Cargando métodos...</option>';
   try {
-    await supabaseInst.from('hoteles').update(datosHotel).eq('id', hotelId);
-    await supabaseInst.from('configuracion_hotel').upsert(configuracionHotelPayload, { onConflict: 'hotel_id' });
-    showAppFeedback(feedbackFormEl, '¡Configuración guardada exitosamente!', 'success', true);
-    if (logoUrlActualInputEl && newLogoUrl) logoUrlActualInputEl.value = newLogoUrl;
-    if (previewLogoEl && newLogoUrl) previewLogoEl.src = newLogoUrl;
+    const { data: metodos, error } = await supabaseInst
+      .from('metodos_pago')
+      .select('id, nombre')
+      .eq('hotel_id', currentHotelId) 
+      .eq('activo', true)
+      .order('nombre');
+
+    if (error) throw error;
+
+    if (metodos && metodos.length > 0) {
+      selectEl.innerHTML = `<option value="">-- Seleccione un método --</option>` +
+        metodos.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
+    } else {
+      selectEl.innerHTML = `<option value="" disabled>No hay métodos de pago activos.</option>`;
+    }
   } catch (err) {
-    showAppFeedback(feedbackFormEl, `Error al guardar: ${err.message}`, 'error', true);
+    selectEl.innerHTML = `<option value="" disabled>Error al cargar métodos</option>`;
+    showError(feedbackGlobalEl, `No se pudieron cargar los métodos de pago: ${err.message}`);
   }
 }
 
-// =============== MONTAJE PRINCIPAL ===============
-export async function mount(container, supabaseInstance, user) {
-  if (!container) return;
-  unmount();
-  container.innerHTML = generarHTMLConfiguracion();
-  currentSupabaseInstance = supabaseInstance;
+export async function mount(container, supabaseInst, user) {
+  unmount(); 
+
+  currentContainerEl = container;
+  currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
   currentHotelId = currentModuleUser?.user_metadata?.hotel_id;
+
   if (!currentHotelId && currentModuleUser?.id) {
     try {
       const { data: perfil } = await currentSupabaseInstance
         .from('usuarios').select('hotel_id').eq('id', currentModuleUser.id).single();
       currentHotelId = perfil?.hotel_id;
-    } catch (e) {}
+    } catch (err) {}
   }
-  await cargarConfiguracion(
-    container.querySelector('#form-configuracion-hotel'),
-    currentHotelId,
-    currentSupabaseInstance,
-    container.querySelector('#config-global-feedback')
-  );
-  // Logo preview
-  const logoInputEl = container.querySelector('#logo_uploader');
-  const previewLogoEl = container.querySelector('#preview_logo');
-  const noLogoMessageEl = container.querySelector('#no_logo_message');
-  const logoUrlActualInputEl = container.querySelector('#logo_url_actual');
-  if (logoInputEl) {
-    const logoChangeHandler = e => {
-      const file = e.target.files[0];
-      if (file && (file.type === "image/png" || file.type === "image/jpeg")) {
-        const reader = new FileReader();
-        reader.onload = ev => {
-          if (previewLogoEl) {
-            previewLogoEl.src = ev.target.result;
-            previewLogoEl.style.display = 'block';
-          }
-          if (noLogoMessageEl) noLogoMessageEl.style.display = 'none';
-        };
-        reader.readAsDataURL(file);
-      } else {
-        if (previewLogoEl) previewLogoEl.style.display = 'none';
-        if (noLogoMessageEl) noLogoMessageEl.style.display = 'block';
+
+  container.innerHTML = `
+    <div class="card caja-module shadow-lg rounded-lg">
+      <div class="card-header bg-gray-100 p-4 border-b flex justify-between items-center">
+        <h2 class="text-xl font-semibold text-gray-800">Gestión de Caja</h2>
+        <button id="btn-cierre-caja" class="button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow-sm">Realizar Cierre de Caja</button>
+      </div>
+      <div class="card-body p-4 md:p-6">
+        <div id="caja-global-feedback" class="feedback-message mb-4" style="min-height: 24px;"></div>
+        <form id="caja-filtros-form" class="mb-6 p-4 border rounded-md bg-gray-50 shadow-sm">
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
+            <div><label for="caja-filter-start" class="block text-sm font-medium text-gray-700">Desde:</label><input type="date" id="caja-filter-start" class="form-control mt-1 text-sm" /></div>
+            <div><label for="caja-filter-end" class="block text-sm font-medium text-gray-700">Hasta:</label><input type="date" id="caja-filter-end" class="form-control mt-1 text-sm" /></div>
+            <div><label for="caja-filter-tipo" class="block text-sm font-medium text-gray-700">Tipo:</label><select id="caja-filter-tipo" class="form-control mt-1 text-sm"><option value="">Todos</option><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+            <button type="submit" class="button button-primary py-2 px-4 rounded-md text-sm">Filtrar</button>
+          </div>
+        </form>
+        <div class="caja-resumen grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
+          <div class="p-3 bg-green-50 rounded-md shadow"><span class="block text-sm text-gray-500">Ingresos Totales</span><span id="caja-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span></div>
+          <div class="p-3 bg-red-50 rounded-md shadow"><span class="block text-sm text-gray-500">Egresos Totales</span><span id="caja-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span></div>
+          <div class="p-3 bg-blue-50 rounded-md shadow"><span class="block text-sm text-gray-500">Balance Actual</span><span id="caja-balance" class="text-2xl font-bold text-blue-600">$0.00</span></div>
+        </div>
+        <div class="overflow-auto">
+          <table class="table-auto w-full border rounded-md shadow-sm bg-white text-sm">
+            <thead>
+              <tr class="bg-gray-200 text-gray-700">
+                <th class="px-4 py-2">Fecha</th>
+                <th class="px-4 py-2">Tipo</th>
+                <th class="px-4 py-2">Monto</th>
+                <th class="px-4 py-2">Concepto</th>
+                <th class="px-4 py-2">Usuario</th>
+                <th class="px-4 py-2">Método Pago</th>
+              </tr>
+            </thead>
+            <tbody id="caja-movements-body"></tbody>
+          </table>
+        </div>
+        <h3 class="mt-7 mb-2 font-semibold text-gray-700 text-base">Registrar Movimiento</h3>
+        <form id="caja-add-form" class="mb-2">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+            <div><label for="caja-add-tipo" class="block text-sm font-medium text-gray-700">Tipo *</label><select id="caja-add-tipo" name="tipo" class="form-control mt-1 text-sm" required><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+            <div><label for="caja-add-monto" class="block text-sm font-medium text-gray-700">Monto *</label><input type="number" id="caja-add-monto" name="monto" class="form-control mt-1 text-sm" step="0.01" min="0.01" required /></div>
+            <div><label for="caja-add-metodo-pago" class="block text-sm font-medium text-gray-700">Método de Pago *</label><select id="caja-add-metodo-pago" name="metodoPagoId" class="form-control mt-1 text-sm" required><option value="">Cargando...</option></select></div>
+          </div>
+          <div class="form-group mb-4"><label for="caja-add-concepto" class="block text-sm font-medium text-gray-700">Concepto/Descripción * (mín. 3 caracteres)</label><input type="text" id="caja-add-concepto" name="concepto" class="form-control mt-1 text-sm" required minlength="3" /></div>
+          <button type="submit" id="caja-btn-add" class="button button-accent py-2 px-4 rounded-md text-sm">＋ Agregar Movimiento</button>
+          <div id="caja-add-feedback" class="feedback-message mt-3" style="min-height:24px;"></div>
+        </form>
+      </div>
+    </div>
+  `;
+
+  const tBodyEl = container.querySelector('#caja-movements-body');
+  const spanIngresosEl = container.querySelector('#caja-total-ingresos');
+  const spanEgresosEl = container.querySelector('#caja-total-egresos');
+  const spanBalanceEl = container.querySelector('#caja-balance');
+  const formFiltrosEl = container.querySelector('#caja-filtros-form');
+  const startInputEl = container.querySelector('#caja-filter-start');
+  const endInputEl = container.querySelector('#caja-filter-end');
+  const tipoSelectEl = container.querySelector('#caja-filter-tipo');
+  const addFormEl = container.querySelector('#caja-add-form');
+  const addMetodoEl = container.querySelector('#caja-add-metodo-pago');
+  const btnAddEl = container.querySelector('#caja-btn-add');
+  const feedbackAddEl = container.querySelector('#caja-add-feedback');
+  const feedbackGlobalEl = container.querySelector('#caja-global-feedback');
+  const btnCierreCaja = container.querySelector('#btn-cierre-caja');
+
+  if (!currentHotelId) {
+    if (feedbackGlobalEl) showError(feedbackGlobalEl, 'Error: Hotel no identificado. No se pueden cargar los datos de caja.');
+    if(formFiltrosEl) formFiltrosEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
+    if(addFormEl) addFormEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
+    if(btnCierreCaja) btnCierreCaja.style.display = 'none';
+    return;
+  }
+  if (!tBodyEl || !formFiltrosEl || !addFormEl || !feedbackGlobalEl || !spanIngresosEl || !spanEgresosEl || !spanBalanceEl || !startInputEl || !endInputEl || !tipoSelectEl || !addMetodoEl || !btnAddEl || !feedbackAddEl || !btnCierreCaja) {
+    showError(feedbackGlobalEl || container, "Error interno: No se pudo inicializar el módulo de caja (elementos DOM no encontrados).");
+    return;
+  }
+
+  const addMovementFormSubmitHandler = async (event) => {
+    event.preventDefault();
+    clearFeedback(feedbackAddEl);
+    const originalButtonText = btnAddEl.textContent;
+    setFormLoadingState(addFormEl, true, btnAddEl, originalButtonText, 'Agregando...');
+
+    const montoValue = parseFloat(addFormEl.elements.monto.value);
+    const conceptoValue = addFormEl.elements.concepto.value.trim();
+    const metodoPagoValue = addFormEl.elements.metodoPagoId.value;
+    const tipoValue = addFormEl.elements.tipo.value;
+
+    if (isNaN(montoValue) || montoValue <= 0) {
+      showError(feedbackAddEl, 'El monto debe ser un número positivo.');
+      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
+      addFormEl.elements.monto.focus(); return;
+    }
+    if (!conceptoValue || conceptoValue.length < 3) {
+      showError(feedbackAddEl, 'El concepto es obligatorio (mín. 3 caracteres).');
+      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
+      addFormEl.elements.concepto.focus(); return;
+    }
+    if (!metodoPagoValue) {
+      showError(feedbackAddEl, 'Debe seleccionar un método de pago.');
+      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
+      addFormEl.elements.metodoPagoId.focus(); return;
+    }
+
+    try {
+      const newMovement = {
+        tipo: tipoValue,
+        monto: montoValue,
+        concepto: conceptoValue,
+        fecha_movimiento: new Date().toISOString(),
+        usuario_id: currentModuleUser.id,
+        hotel_id: currentHotelId,
+        metodo_pago_id: metodoPagoValue
+      };
+      const { error } = await currentSupabaseInstance.from('caja').insert([newMovement]);
+      if (error) throw error;
+      showError(feedbackAddEl, 'Movimiento agregado exitosamente.', 'success-indicator');
+      setTimeout(() => clearFeedback(feedbackAddEl), 3000);
+      addFormEl.reset();
+      await loadAndRenderMovements(tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl, startInputEl, endInputEl, tipoSelectEl, spanIngresosEl, spanEgresosEl, spanBalanceEl);
+    } catch (err) {
+      showError(feedbackAddEl, `Error al agregar movimiento: ${err.message}`);
+    } finally {
+      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
+    }
+  };
+  addFormEl.addEventListener('submit', addMovementFormSubmitHandler);
+  moduleListeners.push({ element: addFormEl, type: 'submit', handler: addMovementFormSubmitHandler });
+
+  const filterFormSubmitHandler = (event) => {
+    event.preventDefault();
+    loadAndRenderMovements(tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl, startInputEl, endInputEl, tipoSelectEl, spanIngresosEl, spanEgresosEl, spanBalanceEl);
+  };
+  formFiltrosEl.addEventListener('submit', filterFormSubmitHandler);
+  moduleListeners.push({ element: formFiltrosEl, type: 'submit', handler: filterFormSubmitHandler });
+
+  // === CORTE DE CAJA SOLO POR USUARIO Y CON REPORTE BONITO ===
+  const cierreCajaHandler = async () => {
+    showGlobalLoading("Realizando cierre de caja...");
+    btnCierreCaja.disabled = true;
+    try {
+      let configHotel = null;
+      try {
+       const { data, error } = await supabase
+  .from('configuracion_hotel')
+  .select('correo_remitente')
+  .eq('hotel_id', 'ac5e4c9d-a8cc-4c53-ab03-0e4ed1549195')
+  .single();
+console.log('Data:', data, 'Error:', error);
+
+        configHotel = data;
+      } catch (err) {
+        // Si hay error o no existe, configHotel sigue siendo null
       }
-    };
-    logoInputEl.addEventListener('change', logoChangeHandler);
-    moduleListeners.push({ element: logoInputEl, type: 'change', handler: logoChangeHandler });
-  }
-  // Métodos de pago: Agregar
-  const btnAgregarMetodoPago = container.querySelector('#btnAgregarMetodoPago');
-  if (btnAgregarMetodoPago) {
-    btnAgregarMetodoPago.onclick = agregarMetodoPago;
-  }
-  // Guardado config
-  const formEl = container.querySelector('#form-configuracion-hotel');
-  const feedbackFormEl = container.querySelector('#config-feedback');
-  const btnGuardarEl = container.querySelector('#btn-guardar-configuracion');
-  if (formEl && btnGuardarEl && logoInputEl && feedbackFormEl && logoUrlActualInputEl && previewLogoEl) {
-    const formConfigSubmitHandler = async e => {
-      e.preventDefault();
-      btnGuardarEl.disabled = true;
-      await guardarConfiguracion(formEl, currentHotelId, currentSupabaseInstance, btnGuardarEl, feedbackFormEl, previewLogoEl, logoUrlActualInputEl);
-      btnGuardarEl.disabled = false;
-    };
-    formEl.addEventListener('submit', formConfigSubmitHandler);
-    moduleListeners.push({ element: formEl, type: 'submit', handler: formConfigSubmitHandler });
-  }
+
+      const correoAdminPrincipal = currentModuleUser?.email;
+      let correosDestino = (configHotel && configHotel.correo_remitente) ? configHotel.correo_remitente : correoAdminPrincipal;
+
+      if (!correosDestino) {
+        const { data: admins } = await currentSupabaseInstance
+          .from('usuarios')
+          .select('correo')
+          .eq('hotel_id', currentHotelId)
+          .in('rol', ['admin', 'superadmin']);
+        if (admins && admins.length > 0) {
+          correosDestino = admins.map(u => u.correo).join(',');
+        } else {
+          showError(feedbackGlobalEl, 'No hay correos de administradores configurados para enviar el reporte.');
+          hideGlobalLoading();
+          btnCierreCaja.disabled = false;
+          return;
+        }
+      }
+
+      // SOLO movimientos del usuario actual en el día
+      const fechaHoyISO = new Date().toISOString().split('T')[0];
+      const desde = `${fechaHoyISO}T00:00:00.000Z`;
+      const hasta = `${fechaHoyISO}T23:59:59.999Z`;
+
+      const { data: movimientos } = await currentSupabaseInstance
+        .from('caja')
+        .select('*, usuarios(nombre), metodos_pago(nombre)')
+        .eq('hotel_id', currentHotelId)
+        .eq('usuario_id', currentModuleUser.id)
+        .gte('creado_en', desde)
+        .lte('creado_en', hasta)
+        .order('creado_en', { ascending: true });
+
+      if (!movimientos || movimientos.length === 0) {
+        showError(feedbackGlobalEl, 'No hay movimientos para incluir en el cierre de caja.');
+        hideGlobalLoading();
+        btnCierreCaja.disabled = false;
+        return;
+      }
+
+      const totalIngresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + Number(m.monto), 0);
+      const totalEgresos = movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + Number(m.monto), 0);
+      const balance = totalIngresos - totalEgresos;
+      const fechaHoyTexto = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
+      const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Usuario del Sistema';
+      const resumenPorMetodo = calcularTotalesPorMetodo(movimientos);
+
+      const htmlReporte = generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaHoyTexto, resumenPorMetodo);
+
+      await enviarReporteCierreCaja({
+        correos: correosDestino,
+        asunto: `Cierre de Caja de Usuario - Hotel [Tu Nombre de Hotel] - ${fechaHoyTexto}`,
+        htmlReporte,
+        feedbackEl: feedbackGlobalEl 
+      });
+
+      // Resetear la vista a los movimientos del día actual (usuario)
+      startInputEl.value = fechaHoyISO;
+      endInputEl.value = fechaHoyISO;
+      tipoSelectEl.value = '';
+      await loadAndRenderMovements(
+        tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl,
+        startInputEl, endInputEl, tipoSelectEl,
+        spanIngresosEl, spanEgresosEl, spanBalanceEl
+      );
+      showError(feedbackGlobalEl, 'Cierre de caja procesado. La vista muestra los movimientos de hoy del usuario.', 'success-indicator');
+    } catch (err) {
+      showError(feedbackGlobalEl, 'Error en cierre de caja: ' + err.message);
+    } finally {
+        hideGlobalLoading();
+        btnCierreCaja.disabled = false;
+    }
+  };
+  btnCierreCaja.addEventListener('click', cierreCajaHandler);
+  moduleListeners.push({ element: btnCierreCaja, type: 'click', handler: cierreCajaHandler });
+
+  await popularMetodosPagoSelect(addMetodoEl, currentSupabaseInstance, feedbackGlobalEl);
+
+  // Carga inicial con filtros de fecha para el día actual (usuario actual)
+  const hoy = new Date().toISOString().split('T')[0];
+  startInputEl.value = hoy;
+  endInputEl.value = hoy;
+  await loadAndRenderMovements(
+    tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl,
+    startInputEl, endInputEl, tipoSelectEl,
+    spanIngresosEl, spanEgresosEl, spanBalanceEl
+  );
 }
+
 export function unmount() {
   moduleListeners.forEach(({ element, type, handler }) => {
     if (element && typeof element.removeEventListener === 'function') {
@@ -513,6 +512,7 @@ export function unmount() {
   });
   moduleListeners = [];
   currentSupabaseInstance = null;
-  currentModuleUser = null;
   currentHotelId = null;
+  currentModuleUser = null;
+  currentContainerEl = null;
 }
