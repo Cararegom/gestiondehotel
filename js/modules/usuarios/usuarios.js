@@ -1,5 +1,5 @@
 // js/modules/usuarios/usuarios.js
-
+console.log(">>> usuarios.js cargado");
 let currentContainerEl = null;
 let currentModuleUser = null;
 let currentSupabaseInstance = null;
@@ -163,7 +163,10 @@ async function abrirModalPermisos(usuario) {
     try {
       const resp = await fetch(EDGE_FUNC_PERMISOS, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, // <--- SOLO Content-Type
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${currentSupabaseInstance.auth.session()?.access_token}` // Se recomienda añadir autenticación
+        },
         body: JSON.stringify({ usuario_id: usuario.id, permisos: permisosSeleccionados })
       });
       const data = await resp.json();
@@ -217,6 +220,8 @@ async function cargarYRenderizarUsuarios(tbodyEl, supabaseInstance, hotelIdParaC
       .select('id, nombre, correo, activo, hotel_id, usuarios_roles ( roles (id, nombre) )')
       .eq('hotel_id', hotelIdParaCarga)
       .order('nombre', { ascending: true });
+
+    if (error) throw error;
 
     tbodyEl.innerHTML = '';
     if (!usuarios || usuarios.length === 0) {
@@ -297,12 +302,13 @@ export function unmount(container) {
     currentContainerEl.innerHTML = '';
   }
   currentContainerEl = null;
+  console.log("Módulo de usuarios desmontado y listeners limpiados.");
 }
 
 // ----------- Mount principal -----------
 
 export async function mount(container, sbInstance, user) {
-  unmount(container);
+  unmount(container); 
   currentContainerEl = container;
   currentSupabaseInstance = sbInstance;
   currentModuleUser = user;
@@ -347,7 +353,7 @@ export async function mount(container, sbInstance, user) {
               <select multiple id="usuario-roles" name="roles" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required size="3"></select>
             </div>
           </div>
-           <div class="form-group mb-4">
+            <div class="form-group mb-4">
             <div class="flex items-center">
               <input type="checkbox" id="usuario-activo" name="activo" class="form-check-input h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked>
               <label for="usuario-activo" class="ml-2 block text-sm text-gray-900">Usuario Activo</label>
@@ -379,7 +385,6 @@ export async function mount(container, sbInstance, user) {
 
   const formUsuarioEl = currentContainerEl.querySelector('#form-crear-editar-usuario');
   const tablaBodyEl = currentContainerEl.querySelector('#tabla-usuarios-body');
-  const btnGuardarEl = currentContainerEl.querySelector('#btn-guardar-usuario');
   const btnCancelarEl = currentContainerEl.querySelector('#btn-cancelar-edicion-usuario');
   const selectRolesEl = currentContainerEl.querySelector('#usuario-roles');
   const feedbackGlobalEl = currentContainerEl.querySelector('#usuarios-feedback');
@@ -398,8 +403,10 @@ export async function mount(container, sbInstance, user) {
   resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
 
   // --------- Submit crear/editar usuario ---------
+  const EDGE_FUNC_CREAR_COLABORADOR = "https://iikpqpdoslyduecibaij.supabase.co/functions/v1/crear_colaborador";
 
   const formSubmitHandler = async (event) => {
+    console.log('>>> formSubmitHandler llamado');
     event.preventDefault();
     clearUsuariosFeedback(feedbackGlobalEl);
 
@@ -429,36 +436,84 @@ export async function mount(container, sbInstance, user) {
 
     try {
       if (idEdit) {
+        // Lógica para editar usuario
         const updates = { nombre, activo, updated_at: new Date().toISOString() };
-        await currentSupabaseInstance
+        const { error: updateError } = await currentSupabaseInstance
           .from('usuarios').update(updates).eq('id', idEdit).eq('hotel_id', currentHotelId);
-        await currentSupabaseInstance.from('usuarios_roles').delete().eq('usuario_id', idEdit);
+        if (updateError) throw updateError;
+        
+        const { error: deleteRolesError } = await currentSupabaseInstance.from('usuarios_roles').delete().eq('usuario_id', idEdit);
+        if (deleteRolesError) throw deleteRolesError;
+
         if (rolesSeleccionadosIds.length > 0) {
           const rolesToInsert = rolesSeleccionadosIds.map(rolId => ({ usuario_id: idEdit, rol_id: rolId, hotel_id: currentHotelId }));
-          await currentSupabaseInstance.from('usuarios_roles').insert(rolesToInsert);
+          const { error: insertRolesError } = await currentSupabaseInstance.from('usuarios_roles').insert(rolesToInsert);
+          if (insertRolesError) throw insertRolesError;
         }
         showUsuariosFeedback(feedbackGlobalEl, 'Usuario actualizado exitosamente.', 'success-indicator');
       } else {
-        // Usa tu Edge Function o procedimiento de creación aquí si tienes
-        showUsuariosFeedback(feedbackGlobalEl, 'Creación de usuario solo soportada por Edge Function.', 'warning-indicator');
+        // --- NUEVO: Llamada a la Edge Function para crear usuario ---
+        showUsuariosFeedback(feedbackGlobalEl, 'Creando usuario...', 'info-indicator', 0);
+
+        console.log('Enviando datos a Edge Function:', {
+          nombre,
+          correo,
+          password: '***', // No loguear passwords
+          activo,
+          hotel_id: currentHotelId,
+          roles: rolesSeleccionadosIds
+        });
+        
+        const session = await currentSupabaseInstance.auth.getSession();
+
+        const resp = await fetch(EDGE_FUNC_CREAR_COLABORADOR, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.data.session.access_token}`
+          },
+          body: JSON.stringify({
+            nombre,
+            correo,
+            password,
+            activo,
+            hotel_id: currentHotelId,
+            roles: rolesSeleccionadosIds
+          })
+        });
+
+        const data = await resp.json();
+        console.log('Respuesta de la Edge Function:', data);
+
+        if (!resp.ok) throw new Error(data.error || 'No se pudo crear el usuario');
+        
+        showUsuariosFeedback(feedbackGlobalEl, 'Usuario creado exitosamente.', 'success-indicator');
       }
+
       resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
       await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
+
     } catch (err) {
       showUsuariosFeedback(feedbackGlobalEl, `Error al guardar usuario: ${err.message}`, 'error-indicator', 0);
     }
   };
-  formUsuarioEl.addEventListener('submit', formSubmitHandler);
-  moduleListeners.push({ element: formUsuarioEl, type: 'submit', handler: formSubmitHandler });
 
-  btnCancelarEl.addEventListener('click', () => {
-    resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
-    clearUsuariosFeedback(feedbackGlobalEl);
+  // ==================================================================
+  // BLOQUE CORREGIDO: Asignar el event listener al formulario
+  // ==================================================================
+  const submitHandler = (event) => formSubmitHandler(event);
+  formUsuarioEl.addEventListener('submit', submitHandler);
+  moduleListeners.push({
+    element: formUsuarioEl,
+    type: 'submit',
+    handler: submitHandler
   });
+  // ==================================================================
+
 
   // --------- Acciones tabla usuarios ---------
 
-  tablaBodyEl.addEventListener('click', async (event) => {
+  const tableClickHandler = async (event) => {
     const button = event.target.closest('button[data-accion]');
     if (!button) return;
     const usuarioId = button.dataset.id;
@@ -468,14 +523,19 @@ export async function mount(container, sbInstance, user) {
 
     if (accion === 'editar') {
       try {
-        const { data: usuarioToEdit } = await currentSupabaseInstance
+        const { data: usuarioToEdit, error } = await currentSupabaseInstance
           .from('usuarios')
           .select('*, usuarios_roles(roles(id, nombre))')
           .eq('id', usuarioId)
           .eq('hotel_id', currentHotelId)
           .single();
+        
+        if (error) throw error;
+        
         if (usuarioToEdit) {
           formUsuarioEl.elements.usuarioIdEdit.value = usuarioToEdit.id;
+          formTitleEl.textContent = 'Editar Usuario';
+          passwordGroupEl.style.display = 'none'; // Ocultar contraseña al editar
           formUsuarioEl.elements.nombre.value = usuarioToEdit.nombre || '';
           formUsuarioEl.elements.correo.value = usuarioToEdit.correo || '';
           formUsuarioEl.elements.correo.disabled = true;
@@ -497,11 +557,12 @@ export async function mount(container, sbInstance, user) {
     } else if (accion === 'toggle-activo') {
       const estadoActual = button.dataset.estadoActual === 'true';
       try {
-        await currentSupabaseInstance
+        const { error } = await currentSupabaseInstance
           .from('usuarios')
           .update({ activo: !estadoActual, updated_at: new Date().toISOString() })
           .eq('id', usuarioId)
           .eq('hotel_id', currentHotelId);
+        if (error) throw error;
         showUsuariosFeedback(feedbackGlobalEl, `Usuario ${!estadoActual ? 'activado' : 'desactivado'}.`, 'success-indicator');
         await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
       } catch (err) {
@@ -514,16 +575,24 @@ export async function mount(container, sbInstance, user) {
       }
       if (confirm(`¿Está seguro de que desea enviar un enlace de reseteo de contraseña a ${userEmail}?`)) {
         try {
-          await currentSupabaseInstance.auth.resetPasswordForEmail(userEmail);
+          const { error } = await currentSupabaseInstance.auth.resetPasswordForEmail(userEmail);
+          if (error) throw error;
           showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo de contraseña enviado a ${userEmail}.`, 'success-indicator');
         } catch (err) {
           showUsuariosFeedback(feedbackGlobalEl, `Error al enviar enlace de reseteo: ${err.message}`, 'error-indicator', 0);
         }
       }
     } else if (accion === 'permisos') {
-      // Abrir modal permisos
       const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo };
       await abrirModalPermisos(usuario);
     }
+  };
+
+  tablaBodyEl.addEventListener('click', tableClickHandler);
+  moduleListeners.push({ element: tablaBodyEl, type: 'click', handler: tableClickHandler });
+
+  btnCancelarEl.addEventListener('click', () => {
+    resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
   });
+  moduleListeners.push({ element: btnCancelarEl, type: 'click', handler: () => resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl) });
 }

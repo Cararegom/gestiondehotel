@@ -1,4 +1,4 @@
-// js/services/BitacoraService.js
+// js/services/bitacoraservice.js
 
 /**
  * Servicio universal para registrar movimientos en la bitácora del sistema hotelero.
