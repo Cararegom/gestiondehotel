@@ -185,6 +185,7 @@ function resetearFormularioTiempoEstancia(formEl, btnCancelarEl) {
   formEl.elements.nombreTiempo.focus();
 }
 
+
 // --- CAMBIO IMPORTANTE: Si el nombre contiene "noche", minutos se calculan según los horarios de hotel configurados
 async function handleTiempoEstanciaSubmit(event, formEl, tbodyEl, feedbackEl, btnGuardarEl, btnCancelarEl) {
     event.preventDefault();
@@ -287,17 +288,32 @@ async function renderHabitaciones(habitacionesContainer, supabaseInst, hotelId, 
   if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
 
   try {
-    const { data: habitaciones, error } = await supabaseInst
-      .from('habitaciones')
-      .select(`
-        id, nombre, tipo, precio, estado, activo, amenidades,
-        habitacion_tiempos_permitidos (
-          tiempo_estancia_id,
-          tiempos_estancia (id, nombre, minutos)
-        )
-      `)
-      .eq('hotel_id', hotelId)
-      .order('nombre', { ascending: true });
+  const { data: habitaciones, error } = await supabaseInst
+    .from('habitaciones')
+    .select(`
+      id, nombre, tipo, precio, estado, activo, amenidades,
+      habitacion_tiempos_permitidos (
+        tiempo_estancia_id,
+        tiempos_estancia (id, nombre, minutos)
+      )
+    `)
+    .eq('hotel_id', hotelId)
+    .order('nombre', { ascending: true });
+
+  if (error) throw error;
+  habitacionesContainer.innerHTML = '';
+
+  // --- Ordena numéricamente por el número de habitación extraído del nombre ---
+  habitaciones.sort((a, b) => {
+    const getNumber = nombre => {
+      const match = nombre.match(/\d+/);
+      return match ? parseInt(match[0], 10) : 0;
+    };
+    return getNumber(a.nombre) - getNumber(b.nombre);
+  });
+
+  // ...el resto de tu lógica de render
+
 
     if (error) throw error;
     habitacionesContainer.innerHTML = '';
@@ -381,17 +397,27 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
         formEl.elements.nombre.focus();
         return;
     }
+    
     const precioInput = formData.get('precio');
-    const precioHabitacion = precioInput !== '' && !isNaN(parseFloat(precioInput)) ? parseFloat(precioInput) : null;
-    const habitacionPayload = {
-      nombre: nombreHabitacion,
-      tipo: formData.get('tipo')?.trim() || null,
-      precio: precioHabitacion,
-      estado: formData.get('estado'),
-      amenidades: formData.get('amenidades')?.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) || null,
-      hotel_id: currentHotelId,
-      activo: formEl.elements.activo.checked
-    };
+const precioHabitacion = precioInput !== '' && !isNaN(parseFloat(precioInput)) ? parseFloat(precioInput) : null;
+
+const precioAdicionalHuesped = formData.get('precio_adicional_huesped');
+const precioAdicional = precioAdicionalHuesped !== '' && !isNaN(parseFloat(precioAdicionalHuesped))
+  ? parseFloat(precioAdicionalHuesped)
+  : 0;
+
+const habitacionPayload = {
+  nombre: nombreHabitacion,
+  tipo: formData.get('tipo')?.trim() || null,
+  precio: precioHabitacion,
+  precio_adicional_huesped: precioAdicional,  // ← ¡Aquí está el nuevo campo!
+  estado: formData.get('estado'),
+  amenidades: formData.get('amenidades')?.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) || null,
+  hotel_id: currentHotelId,
+  activo: formEl.elements.activo.checked
+};
+
+
     const selectedTiempoIds = Array.from(selectTiemposEl.selectedOptions).map(o => o.value);
     const editId = formData.get('habitacionIdEdit');
     const originalButtonText = btnGuardarEl.textContent;
@@ -490,37 +516,131 @@ export async function mount(container, supabaseInst, user) {
   currentHotelId = tempHotelId;
 
   container.innerHTML = `
-    <div class="card habitaciones-module shadow-lg rounded-lg">
-      <div class="card-header bg-gray-100 p-4 border-b">
-        <h2 class="text-xl font-semibold text-gray-800">Gestión de Hotel: Habitaciones y Tiempos de Estancia</h2>
+    <div class="card habitaciones-module shadow-lg rounded-2xl overflow-hidden">
+  <div class="card-header bg-gradient-to-tr from-blue-50 to-white p-5 border-b border-blue-100">
+    <h2 class="text-2xl font-bold text-blue-900 tracking-tight flex items-center gap-2">
+      <svg width="28" height="28" fill="none" stroke="#2061a9" stroke-width="2" viewBox="0 0 24 24" class="inline"><rect x="4" y="9" width="16" height="7" rx="2" stroke="#2061a9" stroke-width="2"/><path d="M8 9V7a4 4 0 1 1 8 0v2" stroke="#2061a9" stroke-width="2"/><circle cx="8.5" cy="13.5" r="1" fill="#2061a9"/><circle cx="15.5" cy="13.5" r="1" fill="#2061a9"/></svg>
+      Gestión de Hotel: Habitaciones y Tiempos de Estancia
+    </h2>
+  </div>
+  <div class="card-body p-6 md:p-10 space-y-10 bg-gradient-to-tr from-blue-50 via-white to-white">
+    <div id="habitaciones-global-feedback" role="status" aria-live="polite" class="feedback-message mb-3" style="min-height: 24px;"></div>
+    <div id="config-horarios-hotel"></div>
+
+    <!-- TIEMPOS DE ESTANCIA -->
+    <section id="section-tiempos-estancia" class="p-6 border border-blue-100 rounded-2xl bg-white shadow mb-6">
+      <h3 class="text-xl font-bold text-blue-800 mb-5 flex items-center gap-2">
+        <svg width="20" height="20" fill="none" stroke="#2061a9" stroke-width="2" viewBox="0 0 24 24" class="inline"><rect x="4" y="9" width="16" height="7" rx="2" stroke="#2061a9" stroke-width="2"/><path d="M8 9V7a4 4 0 1 1 8 0v2" stroke="#2061a9" stroke-width="2"/><circle cx="8.5" cy="13.5" r="1" fill="#2061a9"/><circle cx="15.5" cy="13.5" r="1" fill="#2061a9"/></svg>
+        Administrar Tiempos de Estancia
+      </h3>
+      <form id="form-tiempo-estancia" class="form space-y-3 mb-6 bg-blue-50 rounded-xl p-5" novalidate>
+        <input type="hidden" id="tiempoEstanciaIdEdit" name="tiempoEstanciaIdEdit" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+
+          <div>
+            <label for="nombreTiempo" class="block text-base font-semibold text-blue-900 mb-1">Nombre del Tiempo *</label>
+            <input type="text" id="nombreTiempo" name="nombreTiempo" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" required maxlength="100" placeholder="Ej: 6 Horas, Noche Completa"/>
+          </div>
+          <div>
+            <label for="minutosTiempo" class="block text-base font-semibold text-blue-900 mb-1">Duración (Minutos) *</label>
+            <input type="number" id="minutosTiempo" name="minutosTiempo" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" required min="1" placeholder="Ej: 360"/>
+          </div>
+          <div>
+            <label for="precioAdicionalTiempo" class="block text-base font-semibold text-blue-900 mb-1">Precio Adicional (Opcional)</label>
+            <input type="number" id="precioAdicionalTiempo" name="precioAdicionalTiempo" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" min="0" step="0.01" placeholder="0.00"/>
+          </div>
+        </div>
+        <div class="form-group flex items-center mt-2">
+          <input type="checkbox" id="activoTiempo" name="activoTiempo" class="form-check-input h-5 w-5 text-blue-700 border-gray-300 rounded focus:ring-2 focus:ring-blue-200 mr-2" checked />
+          <label for="activoTiempo" class="text-base font-semibold text-blue-900">Activo</label>
+        </div>
+        <div class="form-actions flex items-center gap-3 mt-2">
+          <button type="submit" id="btn-guardar-tiempo-estancia" class="button bg-blue-700 hover:bg-blue-900 text-white py-2 px-6 rounded-xl shadow transition-all duration-200 text-base font-semibold">＋ Crear Tiempo</button>
+          <button type="button" id="btn-cancelar-edicion-tiempo" class="button bg-white border border-blue-300 text-blue-800 py-2 px-6 rounded-xl shadow hover:bg-blue-50 transition-all duration-200 text-base font-semibold" style="display:none;">Cancelar</button>
+        </div>
+      </form>
+      <h4 class="text-lg font-semibold text-blue-700 mb-2">Tiempos de Estancia Existentes</h4>
+      <div class="table-container overflow-x-auto rounded-xl border border-blue-100 shadow">
+        <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
+          <thead class="bg-blue-50">
+            <tr>
+              <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Nombre</th>
+              <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Duración</th>
+              <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Precio Adic.</th>
+              <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Estado</th>
+              <th class="px-4 py-2 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="tabla-tiempos-estancia-body" class="bg-white divide-y divide-gray-200"></tbody>
+        </table>
       </div>
-      <div class="card-body p-4 md:p-6 space-y-8">
-        <div id="habitaciones-global-feedback" role="status" aria-live="polite" class="feedback-message mb-3" style="min-height: 24px;"></div>
-        <div id="config-horarios-hotel"></div>
-        <section id="section-tiempos-estancia" class="p-4 border rounded-md bg-gray-50 shadow-sm">
-          <h3 class="text-lg font-semibold text-gray-700 mb-3">Administrar Tiempos de Estancia</h3>
-          <form id="form-tiempo-estancia" class="form space-y-3 mb-4" novalidate>
-            <input type="hidden" id="tiempoEstanciaIdEdit" name="tiempoEstanciaIdEdit" />
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div><label for="nombreTiempo" class="block text-sm font-medium text-gray-600">Nombre del Tiempo *</label><input type="text" id="nombreTiempo" name="nombreTiempo" class="form-control mt-1" required maxlength="100" placeholder="Ej: 6 Horas, Noche Completa"/></div>
-              <div><label for="minutosTiempo" class="block text-sm font-medium text-gray-600">Duración (Minutos) *</label><input type="number" id="minutosTiempo" name="minutosTiempo" class="form-control mt-1" required min="1" placeholder="Ej: 360"/></div>
-              <div><label for="precioAdicionalTiempo" class="block text-sm font-medium text-gray-600">Precio Adicional (Opcional)</label><input type="number" id="precioAdicionalTiempo" name="precioAdicionalTiempo" class="form-control mt-1" min="0" step="0.01" placeholder="0.00"/></div>
-            </div>
-            <div class="form-group flex items-center"><input type="checkbox" id="activoTiempo" name="activoTiempo" class="form-check-input h-4 w-4 mr-2" checked /><label for="activoTiempo" class="text-sm font-medium text-gray-700">Activo</label></div>
-            <div class="form-actions flex items-center gap-3"><button type="submit" id="btn-guardar-tiempo-estancia" class="button button-primary text-sm py-2 px-3 rounded-md">＋ Crear Tiempo</button><button type="button" id="btn-cancelar-edicion-tiempo" class="button button-outline text-sm py-2 px-3 rounded-md" style="display:none;">Cancelar</button></div>
-          </form>
-          <h4 class="text-md font-medium text-gray-600 mb-2">Tiempos de Estancia Existentes</h4>
-          <div class="table-container overflow-x-auto"><table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duración</th><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio Adic.</th><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th></tr></thead><tbody id="tabla-tiempos-estancia-body" class="bg-white divide-y divide-gray-200"></tbody></table></div>
-        </section>
-        <hr class="my-8 border-t-2 border-gray-300"/>
-        <section id="section-habitaciones" class="p-4 border rounded-md bg-gray-50 shadow-sm">
-          <h3 class="text-lg font-semibold text-gray-700 mb-3">Administrar Habitaciones</h3>
-          <form id="form-crear-habitacion" class="form mb-6" novalidate><input type="hidden" name="habitacionIdEdit" /><div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3"><div><label for="hab-nombre" class="block text-sm font-medium text-gray-700">Nombre Habitación *</label><input type="text" name="nombre" id="hab-nombre" class="form-control mt-1" required /></div><div><label for="hab-tipo" class="block text-sm font-medium text-gray-700">Tipo</label><input type="text" name="tipo" id="hab-tipo" class="form-control mt-1" /></div><div><label for="hab-precio" class="block text-sm font-medium text-gray-700">Precio Base *</label><input type="number" name="precio" id="hab-precio" class="form-control mt-1" min="0" step="0.01" required /></div></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3"><div><label for="hab-estado" class="block text-sm font-medium text-gray-700">Estado Inicial *</label><select name="estado" id="hab-estado" class="form-control mt-1" required><option value="libre">Libre</option><option value="limpieza">En Limpieza</option><option value="mantenimiento">En Mantenimiento</option><option value="bloqueada">Bloqueada</option></select></div><div><label for="hab-amenidades" class="block text-sm font-medium text-gray-700">Amenidades (separadas por coma)</label><input type="text" name="amenidades" id="hab-amenidades" class="form-control mt-1" placeholder="Ej: Wifi, TV, AC" /></div></div><div class="form-group mb-3"><label for="habitacion-tiempos-estancia" class="block text-sm font-medium text-gray-700">Tiempos de Estancia Permitidos</label><select multiple name="tiempos_estancia_ids_select" id="habitacion-tiempos-estancia" class="form-control mt-1" size="4"></select><small class="text-xs text-gray-500">Mantén Ctrl (o Cmd en Mac) para seleccionar múltiples.</small></div><div class="form-group mb-4 flex items-center"><input type="checkbox" id="hab-activo" name="activo" class="form-check-input h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked /><label for="hab-activo" class="ml-2 block text-sm text-gray-900">Activa</label></div><div class="form-actions flex items-center gap-3"><button type="submit" id="btn-guardar-habitacion" class="button button-primary py-2 px-3 rounded-md text-sm">＋ Crear Habitación</button><button type="button" id="btn-cancelar-edicion-habitacion" class="button button-outline py-2 px-3 rounded-md text-sm" style="display:none;">Cancelar Edición</button></div></form>
-          <h4 class="text-md font-medium text-gray-600 mb-2">Listado de Habitaciones Existentes</h4>
-          <div id="habitaciones-lista-container" class="grid-habitaciones grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"></div>
-        </section>
-      </div>
-    </div>`;
+    </section>
+
+    <hr class="my-8 border-t-2 border-blue-100"/>
+
+    <!-- HABITACIONES -->
+    <section id="section-habitaciones" class="p-6 border border-blue-100 rounded-2xl bg-white shadow">
+      <h3 class="text-xl font-bold text-blue-900 mb-5 flex items-center gap-2">
+        <svg width="24" height="24" fill="none" stroke="#2061a9" stroke-width="2" viewBox="0 0 24 24" class="inline"><rect x="4" y="9" width="16" height="7" rx="2" stroke="#2061a9" stroke-width="2"/><path d="M8 9V7a4 4 0 1 1 8 0v2" stroke="#2061a9" stroke-width="2"/><circle cx="8.5" cy="13.5" r="1" fill="#2061a9"/><circle cx="15.5" cy="13.5" r="1" fill="#2061a9"/></svg>
+        Administrar Habitaciones
+      </h3>
+      <form id="form-crear-habitacion" class="form mb-8 bg-blue-50 rounded-xl p-6 space-y-5" novalidate>
+        <input type="hidden" name="habitacionIdEdit" />
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div>
+            <label for="hab-nombre" class="block text-base font-semibold text-blue-900 mb-1">Nombre Habitación *</label>
+            <input type="text" name="nombre" id="hab-nombre" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" required />
+          </div>
+          <div>
+            <label for="hab-tipo" class="block text-base font-semibold text-blue-900 mb-1">Tipo</label>
+            <input type="text" name="tipo" id="hab-tipo" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
+          </div>
+          <div>
+            <label for="hab-precio" class="block text-base font-semibold text-blue-900 mb-1">Precio Base *</label>
+            <input type="number" name="precio" id="hab-precio" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" min="0" step="0.01" required />
+          </div>
+          <div>
+            <label for="hab-precio-adicional" class="block text-base font-semibold text-blue-900 mb-1">Precio por huésped adicional</label>
+            <input type="number" name="precio_adicional_huesped" id="hab-precio-adicional" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" min="0" step="0.01" placeholder="0.00" />
+            <small class="text-xs text-blue-700">Se aplica desde la 3ra persona</small>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <label for="hab-estado" class="block text-base font-semibold text-blue-900 mb-1">Estado Inicial *</label>
+            <select name="estado" id="hab-estado" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" required>
+              <option value="libre">Libre</option>
+              <option value="limpieza">En Limpieza</option>
+              <option value="mantenimiento">En Mantenimiento</option>
+              <option value="bloqueada">Bloqueada</option>
+            </select>
+          </div>
+          <div>
+            <label for="hab-amenidades" class="block text-base font-semibold text-blue-900 mb-1">Amenidades (separadas por coma)</label>
+            <input type="text" name="amenidades" id="hab-amenidades" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Ej: Wifi, TV, AC" />
+          </div>
+        </div>
+        <div class="mb-3">
+          <label for="habitacion-tiempos-estancia" class="block text-base font-semibold text-blue-900 mb-1">Tiempos de Estancia Permitidos</label>
+          <select multiple name="tiempos_estancia_ids_select" id="habitacion-tiempos-estancia" class="form-control w-full rounded-lg border-gray-300 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-100" size="4"></select>
+          <small class="text-xs text-blue-700">Mantén Ctrl (o Cmd en Mac) para seleccionar múltiples.</small>
+        </div>
+        <div class="flex items-center mb-3 space-x-2">
+          <input type="checkbox" id="hab-activo" name="activo" class="form-check-input h-5 w-5 text-blue-700 border-gray-300 rounded focus:ring-2 focus:ring-blue-200" checked />
+          <label for="hab-activo" class="block text-base font-semibold text-blue-900">Activa</label>
+        </div>
+        <div class="flex items-center gap-4 mt-6">
+          <button type="submit" id="btn-guardar-habitacion" class="button bg-blue-700 hover:bg-blue-900 text-white py-2 px-6 rounded-xl shadow transition-all duration-200 text-base font-semibold">＋ Crear Habitación</button>
+          <button type="button" id="btn-cancelar-edicion-habitacion" class="button bg-white border border-blue-300 text-blue-800 py-2 px-6 rounded-xl shadow hover:bg-blue-50 transition-all duration-200 text-base font-semibold" style="display:none;">Cancelar Edición</button>
+        </div>
+      </form>
+      <h4 class="text-lg font-semibold text-blue-700 mb-4 mt-8">Listado de Habitaciones Existentes</h4>
+      <div id="habitaciones-lista-container" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+
+    </section>
+  </div>
+</div>
+`;
 
   const feedbackGlobalEl = container.querySelector('#habitaciones-global-feedback');
   const configHorariosEl = container.querySelector('#config-horarios-hotel');

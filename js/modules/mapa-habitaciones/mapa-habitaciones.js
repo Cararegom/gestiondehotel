@@ -119,50 +119,33 @@ async function getMetodosPago(supabase, hotelId) {
 }
 
 // ======================= LÓGICA DE RENDERIZADO DE HABITACIONES ===========================
+
 export async function mount(container, supabase, currentUser, hotelId) {
     containerGlobal = container;
     supabaseGlobal = supabase;
     currentUserGlobal = currentUser;
     hotelIdGlobal = hotelId;
 
+    // Pinta el HTML base primero
     container.innerHTML = `
         <div class="mb-8 px-4 md:px-0">
             <h2 class="text-3xl font-bold text-gray-800 flex items-center">
                 Mapa de Habitaciones
             </h2>
         </div>
-        <div id="room-map-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-4 md:px-0"></div>
+        <div id="room-map-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 px-4 md:px-0"></div>
         <div id="modal-container" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto" style="display:none;"></div>
     `;
 
-    // IMPORTANTE: el roomsListEl se busca después de inyectar el HTML
+    // Selecciona el contenedor de habitaciones después de inyectar el HTML
     const roomsListEl = container.querySelector("#room-map-list");
     if (!roomsListEl) {
         console.error("No se encontró el div #room-map-list dentro del container. Corrige el template HTML.");
         return;
     }
 
-    // Llama a renderRooms pasando el roomsListEl
+    // Llama a renderRooms para pintar las tarjetas
     await renderRooms(roomsListEl, supabase, currentUser, hotelId);
-}
-
-
-
-
-document.addEventListener('datosActualizados', () => {
-    // Solo refresca si todo está listo
-    if (containerGlobal && supabaseGlobal && currentUserGlobal && hotelIdGlobal) {
-        renderRooms(containerGlobal, supabaseGlobal, currentUserGlobal, hotelIdGlobal);
-    }
-});
-export function unmount() {
-    Object.values(cronometrosInterval).forEach(clearInterval);
-    cronometrosInterval = {};
-    const modalContainer = document.getElementById('modal-container');
-    if (modalContainer) {
-      modalContainer.style.display = 'none';
-      modalContainer.innerHTML = '';
-    }
 }
 
 async function renderRooms(listEl, supabase, currentUser, hotelId) {
@@ -174,7 +157,7 @@ async function renderRooms(listEl, supabase, currentUser, hotelId) {
 
     const { data: habitaciones, error } = await supabase
         .from('habitaciones')
-        .select('*, precio') 
+        .select('*, precio')
         .eq('hotel_id', hotelId)
         .order('nombre', { ascending: true });
 
@@ -191,6 +174,19 @@ async function renderRooms(listEl, supabase, currentUser, hotelId) {
         return;
     }
 
+    // ---- ORDEN NUMÉRICO DE HABITACIONES POR NOMBRE ----
+    habitaciones.sort((a, b) => {
+        const getNumber = nombre => {
+            const match = nombre.match(/\d+/);
+            return match ? parseInt(match[0], 10) : 0;
+        };
+        return getNumber(a.nombre) - getNumber(b.nombre);
+    });
+
+    // (Opcional) Log para verificar el orden
+    console.log("Habitaciones a renderizar:", habitaciones.map(h => h.nombre));
+
+    // ---- RENDER DE LAS TARJETAS ----
     habitaciones.forEach(room => {
         listEl.appendChild(roomCard(room, supabase, currentUser, hotelId, listEl));
         if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
@@ -671,6 +667,14 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNoche
     let tipoCalculo = null; 
     let cantidadCalculo = 0;
 
+    // 1. Obtén la cantidad de personas (default 2 si no viene)
+    const cantidadPersonas = dataForm.cantidad_personas ? parseInt(dataForm.cantidad_personas) : 2;
+    const precioAdicional = room.precio_adicional_huesped || 0;
+    let adicionales = 0;
+    if (cantidadPersonas > 2) {
+        adicionales = cantidadPersonas - 2;
+    }
+
     const precioNocheHabitacionFallback = room.precio || 20000; 
 
     const nochesSeleccionadasInput = dataForm.noches_personalizada && dataForm.noches_personalizada.trim() !== ''
@@ -702,6 +706,10 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNoche
         } else {
             precio = precioNocheHabitacionFallback * nochesSeleccionadas; 
         }
+        // --- Suma extra por personas ---
+        if (adicionales > 0 && precioAdicional > 0) {
+            precio += adicionales * precioAdicional * nochesSeleccionadas; // Aplica por cada noche
+        }
         descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''} (hasta ${formatDateTime(finAt, undefined, {dateStyle:'short', timeStyle:'short'})})`;
 
     } else if (minutosSeleccionados > 0) {
@@ -721,6 +729,10 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNoche
 
         if (precioHoras > 0) {
             precio = precioHoras;
+            // --- Suma extra por personas ---
+            if (adicionales > 0 && precioAdicional > 0) {
+                precio += adicionales * precioAdicional; // Solo por la estancia, no por noche
+            }
             descripcionEstancia = `${formatHorasMin(minutosSeleccionados)}`;
         } else {
             precio = 0; 
@@ -747,6 +759,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNoche
         cantidadCalculo 
     };
 }
+
 
 // ===================== MODAL DE ALQUILER (POS STYLE - COMPLETO) =====================
 async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer) {
@@ -814,9 +827,10 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                         </div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div><label for="cantidad_huespedes" class="form-label">Cant. Huéspedes</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" max="${room.capacidad_maxima || 10}" value="1"></div>
+                        <div><label for="cantidad_huespedes" class="form-label">Cant. Huéspedes</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" max="${room.capacidad_maxima || 10}" value="2"></div>
                         <div><label for="metodo_pago_id" class="form-label">Método de Pago</label><select required name="metodo_pago_id" id="metodo_pago_id" class="form-control"><option value="">-- Seleccionar --</option>${metodosPago.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}</select></div>
                     </div>
+                    
                      <div class="pt-3"><button type="submit" class="button button-success w-full py-3 text-lg font-semibold">Confirmar y Registrar Alquiler</button></div>
                 </form>
             </div>
@@ -837,7 +851,27 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         </div>
     `;
     modalContainer.appendChild(modalContent);
-    
+    document.getElementById('cantidad_huespedes').addEventListener('input', function() {
+  actualizarTotalHabitacion();
+});
+
+// Si tienes un input para horas o noches, también pon un listener para ellos,
+// así cada vez que cambie el tiempo o huéspedes, recalculas.
+
+function actualizarTotalHabitacion() {
+  // Construye el dataForm según los valores actuales del formulario/modal
+  const dataForm = {
+    // ...otros campos según tu lógica
+    cantidad_personas: parseInt(document.getElementById('cantidad_huespedes').value, 10) || 1,
+    // ejemplo: horas: parseInt(document.getElementById('input-horas').value) || 0,
+    // ejemplo: noches: parseInt(document.getElementById('input-noches').value) || 0,
+    // etc.
+  };
+  // Usa el room seleccionado y tus variables tiempos, horarios, tarifaNocheUnica...
+  const detalles = calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNocheUnica);
+  document.getElementById('total-habitacion').textContent = `Total: $${detalles.precioTotal.toLocaleString()}`;
+}
+
     const formEl = modalContent.querySelector('#alquilar-form-pos');
     const selectNochesEl = modalContent.querySelector('#select-noches');
     const inputNochesPersonalizadaEl = modalContent.querySelector('#input-noches-personalizada');

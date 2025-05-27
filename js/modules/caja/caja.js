@@ -6,9 +6,9 @@ import {
   formatDateTime,
   showGlobalLoading,
   hideGlobalLoading,
-  setFormLoadingState 
+  setFormLoadingState,
+  showSuccess
 } from '../../uiUtils.js';
-
 
 let moduleListeners = [];
 let currentSupabaseInstance = null;
@@ -55,34 +55,52 @@ function generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, bala
 }
 
 async function enviarReporteCierreCaja({ correos, asunto, htmlReporte, feedbackEl }) {
-  console.log("Enviando reporte a Make.com. Payload:", { to: correos, subject: asunto, html: htmlReporte ? 'HTML Presente' : 'HTML Ausente' });
-  const btnCierreCaja = currentContainerEl.querySelector('#btn-cierre-caja'); // Obtener referencia al botón
-  if (btnCierreCaja) btnCierreCaja.disabled = true; // Deshabilitar botón
-
+  const btnCierreCaja = currentContainerEl.querySelector('#btn-cierre-caja');
+  if (btnCierreCaja) btnCierreCaja.disabled = true;
   try {
     const response = await fetch(EMAIL_REPORT_ENDPOINT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        to: correos, 
+        to: correos,
         subject: asunto,
         html: htmlReporte
       })
     });
     if (response.ok) {
-      const responseText = await response.text(); 
-      console.log("Respuesta de Make.com (OK):", responseText);
-      showError(feedbackEl, '¡Reporte de cierre de caja enviado exitosamente!', 'success-indicator'); 
+      showSuccess(feedbackEl, '¡Reporte de cierre de caja enviado exitosamente!', "success-indicator");
     } else {
       const errorData = await response.text();
-      console.error('Error de Make.com:', response.status, errorData);
       showError(feedbackEl, `No se pudo enviar el reporte por email (Error ${response.status}): ${errorData}. Revise la consola.`);
     }
   } catch (error) {
-    console.error('Error al enviar el reporte a Make.com:', error);
     showError(feedbackEl, 'Error de red al enviar el reporte: ' + error.message);
   } finally {
-    if (btnCierreCaja) btnCierreCaja.disabled = false; // Reactivar el botón
+    if (btnCierreCaja) btnCierreCaja.disabled = false;
+  }
+}
+
+async function cancelarMovimientoCaja(
+  movimientoId, feedbackEl, tBodyEl, supabaseInst, hotelId, feedbackGlobalEl,
+  startInputEl, endInputEl, tipoSelectEl, spanIngresosEl, spanEgresosEl, spanBalanceEl
+) {
+  showGlobalLoading('Cancelando movimiento...');
+  try {
+    const { error } = await supabaseInst
+      .from('caja')
+      .delete()
+      .eq('id', movimientoId)
+      .eq('hotel_id', hotelId);
+    if (error) throw error;
+    showSuccess(feedbackEl, '¡Movimiento cancelado exitosamente!');
+    await loadAndRenderMovements(
+      tBodyEl, supabaseInst, hotelId, feedbackGlobalEl,
+      startInputEl, endInputEl, tipoSelectEl, spanIngresosEl, spanEgresosEl, spanBalanceEl
+    );
+  } catch (err) {
+    showError(feedbackEl, 'Error al cancelar el movimiento: ' + (err.message || err));
+  } finally {
+    hideGlobalLoading();
   }
 }
 
@@ -92,14 +110,11 @@ async function loadAndRenderMovements(
   spanIngresosEl, spanEgresosEl, spanBalanceEl
 ) {
   if (!tBodyEl || !supabaseInst || !hotelId || !feedbackGlobalEl || !startInputEl || !endInputEl || !tipoSelectEl || !spanIngresosEl || !spanEgresosEl || !spanBalanceEl) {
-      console.error("loadAndRenderMovements: Faltan uno o más elementos DOM o parámetros.");
-      if (feedbackGlobalEl) showError(feedbackGlobalEl, "Error interno: No se pueden cargar movimientos (elementos faltantes).");
-      return;
+    if (feedbackGlobalEl) showError(feedbackGlobalEl, "Error interno: No se pueden cargar movimientos (elementos faltantes).");
+    return;
   }
-
-  tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-1">Cargando movimientos...</td></tr>`;
+  tBodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-1">Cargando movimientos...</td></tr>`;
   clearFeedback(feedbackGlobalEl);
-
   try {
     let query = supabaseInst
       .from('caja')
@@ -122,14 +137,16 @@ async function loadAndRenderMovements(
 
     let ingresos = 0, egresos = 0;
     tBodyEl.innerHTML = '';
-
     if (!movements || movements.length === 0) {
-      tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-1">No hay movimientos registrados para los filtros seleccionados.</td></tr>`;
+      tBodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-1">No hay movimientos registrados para los filtros seleccionados.</td></tr>`;
     } else {
+      // ---- AQUI DETERMINA SI ES ADMIN ----
+      const esAdmin = ['admin', 'superadmin'].includes(
+        currentModuleUser?.rol || ''
+      );
       movements.forEach(mv => {
         if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
         else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
-
         const userName = mv.usuarios?.nombre || (mv.usuario_id ? `ID: ${mv.usuario_id.slice(0, 8)}...` : 'Sistema');
         const metodoPagoNombre = mv.metodos_pago?.nombre || 'N/A';
         const tr = document.createElement('tr');
@@ -145,19 +162,43 @@ async function loadAndRenderMovements(
           <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
           <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${userName}</td>
           <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${metodoPagoNombre}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm">
+            ${esAdmin && (mv.tipo === 'ingreso' || mv.tipo === 'egreso')
+              ? `<button class="btn-cancelar-movimiento px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-700" data-id="${mv.id}">Cancelar</button>`
+              : ''
+            }
+          </td>
         `;
+        if (esAdmin && (mv.tipo === 'ingreso' || mv.tipo === 'egreso')) {
+          tr.querySelector('.btn-cancelar-movimiento').onclick = async () => {
+            if (confirm('¿Seguro que quieres cancelar este movimiento? Esta acción no se puede deshacer.')) {
+              await cancelarMovimientoCaja(
+                mv.id,
+                feedbackGlobalEl,
+                tBodyEl,
+                supabaseInst,
+                hotelId,
+                feedbackGlobalEl,
+                startInputEl,
+                endInputEl,
+                tipoSelectEl,
+                spanIngresosEl,
+                spanEgresosEl,
+                spanBalanceEl
+              );
+            }
+          };
+        }
         tBodyEl.appendChild(tr);
       });
     }
-
     spanIngresosEl.textContent = formatCurrency(ingresos);
     spanEgresosEl.textContent = formatCurrency(egresos);
     const balance = ingresos - egresos;
     spanBalanceEl.textContent = formatCurrency(balance);
     spanBalanceEl.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
   } catch (err) {
-    console.error("Error en loadAndRenderMovements:", err);
-    tBodyEl.innerHTML = `<tr><td colspan="6" class="text-red-600 text-center p-1">Error al cargar movimientos: ${err.message}</td></tr>`;
+    tBodyEl.innerHTML = `<tr><td colspan="7" class="text-red-600 text-center p-1">Error al cargar movimientos: ${err.message}</td></tr>`;
     showError(feedbackGlobalEl, `Error al cargar datos de caja: ${err.message}`);
   }
 }
@@ -169,12 +210,10 @@ async function popularMetodosPagoSelect(selectEl, supabaseInst, feedbackGlobalEl
     const { data: metodos, error } = await supabaseInst
       .from('metodos_pago')
       .select('id, nombre')
-      .eq('hotel_id', currentHotelId) 
+      .eq('hotel_id', currentHotelId)
       .eq('activo', true)
       .order('nombre');
-
     if (error) throw error;
-
     if (metodos && metodos.length > 0) {
       selectEl.innerHTML = `<option value="">-- Seleccione un método --</option>` +
         metodos.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
@@ -188,26 +227,50 @@ async function popularMetodosPagoSelect(selectEl, supabaseInst, feedbackGlobalEl
 }
 
 export async function mount(container, supabaseInst, user) {
-  console.log("[Caja/mount] Iniciando montaje...");
-  unmount(); 
+  unmount();
 
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
-  currentHotelId = currentModuleUser?.user_metadata?.hotel_id;
 
-  if (!currentHotelId && currentModuleUser?.id) {
-    try {
-      const { data: perfil, error: perfilError } = await currentSupabaseInstance
-        .from('usuarios').select('hotel_id').eq('id', currentModuleUser.id).single();
-      if (perfilError && perfilError.code !== 'PGRST116') throw perfilError;
-      currentHotelId = perfil?.hotel_id;
-    } catch (err) {
-      console.error("Caja Module: Error fetching hotel_id from profile:", err);
+  // --- CONSULTA el rol y hotel_id desde la tabla usuarios ---
+  try {
+    const { data: usuarioDB, error } = await currentSupabaseInstance
+      .from('usuarios')
+      .select('rol, hotel_id')
+      .eq('correo', currentModuleUser.email)
+      .maybeSingle();
+    if (!error && usuarioDB) {
+      currentModuleUser.rol = usuarioDB.rol;
+      currentModuleUser.hotel_id = usuarioDB.hotel_id;
+      currentHotelId = usuarioDB.hotel_id;
+      console.log("Rol traído de la BD:", currentModuleUser.rol);
+      console.log("Hotel_id traído de la BD:", currentModuleUser.hotel_id);
+    } else {
+      console.warn("No se pudo traer el rol/hotel_id de la BD, usando 'usuario' y hotel_id null por defecto.");
+      currentModuleUser.rol = "usuario";
+      currentModuleUser.hotel_id = null;
+      currentHotelId = null;
     }
+  } catch (err) {
+    console.warn("Error al consultar el rol/hotel_id de la BD, usando 'usuario' y hotel_id null por defecto.");
+    currentModuleUser.rol = "usuario";
+    currentModuleUser.hotel_id = null;
+    currentHotelId = null;
   }
-  console.log("[Caja/mount] Hotel ID:", currentHotelId);
 
+  // Si sigue vacío, intenta leer de los metadatos
+  if (!currentHotelId) {
+    currentHotelId = currentModuleUser?.user_metadata?.hotel_id || null;
+  }
+
+  // Debug
+  console.log("currentModuleUser:", currentModuleUser);
+  console.log("currentModuleUser.rol:", currentModuleUser.rol);
+  console.log("currentModuleUser.hotel_id:", currentModuleUser.hotel_id);
+  console.log("currentHotelId:", currentHotelId);
+
+  // Resto del código igual:
   container.innerHTML = `
     <div class="card caja-module shadow-lg rounded-lg">
       <div class="card-header bg-gray-100 p-4 border-b flex justify-between items-center">
@@ -216,7 +279,6 @@ export async function mount(container, supabaseInst, user) {
       </div>
       <div class="card-body p-4 md:p-6">
         <div id="caja-global-feedback" role="status" aria-live="polite" class="feedback-message mb-4" style="min-height: 24px;"></div>
-        
         <form id="caja-filtros-form" class="mb-6 p-4 border rounded-md bg-gray-50 shadow-sm">
           <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
             <div><label for="caja-filter-start" class="block text-sm font-medium text-gray-700">Desde:</label><input type="date" id="caja-filter-start" class="form-control mt-1 text-sm" /></div>
@@ -225,13 +287,11 @@ export async function mount(container, supabaseInst, user) {
             <button type="submit" class="button button-primary py-2 px-4 rounded-md text-sm">Filtrar</button>
           </div>
         </form>
-
         <div class="caja-resumen grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
           <div class="p-3 bg-green-50 rounded-md shadow"><span class="block text-sm text-gray-500">Ingresos Totales</span><span id="caja-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span></div>
           <div class="p-3 bg-red-50 rounded-md shadow"><span class="block text-sm text-gray-500">Egresos Totales</span><span id="caja-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span></div>
           <div class="p-3 bg-blue-50 rounded-md shadow"><span class="block text-sm text-gray-500">Balance Actual</span><span id="caja-balance" class="text-2xl font-bold text-blue-600">$0.00</span></div>
         </div>
-
         <div class="table-container overflow-x-auto mb-6">
           <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
@@ -242,12 +302,12 @@ export async function mount(container, supabaseInst, user) {
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Concepto</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
                 <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Método Pago</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
               </tr>
             </thead>
             <tbody id="caja-movements-body" class="bg-white divide-y divide-gray-200"></tbody>
           </table>
         </div>
-
         <hr class="my-6" />
         <h3 class="text-lg font-semibold text-gray-700 mb-3">Agregar Nuevo Movimiento</h3>
         <form id="caja-add-form" class="form p-4 border rounded-md bg-gray-50 shadow-sm" novalidate>
@@ -279,8 +339,6 @@ export async function mount(container, supabaseInst, user) {
   const feedbackGlobalEl = container.querySelector('#caja-global-feedback');
   const btnCierreCaja = container.querySelector('#btn-cierre-caja');
 
-  console.log("[Caja/mount] Botón Cierre Caja encontrado:", btnCierreCaja); 
-
   if (!currentHotelId) {
     if (feedbackGlobalEl) showError(feedbackGlobalEl, 'Error: Hotel no identificado. No se pueden cargar los datos de caja.');
     if(formFiltrosEl) formFiltrosEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
@@ -298,7 +356,6 @@ export async function mount(container, supabaseInst, user) {
     clearFeedback(feedbackAddEl);
     const originalButtonText = btnAddEl.textContent;
     setFormLoadingState(addFormEl, true, btnAddEl, originalButtonText, 'Agregando...');
-
     const montoValue = parseFloat(addFormEl.elements.monto.value);
     const conceptoValue = addFormEl.elements.concepto.value.trim();
     const metodoPagoValue = addFormEl.elements.metodoPagoId.value;
@@ -319,20 +376,19 @@ export async function mount(container, supabaseInst, user) {
       setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
       addFormEl.elements.metodoPagoId.focus(); return;
     }
-
     try {
       const newMovement = {
         tipo: tipoValue,
         monto: montoValue,
         concepto: conceptoValue,
-        fecha_movimiento: new Date().toISOString(), // Usar fecha_movimiento
+        fecha_movimiento: new Date().toISOString(),
         usuario_id: currentModuleUser.id,
         hotel_id: currentHotelId,
         metodo_pago_id: metodoPagoValue
       };
       const { error } = await currentSupabaseInstance.from('caja').insert([newMovement]);
       if (error) throw error;
-      showError(feedbackAddEl, 'Movimiento agregado exitosamente.', 'success-indicator');
+      showSuccess(feedbackAddEl, 'Movimiento agregado exitosamente.', 'success-indicator');
       setTimeout(() => clearFeedback(feedbackAddEl), 3000);
       addFormEl.reset();
       await loadAndRenderMovements(tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl, startInputEl, endInputEl, tipoSelectEl, spanIngresosEl, spanEgresosEl, spanBalanceEl);
@@ -352,99 +408,109 @@ export async function mount(container, supabaseInst, user) {
   formFiltrosEl.addEventListener('submit', filterFormSubmitHandler);
   moduleListeners.push({ element: formFiltrosEl, type: 'submit', handler: filterFormSubmitHandler });
 
+  // --- CIERRE DE CAJA ---
   const cierreCajaHandler = async () => {
-    if (!confirm("¿Está seguro de que desea realizar el cierre de caja? Esta acción enviará el reporte y reseteará la vista de filtros.")) {
-        return;
-    }
-    showGlobalLoading("Realizando cierre de caja...");
-    btnCierreCaja.disabled = true;
-    
-    try {
-      const { data: configHotel, error: errConfig } = await currentSupabaseInstance
-        .from('configuracion_hotel')
-        .select('correo_remitente') 
-        .eq('hotel_id', currentHotelId)
-        .maybeSingle(); // Usar maybeSingle para que no falle si no hay registro
-      
-      const correoAdminPrincipal = currentModuleUser?.email; 
-      let correosDestino = configHotel?.correo_remitente || correoAdminPrincipal;
-
-      if (!correosDestino) {
+    clearFeedback(feedbackGlobalEl);
+    feedbackGlobalEl.innerHTML = `
+      <div class="p-4 my-3 rounded-md border border-blue-300 bg-blue-50 text-blue-800 font-semibold shadow-sm flex flex-col items-center">
+        <span>¿Está seguro de que desea realizar el cierre de caja?<br>
+        Esta acción enviará el reporte y reseteará la vista de filtros.</span>
+        <div class="flex gap-4 mt-4">
+          <button id="btnConfirmCierreCaja" class="px-4 py-2 bg-green-600 text-white rounded">Sí, Cerrar Caja</button>
+          <button id="btnCancelarCierreCaja" class="px-4 py-2 bg-gray-300 rounded">Cancelar</button>
+        </div>
+      </div>
+    `;
+    feedbackGlobalEl.style.display = "block";
+    document.getElementById('btnConfirmCierreCaja').onclick = async () => {
+      showGlobalLoading("Realizando cierre de caja...");
+      btnCierreCaja.disabled = true;
+      try {
+        if (!currentHotelId) {
+          showError(feedbackGlobalEl, "No se ha definido el Hotel. Por favor, recarga la página o vuelve a iniciar sesión.");
+          btnCierreCaja.disabled = false;
+          hideGlobalLoading();
+          return;
+        }
+        const { data: configHotel } = await currentSupabaseInstance
+          .from('configuracion_hotel')
+          .select('correo_remitente')
+          .eq('hotel_id', currentHotelId)
+          .maybeSingle();
+        const correoAdminPrincipal = currentModuleUser?.email;
+        let correosDestino = correoAdminPrincipal;
+        if (!correosDestino) {
           const { data: admins, error: adminsError } = await currentSupabaseInstance
             .from('usuarios')
             .select('correo')
             .eq('hotel_id', currentHotelId)
-            .in('rol', ['admin', 'superadmin']); 
+            .in('rol', ['admin', 'superadmin']);
           if (adminsError) throw adminsError;
           if (admins && admins.length > 0) {
-            correosDestino = admins.map(u => u.correo).join(',');
+            correosDestino = admins[0].correo;
           } else {
             showError(feedbackGlobalEl, 'No hay correos de administradores configurados para enviar el reporte.');
             hideGlobalLoading();
             btnCierreCaja.disabled = false;
             return;
           }
-      }
-      
-      const { data: movimientos, error: errMov } = await currentSupabaseInstance
-        .from('caja')
-        .select('*, usuarios(nombre), metodos_pago(nombre)')
-        .eq('hotel_id', currentHotelId)
-        // Para el reporte, podrías querer los movimientos del día o desde el último cierre.
-        // Por ahora, si los filtros de fecha están vacíos, toma todos.
-        // Si quieres solo los del día actual para el reporte (independiente de filtros):
-        // .gte('creado_en', new Date(new Date().setHours(0,0,0,0)).toISOString())
-        // .lt('creado_en', new Date(new Date().setHours(23,59,59,999)).toISOString())
-        .order('creado_en', { ascending: true });
-      if (errMov) throw errMov;
-
-      if (!movimientos || movimientos.length === 0) {
-        showError(feedbackGlobalEl, 'No hay movimientos para incluir en el cierre de caja.');
+        }
+        const hoyInicio = new Date();
+        hoyInicio.setHours(0, 0, 0, 0);
+        const hoyFin = new Date();
+        hoyFin.setHours(23, 59, 59, 999);
+        const { data: movimientos, error: errMov } = await currentSupabaseInstance
+          .from('caja')
+          .select('*, usuarios(nombre), metodos_pago(nombre)')
+          .eq('hotel_id', currentHotelId)
+          .gte('creado_en', hoyInicio.toISOString())
+          .lte('creado_en', hoyFin.toISOString())
+          .order('creado_en', { ascending: true });
+        if (errMov) throw errMov;
+        if (!movimientos || movimientos.length === 0) {
+          showError(feedbackGlobalEl, 'No hay movimientos para incluir en el cierre de caja.');
+          hideGlobalLoading();
+          btnCierreCaja.disabled = false;
+          return;
+        }
+        const totalIngresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + Number(m.monto), 0);
+        const totalEgresos = movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + Number(m.monto), 0);
+        const balance = totalIngresos - totalEgresos;
+        const fechaHoy = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
+        const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Usuario del Sistema';
+        const htmlReporte = generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaHoy);
+        await enviarReporteCierreCaja({
+          correos: correosDestino,
+          asunto: `Reporte de Cierre de Caja - Hotel [Tu Nombre de Hotel] - ${fechaHoy}`,
+          htmlReporte,
+          feedbackEl: feedbackGlobalEl
+        });
+        // Reset vista movimientos del día
+        const hoy = new Date().toISOString().split('T')[0];
+        startInputEl.value = hoy;
+        endInputEl.value = hoy;
+        tipoSelectEl.value = '';
+        await loadAndRenderMovements(
+          tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl,
+          startInputEl, endInputEl, tipoSelectEl,
+          spanIngresosEl, spanEgresosEl, spanBalanceEl
+        );
+        showSuccess(feedbackGlobalEl, "¡Cierre de caja realizado y enviado correctamente!", "success-indicator");
+      } catch (err) {
+        showError(feedbackGlobalEl, 'Error en cierre de caja: ' + (err.message || err));
+      } finally {
         hideGlobalLoading();
         btnCierreCaja.disabled = false;
-        return;
       }
-
-      const totalIngresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + Number(m.monto), 0);
-      const totalEgresos = movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + Number(m.monto), 0);
-      const balance = totalIngresos - totalEgresos;
-      const fechaHoy = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
-      const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Usuario del Sistema';
-      const htmlReporte = generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaHoy);
-
-      await enviarReporteCierreCaja({
-        correos: correosDestino,
-        asunto: `Reporte de Cierre de Caja - Hotel [Tu Nombre de Hotel] - ${fechaHoy}`,
-        htmlReporte,
-        feedbackEl: feedbackGlobalEl 
-      });
-
-      // Resetear la vista a los movimientos del día actual
-      const hoy = new Date().toISOString().split('T')[0];
-      startInputEl.value = hoy;
-      endInputEl.value = hoy;
-      tipoSelectEl.value = ''; // Limpiar filtro de tipo
-      await loadAndRenderMovements(
-        tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl,
-        startInputEl, endInputEl, tipoSelectEl,
-        spanIngresosEl, spanEgresosEl, spanBalanceEl
-      );
-      showError(feedbackGlobalEl, 'Cierre de caja procesado. La vista muestra los movimientos de hoy.', 'success-indicator');
-
-    } catch (err) {
-      console.error('Error en cierre de caja:', err);
-      showError(feedbackGlobalEl, 'Error en cierre de caja: ' + err.message);
-    } finally {
-        hideGlobalLoading();
-        btnCierreCaja.disabled = false;
-    }
+    };
+    document.getElementById('btnCancelarCierreCaja').onclick = () => {
+      clearFeedback(feedbackGlobalEl);
+    };
   };
   btnCierreCaja.addEventListener('click', cierreCajaHandler);
   moduleListeners.push({ element: btnCierreCaja, type: 'click', handler: cierreCajaHandler });
-
   await popularMetodosPagoSelect(addMetodoEl, currentSupabaseInstance, feedbackGlobalEl);
-  
-  // Carga inicial con filtros de fecha para el día actual
+  // Carga inicial para el día actual
   const hoy = new Date().toISOString().split('T')[0];
   startInputEl.value = hoy;
   endInputEl.value = hoy;
@@ -453,11 +519,9 @@ export async function mount(container, supabaseInst, user) {
     startInputEl, endInputEl, tipoSelectEl,
     spanIngresosEl, spanEgresosEl, spanBalanceEl
   );
-  console.log("[Caja/mount] Montaje completado.");
 }
 
 export function unmount() {
-  console.log("[Caja/unmount] Desmontando módulo Caja...");
   moduleListeners.forEach(({ element, type, handler }) => {
     if (element && typeof element.removeEventListener === 'function') {
       element.removeEventListener(type, handler);
@@ -468,5 +532,4 @@ export function unmount() {
   currentHotelId = null;
   currentModuleUser = null;
   currentContainerEl = null;
-  console.log('Caja module unmounted and listeners cleaned up.');
 }
