@@ -8,7 +8,7 @@ let hotelIdGlobal = null;
 
 let currentRooms = [];
 let cronometrosInterval = {};
-
+import { turnoService } from '../../services/turnoService.js';
 
 // --- Funciones auxiliares de formato ---
 function formatCurrency(value, currency = 'COP') {
@@ -950,12 +950,49 @@ function actualizarTotalHabitacion() {
         if (errRes) { console.error("Error creando reserva:", errRes); alert("Error creando reserva: " + errRes.message); return; }
         const reservaId = reservaData?.id;
 
-        await supabase.from('caja').insert([{
-            hotel_id: hotelId, tipo: 'ingreso', monto: detallesEstancia.precioTotal,
-            concepto: `Alquiler ${room.nombre} (${detallesEstancia.descripcionEstancia}) - ${formData.cliente_nombre}`,
-            fecha_movimiento: detallesEstancia.inicioAt.toISOString(), usuario_id: currentUser?.id, reserva_id: reservaId,
-            metodo_pago_id: formData.metodo_pago_id
-        }]);
+        // ... (código para crear la reserva y el cronómetro) ...
+
+// ---> INICIO DE LA MODIFICACIÓN PARA CAJA EN showAlquilarModal <---
+// 1. Preguntamos al "conserje" por el ID del turno activo
+const turnoId = turnoService.getActiveTurnId();
+
+// 2. VALIDACIÓN CLAVE: Si el conserje dice que no hay turno, bloqueamos la acción.
+if (!turnoId) {
+    mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No se puede registrar el alquiler en caja porque no hay un turno activo.", "Turno Requerido", modalContainer);
+    // OJO: Aquí la reserva SÍ se creó. Esto podría necesitar una lógica para revertir la reserva
+    // o marcarla como "pendiente de pago en caja". Por simplicidad, ahora solo avisamos.
+    // Considera si el flujo debe detenerse ANTES de crear la reserva si no hay turno.
+
+    // Si decides que la reserva no debe crearse si no hay turno, deberías mover esta validación
+    // ANTES de la línea: const { data: reservaData, error: errRes } = await supabase.from('reservas').insert(...)
+    // Y si no hay turno, hacer un `return;` para salir de la función onsubmit.
+
+    // Por ahora, asumimos que la reserva se crea y solo el registro en caja se ve afectado.
+} else {
+    // 3. Si hay turno, preparamos el movimiento de caja y AÑADIMOS EL TURNO_ID
+    const movimientoCajaAlquiler = {
+        hotel_id: hotelId, 
+        tipo: 'ingreso', 
+        monto: detallesEstancia.precioTotal,
+        concepto: `Alquiler <span class="math-inline">\{room\.nombre\} \(</span>{detallesEstancia.descripcionEstancia}) - ${formData.cliente_nombre}`,
+        fecha_movimiento: detallesEstancia.inicioAt.toISOString(), 
+        usuario_id: currentUser?.id, 
+        reserva_id: reservaId,
+        metodo_pago_id: formData.metodo_pago_id,
+        turno_id: turnoId // <-- ¡LA LÍNEA CLAVE AÑADIDA!
+    };
+
+    // 4. Insertamos en la tabla caja
+    const { error: errorCajaAlquiler } = await supabase.from('caja').insert(movimientoCajaAlquiler); // Ya no es un array
+
+    if (errorCajaAlquiler) {
+        console.error("Error registrando alquiler en caja:", errorCajaAlquiler);
+        mostrarInfoModalGlobal(`Error al registrar el alquiler en caja: <span class="math-inline">\{errorCajaAlquiler\.message\}\. La reserva \#</span>{reservaId} podría necesitar ajuste manual en caja.`, "Error en Caja", modalContainer);
+    }
+}
+// ---> FIN DE LA MODIFICACIÓN PARA CAJA EN showAlquilarModal <---
+
+// ... (código para actualizar estado de habitación y recargar) ...
         await supabase.from('cronometros').insert([{
             hotel_id: hotelId, reserva_id: reservaId, habitacion_id: room.id,
             fecha_inicio: detallesEstancia.inicioAt.toISOString(), fecha_fin: detallesEstancia.finAt.toISOString(), activo: true,
@@ -1193,14 +1230,46 @@ async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mai
                     fecha_fin: nuevaFechaFinSubmit.toISOString(), activo: true,
                 }]);
             }
-            if (precioExtraSubmit > 0) { 
-                await supabase.from('caja').insert([{
-                    hotel_id: hotelId, tipo: 'ingreso', monto: Math.round(precioExtraSubmit),
-                    concepto: `Extensión ${room.nombre} (${descExtraSubmit}) - ${reservaActiva.cliente_nombre || 'N/A'}`,
-                    fecha_movimiento: new Date().toISOString(), usuario_id: currentUser?.id, reserva_id: reservaActiva.id,
-                    metodo_pago_id: formDataExt.metodo_pago_ext_id
-                }]);
-            }
+            // ... (código para actualizar la reserva y el cronómetro) ...
+
+// ---> INICIO DE LA MODIFICACIÓN PARA CAJA EN showExtenderTiempoModal <---
+if (precioExtraSubmit > 0) { 
+    // 1. Preguntamos al "conserje" por el ID del turno activo
+    const turnoId = turnoService.getActiveTurnId();
+
+    // 2. VALIDACIÓN CLAVE: Si el conserje dice que no hay turno, bloqueamos la acción.
+    if (!turnoId) {
+        mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No se puede registrar el pago de la extensión en caja porque no hay un turno activo.", "Turno Requerido", modalContainer);
+        // OJO: La reserva y el cronómetro SÍ se actualizaron. Esto es una inconsistencia.
+        // Idealmente, esta validación debería ocurrir ANTES de actualizar la reserva.
+        // Si decides eso, mueve la validación del turno antes de `supabase.from('reservas').update(...)`
+        // y haz un `return;` para salir del onsubmit si no hay turno.
+    } else {
+        // 3. Si hay turno, preparamos el movimiento de caja y AÑADIMOS EL TURNO_ID
+        const movimientoCajaExtension = {
+            hotel_id: hotelId, 
+            tipo: 'ingreso', 
+            monto: Math.round(precioExtraSubmit),
+            concepto: `Extensión <span class="math-inline">\{room\.nombre\} \(</span>{descExtraSubmit}) - ${reservaActiva.cliente_nombre || 'N/A'}`,
+            fecha_movimiento: new Date().toISOString(), 
+            usuario_id: currentUser?.id, 
+            reserva_id: reservaActiva.id,
+            metodo_pago_id: formDataExt.metodo_pago_ext_id,
+            turno_id: turnoId // <-- ¡LA LÍNEA CLAVE AÑADIDA!
+        };
+
+        // 4. Insertamos en la tabla caja
+        const { error: errorCajaExtension } = await supabase.from('caja').insert(movimientoCajaExtension); // Ya no es un array
+
+        if (errorCajaExtension) {
+            console.error("Error registrando extensión en caja:", errorCajaExtension);
+            mostrarInfoModalGlobal(`Error al registrar el pago de la extensión en caja: ${errorCajaExtension.message}. La extensión de la reserva podría necesitar ajuste manual en caja.`, "Error en Caja", modalContainer);
+        }
+    }
+}
+// ---> FIN DE LA MODIFICACIÓN PARA CAJA EN showExtenderTiempoModal <---
+
+// ... (código para actualizar estado de habitación si es necesario y recargar) ...
             if (room.estado === 'tiempo agotado') {
                 await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
             }

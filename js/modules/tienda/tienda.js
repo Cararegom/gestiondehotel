@@ -13,6 +13,8 @@ let categoriasCache = [];
 let proveedoresCache = [];
 let productosCache = [];
 
+import { turnoService } from '../../services/turnoService.js';
+import { showError, showSuccess } from '../../uiUtils.js';
 // ---------  MONTAJE PRINCIPAL Y NAVEGACION DE PESTAÑAS ----------
 export async function mount(container, supabase, user, hotelId) {
   currentContainerEl = container;
@@ -503,17 +505,46 @@ if (habitacion_id) {
       }).eq('id',item.id);
     }
     // Caja
-    await currentSupabase.from('caja').insert([{
-      hotel_id: currentHotelId,
-      tipo: 'ingreso',
-      monto: total,
-      concepto: 'Venta de tienda',
-      fecha_movimiento: new Date().toISOString(),
-      metodo_pago_id: metodo_pago_id,
-      usuario_id: currentUser.id,
-      venta_tienda_id: ventaId,
-      creado_en: new Date().toISOString()
-    }]);
+    // ... (código para crear venta_tienda y detalle_ventas_tienda) ...
+
+// ---> INICIO DE LA MODIFICACIÓN PARA CAJA EN registrarVentaPOS <---
+// 1. Preguntamos al "conserje" por el ID del turno activo
+const turnoId = turnoService.getActiveTurnId();
+const msgPOSEl = document.getElementById('msgPOS'); // El div donde muestras mensajes en el POS
+
+// 2. VALIDACIÓN CLAVE: Si el conserje dice que no hay turno, bloqueamos la acción.
+if (!turnoId) {
+  if (msgPOSEl) showError(msgPOSEl, "ACCIÓN BLOQUEADA: No se puede registrar la venta porque no hay un turno de caja activo.");
+  return; // Detenemos la función aquí.
+}
+
+// 3. Si hay turno, preparamos el movimiento de caja y AÑADIMOS EL TURNO_ID
+const movimientoCaja = {
+  hotel_id: currentHotelId,
+  tipo: 'ingreso',
+  monto: total,
+  concepto: `Venta de tienda POS #${ventaId}`, // Concepto más descriptivo
+  fecha_movimiento: new Date().toISOString(),
+  metodo_pago_id: metodo_pago_id,
+  usuario_id: currentUser.id,
+  venta_tienda_id: ventaId,
+  // creado_en: new Date().toISOString(), // Supabase puede manejar esto si la columna tiene un default
+  turno_id: turnoId // <-- ¡LA LÍNEA CLAVE AÑADIDA!
+};
+
+// 4. Insertamos en la tabla caja
+const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja); // Ya no es un array
+
+if (errorCaja) {
+    console.error("Error registrando en caja desde POS:", errorCaja);
+    if (msgPOSEl) showError(msgPOSEl, `Error al registrar en caja: <span class="math-inline">\{errorCaja\.message\}\. La venta \#</span>{ventaId} podría necesitar ajuste manual en caja.`);
+    // OJO: Aquí la venta en tienda SÍ se creó. Es un caso especial de error.
+}
+// ---> FIN DE LA MODIFICACIÓN PARA CAJA EN registrarVentaPOS <---
+
+// Limpia
+posCarrito = [];
+// ... (resto de la función sin cambios) ...
     // Limpia
     posCarrito = [];
     renderCarritoPOS();
@@ -554,7 +585,6 @@ async function renderInventario() {
     style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
   <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;">
     <option value="">Todas las Categorías</option>
-    <!-- Rellena dinámicamente las opciones -->
   </select>
 </div>
 
@@ -579,21 +609,18 @@ async function renderInventario() {
   </table>
 </div>
 <div id="modalProductoInv" style="display:none"></div>
-
-  `
- const selectFiltroCat = document.getElementById('filtroCategoriaInv');
-if (selectFiltroCat) {
-  selectFiltroCat.innerHTML = `
-    <option value="">Todas las categorías</option>
-    ${categoriasCache.map(cat => `<option value="${cat.id}">${cat.nombre}</option>`).join('')}
   `;
-  selectFiltroCat.onchange = function() {
-    filtrarYRenderInventario();
+
+  const selectFiltroCat = document.getElementById('filtroCategoriaInv');
+  if (selectFiltroCat) {
+    selectFiltroCat.innerHTML = `
+      <option value="">Todas las categorías</option>
+      ${categoriasCache.map(cat => `<option value="${cat.id}">${cat.nombre}</option>`).join('')}
+    `;
+    selectFiltroCat.onchange = function() {
+      filtrarYRenderInventario();
+    }
   }
-}
-
-
-
 
   document.getElementById('btnNuevoProducto').onclick = ()=>showModalProducto();
   document.getElementById('buscarInventario').oninput = (e)=>renderTablaInventario(e.target.value);
@@ -625,15 +652,13 @@ async function cargarCategoriasYProveedores() {
     .eq('activo', true);
   proveedoresCache = prov || [];
 }
-// Afuera de renderInventario, pon esto:
+
 function filtrarYRenderInventario() {
   const categoriaSeleccionada = document.getElementById('filtroCategoriaInv').value;
   let productos = inventarioProductos;
   if (categoriaSeleccionada) {
     productos = productos.filter(p => p.categoria_id === categoriaSeleccionada);
   }
-  // Si tienes filtro de búsqueda, agrégalo aquí también.
-  // Finalmente renderiza:
   renderTablaInventario(productos);
 }
 
@@ -645,41 +670,40 @@ function renderTablaInventario(filtro = '') {
     lista = lista.filter(p => (p.nombre||'').toLowerCase().includes(filtro.toLowerCase()));
   }
   tbody.innerHTML = '';
-lista.forEach(p => {
-  let categoria = categoriasCache.find(cat => cat.id === p.categoria_id)?.nombre || '—';
-  let proveedor = proveedoresCache.find(pr => pr.id === p.proveedor_id)?.nombre || '—';
-  let tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td style="padding:10px 8px;">${p.nombre}</td>
-    <td style="padding:10px 8px;text-align:center;">${p.codigo_barras || '—'}</td>
-    <td style="padding:10px 8px;text-align:center;">${categoria}</td>
-    <td style="padding:10px 8px;text-align:center;">${proveedor}</td>
-    <td style="padding:10px 8px;text-align:right;">$${p.precio ? Number(p.precio).toLocaleString('es-CO') : 0}</td>
-    <td style="padding:10px 8px;text-align:right;">$${p.precio_venta ? Number(p.precio_venta).toLocaleString('es-CO') : 0}</td>
-    <td style="padding:10px 8px;text-align:center;font-weight:600;color:${p.stock_actual < (p.stock_min || 0) ? '#f43f5e' : '#22c55e'};">
-      ${p.stock_actual || 0}
-    </td>
-    <td style="padding:10px 8px;text-align:center;">${p.stock_min || 0}</td>
-    <td style="padding:10px 8px;text-align:center;">${p.stock_max || 0}</td>
-    <td style="padding:10px 8px;text-align:center;">
-      <span style="font-weight:bold;color:${p.activo ? '#22c55e' : '#f43f5e'};">
-        ${p.activo ? 'Activo' : 'Inactivo'}
-      </span>
-    </td>
-    <td style="padding:10px 8px;text-align:center;">
-      <button onclick="window.showModalProducto('${p.id}')" 
-        style="background:#e0e7ff;color:#1d4ed8;border:none;border-radius:6px;padding:5px 10px;margin-right:4px;cursor:pointer;" title="Editar">
-        <svg width="16" height="16" fill="#1d4ed8" style="vertical-align:middle;"><use href="#icon-edit"></use></svg>
-      </button>
-      <button onclick="window.toggleActivoProducto('${p.id}',${!p.activo})" 
-        style="background:${p.activo ? '#fee2e2' : '#bbf7d0'};color:${p.activo ? '#f43f5e' : '#16a34a'};border:none;border-radius:6px;padding:5px 10px;cursor:pointer;" title="${p.activo ? 'Desactivar' : 'Activar'}">
-        <svg width="16" height="16" fill="${p.activo ? '#f43f5e' : '#16a34a'}" style="vertical-align:middle;">
-          <use href="#${p.activo ? 'icon-x' : 'icon-check'}"></use>
-        </svg>
-      </button>
-    </td>
-  `;
-
+  lista.forEach(p => {
+    let categoria = categoriasCache.find(cat => cat.id === p.categoria_id)?.nombre || '—';
+    let proveedor = proveedoresCache.find(pr => pr.id === p.proveedor_id)?.nombre || '—';
+    let tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="padding:10px 8px;">${p.nombre}</td>
+      <td style="padding:10px 8px;text-align:center;">${p.codigo_barras || '—'}</td>
+      <td style="padding:10px 8px;text-align:center;">${categoria}</td>
+      <td style="padding:10px 8px;text-align:center;">${proveedor}</td>
+      <td style="padding:10px 8px;text-align:right;">$${p.precio ? Number(p.precio).toLocaleString('es-CO') : 0}</td>
+      <td style="padding:10px 8px;text-align:right;">$${p.precio_venta ? Number(p.precio_venta).toLocaleString('es-CO') : 0}</td>
+      <td style="padding:10px 8px;text-align:center;font-weight:600;color:${p.stock_actual < (p.stock_min || 0) ? '#f43f5e' : '#22c55e'};">
+        ${p.stock_actual || 0}
+      </td>
+      <td style="padding:10px 8px;text-align:center;">${p.stock_min || 0}</td>
+      <td style="padding:10px 8px;text-align:center;">${p.stock_max || 0}</td>
+      <td style="padding:10px 8px;text-align:center;">
+        <span style="font-weight:bold;color:${p.activo ? '#22c55e' : '#f43f5e'};">
+          ${p.activo ? 'Activo' : 'Inactivo'}
+        </span>
+      </td>
+      <td style="padding:10px 8px;text-align:center;">
+        <button onclick="window.showModalProducto('${p.id}')" 
+          style="background:#e0e7ff;color:#1d4ed8;border:none;border-radius:6px;padding:5px 10px;margin-right:4px;cursor:pointer;" title="Editar">
+          <svg width="16" height="16" fill="#1d4ed8" style="vertical-align:middle;"><use href="#icon-edit"></use></svg>
+        </button>
+        <button onclick="window.toggleActivoProducto('${p.id}',${!p.activo})" 
+          style="background:${p.activo ? '#fee2e2' : '#bbf7d0'};color:${p.activo ? '#f43f5e' : '#16a34a'};border:none;border-radius:6px;padding:5px 10px;cursor:pointer;" title="${p.activo ? 'Desactivar' : 'Activar'}">
+          <svg width="16" height="16" fill="${p.activo ? '#f43f5e' : '#16a34a'}" style="vertical-align:middle;">
+            <use href="#${p.activo ? 'icon-x' : 'icon-check'}"></use>
+          </svg>
+        </button>
+      </td>
+    `;
     tbody.appendChild(tr);
   });
 }
@@ -796,7 +820,14 @@ async function showModalProducto(productoId = null) {
   </div>
 `;
 
-  document.getElementById('btnGuardarProducto').onclick = ()=>saveProductoInv(productoId);
+  // 👇  CAMBIO CLAVE: usar onsubmit para que no recargue página
+  const form = document.getElementById('formProductoInv');
+  if (form) {
+    form.onsubmit = async function(e) {
+      e.preventDefault();
+      await saveProductoInv(productoId);
+    };
+  }
 }
 
 window.closeModalProducto = ()=>{document.getElementById('modalProductoInv').style.display='none';};
@@ -811,13 +842,12 @@ async function saveProductoInv(productoId) {
     const nombreArchivo = `producto_${Date.now()}_${archivo.name}`;
     let { error: errorUp } = await currentSupabase
       .storage
-      .from('productos') // El bucket debe existir en Supabase Storage
+      .from('productos')
       .upload(nombreArchivo, archivo, { upsert: true });
     if (errorUp) {
       alert("Error subiendo imagen: " + errorUp.message);
       return;
     }
-    // Obtén la URL pública
     let { data: publicUrlData } = currentSupabase
       .storage
       .from('productos')
@@ -857,6 +887,7 @@ window.toggleActivoProducto = async (id,act)=>{
   await cargarProductosInventario();
   renderTablaInventario('');
 };
+
 
 // ====================  PESTAÑA CATEGORÍAS  ====================
 let categoriasLista = [];
@@ -2155,115 +2186,192 @@ function getProveedorNombre(proveedorId) {
 
 // 11. Lógica para recibir pedido (total o parcial)
 // 11. Lógica para recibir pedido (total o parcial)
+// Dentro de tienda.js
+
+// ... (asegúrate de tener 'showError', 'showSuccess' y 'turnoService' importados al principio del archivo)
+// import { turnoService } from '../../services/turnoService.js';
+// import { showError, showSuccess } from '../../uiUtils.js'; // Ajusta la ruta si es necesario
+
 window.recibirPedido = async function(compraId) {
+  const feedbackElementForToast = document.getElementById(`msgRecibido_${compraId}`) || document.body; // Para mensajes
+
   try {
-    // Carga detalles de productos
-    const { data: detalles } = await currentSupabase
+    // 1. Carga detalles de productos de la compra
+    const { data: detallesCompra, error: errDetalles } = await currentSupabase
       .from('detalle_compras_tienda')
-      .select('*')
+      .select('*, producto_id(nombre)') // Incluimos el nombre del producto
       .eq('compra_id', compraId);
-    if (!detalles) throw new Error('No hay detalles de compra');
 
+    if (errDetalles || !detallesCompra || detallesCompra.length === 0) {
+      showError(feedbackElementForToast, 'No se encontraron detalles para esta compra.');
+      return;
+    }
+
+    // 2. Recopilar cantidades recibidas (como ya lo hacías)
     let parcial = false;
-    let recibidoTotal = 0;
+    let recibidoTotalMonto = 0;
+    const itemsRecibidosParaActualizar = [];
 
-    for (let det of detalles) {
+    for (let det of detallesCompra) {
       let recibidoInput = document.getElementById(`recibido_${compraId}_${det.producto_id}`);
-      let cantidadRecibida = Number(recibidoInput?.value || det.cantidad);
-      if (cantidadRecibida < det.cantidad) parcial = true;
-      recibidoTotal += cantidadRecibida * det.precio_unitario;
+      // Si el input no existe o está vacío, asumimos que se recibió la cantidad esperada del detalle.
+      // Si el input existe y tiene valor, usamos ese.
+      let cantidadRecibida = recibidoInput ? Number(recibidoInput.value) : det.cantidad;
 
-      // Sumar solo lo recibido al stock y actualizar el precio de compra en inventario si cambió
-      let prod = productosCache.find(p=>p.id===det.producto_id);
-      if(prod){
-        await currentSupabase.from('productos_tienda').update({
-          stock_actual: (prod.stock_actual || 0) + cantidadRecibida,
-          precio: det.precio_unitario   // <-- Actualiza el precio de compra
-        }).eq('id', det.producto_id);
-        prod.stock_actual = (prod.stock_actual || 0) + cantidadRecibida;
-        prod.precio = det.precio_unitario; // Actualiza cache local
+      if (isNaN(cantidadRecibida) || cantidadRecibida < 0) { // Validación básica
+          cantidadRecibida = 0; // Si es inválido, se asume 0 para este item
+      }
+      
+      if (cantidadRecibida < det.cantidad && cantidadRecibida >= 0) { // Es parcial si se recibe menos de lo esperado pero más de 0
+        parcial = true;
+      } else if (cantidadRecibida > det.cantidad) { // No se puede recibir más de lo pedido
+        showError(feedbackElementForToast, `No puedes recibir más de ${det.cantidad} para ${det.producto_id.nombre}.`);
+        return;
+      }
+
+      if (cantidadRecibida > 0) {
+        itemsRecibidosParaActualizar.push({
+          detalle: det,
+          cantidadRecibida: cantidadRecibida
+        });
+        recibidoTotalMonto += cantidadRecibida * det.precio_unitario;
       }
     }
 
-    // --- Asegúrate de tener el proveedor con nombre ---
+    // Si no se recibió ningún producto en total, no continuar.
+    if (recibidoTotalMonto <= 0 && itemsRecibidosParaActualizar.length === 0) {
+      showError(feedbackElementForToast, "No se indicaron productos recibidos. No se generó movimiento en caja.");
+      return;
+    }
+
+    // 3. OBTENER EL TURNO ACTIVO (Como ya lo hacías)
+    const turnoId = turnoService.getActiveTurnId();
+    if (!turnoId) {
+      showError(feedbackElementForToast, "ACCIÓN BLOQUEADA: No hay un turno de caja activo para registrar el egreso.");
+      return;
+    }
+
+    // 4. NUEVO: OBLIGAR A SELECCIONAR MÉTODO DE PAGO
+    const { data: metodosPago, error: errMetodos } = await currentSupabase
+        .from('metodos_pago')
+        .select('id, nombre')
+        .eq('hotel_id', currentHotelId)
+        .eq('activo', true)
+        .order('nombre');
+
+    if (errMetodos || !metodosPago || metodosPago.length === 0) {
+        showError(feedbackElementForToast, "No hay métodos de pago activos configurados. No se puede registrar el egreso.");
+        return;
+    }
+
+    const inputOptions = new Map();
+    metodosPago.forEach(mp => inputOptions.set(mp.id, mp.nombre));
+
+    // Usaremos Swal.fire como en reservas.js. Asegúrate de que SweetAlert2 esté disponible.
+    const { value: metodoPagoIdSeleccionado, isDismissed } = await Swal.fire({
+        title: 'Método de Pago del Egreso',
+        text: `Se registrará un egreso de ${formatCurrency(recibidoTotalMonto)}. Selecciona el método de pago:`,
+        input: 'select',
+        inputOptions,
+        inputPlaceholder: '-- Selecciona un método --',
+        confirmButtonText: 'Confirmar y Registrar Egreso',
+        showCancelButton: true,
+        cancelButtonText: 'Cancelar Recepción',
+        inputValidator: (value) => {
+            if (!value) {
+                return '¡Debes seleccionar un método de pago!'
+            }
+        }
+    });
+
+    if (isDismissed || !metodoPagoIdSeleccionado) {
+        showError(feedbackElementForToast, "Recepción cancelada: No se seleccionó un método de pago.");
+        return; // Usuario canceló o no seleccionó
+    }
+
+    // --- A partir de aquí, el usuario confirmó el método de pago ---
+    showGlobalLoading("Procesando recepción...");
+
+
+    // 5. Actualizar stock y precio de compra en productos_tienda
+    for (let item of itemsRecibidosParaActualizar) {
+      const prodOriginal = productosCache.find(p => p.id === item.detalle.producto_id);
+      if (prodOriginal) {
+        await currentSupabase.from('productos_tienda').update({
+          stock_actual: (prodOriginal.stock_actual || 0) + item.cantidadRecibida,
+          precio: item.detalle.precio_unitario // Actualiza el precio de compra del producto
+        }).eq('id', item.detalle.producto_id);
+        
+        // Actualizar cache local para consistencia si se re-renderiza algo inmediatamente
+        prodOriginal.stock_actual = (prodOriginal.stock_actual || 0) + item.cantidadRecibida;
+        prodOriginal.precio = item.detalle.precio_unitario;
+      }
+    }
+    
+    // 6. Determinar nombre del proveedor para el concepto
     const { data: compraData } = await currentSupabase
       .from('compras_tienda')
       .select('proveedor_id')
       .eq('id', compraId)
       .single();
 
-    // OBTIENE EL NOMBRE DEL PROVEEDOR DIRECTO DE SUPABASE (no del cache)
-    let proveedorNombre = '';
+    let proveedorNombre = 'Proveedor Desconocido';
     if (compraData?.proveedor_id) {
-      const { data: prov } = await currentSupabase
-        .from('proveedores')
-        .select('nombre')
-        .eq('id', compraData.proveedor_id)
-        .single();
-      proveedorNombre = prov?.nombre || compraData.proveedor_id;
+      const provEnCache = proveedoresCache.find(p => p.id === compraData.proveedor_id);
+      if (provEnCache) {
+        proveedorNombre = provEnCache.nombre;
+      } else {
+        const { data: provDB } = await currentSupabase
+          .from('proveedores')
+          .select('nombre')
+          .eq('id', compraData.proveedor_id)
+          .single();
+        proveedorNombre = provDB?.nombre || compraData.proveedor_id;
+      }
     }
-
-    // Define el concepto mostrando el proveedor y si fue parcial o total
+    
     let concepto = parcial
       ? `Compra a proveedor: ${proveedorNombre} (recepción parcial)`
-      : `Compra a proveedor: ${proveedorNombre} (total)`;
+      : `Compra a proveedor: ${proveedorNombre} (recepción total)`;
 
-    // Actualiza estado de compra
+    // 7. Actualizar estado de la compra
     await currentSupabase.from('compras_tienda').update({
       estado: parcial ? 'parcial' : 'recibida'
     }).eq('id', compraId);
 
-    // Genera egreso en caja solo por lo recibido, mostrando el proveedor
-    await currentSupabase.from('caja').insert([{
+    // 8. Generar egreso en caja (MODIFICADO para incluir metodo_pago_id)
+    const movimientoCajaEgreso = {
       hotel_id: currentHotelId,
       tipo: 'egreso',
-      monto: recibidoTotal,
+      monto: recibidoTotalMonto,
       concepto: concepto,
       fecha_movimiento: new Date().toISOString(),
       usuario_id: currentUser.id,
       compra_tienda_id: compraId,
-      creado_en: new Date().toISOString()
-    }]);
+      turno_id: turnoId, 
+      metodo_pago_id: metodoPagoIdSeleccionado // <-- AÑADIDO
+    };
+    const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCajaEgreso);
 
-    // Mensaje de éxito visual (toast)
-    function toastExitoPedido(msg) {
-      let toast = document.createElement('div');
-      toast.innerHTML = `
-        <div style="
-          position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
-          background:#16a34a; color:#fff; padding:13px 27px; border-radius:7px;
-          font-weight:600; font-size:1.09em; box-shadow:0 2px 18px #16a34a33; z-index:9999;">
-          ✔️ ${msg || '¡Pedido recibido correctamente!'}
-        </div>
-      `;
-      toast.id = "toastExitoPedido";
-      document.body.appendChild(toast);
-      setTimeout(()=>{ toast.remove(); }, 2300);
+    if (errorCaja) {
+        // Idealmente, aquí se debería considerar una lógica de rollback o marcar la recepción como "pendiente de caja"
+        console.error("Error registrando egreso en caja:", errorCaja);
+        showError(feedbackElementForToast, `¡ATENCIÓN! El inventario se actualizó, pero hubo un error al registrar el egreso en caja: ${errorCaja.message}. Por favor, revise manualmente.`);
+    } else {
+        showSuccess(feedbackElementForToast, '¡Pedido recibido! Inventario y caja actualizados.');
     }
-
-    toastExitoPedido('¡Pedido recibido! Inventario y caja actualizados.');
-    setTimeout(() => renderComprasPendientes(), 1200);
 
   } catch (err) {
-    function toastError(msg) {
-      let toast = document.createElement('div');
-      toast.innerHTML = `
-        <div style="
-          position:fixed; bottom:32px; left:50%; transform:translateX(-50%);
-          background:#dc2626; color:#fff; padding:13px 27px; border-radius:7px;
-          font-weight:600; font-size:1.09em; box-shadow:0 2px 18px #dc262655; z-index:9999;">
-          ❌ ${msg || 'Ocurrió un error.'}
-        </div>
-      `;
-      toast.id = "toastErrorPedido";
-      document.body.appendChild(toast);
-      setTimeout(()=>{ toast.remove(); }, 3200);
+    console.error("Error en recibirPedido:", err);
+    showError(feedbackElementForToast, 'Error al procesar la recepción: ' + (err.message || 'Error inesperado'));
+  } finally {
+    hideGlobalLoading();
+    // Siempre re-renderizar la lista de compras pendientes para reflejar cambios o errores
+    if (typeof renderComprasPendientes === "function") { // Verifica si la función existe en el scope
+        setTimeout(() => renderComprasPendientes(), 1000); // Dar tiempo a que el usuario vea el mensaje
     }
-
-    toastError('Error al recibir pedido: ' + (err.message || 'Error inesperado'));
   }
 };
-
 
 
 // ========== BLOQUE PDF, BITÁCORA Y ALERTAS VISUALES ==========
