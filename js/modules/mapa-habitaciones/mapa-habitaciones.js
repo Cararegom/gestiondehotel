@@ -196,11 +196,32 @@ async function renderRooms(listEl, supabase, currentUser, hotelId) {
 }
 
 
-// ================== CARD DE HABITACIÓN (VISUAL MEJORADO v3 - CORRECCIÓN BADGE) ===================
 function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
     const card = document.createElement('div');
-    card.className = `room-card bg-white rounded-2xl shadow-xl overflow-hidden transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1 flex flex-col group relative`;
 
+    // ==================== COLOR DINÁMICO SEGÚN TIEMPO RESTANTE =======================
+    let colorClase = "bg-white";
+    let segundosRestantes = null;
+    let fechaFin = room.fecha_fin ? new Date(room.fecha_fin) : null;
+    let ahora = new Date();
+
+    // Calcula segundosRestantes solo si la habitación está ocupada/activa/reservada/tiempo agotado
+    if (["ocupada", "activa", "reservada", "tiempo agotado"].includes(room.estado) && fechaFin) {
+        segundosRestantes = Math.floor((fechaFin - ahora) / 1000);
+
+        if (segundosRestantes <= 0) {
+            colorClase = "bg-red-500 text-white animate-pulse";
+        } else if (segundosRestantes <= 15 * 60) {
+            colorClase = "bg-orange-400 text-black";
+        } else {
+            colorClase = "bg-green-200 text-black";
+        }
+    }
+    // =================================================================================
+
+    card.className = `room-card ${colorClase} rounded-2xl shadow-xl overflow-hidden transition-all duration-300 ease-in-out hover:shadow-2xl hover:-translate-y-1 flex flex-col group relative`;
+
+    // --- ICONOS Y BADGES ---
     const contentWrapper = document.createElement('div');
     contentWrapper.className = "p-5 flex-grow flex flex-col"; 
 
@@ -254,15 +275,63 @@ function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
                 }
             </div>
         </div>
-
         <div id="cronometro-${room.id}" class="cronometro-display mt-auto text-right font-mono text-xl flex items-center justify-end pt-4 border-t border-slate-200 group-hover:border-blue-200 transition-colors duration-200">
+            <span id="cronometro-text-${room.id}"></span>
         </div>
     `;
-    
     card.appendChild(contentWrapper);
+
+    // ========== Lógica para mostrar el tiempo restante o excedido en la tarjeta ==========
+    // SONIDO SOLO UNA VEZ
+    let sonidoLanzado = false;
+    function playPopSound() {
+        const audio = new Audio('https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa9a8b.mp3');
+        audio.volume = 0.7;
+        audio.play();
+    }
+
+    if (["ocupada", "activa", "reservada", "tiempo agotado"].includes(room.estado) && room.fecha_fin) {
+        const cronometroTextEl = card.querySelector(`#cronometro-text-${room.id}`);
+        function updateCronometro() {
+            const ahora = new Date();
+            const fechaFin = new Date(room.fecha_fin);
+            let diff = fechaFin - ahora; // en ms
+
+            let negativo = false;
+            if (diff < 0) {
+                negativo = true;
+                diff = -diff;
+            }
+
+            let segundos = Math.floor(diff / 1000) % 60;
+            let minutos = Math.floor(diff / 1000 / 60) % 60;
+            let horas = Math.floor(diff / 1000 / 60 / 60);
+
+            const formatted = `${negativo ? "+" : ""}${horas}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
+
+            if (negativo) {
+                cronometroTextEl.innerHTML = `<span class="text-red-600 font-bold animate-pulse">Excedido ${formatted}</span>`;
+                // SONIDO solo una vez
+                if (!sonidoLanzado) {
+                    playPopSound();
+                    sonidoLanzado = true;
+                }
+            } else if (diff <= 15 * 60 * 1000) {
+                cronometroTextEl.innerHTML = `<span class="text-orange-700 font-bold">Restan ${formatted}</span>`;
+                sonidoLanzado = false; // reset
+            } else {
+                cronometroTextEl.innerHTML = `<span class="text-slate-800 font-bold">Restan ${formatted}</span>`;
+                sonidoLanzado = false;
+            }
+        }
+        updateCronometro();
+        setInterval(updateCronometro, 1000);
+    }
+
     card.onclick = () => showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer);
     return card;
 }
+
 
 // ================== MODAL OPCIONES HABITACIÓN ===================
 async function showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer) {
@@ -462,11 +531,11 @@ if (room.estado === "reservada") {
   });
 
   // =================== BOTÓN VER CONSUMOS (igual que antes)
-  setupButtonListener('btn-ver-consumos', async () => {
+    setupButtonListener('btn-ver-consumos', async () => {
     // 1. Buscar la reserva activa
     const { data: reserva, error: errRes } = await supabase
         .from('reservas')
-        .select('id, cliente_nombre, monto_total')
+        .select('id, cliente_nombre, monto_total, fecha_inicio, fecha_fin')
         .eq('habitacion_id', room.id)
         .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
         .order('fecha_inicio', { ascending: false })
@@ -490,82 +559,242 @@ if (room.estado === "reservada") {
 
     if (ventasTienda && ventasTienda.length > 0) {
         const ventaIds = ventasTienda.map(v => v.id);
-        // Supabase no permite más de 1000 elementos en .in, pero para hotel nunca será tanto.
-        const { data: detallesVentas, error: errDetalles } = await supabase
+        const { data: detallesVentas } = await supabase
             .from('detalle_ventas_tienda')
-            .select('producto_id, cantidad, precio_unitario_venta, subtotal, producto:producto_id (nombre)')
+            .select('producto_id, cantidad, precio_unitario_venta, subtotal')
             .in('venta_id', ventaIds);
 
         if (detallesVentas && detallesVentas.length > 0) {
-            detalles = detallesVentas;
-            totalTienda = detallesVentas.reduce((sum, det) => sum + (det.subtotal || 0), 0);
+            // Buscar los nombres de productos
+            const productoIds = [...new Set(detallesVentas.map(d => d.producto_id))];
+            let nombresProductos = {};
+            if (productoIds.length > 0) {
+                const { data: productos } = await supabase
+                    .from('productos_tienda')
+                    .select('id, nombre')
+                    .in('id', productoIds);
+                if (productos) {
+                    productos.forEach(p => {
+                        nombresProductos[p.id] = p.nombre;
+                    });
+                }
+            }
+            // Agrupar por producto
+            const agrupados = {};
+            detallesVentas.forEach(det => {
+                const nombre = nombresProductos[det.producto_id] || "Producto";
+                if (!agrupados[nombre]) {
+                    agrupados[nombre] = { cantidad: 0, subtotal: 0, precio: det.precio_unitario_venta };
+                }
+                agrupados[nombre].cantidad += det.cantidad;
+                agrupados[nombre].subtotal += det.subtotal;
+            });
+            detalles = Object.entries(agrupados).map(([nombre, info]) => ({
+                nombre,
+                cantidad: info.cantidad,
+                subtotal: info.subtotal,
+                precio: info.precio
+            }));
+            totalTienda = detalles.reduce((sum, det) => sum + (det.subtotal || 0), 0);
         }
     }
 
-    // 4. Mostrar resumen
-    let html = `<b>Consumos habitación:</b><ul>`;
-    let totalGeneral = 0;
+    // 4. Mostrar resumen bonito
+    let tipoFactura = false;
+    let totalGeneral = (reserva.monto_total || 0) + totalTienda;
 
-    // Estancia habitación
-    html += `<li>Estancia: <b>${formatCurrency(reserva.monto_total)}</b></li>`;
-    totalGeneral += reserva.monto_total || 0;
-
-    // Tienda
-    if (detalles.length > 0) {
-        html += `<li style="margin-top:8px;"><b>Consumos Tienda:</b><ul>`;
-        detalles.forEach(t => {
-            html += `<li>${t.cantidad} x ${(t.producto?.nombre || 'Producto')} = <b>${formatCurrency(t.subtotal)}</b></li>`;
-        });
-        html += `</ul><b>Total Tienda:</b> ${formatCurrency(totalTienda)}</li>`;
-        totalGeneral += totalTienda;
-    } else if (ventasTienda && ventasTienda.length > 0) {
-        html += `<li><b>Total Tienda:</b> ${formatCurrency(ventasTienda.reduce((sum, v) => sum + (v.total_venta || 0), 0))}</li>`;
-        totalGeneral += ventasTienda.reduce((sum, v) => sum + (v.total_venta || 0), 0);
-    }
-
-    html += `</ul><hr><b style="font-size:1.1em;">Total a pagar: ${formatCurrency(totalGeneral)}</b>`;
+    let html = `
+      <div style="font-family: 'Segoe UI', Arial, sans-serif;">
+        <div style="font-size: 1.1em; font-weight: bold; color: #0ea5e9; margin-bottom: 12px;">
+          ${tipoFactura ? "Factura de Estancia y Consumos" : "Consumos Estancia + Tienda"}
+        </div>
+        
+        <div style="margin-bottom: 10px;">
+          <b style="color:#475569;">Huésped:</b> ${reserva.cliente_nombre} <br>
+          <b style="color:#475569;">Fecha:</b> ${formatDateTime(reserva.fecha_inicio)} - ${formatDateTime(reserva.fecha_fin)}
+        </div>
+        
+        <div style="margin-bottom: 14px;">
+          <b style="font-size:1em; color:#475569;">Estancia habitación:</b>
+          <div style="padding:4px 0 4px 14px;">Estancia: <b style="color:#06b6d4;">${formatCurrency(reserva.monto_total)}</b></div>
+        </div>
+        
+        ${detalles.length > 0 ? `
+          <div style="margin-bottom:10px;">
+            <b style="font-size:1em; color:#475569;">Consumos Tienda:</b>
+            <table style="width:100%; border-collapse:collapse; margin:6px 0 0 0; font-size: 0.97em;">
+              <thead>
+                <tr style="background:#f3f6fa;">
+                  <th style="text-align:left; padding: 6px 6px;">Producto</th>
+                  <th style="text-align:center; padding: 6px 6px;">Cant.</th>
+                  <th style="text-align:right; padding: 6px 6px;">Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${detalles.map(t => `
+                  <tr>
+                    <td style="padding: 4px 6px;">${t.nombre}</td>
+                    <td style="text-align:center; padding: 4px 6px;">${t.cantidad}</td>
+                    <td style="text-align:right; padding: 4px 6px;">${formatCurrency(t.subtotal)}</td>
+                  </tr>
+                `).join('')}
+                <tr>
+                  <td colspan="2" style="text-align:right; padding: 6px 6px; font-weight:bold;">Total Tienda:</td>
+                  <td style="text-align:right; padding: 6px 6px; font-weight:bold;">${formatCurrency(totalTienda)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        ` : (totalTienda > 0 ? `<div><b>Total Tienda:</b> ${formatCurrency(totalTienda)}</div>` : '')}
+        
+        <hr style="margin: 16px 0 8px 0; border: none; border-top: 1.5px solid #e0e7ef;">
+        <div style="font-size: 1.22em; text-align: right; font-weight: bold; color: #059669;">
+          Total a pagar: ${formatCurrency(totalGeneral)}
+        </div>
+      </div>
+    `;
 
     mostrarInfoModalGlobal(html, "Consumos Estancia + Tienda");
 });
-
 
 
   // =================== BOTÓN FACTURAR (igual que antes)
   setupButtonListener('btn-facturar', async () => {
     // 1. Buscar reserva activa
     const { data: reserva } = await supabase
-      .from('reservas')
-      .select('id, cliente_nombre, monto_total, fecha_inicio, fecha_fin')
-      .eq('habitacion_id', room.id)
-      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-      .order('fecha_inicio', { ascending: false })
-      .limit(1)
-      .single();
+        .from('reservas')
+        .select('id, cliente_nombre, monto_total, fecha_inicio, fecha_fin')
+        .eq('habitacion_id', room.id)
+        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+        .order('fecha_inicio', { ascending: false })
+        .limit(1)
+        .single();
 
     if (!reserva) {
-      mostrarInfoModalGlobal("No hay reserva activa para facturar.", "Facturación");
-      return;
+        mostrarInfoModalGlobal("No hay reserva activa para facturar.", "Facturación");
+        return;
     }
 
     // 2. Buscar ventas de tienda asociadas a esa reserva
     const { data: ventasTienda } = await supabase
-      .from('ventas_tienda')
-      .select('id, total_venta')
-      .eq('reserva_id', reserva.id);
+        .from('ventas_tienda')
+        .select('id, total_venta')
+        .eq('reserva_id', reserva.id);
 
     let totalTienda = ventasTienda?.reduce((sum, v) => sum + (v.total_venta || 0), 0) || 0;
 
-    // 3. Detalles del resumen
-    let totalGeneral = (reserva.monto_total || 0) + totalTienda;
+    // 3. Buscar detalles de productos vendidos en tienda (igual que en consumos)
+    let detalles = [];
+    if (ventasTienda && ventasTienda.length > 0) {
+        const ventaIds = ventasTienda.map(v => v.id);
+        const { data: detallesVentas } = await supabase
+            .from('detalle_ventas_tienda')
+            .select('producto_id, cantidad, precio_unitario_venta, subtotal')
+            .in('venta_id', ventaIds);
 
+        if (detallesVentas && detallesVentas.length > 0) {
+            // Buscar los nombres de producto
+            const productoIds = [...new Set(detallesVentas.map(d => d.producto_id))];
+            let nombresProductos = {};
+            if (productoIds.length > 0) {
+                const { data: productos } = await supabase
+                    .from('productos_tienda')
+                    .select('id, nombre')
+                    .in('id', productoIds);
+                if (productos) {
+                    productos.forEach(p => {
+                        nombresProductos[p.id] = p.nombre;
+                    });
+                }
+            }
+            // Agrupa por producto
+            const agrupados = {};
+            detallesVentas.forEach(det => {
+                const nombre = nombresProductos[det.producto_id] || "Producto";
+                if (!agrupados[nombre]) {
+                    agrupados[nombre] = { cantidad: 0, subtotal: 0, precio: det.precio_unitario_venta };
+                }
+                agrupados[nombre].cantidad += det.cantidad;
+                agrupados[nombre].subtotal += det.subtotal;
+            });
+            detalles = Object.entries(agrupados).map(([nombre, info]) => ({
+                nombre,
+                cantidad: info.cantidad,
+                subtotal: info.subtotal,
+                precio: info.precio
+            }));
+            totalTienda = detalles.reduce((sum, det) => sum + (det.subtotal || 0), 0);
+        }
+    }
+
+    // 4. Detalles del resumen
+    let totalGeneral = (reserva.monto_total || 0) + totalTienda;
+    let tipoFactura = true;
     let html = `
-        <b>Factura Estancia + Consumos</b>
-        <br>
-        <b>Huésped:</b> ${reserva.cliente_nombre}<br>
-        <b>Fecha:</b> ${formatDateTime(reserva.fecha_inicio)} - ${formatDateTime(reserva.fecha_fin)}<br>
-        <b>Estancia:</b> ${formatCurrency(reserva.monto_total)}<br>
-        ${totalTienda > 0 ? `<b>Consumos Tienda:</b> ${formatCurrency(totalTienda)}<br>` : ''}
-        <hr>
+  <div style="font-family: 'Segoe UI', Arial, sans-serif;">
+    <div style="font-size: 1.1em; font-weight: bold; color: #0ea5e9; margin-bottom: 12px;">
+      ${tipoFactura ? "Factura de Estancia y Consumos" : "Consumos Estancia + Tienda"}
+    </div>
+    
+    <div style="margin-bottom: 10px;">
+      <b style="color:#475569;">Huésped:</b> ${reserva.cliente_nombre} <br>
+      <b style="color:#475569;">Fecha:</b> ${formatDateTime(reserva.fecha_inicio)} - ${formatDateTime(reserva.fecha_fin)}
+    </div>
+    
+    <div style="margin-bottom: 14px;">
+      <b style="font-size:1em; color:#475569;">Estancia habitación:</b>
+      <div style="padding:4px 0 4px 14px;">Estancia: <b style="color:#06b6d4;">${formatCurrency(reserva.monto_total)}</b></div>
+    </div>
+    
+    ${detalles.length > 0 ? `
+      <div style="margin-bottom:10px;">
+        <b style="font-size:1em; color:#475569;">Consumos Tienda:</b>
+        <table style="width:100%; border-collapse:collapse; margin:6px 0 0 0; font-size: 0.97em;">
+          <thead>
+            <tr style="background:#f3f6fa;">
+              <th style="text-align:left; padding: 6px 6px;">Producto</th>
+              <th style="text-align:center; padding: 6px 6px;">Cant.</th>
+              <th style="text-align:right; padding: 6px 6px;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${detalles.map(t => `
+              <tr>
+                <td style="padding: 4px 6px;">${t.nombre}</td>
+                <td style="text-align:center; padding: 4px 6px;">${t.cantidad}</td>
+                <td style="text-align:right; padding: 4px 6px;">${formatCurrency(t.subtotal)}</td>
+              </tr>
+            `).join('')}
+            <tr>
+              <td colspan="2" style="text-align:right; padding: 6px 6px; font-weight:bold;">Total Tienda:</td>
+              <td style="text-align:right; padding: 6px 6px; font-weight:bold;">${formatCurrency(totalTienda)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    ` : (totalTienda > 0 ? `<div><b>Total Tienda:</b> ${formatCurrency(totalTienda)}</div>` : '')}
+    
+    <hr style="margin: 16px 0 8px 0; border: none; border-top: 1.5px solid #e0e7ef;">
+    <div style="font-size: 1.22em; text-align: right; font-weight: bold; color: #059669;">
+      Total a pagar: ${formatCurrency(totalGeneral)}
+    </div>
+    ${tipoFactura ? `<div style="text-align:center; margin-top:16px;"><button onclick="window.print()" class="button button-primary">Imprimir Recibo</button></div>` : ''}
+  </div>
+`;
+
+
+    // Detalle tienda
+    if (detalles.length > 0) {
+        html += `<b>Consumos Tienda:</b><ul style="margin-top:8px;">`;
+        detalles.forEach(t => {
+            html += `<li>${t.cantidad} x ${t.nombre} = <b>${formatCurrency(t.subtotal)}</b></li>`;
+        });
+        html += `</ul><b>Total Tienda:</b> ${formatCurrency(totalTienda)}<br>`;
+    } else if (ventasTienda && ventasTienda.length > 0) {
+        html += `<b>Consumos Tienda:</b> ${formatCurrency(totalTienda)}<br>`;
+    }
+
+    html += `<hr>
         <b style="font-size:1.3em;color:green;">Total a pagar: ${formatCurrency(totalGeneral)}</b><br><br>
         <button onclick="window.print()" class="button button-primary">Imprimir Recibo</button>
     `;
@@ -974,7 +1203,7 @@ if (!turnoId) {
         hotel_id: hotelId, 
         tipo: 'ingreso', 
         monto: detallesEstancia.precioTotal,
-        concepto: `Alquiler <span class="math-inline">\{room\.nombre\} \(</span>{detallesEstancia.descripcionEstancia}) - ${formData.cliente_nombre}`,
+        concepto: `Alquiler ${room.nombre} (${detallesEstancia.descripcionEstancia}) - ${formData.cliente_nombre || 'Cliente Directo'}`,
         fecha_movimiento: detallesEstancia.inicioAt.toISOString(), 
         usuario_id: currentUser?.id, 
         reserva_id: reservaId,

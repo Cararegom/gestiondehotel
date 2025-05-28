@@ -129,7 +129,7 @@ async function renderPOS() {
   <!-- PRODUCTOS -->
   <div style="
     flex: 1 1 340px; 
-    max-width: 460px; 
+     
     background: #fff; 
     border-radius: 16px; 
     box-shadow: 0 2px 18px #b6d0f912; 

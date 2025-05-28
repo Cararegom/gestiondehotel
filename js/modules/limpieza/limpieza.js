@@ -136,18 +136,16 @@ export async function mount(container, supabaseInst, currentUser) {
 
   // Renderizar UI
   container.innerHTML = `
-    <div class="card max-w-2xl mx-auto shadow-xl rounded-2xl bg-white">
-      <div class="card-header bg-gradient-to-r from-blue-100 via-blue-50 to-white p-6 rounded-t-2xl border-b flex flex-col md:flex-row items-center justify-between">
-        <h2 class="text-2xl font-bold text-blue-900 flex items-center gap-2">🧽 Gestión de Limpieza</h2>
-        <div class="text-blue-600 mt-2 md:mt-0 font-medium text-sm">Haz clic en el botón cuando la habitación esté lista</div>
-      </div>
-      <div class="card-body p-6">
-        <h3 class="font-semibold text-lg mb-3 text-blue-700">Habitaciones pendientes</h3>
-        <div id="pendientes-feedback" class="mb-3"></div>
-        <div id="pendientes-list"></div>
-      </div>
+  <div class="w-full px-2 py-8">
+    <div class="bg-white rounded-2xl shadow-xl p-6 mb-4 flex flex-col md:flex-row items-center justify-between">
+      <h2 class="text-2xl font-bold text-blue-900 flex items-center gap-2">🧽 Gestión de Limpieza</h2>
+      <div class="text-blue-600 mt-2 md:mt-0 font-medium text-sm">Haz clic en el botón cuando la habitación esté lista</div>
     </div>
-  `;
+    <h3 class="font-semibold text-lg mb-3 text-blue-700">Habitaciones pendientes</h3>
+    <div id="pendientes-feedback" class="mb-3"></div>
+    <div id="pendientes-list"></div>
+  </div>
+`;
 
   const pendientesListEl   = container.querySelector('#pendientes-list');
   const pendientesFeedback = container.querySelector('#pendientes-feedback');

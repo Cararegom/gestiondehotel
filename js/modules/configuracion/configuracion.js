@@ -1,518 +1,228 @@
-import {
-  showError,
-  clearFeedback,
-  formatCurrency,
-  formatDateTime,
-  showGlobalLoading,
-  hideGlobalLoading,
-  setFormLoadingState 
-} from '../../uiUtils.js';
+// js/modules/configuracion/configuracion.js
 
-let moduleListeners = [];
-let currentSupabaseInstance = null;
-let currentHotelId = null;
-let currentModuleUser = null;
-let currentContainerEl = null;
+let supabase = null;
+let hotelId = null;
+let configActual = null;
 
-const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb44ip8u876";
+export async function mount(container, supabaseClient, currentUser, currentHotelId) {
+  supabase = supabaseClient;
+  hotelId = currentHotelId;
+  container.innerHTML = generarHTML();
 
-// Calcular totales por método de pago (ingresos/egresos)
-function calcularTotalesPorMetodo(movimientos) {
-  const resumen = {};
-  movimientos.forEach(mv => {
-    const metodo = mv.metodos_pago?.nombre || 'N/A';
-    if (!resumen[metodo]) resumen[metodo] = { ingresos: 0, egresos: 0 };
-    if (mv.tipo === 'ingreso') resumen[metodo].ingresos += Number(mv.monto);
-    else if (mv.tipo === 'egreso') resumen[metodo].egresos += Number(mv.monto);
-  });
-  return resumen;
+  // Cargar datos previos si existen
+  await cargarConfiguracionInicial();
+
+  // Eventos
+  document.getElementById('config-form').addEventListener('submit', guardarConfiguracion);
+  document.querySelector('input[name="logo"]').addEventListener('change', mostrarVistaPreviaLogo);
 }
 
-// HTML premium para el reporte por correo
-// ... pega la función que te puse antes ...
-function generarHTMLReporteCierre(
-  movimientos,
-  totalIngresos,
-  totalEgresos,
-  balance,
-  usuarioNombre,
-  fechaCierre,
-  resumenPorMetodo
-) {
-  // Bloque resumen por método de pago
-  const resumenHtml = Object.entries(resumenPorMetodo).map(([metodo, totales]) => `
-    <tr>
-      <td style="padding:7px 18px;font-weight:500;">${metodo}</td>
-      <td style="padding:7px 18px;color:green;text-align:right;font-weight:500;">${formatCurrency(totales.ingresos)}</td>
-      <td style="padding:7px 18px;color:#c70000;text-align:right;font-weight:500;">${formatCurrency(totales.egresos)}</td>
-    </tr>
-  `).join('');
-
+// GENERAR HTML BONITO
+function generarHTML() {
   return `
-  <div style="max-width:730px;margin:auto;background:linear-gradient(135deg,#eef7ff 60%,#f5fcff);border-radius:18px;box-shadow:0 6px 38px #b0c4d277;padding:32px 18px 28px 18px;font-family:'Segoe UI',Arial,sans-serif;color:#212c44;">
-    <div style="text-align:center;">
-      <h2 style="color:#1869b6;font-weight:800;letter-spacing:-1px;font-size:2.1em;margin-bottom:4px;">Cierre de Caja</h2>
-      <div style="font-size:15px;color:#404b5c;margin-bottom:4px;">${fechaCierre}</div>
-      <div style="font-size:15px;color:#606b7a;font-weight:500;margin-bottom:15px;">Usuario: <span style="font-weight:700;color:#1869b6;">${usuarioNombre}</span></div>
+  <div class="max-w-3xl mx-auto bg-gradient-to-br from-blue-50 to-white shadow-2xl rounded-3xl overflow-hidden my-8 border border-blue-100">
+    <div class="bg-blue-800 p-7 flex items-center gap-3">
+      <span class="inline-block bg-white bg-opacity-20 p-2 rounded-xl">
+        <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L6 21m0 0l-3.75-4m3.75 4V3m7.5 0v18m0 0l3.75-4m-3.75 4l3.75-4M18 3v18"></path></svg>
+      </span>
+      <h2 class="text-3xl font-bold text-white tracking-tight">Configuración General del Hotel</h2>
     </div>
-    <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;">
-      <div style="flex:1;min-width:150px;background:#e4f6e9;padding:22px;border-radius:12px;text-align:center;">
-        <div style="font-size:15px;color:#217145;margin-bottom:2px;">Ingresos totales</div>
-        <div style="font-size:1.5em;color:green;font-weight:700;">${formatCurrency(totalIngresos)}</div>
+    <form id="config-form" class="p-8 bg-white grid grid-cols-1 md:grid-cols-2 gap-7">
+      
+      <div class="col-span-2">
+        <h3 class="text-blue-700 text-lg font-semibold mb-1 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 21v-2a4 4 0 014-4h10a4 4 0 014 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          Datos Generales
+        </h3>
       </div>
-      <div style="flex:1;min-width:150px;background:#ffeaea;padding:22px;border-radius:12px;text-align:center;">
-        <div style="font-size:15px;color:#bd0f0f;margin-bottom:2px;">Egresos totales</div>
-        <div style="font-size:1.5em;color:#c70000;font-weight:700;">${formatCurrency(totalEgresos)}</div>
+      <div>
+        <label class="block font-medium mb-1">Nombre del Hotel</label>
+        <input name="nombre_hotel" class="input w-full bg-blue-50 rounded-xl px-4 py-2" required />
       </div>
-      <div style="flex:1;min-width:150px;background:#e7f1ff;padding:22px;border-radius:12px;text-align:center;">
-        <div style="font-size:15px;color:#17518e;margin-bottom:2px;">Balance</div>
-        <div style="font-size:1.5em;font-weight:800;color:${balance < 0 ? '#c70000' : 'green'};">${formatCurrency(balance)}</div>
+      <div>
+        <label class="block font-medium mb-1">Teléfono</label>
+        <input name="telefono_fiscal" class="input w-full bg-blue-50 rounded-xl px-4 py-2" />
       </div>
-    </div>
-    <div style="margin:0 auto 26px auto;max-width:420px;">
-      <h3 style="font-size:1.08em;color:#1869b6;margin-bottom:10px;margin-top:8px;text-align:left;">Resumen por método de pago</h3>
-      <table style="width:100%;border-radius:10px;background:white;box-shadow:0 1px 5px #b0c4d222;overflow:hidden;border-collapse:collapse;">
-        <thead>
-          <tr style="background:#1869b6;color:#fff;">
-            <th style="padding:10px;">Método</th>
-            <th style="padding:10px;">Ingresos</th>
-            <th style="padding:10px;">Egresos</th>
-          </tr>
-        </thead>
-        <tbody>${resumenHtml}</tbody>
-      </table>
-    </div>
-    <h3 style="font-size:1.08em;color:#1869b6;margin-bottom:10px;margin-top:28px;">Detalle de movimientos del turno</h3>
-    <table style="width:100%;border-collapse:collapse;font-size:14px;background:white;border-radius:8px;box-shadow:0 1px 5px #b0c4d233;">
-      <thead>
-        <tr style="background:#e9eef3;">
-          <th style="padding:8px;">Fecha</th>
-          <th style="padding:8px;">Tipo</th>
-          <th style="padding:8px;">Monto</th>
-          <th style="padding:8px;">Concepto</th>
-          <th style="padding:8px;">Método Pago</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${movimientos.map(mv => `
-          <tr>
-            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">${formatDateTime(mv.creado_en)}</td>
-            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">
-              <span style="font-weight:600;color:${mv.tipo === 'ingreso' ? 'green' : '#c70000'}">
-                ${mv.tipo.charAt(0).toUpperCase() + mv.tipo.slice(1)}
-              </span>
-            </td>
-            <td style="padding:8px;border-bottom:1px solid #f0f3f7;color:${mv.tipo === 'ingreso' ? 'green' : '#c70000'};text-align:right;">
-              ${formatCurrency(mv.monto)}
-            </td>
-            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">${mv.concepto || ''}</td>
-            <td style="padding:8px;border-bottom:1px solid #f0f3f7;">${mv.metodos_pago?.nombre || 'N/A'}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-    <div style="margin-top:40px;font-size:12px;text-align:center;color:#8b99b0;">
-      Gestión de Hotel &bull; Software de control hotelero &bull; <a href="https://gestiondehotel.com" style="color:#1869b6;text-decoration:none;">gestiondehotel.com</a>
-    </div>
+      <div class="col-span-2">
+        <label class="block font-medium mb-1">Dirección</label>
+        <input name="direccion_fiscal" class="input w-full bg-blue-50 rounded-xl px-4 py-2" />
+      </div>
+
+      <div class="col-span-2 border-t pt-5 mt-1">
+        <h3 class="text-blue-700 text-lg font-semibold mb-1 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17v-2a4 4 0 014-4h2a4 4 0 014 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          Datos Fiscales
+        </h3>
+      </div>
+      <div>
+        <label class="block font-medium mb-1">NIT / RUT</label>
+        <input name="nit_rut" class="input w-full bg-blue-50 rounded-xl px-4 py-2" />
+      </div>
+      <div>
+        <label class="block font-medium mb-1">Razón Social</label>
+        <input name="razon_social" class="input w-full bg-blue-50 rounded-xl px-4 py-2" />
+      </div>
+
+      <div class="col-span-2 border-t pt-5 mt-1">
+        <h3 class="text-blue-700 text-lg font-semibold mb-1 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82c.63.63 1.71.18 1.71-.7V7.88A1.65 1.65 0 0019.4 9M4.6 9a1.65 1.65 0 00-.33-1.82c-.63-.63-1.71-.18-1.71.7v8.25c0 .88 1.08 1.33 1.71.7A1.65 1.65 0 004.6 15"></path></svg>
+          Preferencias y Documentos
+        </h3>
+      </div>
+      <div>
+        <label class="block font-medium mb-1">Moneda Local</label>
+        <input name="moneda_local" class="input w-full bg-blue-50 rounded-xl px-4 py-2" placeholder="Ej: COP, USD, EUR" />
+      </div>
+      <div>
+        <label class="block font-medium mb-1">Tipo de Impresora</label>
+        <select name="tipo_impresora" class="input w-full bg-blue-50 rounded-xl px-4 py-2">
+          <option value="termica">Térmica</option>
+          <option value="carta">Tamaño carta</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-medium mb-1">Tamaño de Papel</label>
+        <select name="tamano_papel" class="input w-full bg-blue-50 rounded-xl px-4 py-2">
+          <option value="80mm">80mm (Térmica)</option>
+          <option value="58mm">58mm (Térmica pequeña)</option>
+          <option value="carta">Carta</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-medium mb-1">Logo del Hotel</label>
+        <input type="file" name="logo" accept="image/*" class="input w-full bg-blue-50 rounded-xl px-4 py-2" />
+        <div id="logo-preview" class="my-2"></div>
+        <div class="flex items-center gap-2 mt-2">
+          <input type="checkbox" name="mostrar_logo" id="mostrar_logo" class="accent-blue-700" checked />
+          <label for="mostrar_logo" class="text-sm">Mostrar logo en documentos</label>
+        </div>
+      </div>
+      <div class="col-span-2">
+        <label class="block font-medium mb-1">Encabezado para Facturas/Recibos</label>
+        <textarea name="encabezado_ticket" class="input w-full bg-blue-50 rounded-xl px-4 py-2" rows="2" placeholder="Ej: Hotel Corales del Mar, NIT 123456, Dir. Calle 123..."></textarea>
+      </div>
+      <div class="col-span-2">
+        <label class="block font-medium mb-1">Pie de Página para Facturas/Recibos</label>
+        <textarea name="pie_ticket" class="input w-full bg-blue-50 rounded-xl px-4 py-2" rows="2" placeholder="Ej: ¡Gracias por su visita!"></textarea>
+      </div>
+      <div class="col-span-2 flex justify-end mt-6">
+        <button class="bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-900 hover:to-blue-700 transition text-white px-10 py-3 rounded-2xl shadow-lg font-bold text-lg flex items-center gap-2">
+          <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+          Guardar Configuración
+        </button>
+      </div>
+    </form>
   </div>
   `;
 }
 
-async function enviarReporteCierreCaja({ correos, asunto, htmlReporte, feedbackEl }) {
-  const btnCierreCaja = currentContainerEl.querySelector('#btn-cierre-caja');
-  if (btnCierreCaja) btnCierreCaja.disabled = true;
-  try {
-    const response = await fetch(EMAIL_REPORT_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        to: correos, 
-        subject: asunto,
-        html: htmlReporte
-      })
-    });
-    if (response.ok) {
-      showError(feedbackEl, '¡Reporte de cierre de caja enviado exitosamente!', 'success-indicator'); 
-    } else {
-      const errorData = await response.text();
-      showError(feedbackEl, `No se pudo enviar el reporte por email (Error ${response.status}): ${errorData}. Revise la consola.`);
-    }
-  } catch (error) {
-    showError(feedbackEl, 'Error de red al enviar el reporte: ' + error.message);
-  } finally {
-    if (btnCierreCaja) btnCierreCaja.disabled = false;
-  }
-}
+// ----------------------------- CARGAR Y GUARDAR CONFIG -----------------------------
 
-async function loadAndRenderMovements(
-  tBodyEl, supabaseInst, hotelId, feedbackGlobalEl,
-  startInputEl, endInputEl, tipoSelectEl,
-  spanIngresosEl, spanEgresosEl, spanBalanceEl
-) {
-  if (!tBodyEl || !supabaseInst || !hotelId || !feedbackGlobalEl || !startInputEl || !endInputEl || !tipoSelectEl || !spanIngresosEl || !spanEgresosEl || !spanBalanceEl) {
-      if (feedbackGlobalEl) showError(feedbackGlobalEl, "Error interno: No se pueden cargar movimientos (elementos faltantes).");
-      return;
-  }
-  tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-1">Cargando movimientos...</td></tr>`;
-  clearFeedback(feedbackGlobalEl);
-
+// Carga la configuración inicial desde Supabase y llena el formulario
+async function cargarConfiguracionInicial() {
   try {
-    let query = supabaseInst
-      .from('caja')
-      .select('id,tipo,monto,concepto,creado_en,usuario_id,usuarios (nombre),metodo_pago_id,metodos_pago (nombre)')
+    const { data, error } = await supabase
+      .from('configuracion_hotel')
+      .select('*')
       .eq('hotel_id', hotelId)
-      .eq('usuario_id', currentModuleUser.id)
-      .order('creado_en', { ascending: false });
-
-    if (startInputEl.value) {
-      query = query.gte('creado_en', `${startInputEl.value}T00:00:00.000Z`);
+      .single();
+    if (data) {
+      configActual = data;
+      poblarFormulario(data);
+      if (data.logo_url) mostrarLogoGuardado(data.logo_url);
     }
-    if (endInputEl.value) {
-      query = query.lte('creado_en', `${endInputEl.value}T23:59:59.999Z`);
-    }
-    if (tipoSelectEl.value) {
-      query = query.eq('tipo', tipoSelectEl.value);
-    }
-
-    const { data: movements, error } = await query;
-    if (error) throw error;
-
-    let ingresos = 0, egresos = 0;
-    tBodyEl.innerHTML = '';
-
-    if (!movements || movements.length === 0) {
-      tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-1">No hay movimientos registrados para los filtros seleccionados.</td></tr>`;
-    } else {
-      movements.forEach(mv => {
-        if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
-        else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
-
-        const userName = mv.usuarios?.nombre || (mv.usuario_id ? `ID: ${mv.usuario_id.slice(0, 8)}...` : 'Sistema');
-        const metodoPagoNombre = mv.metodos_pago?.nombre || 'N/A';
-        const tr = document.createElement('tr');
-        tr.className = "hover:bg-gray-50";
-        tr.innerHTML = `
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm">
-            <span class="badge px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
-              ${mv.tipo.charAt(0).toUpperCase() + mv.tipo.slice(1)}
-            </span>
-          </td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
-          <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${userName}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${metodoPagoNombre}</td>
-        `;
-        tBodyEl.appendChild(tr);
-      });
-    }
-
-    spanIngresosEl.textContent = formatCurrency(ingresos);
-    spanEgresosEl.textContent = formatCurrency(egresos);
-    const balance = ingresos - egresos;
-    spanBalanceEl.textContent = formatCurrency(balance);
-    spanBalanceEl.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
-  } catch (err) {
-    tBodyEl.innerHTML = `<tr><td colspan="6" class="text-red-600 text-center p-1">Error al cargar movimientos: ${err.message}</td></tr>`;
-    showError(feedbackGlobalEl, `Error al cargar datos de caja: ${err.message}`);
+  } catch (e) {
+    // Si no hay configuración previa, ignora
   }
 }
 
-async function popularMetodosPagoSelect(selectEl, supabaseInst, feedbackGlobalEl) {
-  if (!selectEl || !supabaseInst) return;
-  selectEl.innerHTML = '<option value="">Cargando métodos...</option>';
-  try {
-    const { data: metodos, error } = await supabaseInst
-      .from('metodos_pago')
-      .select('id, nombre')
-      .eq('hotel_id', currentHotelId) 
-      .eq('activo', true)
-      .order('nombre');
+// Llena el formulario con los datos existentes
+function poblarFormulario(config) {
+  const form = document.getElementById('config-form');
+  form.nombre_hotel.value = config.nombre_hotel || '';
+  form.direccion_fiscal.value = config.direccion_fiscal || '';
+  form.telefono_fiscal.value = config.telefono_fiscal || '';
+  form.nit_rut.value = config.nit_rut || '';
+  form.razon_social.value = config.razon_social || '';
+  form.moneda_local.value = config.moneda_local || '';
+  form.tipo_impresora.value = config.tipo_impresora || 'termica';
+  form.tamano_papel.value = config.tamano_papel || '80mm';
+  form.encabezado_ticket.value = config.encabezado_ticket || '';
+  form.pie_ticket.value = config.pie_ticket || '';
+  form.mostrar_logo.checked = config.mostrar_logo !== false;
+}
 
-    if (error) throw error;
+// Muestra logo existente guardado (url pública)
+function mostrarLogoGuardado(url) {
+  const preview = document.getElementById('logo-preview');
+  preview.innerHTML = `<img src="${url}" alt="Logo actual" class="h-16 mb-2 rounded shadow" />`;
+}
 
-    if (metodos && metodos.length > 0) {
-      selectEl.innerHTML = `<option value="">-- Seleccione un método --</option>` +
-        metodos.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
-    } else {
-      selectEl.innerHTML = `<option value="" disabled>No hay métodos de pago activos.</option>`;
-    }
-  } catch (err) {
-    selectEl.innerHTML = `<option value="" disabled>Error al cargar métodos</option>`;
-    showError(feedbackGlobalEl, `No se pudieron cargar los métodos de pago: ${err.message}`);
+// Vista previa del logo al seleccionarlo
+function mostrarVistaPreviaLogo(e) {
+  const file = e.target.files[0];
+  const preview = document.getElementById('logo-preview');
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      preview.innerHTML = `<img src="${ev.target.result}" alt="Vista previa logo" class="h-16 mb-2 rounded shadow" />`;
+    };
+    reader.readAsDataURL(file);
+  } else {
+    preview.innerHTML = '';
   }
 }
 
-export async function mount(container, supabaseInst, user) {
-  unmount(); 
+// Guardar configuración al hacer submit
+async function guardarConfiguracion(e) {
+  e.preventDefault();
+  const form = e.target;
+  const config = {
+    hotel_id: hotelId,
+    nombre_hotel: form.nombre_hotel.value,
+    direccion_fiscal: form.direccion_fiscal.value,
+    telefono_fiscal: form.telefono_fiscal.value,
+    nit_rut: form.nit_rut.value,
+    razon_social: form.razon_social.value,
+    moneda_local: form.moneda_local.value,
+    tipo_impresora: form.tipo_impresora.value,
+    tamano_papel: form.tamano_papel.value,
+    encabezado_ticket: form.encabezado_ticket.value,
+    pie_ticket: form.pie_ticket.value,
+    mostrar_logo: form.mostrar_logo.checked
+  };
 
-  currentContainerEl = container;
-  currentSupabaseInstance = supabaseInst;
-  currentModuleUser = user;
-  currentHotelId = currentModuleUser?.user_metadata?.hotel_id;
+  // Si hay un logo nuevo, súbelo a Supabase Storage y guarda la URL pública
+  const logoInput = form.logo;
+  if (logoInput.files && logoInput.files[0]) {
+    const file = logoInput.files[0];
+    const ext = file.name.split('.').pop();
+    const filePath = `logos/${hotelId}.${ext}`;
+    // Sube a Supabase Storage (con upsert)
+    let { error: uploadError } = await supabase.storage
+      .from('hotel-logos')
+      .upload(filePath, file, { upsert: true });
 
-  if (!currentHotelId && currentModuleUser?.id) {
-    try {
-      const { data: perfil } = await currentSupabaseInstance
-        .from('usuarios').select('hotel_id').eq('id', currentModuleUser.id).single();
-      currentHotelId = perfil?.hotel_id;
-    } catch (err) {}
+    if (uploadError && !uploadError.message.includes('The resource already exists')) {
+      alert('Error subiendo logo: ' + uploadError.message);
+      return;
+    }
+    // Obtiene URL pública del logo
+    const { data: urlData } = supabase.storage.from('hotel-logos').getPublicUrl(filePath);
+    config.logo_url = urlData.publicUrl;
+  } else if (configActual && configActual.logo_url) {
+    config.logo_url = configActual.logo_url;
   }
 
-  container.innerHTML = `
-    <div class="card caja-module shadow-lg rounded-lg">
-      <div class="card-header bg-gray-100 p-4 border-b flex justify-between items-center">
-        <h2 class="text-xl font-semibold text-gray-800">Gestión de Caja</h2>
-        <button id="btn-cierre-caja" class="button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow-sm">Realizar Cierre de Caja</button>
-      </div>
-      <div class="card-body p-4 md:p-6">
-        <div id="caja-global-feedback" class="feedback-message mb-4" style="min-height: 24px;"></div>
-        <form id="caja-filtros-form" class="mb-6 p-4 border rounded-md bg-gray-50 shadow-sm">
-          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 items-end">
-            <div><label for="caja-filter-start" class="block text-sm font-medium text-gray-700">Desde:</label><input type="date" id="caja-filter-start" class="form-control mt-1 text-sm" /></div>
-            <div><label for="caja-filter-end" class="block text-sm font-medium text-gray-700">Hasta:</label><input type="date" id="caja-filter-end" class="form-control mt-1 text-sm" /></div>
-            <div><label for="caja-filter-tipo" class="block text-sm font-medium text-gray-700">Tipo:</label><select id="caja-filter-tipo" class="form-control mt-1 text-sm"><option value="">Todos</option><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
-            <button type="submit" class="button button-primary py-2 px-4 rounded-md text-sm">Filtrar</button>
-          </div>
-        </form>
-        <div class="caja-resumen grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
-          <div class="p-3 bg-green-50 rounded-md shadow"><span class="block text-sm text-gray-500">Ingresos Totales</span><span id="caja-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span></div>
-          <div class="p-3 bg-red-50 rounded-md shadow"><span class="block text-sm text-gray-500">Egresos Totales</span><span id="caja-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span></div>
-          <div class="p-3 bg-blue-50 rounded-md shadow"><span class="block text-sm text-gray-500">Balance Actual</span><span id="caja-balance" class="text-2xl font-bold text-blue-600">$0.00</span></div>
-        </div>
-        <div class="overflow-auto">
-          <table class="table-auto w-full border rounded-md shadow-sm bg-white text-sm">
-            <thead>
-              <tr class="bg-gray-200 text-gray-700">
-                <th class="px-4 py-2">Fecha</th>
-                <th class="px-4 py-2">Tipo</th>
-                <th class="px-4 py-2">Monto</th>
-                <th class="px-4 py-2">Concepto</th>
-                <th class="px-4 py-2">Usuario</th>
-                <th class="px-4 py-2">Método Pago</th>
-              </tr>
-            </thead>
-            <tbody id="caja-movements-body"></tbody>
-          </table>
-        </div>
-        <h3 class="mt-7 mb-2 font-semibold text-gray-700 text-base">Registrar Movimiento</h3>
-        <form id="caja-add-form" class="mb-2">
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-            <div><label for="caja-add-tipo" class="block text-sm font-medium text-gray-700">Tipo *</label><select id="caja-add-tipo" name="tipo" class="form-control mt-1 text-sm" required><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
-            <div><label for="caja-add-monto" class="block text-sm font-medium text-gray-700">Monto *</label><input type="number" id="caja-add-monto" name="monto" class="form-control mt-1 text-sm" step="0.01" min="0.01" required /></div>
-            <div><label for="caja-add-metodo-pago" class="block text-sm font-medium text-gray-700">Método de Pago *</label><select id="caja-add-metodo-pago" name="metodoPagoId" class="form-control mt-1 text-sm" required><option value="">Cargando...</option></select></div>
-          </div>
-          <div class="form-group mb-4"><label for="caja-add-concepto" class="block text-sm font-medium text-gray-700">Concepto/Descripción * (mín. 3 caracteres)</label><input type="text" id="caja-add-concepto" name="concepto" class="form-control mt-1 text-sm" required minlength="3" /></div>
-          <button type="submit" id="caja-btn-add" class="button button-accent py-2 px-4 rounded-md text-sm">＋ Agregar Movimiento</button>
-          <div id="caja-add-feedback" class="feedback-message mt-3" style="min-height:24px;"></div>
-        </form>
-      </div>
-    </div>
-  `;
-
-  const tBodyEl = container.querySelector('#caja-movements-body');
-  const spanIngresosEl = container.querySelector('#caja-total-ingresos');
-  const spanEgresosEl = container.querySelector('#caja-total-egresos');
-  const spanBalanceEl = container.querySelector('#caja-balance');
-  const formFiltrosEl = container.querySelector('#caja-filtros-form');
-  const startInputEl = container.querySelector('#caja-filter-start');
-  const endInputEl = container.querySelector('#caja-filter-end');
-  const tipoSelectEl = container.querySelector('#caja-filter-tipo');
-  const addFormEl = container.querySelector('#caja-add-form');
-  const addMetodoEl = container.querySelector('#caja-add-metodo-pago');
-  const btnAddEl = container.querySelector('#caja-btn-add');
-  const feedbackAddEl = container.querySelector('#caja-add-feedback');
-  const feedbackGlobalEl = container.querySelector('#caja-global-feedback');
-  const btnCierreCaja = container.querySelector('#btn-cierre-caja');
-
-  if (!currentHotelId) {
-    if (feedbackGlobalEl) showError(feedbackGlobalEl, 'Error: Hotel no identificado. No se pueden cargar los datos de caja.');
-    if(formFiltrosEl) formFiltrosEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
-    if(addFormEl) addFormEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
-    if(btnCierreCaja) btnCierreCaja.style.display = 'none';
-    return;
+  // Guarda o actualiza configuración
+  const { error: errorSave } = await supabase
+    .from('configuracion_hotel')
+    .upsert([config], { onConflict: 'hotel_id' });
+  if (errorSave) {
+    alert('Error guardando configuración: ' + errorSave.message);
+  } else {
+    alert('¡Configuración guardada!');
+    configActual = config;
+    if (config.logo_url) mostrarLogoGuardado(config.logo_url);
   }
-  if (!tBodyEl || !formFiltrosEl || !addFormEl || !feedbackGlobalEl || !spanIngresosEl || !spanEgresosEl || !spanBalanceEl || !startInputEl || !endInputEl || !tipoSelectEl || !addMetodoEl || !btnAddEl || !feedbackAddEl || !btnCierreCaja) {
-    showError(feedbackGlobalEl || container, "Error interno: No se pudo inicializar el módulo de caja (elementos DOM no encontrados).");
-    return;
-  }
-
-  const addMovementFormSubmitHandler = async (event) => {
-    event.preventDefault();
-    clearFeedback(feedbackAddEl);
-    const originalButtonText = btnAddEl.textContent;
-    setFormLoadingState(addFormEl, true, btnAddEl, originalButtonText, 'Agregando...');
-
-    const montoValue = parseFloat(addFormEl.elements.monto.value);
-    const conceptoValue = addFormEl.elements.concepto.value.trim();
-    const metodoPagoValue = addFormEl.elements.metodoPagoId.value;
-    const tipoValue = addFormEl.elements.tipo.value;
-
-    if (isNaN(montoValue) || montoValue <= 0) {
-      showError(feedbackAddEl, 'El monto debe ser un número positivo.');
-      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
-      addFormEl.elements.monto.focus(); return;
-    }
-    if (!conceptoValue || conceptoValue.length < 3) {
-      showError(feedbackAddEl, 'El concepto es obligatorio (mín. 3 caracteres).');
-      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
-      addFormEl.elements.concepto.focus(); return;
-    }
-    if (!metodoPagoValue) {
-      showError(feedbackAddEl, 'Debe seleccionar un método de pago.');
-      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
-      addFormEl.elements.metodoPagoId.focus(); return;
-    }
-
-    try {
-      const newMovement = {
-        tipo: tipoValue,
-        monto: montoValue,
-        concepto: conceptoValue,
-        fecha_movimiento: new Date().toISOString(),
-        usuario_id: currentModuleUser.id,
-        hotel_id: currentHotelId,
-        metodo_pago_id: metodoPagoValue
-      };
-      const { error } = await currentSupabaseInstance.from('caja').insert([newMovement]);
-      if (error) throw error;
-      showError(feedbackAddEl, 'Movimiento agregado exitosamente.', 'success-indicator');
-      setTimeout(() => clearFeedback(feedbackAddEl), 3000);
-      addFormEl.reset();
-      await loadAndRenderMovements(tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl, startInputEl, endInputEl, tipoSelectEl, spanIngresosEl, spanEgresosEl, spanBalanceEl);
-    } catch (err) {
-      showError(feedbackAddEl, `Error al agregar movimiento: ${err.message}`);
-    } finally {
-      setFormLoadingState(addFormEl, false, btnAddEl, originalButtonText);
-    }
-  };
-  addFormEl.addEventListener('submit', addMovementFormSubmitHandler);
-  moduleListeners.push({ element: addFormEl, type: 'submit', handler: addMovementFormSubmitHandler });
-
-  const filterFormSubmitHandler = (event) => {
-    event.preventDefault();
-    loadAndRenderMovements(tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl, startInputEl, endInputEl, tipoSelectEl, spanIngresosEl, spanEgresosEl, spanBalanceEl);
-  };
-  formFiltrosEl.addEventListener('submit', filterFormSubmitHandler);
-  moduleListeners.push({ element: formFiltrosEl, type: 'submit', handler: filterFormSubmitHandler });
-
-  // === CORTE DE CAJA SOLO POR USUARIO Y CON REPORTE BONITO ===
-  const cierreCajaHandler = async () => {
-    showGlobalLoading("Realizando cierre de caja...");
-    btnCierreCaja.disabled = true;
-    try {
-      let configHotel = null;
-      try {
-       const { data, error } = await supabase
-  .from('configuracion_hotel')
-  .select('correo_remitente')
-  .eq('hotel_id', 'ac5e4c9d-a8cc-4c53-ab03-0e4ed1549195')
-  .single();
-console.log('Data:', data, 'Error:', error);
-
-        configHotel = data;
-      } catch (err) {
-        // Si hay error o no existe, configHotel sigue siendo null
-      }
-
-      const correoAdminPrincipal = currentModuleUser?.email;
-      let correosDestino = (configHotel && configHotel.correo_remitente) ? configHotel.correo_remitente : correoAdminPrincipal;
-
-      if (!correosDestino) {
-        const { data: admins } = await currentSupabaseInstance
-          .from('usuarios')
-          .select('correo')
-          .eq('hotel_id', currentHotelId)
-          .in('rol', ['admin', 'superadmin']);
-        if (admins && admins.length > 0) {
-          correosDestino = admins.map(u => u.correo).join(',');
-        } else {
-          showError(feedbackGlobalEl, 'No hay correos de administradores configurados para enviar el reporte.');
-          hideGlobalLoading();
-          btnCierreCaja.disabled = false;
-          return;
-        }
-      }
-
-      // SOLO movimientos del usuario actual en el día
-      const fechaHoyISO = new Date().toISOString().split('T')[0];
-      const desde = `${fechaHoyISO}T00:00:00.000Z`;
-      const hasta = `${fechaHoyISO}T23:59:59.999Z`;
-
-      const { data: movimientos } = await currentSupabaseInstance
-        .from('caja')
-        .select('*, usuarios(nombre), metodos_pago(nombre)')
-        .eq('hotel_id', currentHotelId)
-        .eq('usuario_id', currentModuleUser.id)
-        .gte('creado_en', desde)
-        .lte('creado_en', hasta)
-        .order('creado_en', { ascending: true });
-
-      if (!movimientos || movimientos.length === 0) {
-        showError(feedbackGlobalEl, 'No hay movimientos para incluir en el cierre de caja.');
-        hideGlobalLoading();
-        btnCierreCaja.disabled = false;
-        return;
-      }
-
-      const totalIngresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + Number(m.monto), 0);
-      const totalEgresos = movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + Number(m.monto), 0);
-      const balance = totalIngresos - totalEgresos;
-      const fechaHoyTexto = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
-      const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Usuario del Sistema';
-      const resumenPorMetodo = calcularTotalesPorMetodo(movimientos);
-
-      const htmlReporte = generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaHoyTexto, resumenPorMetodo);
-
-      await enviarReporteCierreCaja({
-        correos: correosDestino,
-        asunto: `Cierre de Caja de Usuario - Hotel [Tu Nombre de Hotel] - ${fechaHoyTexto}`,
-        htmlReporte,
-        feedbackEl: feedbackGlobalEl 
-      });
-
-      // Resetear la vista a los movimientos del día actual (usuario)
-      startInputEl.value = fechaHoyISO;
-      endInputEl.value = fechaHoyISO;
-      tipoSelectEl.value = '';
-      await loadAndRenderMovements(
-        tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl,
-        startInputEl, endInputEl, tipoSelectEl,
-        spanIngresosEl, spanEgresosEl, spanBalanceEl
-      );
-      showError(feedbackGlobalEl, 'Cierre de caja procesado. La vista muestra los movimientos de hoy del usuario.', 'success-indicator');
-    } catch (err) {
-      showError(feedbackGlobalEl, 'Error en cierre de caja: ' + err.message);
-    } finally {
-        hideGlobalLoading();
-        btnCierreCaja.disabled = false;
-    }
-  };
-  btnCierreCaja.addEventListener('click', cierreCajaHandler);
-  moduleListeners.push({ element: btnCierreCaja, type: 'click', handler: cierreCajaHandler });
-
-  await popularMetodosPagoSelect(addMetodoEl, currentSupabaseInstance, feedbackGlobalEl);
-
-  // Carga inicial con filtros de fecha para el día actual (usuario actual)
-  const hoy = new Date().toISOString().split('T')[0];
-  startInputEl.value = hoy;
-  endInputEl.value = hoy;
-  await loadAndRenderMovements(
-    tBodyEl, currentSupabaseInstance, currentHotelId, feedbackGlobalEl,
-    startInputEl, endInputEl, tipoSelectEl,
-    spanIngresosEl, spanEgresosEl, spanBalanceEl
-  );
-}
-
-export function unmount() {
-  moduleListeners.forEach(({ element, type, handler }) => {
-    if (element && typeof element.removeEventListener === 'function') {
-      element.removeEventListener(type, handler);
-    }
-  });
-  moduleListeners = [];
-  currentSupabaseInstance = null;
-  currentHotelId = null;
-  currentModuleUser = null;
-  currentContainerEl = null;
 }

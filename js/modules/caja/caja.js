@@ -212,81 +212,120 @@ async function renderizarUIAbierta() {
       <div class="card-body p-4 md:p-6">
         <div id="turno-global-feedback" role="status" aria-live="polite" class="feedback-message mb-4"></div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
-          <div class="p-3 bg-green-50 rounded-md shadow"><span class="block text-sm text-gray-500">Ingresos del Turno</span><span id="turno-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span></div>
-          <div class="p-3 bg-red-50 rounded-md shadow"><span class="block text-sm text-gray-500">Egresos del Turno</span><span id="turno-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span></div>
-          <div class="p-3 bg-blue-50 rounded-md shadow"><span class="block text-sm text-gray-500">Balance del Turno</span><span id="turno-balance" class="text-2xl font-bold text-blue-600">$0.00</span></div>
+          <div class="p-3 bg-green-50 rounded-md shadow">
+            <span class="block text-sm text-gray-500">Ingresos del Turno</span>
+            <span id="turno-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span>
+          </div>
+          <div class="p-3 bg-red-50 rounded-md shadow">
+            <span class="block text-sm text-gray-500">Egresos del Turno</span>
+            <span id="turno-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span>
+          </div>
+          <div class="p-3 bg-blue-50 rounded-md shadow">
+            <span class="block text-sm text-gray-500">Balance del Turno</span>
+            <span id="turno-balance" class="text-2xl font-bold text-blue-600">$0.00</span>
+          </div>
         </div>
         <div class="table-container overflow-x-auto mb-6">
           <table class="tabla-estilizada w-full">
-            <thead class="bg-gray-50"><tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Usuario</th><th>Método Pago</th></tr></thead>
+            <thead class="bg-gray-50">
+              <tr>
+                <th>Fecha</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Usuario</th><th>Método Pago</th>
+              </tr>
+            </thead>
             <tbody id="turno-movements-body"></tbody>
           </table>
         </div>
         <hr class="my-6"/>
         <h3 class="text-lg font-semibold text-gray-700 mb-3">Agregar Nuevo Movimiento</h3>
         <form id="turno-add-form" class="form p-4 border rounded-md bg-gray-50 shadow-sm">
-           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-             <div><label>Tipo *</label><select name="tipo" class="form-control" required><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
-             <div><label>Monto *</label><input type="number" name="monto" class="form-control" step="0.01" min="0.01" required /></div>
-             <div><label>Método de Pago *</label><select name="metodoPagoId" class="form-control" required><option value="">Cargando...</option></select></div>
-           </div>
-           <div class="mb-4"><label>Concepto/Descripción *</label><input type="text" name="concepto" class="form-control" required minlength="3" /></div>
-           <button type="submit" class="button button-accent">＋ Agregar Movimiento</button>
-           <div id="turno-add-feedback" class="feedback-message mt-3"></div>
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+            <div>
+              <label>Tipo *</label>
+              <select name="tipo" class="form-control" required>
+                <option value="">-- Seleccione --</option>
+                <option value="ingreso">Ingreso</option>
+                <option value="egreso">Egreso</option>
+              </select>
+            </div>
+            <div>
+              <label>Monto *</label>
+              <input type="number" name="monto" class="form-control" step="0.01" min="0.01" required />
+            </div>
+            <div>
+              <label>Método de Pago *</label>
+              <select name="metodoPagoId" class="form-control" required>
+                <option value="">Cargando...</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-4">
+            <label>Concepto/Descripción *</label>
+            <input type="text" name="concepto" class="form-control" required minlength="3" />
+          </div>
+          <button type="submit" class="button button-accent">＋ Agregar Movimiento</button>
+          <div id="turno-add-feedback" class="feedback-message mt-3"></div>
         </form>
       </div>
     </div>`;
 
-  // Attach listeners y cargar datos
+  // --- Aquí siguen los listeners y lógica ---
   const tBodyEl = currentContainerEl.querySelector('#turno-movements-body');
   const summaryEls = {
     ingresos: currentContainerEl.querySelector('#turno-total-ingresos'),
     egresos: currentContainerEl.querySelector('#turno-total-egresos'),
     balance: currentContainerEl.querySelector('#turno-balance')
   };
-  
-  // Cargar movimientos del turno
   await loadAndRenderMovements(tBodyEl, summaryEls);
 
-  // Formulario para agregar movimiento
+  // POPULAR SELECT MÉTODO DE PAGO
   const addFormEl = currentContainerEl.querySelector('#turno-add-form');
-  popularMetodosPagoSelect(addFormEl.elements.metodoPagoId);
-  
+  const metodoPagoSelect = addFormEl.elements.metodoPagoId;
+  await popularMetodosPagoSelect(metodoPagoSelect);
+
+  // SUBMIT DEL FORMULARIO
+  // SUBMIT DEL FORMULARIO
   addFormEl.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      setFormLoadingState(addFormEl, true);
-      const formData = new FormData(addFormEl);
-      const newMovement = {
-          tipo: formData.get('tipo'),
-          monto: parseFloat(formData.get('monto')),
-          concepto: formData.get('concepto').trim(),
-          metodo_pago_id: formData.get('metodoPagoId'),
-          usuario_id: currentModuleUser.id,
-          hotel_id: currentHotelId,
-          turno_id: turnoActivo.id // La clave: asignar el movimiento al turno activo
-      };
+    e.preventDefault();
+    
+    // 1. Lee los datos del formulario MIENTRAS los campos aún están activos.
+    const formData = new FormData(addFormEl);
+    const newMovement = {
+      tipo: formData.get('tipo'),
+      monto: parseFloat(formData.get('monto')),
+      concepto: (formData.get('concepto') || '').trim(),
+      metodo_pago_id: formData.get('metodoPagoId'),
+      usuario_id: currentModuleUser.id,
+      hotel_id: currentHotelId,
+      turno_id: turnoActivo.id
+    };
+    
+    // 2. Ahora sí, deshabilita el formulario para prevenir doble clic.
+    setFormLoadingState(addFormEl, true);
+    
+    console.log('Nuevo movimiento:', newMovement); // ¡Ahora debería mostrar los valores correctos!
 
-      // Validaciones
-      if (!newMovement.monto > 0 || !newMovement.concepto || !newMovement.metodo_pago_id) {
-          showError(addFormEl.querySelector('#turno-add-feedback'), 'Todos los campos son obligatorios.');
-          setFormLoadingState(addFormEl, false);
-          return;
-      }
-
-      const { error } = await currentSupabaseInstance.from('caja').insert(newMovement);
-      if (error) {
-          showError(addFormEl.querySelector('#turno-add-feedback'), `Error: ${error.message}`);
-      } else {
-          showSuccess(addFormEl.querySelector('#turno-add-feedback'), 'Movimiento agregado.');
-          addFormEl.reset();
-          await loadAndRenderMovements(tBodyEl, summaryEls); // Recargar la tabla
-      }
+    // VALIDACIÓN
+    if (!(newMovement.monto > 0) || !newMovement.concepto || !newMovement.metodo_pago_id || !newMovement.tipo) {
+      showError(addFormEl.querySelector('#turno-add-feedback'), 'Todos los campos son obligatorios.');
       setFormLoadingState(addFormEl, false);
+      return;
+    }
+
+    // ... el resto de la lógica para insertar en la DB
+    const { error } = await currentSupabaseInstance.from('caja').insert(newMovement);
+    if (error) {
+      showError(addFormEl.querySelector('#turno-add-feedback'), `Error: ${error.message}`);
+    } else {
+      showSuccess(addFormEl.querySelector('#turno-add-feedback'), 'Movimiento agregado.');
+      addFormEl.reset();
+      await loadAndRenderMovements(tBodyEl, summaryEls);
+    }
+    setFormLoadingState(addFormEl, false);
   });
-  
   // Botón de cerrar turno
   currentContainerEl.querySelector('#btn-cerrar-turno').addEventListener('click', cerrarTurno);
 }
+
 
 /**
  * Renderiza la interfaz cuando NO hay un turno activo.
@@ -322,13 +361,21 @@ async function renderizarUI() {
 async function popularMetodosPagoSelect(selectEl) {
     if (!selectEl) return;
     selectEl.innerHTML = '<option value="">Cargando...</option>';
-    const { data, error } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true);
+    const { data, error } = await currentSupabaseInstance
+        .from('metodos_pago')
+        .select('id, nombre')
+        .eq('hotel_id', currentHotelId)
+        .eq('activo', true);
+
     if (error || !data.length) {
         selectEl.innerHTML = '<option value="" disabled>No hay métodos</option>';
     } else {
         selectEl.innerHTML = `<option value="">-- Seleccione --</option>${data.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')}`;
+        // Si solo hay un método de pago, lo selecciona automáticamente
+        if (data.length === 1) selectEl.value = data[0].id;
     }
 }
+
 
 function generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaCierre) {
   // Esta función se mantiene igual que en tu código original

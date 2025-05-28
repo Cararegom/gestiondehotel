@@ -179,6 +179,9 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
   const modalPlatoFeedbackEl = tabContentEl.querySelector('#modal-plato-feedback');
   const modalPlatoTituloEl = tabContentEl.querySelector('#modal-plato-titulo');
 
+  // --- LOG DE DIAGNÓSTICO ---
+  console.log("¿Elemento del formulario encontrado?:", formPlatoEl);
+
   const openPlatoModal = (plato = null) => {
     formPlatoEl.reset();
     clearRestauranteFeedback(modalPlatoFeedbackEl);
@@ -195,7 +198,7 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
       formPlatoEl.elements['activo'].checked = true;
     }
     modalPlatoEl.style.display = 'flex';
-    setTimeout(() => formPlatoEl.elements['nombre'].focus(), 50); // Delay focus for transition
+    setTimeout(() => formPlatoEl.elements['nombre'].focus(), 50);
   };
 
   const closePlatoModal = () => {
@@ -287,7 +290,7 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
             if (confirm(`¿Estás seguro de que quieres eliminar el plato "${platoNombre}"? Esta acción no se puede deshacer.`)) {
                 showRestauranteLoading(platosLoadingEl, true, "Eliminando plato...");
                 try {
-                    const { error } = await supabaseInstance.from('platos').delete().match({ id: platoId, hotel_id: hotelId }); // Asegurar que solo borre del hotel actual
+                    const { error } = await supabaseInstance.from('platos').delete().match({ id: platoId, hotel_id: hotelId });
                     if (error) throw error;
                     showRestauranteFeedback(platosFeedbackEl, 'Plato eliminado correctamente.', 'success-indicator');
                     await registrarEnBitacora(supabaseInstance, hotelId, currentModuleUser.id, 'ELIMINAR_PLATO_RESTAURANTE', { platoId: platoId, nombre: platoNombre });
@@ -306,37 +309,41 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
   }
 
   const formPlatoSubmitHandler = async (e) => {
+    // --- LOG DE DIAGNÓSTICO ---
+    console.log("¡Manejador de submit EJECUTADO!");
     e.preventDefault();
+
     clearRestauranteFeedback(modalPlatoFeedbackEl);
     const btnGuardar = formPlatoEl.querySelector('#btn-guardar-plato');
     const originalText = btnGuardar.textContent;
-    setFormLoadingState(formPlatoEl, true, btnGuardar, originalText, 'Guardando...');
 
     const formData = new FormData(formPlatoEl);
     const platoData = {
       hotel_id: hotelId,
       nombre: formData.get('nombre')?.trim(),
       descripcion: formData.get('descripcion')?.trim() || null,
-      precio: parseFloat(formData.get('precio')),
+      precio: parseFloat((formData.get('precio') || '').replace(/,/g, '').trim()),
       categoria: formData.get('categoria')?.trim() || null,
       activo: formPlatoEl.elements['activo'].checked,
       actualizado_en: new Date().toISOString()
     };
     const platoId = formData.get('id');
 
-    if (!platoData.nombre || isNaN(platoData.precio) || platoData.precio < 0) {
-        showRestauranteFeedback(modalPlatoFeedbackEl, 'Nombre y precio válido son requeridos.', 'error-indicator', 0);
-        setFormLoadingState(formPlatoEl, false, btnGuardar, originalText);
-        return;
+    setFormLoadingState(formPlatoEl, true, btnGuardar, originalText, 'Guardando...');
+
+    if (!platoData.nombre || isNaN(platoData.precio) || platoData.precio <= 0) {
+      showRestauranteFeedback(modalPlatoFeedbackEl, 'Nombre y precio válido (>0) son requeridos.', 'error-indicator', 0);
+      setFormLoadingState(formPlatoEl, false, btnGuardar, originalText);
+      return;
     }
 
     try {
       let result;
       let bitacoraAccion;
-      if (platoId) { // Editar
+      if (platoId) {
         result = await supabaseInstance.from('platos').update(platoData).match({ id: platoId, hotel_id: hotelId }).select();
         bitacoraAccion = 'EDITAR_PLATO_RESTAURANTE';
-      } else { // Crear
+      } else {
         result = await supabaseInstance.from('platos').insert({...platoData, creado_en: new Date().toISOString()}).select();
         bitacoraAccion = 'NUEVO_PLATO_RESTAURANTE';
       }
@@ -347,7 +354,7 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
       await registrarEnBitacora(supabaseInstance, hotelId, currentModuleUser.id, bitacoraAccion, { platoId: data[0].id, nombre: data[0].nombre });
       showRestauranteFeedback(platosFeedbackEl, `Plato ${platoId ? 'actualizado' : 'creado'} correctamente.`, 'success-indicator');
       closePlatoModal();
-      cargarYRenderizarPlatos(); // Recargar lista
+      cargarYRenderizarPlatos();
     } catch (err) {
       console.error("Error guardando plato:", err);
       showRestauranteFeedback(modalPlatoFeedbackEl, `Error al guardar: ${err.message}`, 'error-indicator', 0);
@@ -355,12 +362,13 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
       setFormLoadingState(formPlatoEl, false, btnGuardar, originalText);
     }
   };
+
+  // Se adjunta el listener aquí
   formPlatoEl.addEventListener('submit', formPlatoSubmitHandler);
   currentTabListeners.push({ element: formPlatoEl, type: 'submit', handler: formPlatoSubmitHandler });
 
   await cargarYRenderizarPlatos();
 }
-
 
 async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, moduleUser) {
   currentTabListeners.forEach(({ element, type, handler }) => element.removeEventListener(type, handler));
