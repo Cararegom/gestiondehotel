@@ -105,6 +105,22 @@ function generarHTML() {
         <label class="block font-medium mb-1">Pie de Página para Facturas/Recibos</label>
         <textarea name="pie_ticket" class="input w-full bg-blue-50 rounded-xl px-4 py-2" rows="2" placeholder="Ej: ¡Gracias por su visita!"></textarea>
       </div>
+      <div class="col-span-2 border-t pt-5 mt-1">
+        <h3 class="text-blue-700 text-lg font-semibold mb-1 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82c.63.63 1.71.18 1.71-.7V7.88A1.65 1.65 0 0019.4 9M4.6 9a1.65 1.65 0 00-.33-1.82c-.63-.63-1.71-.18-1.71.7v8.25c0 .88 1.08 1.33 1.71.7A1.65 1.65 0 004.6 15"></path></svg>
+          <span class="text-base text-blue-700">Correos para reportes y notificaciones de cierre de caja</span>
+        </h3>
+      </div>
+      <div class="col-span-2">
+  <label class="block font-medium mb-1">
+    Correo para reportes <span class="text-xs text-gray-500">(solo uno, sin comas)</span>
+  </label>
+  <input name="correo_reportes" type="email" class="input w-full bg-blue-50 rounded-xl px-4 py-2" placeholder="ejemplo@email.com" required />
+  <div class="text-xs text-gray-500 mt-1">
+    Aquí llegará el reporte automático de cierres de caja y otras notificaciones importantes.
+  </div>
+</div>
+
       <div class="col-span-2 flex justify-end mt-6">
         <button class="bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-900 hover:to-blue-700 transition text-white px-10 py-3 rounded-2xl shadow-lg font-bold text-lg flex items-center gap-2">
           <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
@@ -150,6 +166,7 @@ function poblarFormulario(config) {
   form.encabezado_ticket.value = config.encabezado_ticket || '';
   form.pie_ticket.value = config.pie_ticket || '';
   form.mostrar_logo.checked = config.mostrar_logo !== false;
+  form.correo_reportes.value = config.correo_reportes || '';
 }
 
 // Muestra logo existente guardado (url pública)
@@ -177,6 +194,23 @@ function mostrarVistaPreviaLogo(e) {
 async function guardarConfiguracion(e) {
   e.preventDefault();
   const form = e.target;
+  const correo = form.correo_reportes.value.trim();
+
+  // Validar que no tenga comas ni espacios múltiples ni varios correos
+  if (correo.includes(",") || correo.split("@").length !== 2) {
+    alert('Solo se permite ingresar un correo electrónico válido, sin comas ni espacios extra.');
+    form.correo_reportes.focus();
+    return;
+  }
+  // Opcional: validar formato con regex
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(correo)) {
+    alert('Por favor, ingresa un correo electrónico válido.');
+    form.correo_reportes.focus();
+    return;
+  }
+
+  // ...el resto de la función igual...
   const config = {
     hotel_id: hotelId,
     nombre_hotel: form.nombre_hotel.value,
@@ -189,8 +223,10 @@ async function guardarConfiguracion(e) {
     tamano_papel: form.tamano_papel.value,
     encabezado_ticket: form.encabezado_ticket.value,
     pie_ticket: form.pie_ticket.value,
-    mostrar_logo: form.mostrar_logo.checked
+    mostrar_logo: form.mostrar_logo.checked,
+    correo_reportes: correo // ahora solo uno y validado
   };
+  
 
   // Si hay un logo nuevo, súbelo a Supabase Storage y guarda la URL pública
   const logoInput = form.logo;

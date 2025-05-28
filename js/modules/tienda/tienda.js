@@ -410,19 +410,6 @@ function addToCartPOS(id){
 
 
 
-function renderHabitacionesPOS() {
-  let sel = document.getElementById('habitacionPOS');
-  sel.innerHTML = '';
-  posHabitacionesOcupadas.forEach(h=>{
-    let opt = document.createElement('option');
-    opt.value = h.id;
-    opt.textContent = h.nombre;
-    sel.appendChild(opt);
-  });
-}
-
-// <-- AGREGA ESTA LINEA DESPUÉS DE LA FUNCIÓN
-window.addToCartPOS = addToCartPOS;
 // ----- Registrar venta -----
 async function registrarVentaPOS() {
   try {
@@ -432,9 +419,15 @@ async function registrarVentaPOS() {
     }
     const modo = document.getElementById('modoPOS').value;
     let metodo_pago_id = null, habitacion_id = null, cliente_temporal = null;
+
     if(modo === 'inmediato') {
       metodo_pago_id = document.getElementById('metodoPOS').value;
-      if (metodo_pago_id === "") metodo_pago_id = null;
+      // VALIDAR QUE SE SELECCIONE MÉTODO DE PAGO
+      if (!metodo_pago_id) {
+        document.getElementById('msgPOS').textContent = "Selecciona un método de pago";
+        document.getElementById('metodoPOS').focus();
+        return;
+      }
       cliente_temporal = document.getElementById('clientePOS').value || null;
     } else {
       habitacion_id = document.getElementById('habitacionPOS').value;
@@ -444,11 +437,12 @@ async function registrarVentaPOS() {
         return;
       }
     }
+
     let total = posCarrito.reduce((a,b)=>a+b.precio_venta*b.cantidad,0);
-let reservaId = null;
-if (habitacion_id) {
-    // Buscar reserva activa en esa habitación
-    const { data: reservasActivas } = await currentSupabase
+    let reservaId = null;
+    if (habitacion_id) {
+      // Buscar reserva activa en esa habitación
+      const { data: reservasActivas } = await currentSupabase
         .from('reservas')
         .select('id')
         .eq('habitacion_id', habitacion_id)
@@ -456,37 +450,28 @@ if (habitacion_id) {
         .order('fecha_inicio', { ascending: false })
         .limit(1);
 
-    if (reservasActivas && reservasActivas.length > 0) {
+      if (reservasActivas && reservasActivas.length > 0) {
         reservaId = reservasActivas[0].id;
+      }
     }
-}
+
     // Crear venta_tienda (principal)
     let ventaPayload = {
-  hotel_id: currentHotelId,
-  usuario_id: currentUser.id,
-  habitacion_id: habitacion_id,
-  reserva_id: reservaId, // 👈 ESTA LÍNEA ASOCIA LA VENTA A LA RESERVA ACTIVA
-  metodo_pago_id: metodo_pago_id,
-  cliente_temporal,
-  total_venta: total,
-  fecha: new Date().toISOString(),
-  creado_en: new Date().toISOString()
-};
-     console.log('Debug venta POS:', {
-  hotel_id: currentHotelId,
-  usuario_id: currentUser.id,
-  habitacion_id: habitacion_id,
-  metodo_pago_id: metodo_pago_id,
-  cliente_temporal,
-  total_venta: total,
-  fecha: new Date().toISOString(),
-  creado_en: new Date().toISOString()
-});
+      hotel_id: currentHotelId,
+      usuario_id: currentUser.id,
+      habitacion_id: habitacion_id,
+      reserva_id: reservaId, // 👈 ESTA LÍNEA ASOCIA LA VENTA A LA RESERVA ACTIVA
+      metodo_pago_id: metodo_pago_id,
+      cliente_temporal,
+      total_venta: total,
+      fecha: new Date().toISOString(),
+      creado_en: new Date().toISOString()
+    };
+    console.log('Debug venta POS:', ventaPayload);
+
     let {data: ventas, error} = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
     if(error || !ventas?.[0]) throw new Error("Error guardando venta");
     let ventaId = ventas[0].id;
-
-   
 
     // Detalle y stock
     for(let item of posCarrito){
@@ -504,47 +489,41 @@ if (habitacion_id) {
         stock_actual: item.stock_actual-item.cantidad
       }).eq('id',item.id);
     }
-    // Caja
-    // ... (código para crear venta_tienda y detalle_ventas_tienda) ...
 
-// ---> INICIO DE LA MODIFICACIÓN PARA CAJA EN registrarVentaPOS <---
-// 1. Preguntamos al "conserje" por el ID del turno activo
-const turnoId = turnoService.getActiveTurnId();
-const msgPOSEl = document.getElementById('msgPOS'); // El div donde muestras mensajes en el POS
+    // 1. Preguntamos al "conserje" por el ID del turno activo
+    const turnoId = turnoService.getActiveTurnId();
+    const msgPOSEl = document.getElementById('msgPOS'); // El div donde muestras mensajes en el POS
 
-// 2. VALIDACIÓN CLAVE: Si el conserje dice que no hay turno, bloqueamos la acción.
-if (!turnoId) {
-  if (msgPOSEl) showError(msgPOSEl, "ACCIÓN BLOQUEADA: No se puede registrar la venta porque no hay un turno de caja activo.");
-  return; // Detenemos la función aquí.
-}
+    // 2. VALIDACIÓN CLAVE: Si el conserje dice que no hay turno, bloqueamos la acción.
+    if (!turnoId) {
+      if (msgPOSEl) showError(msgPOSEl, "ACCIÓN BLOQUEADA: No se puede registrar la venta porque no hay un turno de caja activo.");
+      return; // Detenemos la función aquí.
+    }
 
-// 3. Si hay turno, preparamos el movimiento de caja y AÑADIMOS EL TURNO_ID
-const movimientoCaja = {
-  hotel_id: currentHotelId,
-  tipo: 'ingreso',
-  monto: total,
-  concepto: `Venta de tienda POS #${ventaId}`, // Concepto más descriptivo
-  fecha_movimiento: new Date().toISOString(),
-  metodo_pago_id: metodo_pago_id,
-  usuario_id: currentUser.id,
-  venta_tienda_id: ventaId,
-  // creado_en: new Date().toISOString(), // Supabase puede manejar esto si la columna tiene un default
-  turno_id: turnoId // <-- ¡LA LÍNEA CLAVE AÑADIDA!
-};
+    // 3. Si hay turno, preparamos el movimiento de caja y AÑADIMOS EL TURNO_ID
+    const nombresProductos = posCarrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
 
-// 4. Insertamos en la tabla caja
-const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja); // Ya no es un array
+    const movimientoCaja = {
+      hotel_id: currentHotelId,
+      tipo: 'ingreso',
+      monto: total,
+      concepto: `Venta: ${nombresProductos}`,  // <--- Aquí se listan productos y cantidades
+      fecha_movimiento: new Date().toISOString(),
+      metodo_pago_id: metodo_pago_id,
+      usuario_id: currentUser.id,
+      venta_tienda_id: ventaId,
+      turno_id: turnoId
+    };
 
-if (errorCaja) {
-    console.error("Error registrando en caja desde POS:", errorCaja);
-    if (msgPOSEl) showError(msgPOSEl, `Error al registrar en caja: <span class="math-inline">\{errorCaja\.message\}\. La venta \#</span>{ventaId} podría necesitar ajuste manual en caja.`);
-    // OJO: Aquí la venta en tienda SÍ se creó. Es un caso especial de error.
-}
-// ---> FIN DE LA MODIFICACIÓN PARA CAJA EN registrarVentaPOS <---
+    // 4. Insertamos en la tabla caja
+    const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja); // Ya no es un array
 
-// Limpia
-posCarrito = [];
-// ... (resto de la función sin cambios) ...
+    if (errorCaja) {
+      console.error("Error registrando en caja desde POS:", errorCaja);
+      if (msgPOSEl) showError(msgPOSEl, `Error al registrar en caja: <span class="math-inline">{errorCaja.message}. La venta #${ventaId} podría necesitar ajuste manual en caja.`);
+      // OJO: Aquí la venta en tienda SÍ se creó. Es un caso especial de error.
+    }
+
     // Limpia
     posCarrito = [];
     renderCarritoPOS();
@@ -553,10 +532,11 @@ posCarrito = [];
     document.getElementById('msgPOS').textContent = "¡Venta registrada!";
     setTimeout(()=>{document.getElementById('msgPOS').textContent="";},1700);
 
-  }catch(err){
+  } catch(err){
     document.getElementById('msgPOS').textContent = err.message;
   }
 }
+
 // =============== FIN BLOQUE POS ===============
 
 

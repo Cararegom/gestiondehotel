@@ -404,21 +404,53 @@ function generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, bala
 }
 
 async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
+  // Traer el/los correos de destino configurados por el hotel
   const { data: config } = await currentSupabaseInstance
       .from('configuracion_hotel')
-      .select('correo_remitente')
-      .eq('hotel_id', currentHotelId).single();
-  const correosDestino = config?.correo_remitente || currentModuleUser.email;
+      .select('correo_reportes, correo_remitente')
+      .eq('hotel_id', currentHotelId)
+      .maybeSingle();
 
+  // Usar el nuevo campo, y hacer backup por si el admin lo deja vacío
+  let toCorreos = (config?.correo_reportes || '').trim();
+  // Como fallback, usa el email del usuario actual o uno de backup duro
+  if (!toCorreos) {
+    toCorreos = currentModuleUser.email || "tucorreo@tudominio.com";
+  }
+
+  // Validar que haya al menos un correo válido
+  // (aquí validamos solo que tenga @, si quieres un validador más pro, avísame)
+  if (!toCorreos || !toCorreos.split(',').some(correo => correo.trim().includes('@'))) {
+    showError(feedbackEl, "No hay correo de destino válido para enviar el cierre de caja. Configúralo en Ajustes.");
+    return;
+  }
+
+  // Si quieres, limpia espacios y quita dobles comas
+  toCorreos = toCorreos.split(',').map(c => c.trim()).filter(c => !!c).join(',');
+
+  // El 'from' solo si tu sistema lo usa (Brevo permite, Gmail API no)
+  const fromCorreo = config?.correo_remitente || "no-reply@gestiondehotel.com";
+
+  // Armar el payload que espera tu Make/Brevo (si tu scenario acepta varios correos juntos)
+  const payload = {
+    to: toCorreos,         // puede ser: admin@hotel.com,gerente@hotel.com
+    from: fromCorreo,
+    subject: asunto,
+    html: htmlReporte
+  };
+
+  // Enviar al webhook de Make.com
   const response = await fetch(EMAIL_REPORT_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ to: correosDestino, subject: asunto, html: htmlReporte })
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
   });
+
   if (!response.ok) {
       showError(feedbackEl, 'No se pudo enviar el reporte por email.');
   }
 }
+
 
 
 // --- MOUNT / UNMOUNT ---
