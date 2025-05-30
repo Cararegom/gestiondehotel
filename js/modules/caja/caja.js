@@ -152,87 +152,67 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
         const tr = document.createElement('tr');
         tr.className = "hover:bg-gray-50";
         tr.innerHTML = `
-  <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
-  <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
-  <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
-  <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
-  <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
-  <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-    ${mv.metodos_pago?.nombre || 'N/A'}
-    <button class="ml-2 text-blue-500 hover:underline" data-edit-metodo="${mv.id}">✏️</button>
-  </td>
-`;
-
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
+          <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
+          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+            ${mv.metodos_pago?.nombre || 'N/A'}
+            <button class="ml-2 text-blue-500 hover:underline" data-edit-metodo="${mv.id}">✏️</button>
+          </td>
+        `;
         tBodyEl.appendChild(tr);
       });
-      movements.forEach(mv => {
-  if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
-  else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
-  const tr = document.createElement('tr');
-  tr.className = "hover:bg-gray-50";
-  tr.innerHTML = `
-    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
-    <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
-    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
-    <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
-    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
-    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-      ${mv.metodos_pago?.nombre || 'N/A'}
-      <button class="ml-2 text-blue-500 hover:underline" data-edit-metodo="${mv.id}">✏️</button>
-    </td>
-  `;
-  tBodyEl.appendChild(tr);
-});
 
-// --- Agrega el listener para editar método de pago ---
-tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
-  btn.onclick = async () => {
-    const movimientoId = btn.getAttribute('data-edit-metodo');
-    const { data: metodosPago } = await currentSupabaseInstance
-      .from('metodos_pago')
-      .select('id, nombre')
-      .eq('hotel_id', currentHotelId)
-      .eq('activo', true);
+      // --- Agrega el listener para editar método de pago ---
+      tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
+        btn.onclick = async () => {
+          const movimientoId = btn.getAttribute('data-edit-metodo');
+          const { data: metodosPago } = await currentSupabaseInstance
+            .from('metodos_pago')
+            .select('id, nombre')
+            .eq('hotel_id', currentHotelId)
+            .eq('activo', true);
 
-    let selectHtml = '<select id="select-nuevo-metodo-pago" class="input px-2 py-1 rounded-md border border-gray-300">';
-    metodosPago.forEach(mp => {
-      selectHtml += `<option value="${mp.id}">${mp.nombre}</option>`;
-    });
-    selectHtml += '</select>';
+          let selectHtml = '<select id="select-nuevo-metodo-pago" class="input px-2 py-1 rounded-md border border-gray-300">';
+          metodosPago.forEach(mp => {
+            selectHtml += `<option value="${mp.id}">${mp.nombre}</option>`;
+          });
+          selectHtml += '</select>';
 
-    const confirmDiv = document.createElement('div');
-    confirmDiv.innerHTML = `
-      <div class="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-[99999]">
-        <div class="bg-white rounded-xl p-6 border-4 border-green-200 shadow-xl w-full max-w-xs text-center">
-          <h4 class="text-lg font-bold mb-3">Cambiar método de pago</h4>
-          ${selectHtml}
-          <div class="mt-4 flex gap-2 justify-center">
-            <button id="btn-confirm-metodo-pago" class="button button-success px-4 py-2 rounded">Guardar</button>
-            <button id="btn-cancel-metodo-pago" class="button button-neutral px-4 py-2 rounded">Cancelar</button>
-          </div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(confirmDiv);
+          const confirmDiv = document.createElement('div');
+          confirmDiv.innerHTML = `
+            <div class="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-[99999]">
+              <div class="bg-white rounded-xl p-6 border-4 border-green-200 shadow-xl w-full max-w-xs text-center">
+                <h4 class="text-lg font-bold mb-3">Cambiar método de pago</h4>
+                ${selectHtml}
+                <div class="mt-4 flex gap-2 justify-center">
+                  <button id="btn-confirm-metodo-pago" class="button button-success px-4 py-2 rounded">Guardar</button>
+                  <button id="btn-cancel-metodo-pago" class="button button-neutral px-4 py-2 rounded">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          `;
+          document.body.appendChild(confirmDiv);
 
-    document.getElementById('btn-cancel-metodo-pago').onclick = () => confirmDiv.remove();
+          document.getElementById('btn-cancel-metodo-pago').onclick = () => confirmDiv.remove();
 
-    document.getElementById('btn-confirm-metodo-pago').onclick = async () => {
-      const nuevoMetodoId = document.getElementById('select-nuevo-metodo-pago').value;
-      const { error } = await currentSupabaseInstance
-        .from('caja')
-        .update({ metodo_pago_id: nuevoMetodoId })
-        .eq('id', movimientoId);
-      if (error) {
-        alert('Error actualizando método de pago: ' + error.message);
-      } else {
-        confirmDiv.remove();
-        await loadAndRenderMovements(tBodyEl, summaryEls);
-      }
-    };
-  };
-});
-
+          document.getElementById('btn-confirm-metodo-pago').onclick = async () => {
+            const nuevoMetodoId = document.getElementById('select-nuevo-metodo-pago').value;
+            const { error } = await currentSupabaseInstance
+              .from('caja')
+              .update({ metodo_pago_id: nuevoMetodoId })
+              .eq('id', movimientoId);
+            if (error) {
+              alert('Error actualizando método de pago: ' + error.message);
+            } else {
+              confirmDiv.remove();
+              await loadAndRenderMovements(tBodyEl, summaryEls);
+            }
+          };
+        };
+      });
     }
     const balance = ingresos - egresos;
     summaryEls.ingresos.textContent = formatCurrency(ingresos);
