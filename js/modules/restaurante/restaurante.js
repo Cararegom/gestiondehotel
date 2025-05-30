@@ -371,6 +371,7 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
 }
 
 async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, moduleUser) {
+  // Limpia listeners previos
   currentTabListeners.forEach(({ element, type, handler }) => element.removeEventListener(type, handler));
   currentTabListeners = [];
   ventaItems = [];
@@ -384,7 +385,7 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
             <input type="text" id="pos-filtro-platos" class="form-control form-control-sm py-1.5 px-2 text-xs w-full sm:w-1/2 md:w-1/3 rounded-md border-gray-300" placeholder="Buscar plato...">
           </div>
           <div id="pos-platos-disponibles-render-area" class="min-h-[100px]">
-            </div>
+          </div>
         </div>
         <div id="pos-pedido-actual" class="md:col-span-1 pos-pedido-card card bg-white rounded-lg shadow flex flex-col max-h-[calc(100vh-200px)]">
           <div class="card-header bg-gray-100 p-3 border-b"><h5 class="mb-0 text-md font-semibold text-gray-700">Pedido Actual</h5></div>
@@ -408,16 +409,29 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
             <h4 class="mb-2 text-lg font-bold text-right">Total: <span id="venta-restaurante-total" class="text-indigo-600">$0</span></h4>
             <form id="form-finalizar-venta-restaurante" class="space-y-3">
               <div class="form-group">
+                <label for="venta-restaurante-modo" class="block text-xs font-medium text-gray-600">Modo de Venta *</label>
+                <select id="venta-restaurante-modo" name="modoVenta" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs" required>
+                  <option value="inmediato">Pago Inmediato</option>
+                  <option value="habitacion">Cargar a Habitación</option>
+                </select>
+              </div>
+              <div class="form-group" id="grupo-metodo-pago-restaurante">
                 <label for="venta-restaurante-metodo-pago" class="block text-xs font-medium text-gray-600">Método de Pago *</label>
-                <select id="venta-restaurante-metodo-pago" name="metodoPagoId" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs" required>
+                <select id="venta-restaurante-metodo-pago" name="metodoPagoId" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs">
                   <option value="">Cargando...</option>
                 </select>
               </div>
-              <div class="form-group">
+              <div class="form-group" id="grupo-habitacion-restaurante" style="display:none;">
+                <label for="venta-restaurante-habitacion" class="block text-xs font-medium text-gray-600">Habitación a cargar *</label>
+                <select id="venta-restaurante-habitacion" name="habitacionId" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs">
+                  <option value="">Cargando...</option>
+                </select>
+              </div>
+              <div class="form-group" id="grupo-cliente-restaurante">
                 <label for="venta-restaurante-cliente" class="block text-xs font-medium text-gray-600">Cliente (Opcional)</label>
                 <input type="text" id="venta-restaurante-cliente" name="clienteNombre" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs" placeholder="Nombre o # Habitación">
               </div>
-              <button type="submit" id="btn-finalizar-venta-restaurante" class="button button-success button-block w-full py-2 px-4 rounded-md text-sm">Finalizar y Pagar</button>
+              <button type="submit" id="btn-finalizar-venta-restaurante" class="button button-success button-block w-full py-2 px-4 rounded-md text-sm">Registrar Venta</button>
             </form>
           </div>
         </div>
@@ -425,71 +439,110 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
       <div id="posVentaFeedback" role="status" aria-live="polite" style="display:none;" class="feedback-message mt-3"></div>
     </section>`;
 
+  // ELEMENTOS
   const posPlatosRenderAreaEl = tabContentEl.querySelector('#pos-platos-disponibles-render-area');
   const posPedidoItemsBodyEl = tabContentEl.querySelector('#pos-pedido-items-body');
   const formFinalizarVentaEl = tabContentEl.querySelector('#form-finalizar-venta-restaurante');
   const selectMetodoPagoVentaEl = tabContentEl.querySelector('#venta-restaurante-metodo-pago');
+  const selectModoVentaEl = tabContentEl.querySelector('#venta-restaurante-modo');
+  const selectHabitacionEl = tabContentEl.querySelector('#venta-restaurante-habitacion');
+  const grupoMetodoPagoEl = tabContentEl.querySelector('#grupo-metodo-pago-restaurante');
+  const grupoHabitacionEl = tabContentEl.querySelector('#grupo-habitacion-restaurante');
+  const grupoClienteEl = tabContentEl.querySelector('#grupo-cliente-restaurante');
   const btnFinalizarVentaEl = tabContentEl.querySelector('#btn-finalizar-venta-restaurante');
   const posFeedbackEl = tabContentEl.querySelector('#posVentaFeedback');
   const filtroPlatosInputEl = tabContentEl.querySelector('#pos-filtro-platos');
   const restauranteLoadingEl = document.getElementById('restaurante-loading');
 
+  let habitacionesOcupadas = [];
+
   showRestauranteLoading(restauranteLoadingEl, true, "Cargando datos del POS...");
 
   try {
-    const [{ data: platos, error: errPlatos }, { data: metodos, error: errMetodos }] = await Promise.all([
+    const [
+      { data: platos, error: errPlatos },
+      { data: metodos, error: errMetodos },
+      { data: habitaciones, error: errHab }
+    ] = await Promise.all([
       supabaseInstance.from('platos').select('*').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
-      supabaseInstance.from('metodos_pago').select('id, nombre').eq('activo', true).order('nombre')
+      supabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
+      supabaseInstance.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).eq('estado', 'ocupada').order('nombre')
     ]);
     if (errPlatos) throw errPlatos;
     if (errMetodos) throw errMetodos;
+    if (errHab) throw errHab;
 
-    platosCache = platos || []; // Cache para el filtro
+    platosCache = platos || [];
     metodosPagoCache = metodos || [];
+    habitacionesOcupadas = habitaciones || [];
 
+    // Render platos
     renderPOSPlatosUI(posPlatosRenderAreaEl, platosCache, (plato) => {
       const existingItem = ventaItems.find(item => item.plato_id === plato.id);
       if (existingItem) {
         existingItem.cantidad++;
       } else {
-        ventaItems.push({ 
-          plato_id: plato.id, 
-          nombre_plato: plato.nombre, 
-          cantidad: 1, 
-          precio_unitario: plato.precio 
+        ventaItems.push({
+          plato_id: plato.id,
+          nombre_plato: plato.nombre,
+          cantidad: 1,
+          precio_unitario: plato.precio
         });
       }
       renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
     });
 
+    // Render métodos de pago
     selectMetodoPagoVentaEl.innerHTML = metodosPagoCache.length > 0
       ? `<option value="">-- Seleccione Método --</option>` + metodosPagoCache.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')
       : '<option value="" disabled>No hay métodos de pago activos</option>';
 
+    // Render habitaciones ocupadas
+    selectHabitacionEl.innerHTML = habitacionesOcupadas.length > 0
+      ? `<option value="">-- Seleccione habitación --</option>` + habitacionesOcupadas.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('')
+      : '<option value="" disabled>No hay habitaciones ocupadas</option>';
+
     renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
+
   } catch (e) {
     console.error("Error crítico al cargar el POS:", e);
     showRestauranteFeedback(posFeedbackEl, `Error crítico al cargar el POS: ${e.message}`, 'error-indicator', 0);
   } finally {
     showRestauranteLoading(restauranteLoadingEl, false);
   }
-  
+
+  // Filtro de platos
   const filtroHandler = () => {
-      const termino = filtroPlatosInputEl.value.toLowerCase();
-      const platosFiltrados = platosCache.filter(plato => 
-          plato.nombre.toLowerCase().includes(termino) || 
-          (plato.categoria && plato.categoria.toLowerCase().includes(termino))
-      );
-      renderPOSPlatosUI(posPlatosRenderAreaEl, platosFiltrados, (plato) => {
-        const existingItem = ventaItems.find(item => item.plato_id === plato.id);
-        if (existingItem) existingItem.cantidad++;
-        else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
-        renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
-      });
+    const termino = filtroPlatosInputEl.value.toLowerCase();
+    const platosFiltrados = platosCache.filter(plato =>
+      plato.nombre.toLowerCase().includes(termino) ||
+      (plato.categoria && plato.categoria.toLowerCase().includes(termino))
+    );
+    renderPOSPlatosUI(posPlatosRenderAreaEl, platosFiltrados, (plato) => {
+      const existingItem = ventaItems.find(item => item.plato_id === plato.id);
+      if (existingItem) existingItem.cantidad++;
+      else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
+      renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
+    });
   };
   filtroPlatosInputEl.addEventListener('input', filtroHandler);
-  currentTabListeners.push({element: filtroPlatosInputEl, type: 'input', handler: filtroHandler});
+  currentTabListeners.push({ element: filtroPlatosInputEl, type: 'input', handler: filtroHandler });
 
+  // Lógica para mostrar/ocultar campos según modo de venta
+  selectModoVentaEl.addEventListener('change', function () {
+    const modo = selectModoVentaEl.value;
+    if (modo === "inmediato") {
+      grupoMetodoPagoEl.style.display = "";
+      grupoHabitacionEl.style.display = "none";
+      grupoClienteEl.style.display = "";
+    } else if (modo === "habitacion") {
+      grupoMetodoPagoEl.style.display = "none";
+      grupoHabitacionEl.style.display = "";
+      grupoClienteEl.style.display = "none";
+    }
+  });
+  // Disparar cambio inicial para estado correcto de inputs
+  selectModoVentaEl.dispatchEvent(new Event('change'));
 
   function renderVentaItemsUI(tbodyEl, feedbackElementForItems) {
     tbodyEl.innerHTML = '';
@@ -537,67 +590,178 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
     tabContentEl.querySelector('#venta-restaurante-total').textContent = formatCurrencyLocal(calculatedTotal);
   }
 
+  // SUBMIT DE LA VENTA
   const finalizarVentaHandler = async (e) => {
     e.preventDefault();
-    if(posFeedbackEl) clearRestauranteFeedback(posFeedbackEl);
+    if (posFeedbackEl) clearRestauranteFeedback(posFeedbackEl);
 
     if (ventaItems.length === 0) {
       showRestauranteFeedback(posFeedbackEl, "El pedido está vacío. Agregue platos para continuar.", 'error-indicator');
       return;
     }
-    const metodoPagoId = selectMetodoPagoVentaEl.value;
-    if (!metodoPagoId) {
-      showRestauranteFeedback(posFeedbackEl, "Por favor, seleccione un método de pago.", 'error-indicator');
-      selectMetodoPagoVentaEl.focus();
+
+    const modo = selectModoVentaEl.value;
+
+    // Pago inmediato
+    if (modo === "inmediato") {
+      const metodoPagoId = selectMetodoPagoVentaEl.value;
+      if (!metodoPagoId) {
+        showRestauranteFeedback(posFeedbackEl, "Por favor, seleccione un método de pago.", 'error-indicator');
+        selectMetodoPagoVentaEl.focus();
+        return;
+      }
+
+      const originalButtonText = "Registrar Venta";
+      setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, originalButtonText, 'Procesando...');
+
+      const montoTotalVenta = ventaItems.reduce((sum, item) => sum + item.cantidad * item.precio_unitario, 0);
+      const nombreClienteTemporal = formFinalizarVentaEl.elements.clienteNombre.value.trim() || null;
+      const platosParaRpc = ventaItems.map(item => ({
+        plato_id: item.plato_id,
+        cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario,
+      }));
+
+      try {
+        const { data: rpcResult, error: rpcError } = await supabaseInstance.rpc('procesar_venta_restaurante_y_caja', {
+          p_hotel_id: hotelId,
+          p_usuario_id: moduleUser.id,
+          p_metodo_pago_id: metodoPagoId,
+          p_platos_vendidos: platosParaRpc,
+          p_monto_total_venta: montoTotalVenta,
+          p_nombre_cliente_temporal: nombreClienteTemporal
+        });
+
+        if (rpcError) throw rpcError;
+        if (rpcResult && rpcResult.error === true) {
+          throw new Error(rpcResult.message || 'Error devuelto por el servidor al procesar la venta.');
+        }
+
+        showRestauranteFeedback(posFeedbackEl, `Venta #${rpcResult?.venta_id || ''} registrada exitosamente.`, 'success-indicator', 5000);
+        await registrarEnBitacora(supabaseInstance, hotelId, moduleUser.id, 'NUEVA_VENTA_RESTAURANTE_POS', { ventaId: rpcResult?.venta_id, monto: montoTotalVenta, cliente: nombreClienteTemporal });
+
+        ventaItems = [];
+        renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
+        formFinalizarVentaEl.reset();
+        selectMetodoPagoVentaEl.value = "";
+        filtroPlatosInputEl.value = "";
+      } catch (err) {
+        console.error('Error finalizing restaurant sale:', err);
+        showRestauranteFeedback(posFeedbackEl, `Error al finalizar la venta: ${err.message}`, 'error-indicator', 0);
+      } finally {
+        setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, originalButtonText);
+      }
       return;
     }
 
-    const originalButtonText = "Finalizar y Pagar"; // Hardcoded for simplicity, or store it
-    setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, originalButtonText, 'Procesando...');
-
-    const montoTotalVenta = ventaItems.reduce((sum, item) => sum + item.cantidad * item.precio_unitario, 0);
-    const nombreClienteTemporal = formFinalizarVentaEl.elements.clienteNombre.value.trim() || null;
-
-    const platosParaRpc = ventaItems.map(item => ({
-      plato_id: item.plato_id,
-      cantidad: item.cantidad,
-      precio_unitario: item.precio_unitario,
-    }));
-
-    try {
-      const { data: rpcResult, error: rpcError } = await supabaseInstance.rpc('procesar_venta_restaurante_y_caja', {
-        p_hotel_id: hotelId,
-        p_usuario_id: moduleUser.id,
-        p_metodo_pago_id: metodoPagoId,
-        p_platos_vendidos: platosParaRpc,
-        p_monto_total_venta: montoTotalVenta,
-        p_nombre_cliente_temporal: nombreClienteTemporal
-      });
-
-      if (rpcError) throw rpcError; // Error de red o de la llamada RPC en sí
-      if (rpcResult && rpcResult.error === true) { // Error lógico devuelto por la función PL/pgSQL
-        throw new Error(rpcResult.message || 'Error devuelto por el servidor al procesar la venta.');
+    // Cargar a habitación
+    if (modo === "habitacion") {
+      const habitacionId = selectHabitacionEl.value;
+      if (!habitacionId) {
+        showRestauranteFeedback(posFeedbackEl, "Seleccione una habitación a la que cargar el consumo.", 'error-indicator');
+        selectHabitacionEl.focus();
+        return;
       }
 
-      showRestauranteFeedback(posFeedbackEl, `Venta #${rpcResult?.venta_id || ''} registrada exitosamente.`, 'success-indicator', 5000);
-      await registrarEnBitacora(supabaseInstance, hotelId, moduleUser.id, 'NUEVA_VENTA_RESTAURANTE_POS', { ventaId: rpcResult?.venta_id, monto: montoTotalVenta, cliente: nombreClienteTemporal });
-      
-      ventaItems = [];
-      renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
-      formFinalizarVentaEl.reset();
-      selectMetodoPagoVentaEl.value = "";
-      filtroPlatosInputEl.value = ""; // Reset filter
-      // Opcional: Recargar lista de platos si el stock cambiara (no implementado aquí)
-      // renderPOSPlatosUI(posPlatosRenderAreaEl, platosCache, ...);
+      setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, "Registrar Venta", "Cargando...");
 
+      // Buscar reserva activa en esa habitación
+      let reservaId = null;
+      try {
+        const { data: reservas } = await supabaseInstance
+          .from('reservas')
+          .select('id')
+          .eq('habitacion_id', habitacionId)
+          .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+          .order('fecha_inicio', { ascending: false })
+          .limit(1);
 
-    } catch (err) {
-      console.error('Error finalizing restaurant sale:', err);
-      showRestauranteFeedback(posFeedbackEl, `Error al finalizar la venta: ${err.message}`, 'error-indicator', 0);
-    } finally {
-      setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, originalButtonText);
+        if (reservas && reservas.length > 0) {
+          reservaId = reservas[0].id;
+        }
+      } catch (err) {
+        showRestauranteFeedback(posFeedbackEl, "Error buscando la reserva activa de la habitación.", 'error-indicator');
+        setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
+        return;
+      }
+
+      if (!reservaId) {
+        showRestauranteFeedback(posFeedbackEl, "No se encontró una reserva activa para esa habitación.", 'error-indicator');
+        setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
+        return;
+      }
+
+      // Registra la venta en la tabla ventas_restaurante y asóciala a la reserva
+      const montoTotalVenta = ventaItems.reduce((sum, item) => sum + item.cantidad * item.precio_unitario, 0);
+      const platosParaInsert = ventaItems.map(item => ({
+        venta_id: null, // se actualiza después
+        plato_id: item.plato_id,
+        cantidad: item.cantidad,
+        precio_unitario: item.precio_unitario,
+        subtotal: item.cantidad * item.precio_unitario,
+        hotel_id: hotelId,
+        creado_en: new Date().toISOString()
+      }));
+console.log({
+  hotel_id: hotelId,
+  usuario_id: moduleUser.id,
+  habitacion_id: habitacionId,
+  reserva_id: reservaId,
+  total_venta: montoTotalVenta,
+  fecha: new Date().toISOString(),
+  creado_en: new Date().toISOString()
+});
+
+      try {
+        // 1. Registrar la venta principal
+      const now = new Date().toISOString();
+const { data: ventas, error: ventaError } = await supabaseInstance
+  .from('ventas_restaurante')
+  .insert([{
+    hotel_id: hotelId,
+    usuario_id: moduleUser.id,
+    habitacion_id: habitacionId,
+    reserva_id: reservaId,
+    monto_total: montoTotalVenta,
+    fecha_venta: now,
+    creado_en: now,
+    fecha: now, // este campo puede ser igual a now o como lo quieras manejar
+    // total_venta: puedes omitirlo (queda null)
+    // metodo_pago_id: null si carga a habitación
+    // nombre_cliente_temporal: null si carga a habitación
+  }])
+  .select();
+if (ventaError || !ventas?.[0]) throw new Error("Error guardando venta.");
+const ventaId = ventas[0].id; // 
+
+        // 2. Detalle de la venta
+        for (let item of ventaItems) {
+          await supabaseInstance.from('ventas_restaurante_items').insert([{
+  venta_id: ventaId,
+  plato_id: item.plato_id,
+  cantidad: item.cantidad,
+  precio_unitario_venta: item.precio_unitario, // nombre correcto en tu tabla
+  subtotal: item.cantidad * item.precio_unitario,
+  creado_en: now
+}]);
+
+        }
+
+        showRestauranteFeedback(posFeedbackEl, `Consumo cargado exitosamente a la habitación.`, 'success-indicator', 3500);
+        await registrarEnBitacora(supabaseInstance, hotelId, moduleUser.id, 'CONSUMO_HABITACION_RESTAURANTE', { ventaId, reservaId, habitacionId, monto: montoTotalVenta });
+
+        ventaItems = [];
+        renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
+        formFinalizarVentaEl.reset();
+        filtroPlatosInputEl.value = "";
+      } catch (err) {
+        showRestauranteFeedback(posFeedbackEl, `Error al cargar el consumo a la habitación: ${err.message}`, 'error-indicator');
+      } finally {
+        setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
+      }
     }
   };
+
   formFinalizarVentaEl.addEventListener('submit', finalizarVentaHandler);
   currentTabListeners.push({ element: formFinalizarVentaEl, type: 'submit', handler: finalizarVentaHandler });
 }

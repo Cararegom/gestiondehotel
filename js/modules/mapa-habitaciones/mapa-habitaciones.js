@@ -10,6 +10,38 @@ let currentRooms = [];
 let cronometrosInterval = {};
 import { turnoService } from '../../services/turnoService.js';
 
+
+const estadoColores = {
+    libre: { border: 'border-green-500', badge: 'bg-green-100 text-green-700', icon: `...` },
+    ocupada: { border: 'border-yellow-500', badge: 'bg-yellow-100 text-yellow-700', icon: `...` },
+    "tiempo agotado": { border: 'border-red-600', badge: 'bg-red-100 text-red-700', icon: `...` },
+    mantenimiento: { border: 'border-orange-500', badge: 'bg-orange-100 text-orange-700', icon: `...` },
+    limpieza: { border: 'border-cyan-500', badge: 'bg-cyan-100 text-cyan-700', icon: `...` },
+    reservada: { border: 'border-indigo-500', badge: 'bg-indigo-100 text-indigo-700', icon: `...` },
+    // agrega más si los tienes
+};
+ // SONIDO SOLO UNA VEZ
+    let sonidoLanzado = false;
+   function playPopSound() {
+    const audio = new Audio('js/assets/notificacion.mp3'); // O la ruta correcta a tu archivo mp3
+    audio.volume = 0.8;
+    audio.play();
+}
+// Función robusta para asignar eventos a botones cuando estén en el DOM
+function waitForButtonAndBind(id, fn) {
+  let tries = 0;
+  function tryBind() {
+    const el = document.getElementById(id);
+    if (el) {
+      fn(el);
+    } else if (++tries < 20) {
+      setTimeout(tryBind, 100);
+    }
+  }
+  tryBind();
+}
+
+
 // --- Funciones auxiliares de formato ---
 function formatCurrency(value, currency = 'COP') {
     if (typeof value !== 'number' || isNaN(value)) {
@@ -282,13 +314,7 @@ function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
     card.appendChild(contentWrapper);
 
     // ========== Lógica para mostrar el tiempo restante o excedido en la tarjeta ==========
-    // SONIDO SOLO UNA VEZ
-    let sonidoLanzado = false;
-    function playPopSound() {
-        const audio = new Audio('https://cdn.pixabay.com/audio/2022/07/26/audio_124bfa9a8b.mp3');
-        audio.volume = 0.7;
-        audio.play();
-    }
+   
 
     if (["ocupada", "activa", "reservada", "tiempo agotado"].includes(room.estado) && room.fecha_fin) {
         const cronometroTextEl = card.querySelector(`#cronometro-text-${room.id}`);
@@ -351,7 +377,6 @@ async function showHabitacionOpcionesModal(room, supabase, currentUser, hotelId,
     botonesHtml += `<button id="btn-extender-tiempo" class="button w-full mb-2 py-2.5" style="background:#a21caf;color:white;">Extender Tiempo</button>`;
     botonesHtml += `<button id="btn-entregar" class="button w-full mb-2 py-2.5" style="background:#06b6d4;color:white;">Entregar Habitación</button>`;
     botonesHtml += `<button id="btn-ver-consumos" class="button w-full mb-2 py-2.5" style="background:#0ea5e9;color:white;">Ver Consumos</button>`;
-    botonesHtml += `<button id="btn-facturar" class="button w-full mb-2 py-2.5" style="background:#22d3ee;color:#047857;font-weight:bold;">Facturar Todo</button>`;
     botonesHtml += `<button id="btn-cambiar-habitacion" class="button w-full mb-2 py-2.5" style="background:#6366f1;color:white;">Cambiar de Habitación</button>`;
 
  }
@@ -1155,256 +1180,109 @@ setupButtonListener('btn-cambiar-habitacion', async () => {
   });
 
   // =================== BOTÓN VER CONSUMOS (igual que antes)
-   setupButtonListener('btn-ver-consumos', async () => {
-  // 1. Buscar la reserva activa
+   // Utilidades
+const formatCurrency = val => Number(val || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP' });
+const formatDateTime = d => new Date(d).toLocaleString('es-CO');
+
+// =================== BOTÓN VER CONSUMOS Y FACTURAR ===================
+setupButtonListener('btn-ver-consumos', async () => {
+  // Buscar reserva activa
   const { data: reserva, error: errRes } = await supabase
     .from('reservas')
-    .select('id, cliente_nombre, monto_total, fecha_inicio, fecha_fin')
+    .select('id, cliente_nombre, monto_total, fecha_inicio, fecha_fin, hotel_id')
     .eq('habitacion_id', room.id)
     .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
     .order('fecha_inicio', { ascending: false })
     .limit(1)
     .single();
-
   if (errRes || !reserva) {
     mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos");
     return;
   }
 
-  // ...Antes ya tienes servicios adicionales, productos normales, etc.
-
-// 2. Buscar ventas de tienda asociadas a esa reserva
-const { data: ventasTienda, error: errVentas } = await supabase
-  .from('ventas_tienda')
-  .select('id, total_venta')
-  .eq('reserva_id', reserva.id);
-
-let detallesTienda = [];
-let totalTienda = 0;
-
-if (ventasTienda && ventasTienda.length > 0) {
-  const ventaIds = ventasTienda.map(v => v.id);
-  const { data: productosTienda } = await supabase
-    .from('detalle_ventas_tienda')
-    .select('venta_id, producto_nombre, cantidad, subtotal')
-    .in('venta_id', ventaIds);
-
-  if (productosTienda && productosTienda.length > 0) {
-    detallesTienda = productosTienda.map(item => ({
-      nombre: item.producto_nombre,
-      cantidad: item.cantidad,
-      subtotal: item.subtotal,
-      tipo: "Tienda" // Puedes agregar el origen si quieres diferenciarlo
-    }));
-    totalTienda = detallesTienda.reduce((sum, item) => sum + (item.subtotal || 0), 0);
-  }
-}
-
-// ------ Agrega estos detalles a tu lista de consumos ---------
-const consumosTotales = [
-  ...detallesServiciosAdicionales, // <-- lo que tengas de servicios
-  ...detallesTienda               // <-- esto suma los de tienda
-  // Puedes agregar aquí más tipos (ej: restaurante)
-];
-
-// En tu renderizado, recorre consumosTotales y muéstralos todos
-consumosTotales.forEach(item => {
-  // Renderiza cada línea
-  // Ejemplo: 
-  // <tr><td>${item.nombre}</td><td>${item.cantidad}</td><td>${item.subtotal}</td></tr>
-});
-
-  // 3. Buscar servicios adicionales de la reserva
-  const { data: serviciosReserva, error: errServ } = await supabase
-    .from('servicios_x_reserva')
-    .select('servicio_id, cantidad, nota')
-    .eq('reserva_id', reserva.id);
-
-  let detallesServicios = [];
-  let totalServicios = 0;
-
-  if (serviciosReserva && serviciosReserva.length > 0) {
-    const servicioIds = [...new Set(serviciosReserva.map(s => s.servicio_id))];
-    let nombresServicios = {};
-    let preciosServicios = {};
-    if (servicioIds.length > 0) {
-      const { data: infoServicios } = await supabase
-        .from('servicios_adicionales')
-        .select('id, nombre, precio')
-        .in('id', servicioIds);
-      if (infoServicios) {
-        infoServicios.forEach(s => {
-          nombresServicios[s.id] = s.nombre;
-          preciosServicios[s.id] = s.precio || 0;
-        });
-      }
-    }
-    const agrupados = {};
-    serviciosReserva.forEach(det => {
-      const nombre = nombresServicios[det.servicio_id] || "Servicio";
-      const precio = preciosServicios[det.servicio_id] || 0;
-      if (!agrupados[nombre]) {
-        agrupados[nombre] = { cantidad: 0, subtotal: 0, precio, notas: [] };
-      }
-      agrupados[nombre].cantidad += det.cantidad;
-      agrupados[nombre].subtotal += det.cantidad * precio;
-      if (det.nota) agrupados[nombre].notas.push(det.nota);
-    });
-    detallesServicios = Object.entries(agrupados).map(([nombre, info]) => ({
-      nombre,
-      cantidad: info.cantidad,
-      subtotal: info.subtotal,
-      precio: info.precio,
-      notas: info.notas
-    }));
-    totalServicios = detallesServicios.reduce((sum, det) => sum + (det.subtotal || 0), 0);
-  }
-
-  // Total general
-  let totalGeneral = (reserva.monto_total || 0) + totalTienda + totalServicios;
-
-  // HTML para servicios adicionales
-  let htmlServicios = "";
-  if (detallesServicios.length > 0) {
-    htmlServicios = `
-      <div style="margin-bottom:10px;">
-        <b style="font-size:1em; color:#475569;">Servicios adicionales:</b>
-        <table style="width:100%; border-collapse:collapse; margin:6px 0 0 0; font-size: 0.97em;">
-          <thead>
-            <tr style="background:#f3f6fa;">
-              <th style="text-align:left; padding: 6px 6px;">Servicio</th>
-              <th style="text-align:center; padding: 6px 6px;">Cant.</th>
-              <th style="text-align:right; padding: 6px 6px;">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${detallesServicios.map(s => `
-              <tr>
-                <td style="padding: 4px 6px;">${s.nombre}</td>
-                <td style="text-align:center; padding: 4px 6px;">${s.cantidad}</td>
-                <td style="text-align:right; padding: 4px 6px;">${formatCurrency(s.subtotal)}</td>
-              </tr>
-            `).join('')}
-            <tr>
-              <td colspan="2" style="text-align:right; padding: 6px 6px; font-weight:bold;">Total Servicios:</td>
-              <td style="text-align:right; padding: 6px 6px; font-weight:bold;">${formatCurrency(totalServicios)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
-  }
-
-  // HTML final del resumen
-  let html = `
-    <div style="font-family: 'Segoe UI', Arial, sans-serif;">
-      <div style="font-size: 1.1em; font-weight: bold; color: #0ea5e9; margin-bottom: 12px;">
-        Consumos Estancia + Tienda + Servicios
-      </div>
-      <div style="margin-bottom: 10px;">
-        <b style="color:#475569;">Huésped:</b> ${reserva.cliente_nombre} <br>
-        <b style="color:#475569;">Fecha:</b> ${formatDateTime(reserva.fecha_inicio)} - ${formatDateTime(reserva.fecha_fin)}
-      </div>
-      <div style="margin-bottom: 14px;">
-        <b style="font-size:1em; color:#475569;">Estancia habitación:</b>
-        <div style="padding:4px 0 4px 14px;">Estancia: <b style="color:#06b6d4;">${formatCurrency(reserva.monto_total)}</b></div>
-      </div>
-      ${detalles.length > 0 ? `
-        <div style="margin-bottom:10px;">
-          <b style="font-size:1em; color:#475569;">Consumos Tienda:</b>
-          <table style="width:100%; border-collapse:collapse; margin:6px 0 0 0; font-size: 0.97em;">
-            <thead>
-              <tr style="background:#f3f6fa;">
-                <th style="text-align:left; padding: 6px 6px;">Producto</th>
-                <th style="text-align:center; padding: 6px 6px;">Cant.</th>
-                <th style="text-align:right; padding: 6px 6px;">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${detalles.map(t => `
-                <tr>
-                  <td style="padding: 4px 6px;">${t.nombre}</td>
-                  <td style="text-align:center; padding: 4px 6px;">${t.cantidad}</td>
-                  <td style="text-align:right; padding: 4px 6px;">${formatCurrency(t.subtotal)}</td>
-                </tr>
-              `).join('')}
-              <tr>
-                <td colspan="2" style="text-align:right; padding: 6px 6px; font-weight:bold;">Total Tienda:</td>
-                <td style="text-align:right; padding: 6px 6px; font-weight:bold;">${formatCurrency(totalTienda)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ` : (totalTienda > 0 ? `<div><b>Total Tienda:</b> ${formatCurrency(totalTienda)}</div>` : '')}
-      ${htmlServicios}
-      <hr style="margin: 16px 0 8px 0; border: none; border-top: 1.5px solid #e0e7ef;">
-      <div style="font-size: 1.22em; text-align: right; font-weight: bold; color: #059669;">
-        Total a pagar: ${formatCurrency(totalGeneral)}
-      </div>
-    </div>
-  `;
-
-  mostrarInfoModalGlobal(html, "Consumos Estancia + Tienda + Servicios");
-});
-
-
-
-  // =================== BOTÓN FACTURAR (igual que antes)
-  setupButtonListener('btn-facturar', async () => {
-  // 1. Buscar la reserva activa
-  const { data: reserva, error: errRes } = await supabase
-    .from('reservas')
-    .select('id, cliente_nombre, monto_total, fecha_inicio, fecha_fin')
-    .eq('habitacion_id', room.id)
-    .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-    .order('fecha_inicio', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (errRes || !reserva) {
-    mostrarInfoModalGlobal("No hay reserva activa para esta habitación.", "Facturar");
-    return;
-  }
-
-  // 2. Buscar ventas de tienda asociadas a esa reserva
-  const { data: ventasTienda, error: errVentas } = await supabase
+  // ========== TIENDA ==========
+  const { data: ventasTienda } = await supabase
     .from('ventas_tienda')
-    .select('id, total_venta')
+    .select('id')
     .eq('reserva_id', reserva.id);
 
-  let detalles = [];
-  let totalTienda = 0;
+  let consumosTienda = [], totalTienda = 0;
+  let ventaIdsTienda = Array.isArray(ventasTienda) ? ventasTienda.map(v => v.id).filter(Boolean) : [];
+  ventaIdsTienda = ventaIdsTienda.map(x => (typeof x === 'string' ? x.trim() : String(x)));
 
-  if (ventasTienda && ventasTienda.length > 0) {
-    const ventaIds = ventasTienda.map(v => v.id);
-    const { data: detallesTienda } = await supabase
+  if (ventaIdsTienda.length > 0) {
+    const { data: rowsTienda } = await supabase
       .from('detalle_ventas_tienda')
-      .select('venta_id, producto_nombre, cantidad, subtotal')
-      .in('venta_id', ventaIds);
+      .select('producto_id, cantidad, subtotal')
+      .in('venta_id', ventaIdsTienda);
 
-    if (detallesTienda && detallesTienda.length > 0) {
-      detalles = detallesTienda.map(item => ({
-        nombre: item.producto_nombre,
-        cantidad: item.cantidad,
-        subtotal: item.subtotal
-      }));
-      totalTienda = detalles.reduce((sum, item) => sum + (item.subtotal || 0), 0);
+    const productoIds = rowsTienda.map(dt => dt.producto_id).filter(Boolean);
+    let nombresProductos = {};
+    if (productoIds.length) {
+      const { data: productos } = await supabase
+        .from('productos_tienda')
+        .select('id, nombre')
+        .in('id', productoIds);
+      if (productos) {
+        productos.forEach(prod => { nombresProductos[prod.id] = prod.nombre; });
+      }
     }
+
+    consumosTienda = rowsTienda.map(t => ({
+      nombre: nombresProductos[t.producto_id] || "Producto",
+      cantidad: t.cantidad,
+      subtotal: t.subtotal
+    }));
+    totalTienda = consumosTienda.reduce((sum, i) => sum + Number(i.subtotal), 0);
   }
 
-  // 3. Buscar servicios adicionales de la reserva
-  const { data: serviciosReserva, error: errServ } = await supabase
+  // ========== RESTAURANTE ==========
+  const { data: ventasRest } = await supabase
+    .from('ventas_restaurante')
+    .select('id')
+    .eq('reserva_id', reserva.id);
+
+  let consumosRest = [], totalRest = 0;
+  let ventaIdsRest = Array.isArray(ventasRest) ? ventasRest.map(v => v.id).filter(Boolean) : [];
+  ventaIdsRest = ventaIdsRest.map(x => (typeof x === 'string' ? x.trim() : String(x)));
+
+  if (ventaIdsRest.length > 0) {
+    const { data: rowsRest } = await supabase
+      .from('ventas_restaurante_items')
+      .select('plato_id, cantidad, subtotal')
+      .in('venta_id', ventaIdsRest);
+
+    const platoIds = rowsRest.map(dt => dt.plato_id).filter(Boolean);
+    let nombresPlatos = {};
+    if (platoIds.length) {
+      const { data: platos } = await supabase
+        .from('platos')
+        .select('id, nombre')
+        .in('id', platoIds);
+      if (platos) {
+        platos.forEach(plato => { nombresPlatos[plato.id] = plato.nombre; });
+      }
+    }
+
+    consumosRest = rowsRest.map(t => ({
+      nombre: nombresPlatos[t.plato_id] || "Plato",
+      cantidad: t.cantidad,
+      subtotal: t.subtotal
+    }));
+    totalRest = consumosRest.reduce((sum, i) => sum + Number(i.subtotal), 0);
+  }
+
+  // ========== SERVICIOS ADICIONALES ==========
+  const { data: serviciosReserva } = await supabase
     .from('servicios_x_reserva')
     .select('servicio_id, cantidad, nota')
     .eq('reserva_id', reserva.id);
 
-  let detallesServicios = [];
-  let totalServicios = 0;
-
+  let consumosServicios = [], totalServicios = 0;
   if (serviciosReserva && serviciosReserva.length > 0) {
-    const servicioIds = [...new Set(serviciosReserva.map(s => s.servicio_id))];
-    let nombresServicios = {};
-    let preciosServicios = {};
+    const servicioIds = [...new Set(serviciosReserva.map(s => s.servicio_id))].filter(Boolean)
+      .map(x => (typeof x === 'string' ? x.trim() : String(x)));
+    let nombresServicios = {}, preciosServicios = {};
     if (servicioIds.length > 0) {
       const { data: infoServicios } = await supabase
         .from('servicios_adicionales')
@@ -1417,156 +1295,147 @@ consumosTotales.forEach(item => {
         });
       }
     }
-    const agrupados = {};
     serviciosReserva.forEach(det => {
-      const nombre = nombresServicios[det.servicio_id] || "Servicio";
-      const precio = preciosServicios[det.servicio_id] || 0;
-      if (!agrupados[nombre]) {
-        agrupados[nombre] = { cantidad: 0, subtotal: 0, precio, notas: [] };
-      }
-      agrupados[nombre].cantidad += det.cantidad;
-      agrupados[nombre].subtotal += det.cantidad * precio;
-      if (det.nota) agrupados[nombre].notas.push(det.nota);
+      consumosServicios.push({
+        nombre: nombresServicios[det.servicio_id] || "Servicio",
+        cantidad: det.cantidad,
+        subtotal: (det.cantidad * (preciosServicios[det.servicio_id] || 0)),
+        nota: det.nota || ""
+      });
     });
-    detallesServicios = Object.entries(agrupados).map(([nombre, info]) => ({
-      nombre,
-      cantidad: info.cantidad,
-      subtotal: info.subtotal,
-      precio: info.precio,
-      notas: info.notas
-    }));
-    totalServicios = detallesServicios.reduce((sum, det) => sum + (det.subtotal || 0), 0);
+    totalServicios = consumosServicios.reduce((sum, i) => sum + Number(i.subtotal), 0);
   }
 
-  // HTML para servicios adicionales
-  let htmlServicios = "";
-  if (detallesServicios.length > 0) {
-    htmlServicios = `
-      <div style="margin-bottom:10px;">
-        <b style="font-size:1em; color:#475569;">Servicios adicionales:</b>
-        <table style="width:100%; border-collapse:collapse; margin:6px 0 0 0; font-size: 0.97em;">
-          <thead>
-            <tr style="background:#f3f6fa;">
-              <th style="text-align:left; padding: 6px 6px;">Servicio</th>
-              <th style="text-align:center; padding: 6px 6px;">Cant.</th>
-              <th style="text-align:right; padding: 6px 6px;">Subtotal</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${detallesServicios.map(t => `
-              <tr>
-                <td style="padding: 4px 6px;">${t.nombre}${t.notas.length ? `<br><span style="font-size:10px;color:#888;">${t.notas.join(', ')}</span>` : ''}</td>
-                <td style="text-align:center; padding: 4px 6px;">${t.cantidad}</td>
-                <td style="text-align:right; padding: 4px 6px;">${formatCurrency(t.subtotal)}</td>
-              </tr>
-            `).join('')}
-            <tr>
-              <td colspan="2" style="text-align:right; padding: 6px 6px; font-weight:bold;">Total Servicios:</td>
-              <td style="text-align:right; padding: 6px 6px; font-weight:bold;">${formatCurrency(totalServicios)}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    `;
-  }
+  // ========== TOTAL GENERAL ==========
+  const totalGeneral = (reserva.monto_total || 0) + totalTienda + totalRest + totalServicios;
 
-  // Total general
-  let totalGeneral = (reserva.monto_total || 0) + totalTienda + totalServicios;
+  // ========== MÉTODOS DE PAGO ==========
+  const { data: metodosPago } = await supabase
+    .from('metodos_pago')
+    .select('id, nombre')
+    .eq('hotel_id', reserva.hotel_id)
+    .eq('activo', true);
 
-  // HTML final de la factura
-  let facturaHtml = `
-    <div id="factura-impresion" style="max-width:650px; margin:auto; font-family: Arial, sans-serif; color:#222;">
-      <div style="text-align:center; margin-bottom:10px;">
-        <img src="/ruta-tu-logo.png" alt="LOGO HOTEL" style="height:60px; margin-bottom:4px;">
-        <div style="font-size:1.35em; font-weight:bold; color:#1459ae;">Nombre del Hotel</div>
-        <div style="font-size:0.98em; color:#666;">Dirección del hotel, Ciudad, Tel: xxx-xxx-xxxx</div>
-        <div style="margin-top:3px; font-size:0.98em;">Fecha: ${formatDateTime(new Date())}</div>
-      </div>
-      <hr>
-      <div style="font-size:1.08em; margin-bottom:8px;">
-        <b>Factura para:</b> ${reserva.cliente_nombre} <br>
-        <b>Habitación:</b> ${room.nombre} <br>
-        <b>Estancia:</b> ${formatDateTime(reserva.fecha_inicio)} - ${formatDateTime(reserva.fecha_fin)}
-      </div>
-      <hr>
-      <div style="margin-bottom: 10px;">
-        <b style="color:#475569;">Estancia habitación:</b>
-        <div style="padding:4px 0 4px 14px;">
-          Estancia: <b style="color:#06b6d4;">${formatCurrency(reserva.monto_total)}</b>
-        </div>
-      </div>
-      ${detalles.length > 0 ? `
-        <div style="margin-bottom:10px;">
-          <b style="color:#475569;">Consumos Tienda:</b>
-          <table style="width:100%; border-collapse:collapse; font-size: 0.97em;">
-            <thead>
-              <tr style="background:#f3f6fa;">
-                <th style="text-align:left; padding: 6px 6px;">Producto</th>
-                <th style="text-align:center; padding: 6px 6px;">Cant.</th>
-                <th style="text-align:right; padding: 6px 6px;">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${detalles.map(t => `
-                <tr>
-                  <td style="padding: 4px 6px;">${t.nombre}</td>
-                  <td style="text-align:center; padding: 4px 6px;">${t.cantidad}</td>
-                  <td style="text-align:right; padding: 4px 6px;">${formatCurrency(t.subtotal)}</td>
-                </tr>
-              `).join('')}
-              <tr>
-                <td colspan="2" style="text-align:right; padding: 6px 6px; font-weight:bold;">Total Tienda:</td>
-                <td style="text-align:right; padding: 6px 6px; font-weight:bold;">${formatCurrency(totalTienda)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      ` : ''}
-      ${htmlServicios}
-      <hr style="margin: 18px 0;">
-      <div style="font-size: 1.28em; text-align: right; font-weight: bold; color: #059669;">
-        TOTAL: ${formatCurrency(totalGeneral)}
-      </div>
-      <div style="font-size: 0.94em; color:#888; text-align:right;">Incluye impuestos si aplica.</div>
-      <hr>
-      <div style="text-align:center; margin:18px 0 6px 0; font-size:1.05em;">
-        ¡Gracias por su preferencia!
-      </div>
+  // ========== MODAL CONSUMOS ==========
+  let html = `
+  <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width:420px; margin:auto;">
+    <div style="font-size:1.25em;font-weight:bold;color:#1459ae;margin-bottom:6px;">🧾 Detalle de Consumos</div>
+    <div style="margin-bottom:18px;">
+      <b style="color:#0ea5e9;">Huésped:</b> ${reserva.cliente_nombre}<br>
+      <b style="color:#0ea5e9;">Estancia:</b> ${formatDateTime(reserva.fecha_inicio)} - ${formatDateTime(reserva.fecha_fin)}
     </div>
-    <div style="text-align:center; margin-top:15px;">
-      <button id="btn-imprimir-factura" style="background:#2563eb; color:white; padding:9px 28px; border-radius:6px; border:none; font-size:1.03em; margin-right:10px;">Imprimir</button>
-      <button id="btn-descargar-factura" style="background:#059669; color:white; padding:9px 24px; border-radius:6px; border:none; font-size:1.03em;">Descargar PDF</button>
+    <div>
+      <span style="color:#475569;">Estancia habitación:</span>
+      <span style="color:#06b6d4;">${formatCurrency(reserva.monto_total)}</span>
     </div>
+    ${consumosTienda.length ? `
+      <div style="margin-top:12px;">
+        <b>🛒 Tienda:</b>
+        <ul>${consumosTienda.map(t => `<li>${t.nombre} x${t.cantidad}: ${formatCurrency(t.subtotal)}</li>`).join('')}</ul>
+        <b>Total Tienda: ${formatCurrency(totalTienda)}</b>
+      </div>
+    ` : ''}
+    ${consumosRest.length ? `
+      <div style="margin-top:12px;">
+        <b>🍽️ Restaurante:</b>
+        <ul>${consumosRest.map(r => `<li>${r.nombre} x${r.cantidad}: ${formatCurrency(r.subtotal)}</li>`).join('')}</ul>
+        <b>Total Restaurante: ${formatCurrency(totalRest)}</b>
+      </div>
+    ` : ''}
+    ${consumosServicios.length ? `
+      <div style="margin-top:12px;">
+        <b>🧰 Servicios Adicionales:</b>
+        <ul>${consumosServicios.map(s => `<li>${s.nombre} x${s.cantidad}: ${formatCurrency(s.subtotal)}${s.nota ? ` <i>(${s.nota})</i>` : ''}</li>`).join('')}</ul>
+        <b>Total Servicios: ${formatCurrency(totalServicios)}</b>
+      </div>
+    ` : ''}
+    <div style="margin-top:14px; font-weight:bold; color:#059669; font-size:1.1em;">
+      Total a pagar: ${formatCurrency(totalGeneral)}
+    </div>
+    ${(totalGeneral > 0 && metodosPago?.length) ? `
+      <div style="margin-top:18px;">
+        <label for="metodoPagoFact" style="font-weight:600;">Método de pago:</label>
+        <select id="metodoPagoFact" style="padding:6px 14px; border-radius:6px; border:1px solid #d1d5db; margin-left:10px;">
+          <option value="">Selecciona...</option>
+          ${metodosPago.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')}
+        </select>
+        <button id="btn-facturar-final" style="margin-left:16px; background:#059669; color:#fff; padding:9px 22px; border-radius:6px; border:none; font-size:1.05em; font-weight:600;">Facturar Todo</button>
+      </div>
+    ` : ''}
+  </div>
   `;
 
-  mostrarInfoModalGlobal(facturaHtml, "Factura Cliente");
+  mostrarInfoModalGlobal(html, "Detalle de Consumos");
 
-  setTimeout(() => {
-    const btnImprimir = document.getElementById('btn-imprimir-factura');
-    if (btnImprimir) {
-      btnImprimir.onclick = () => {
-        const facturaDiv = document.getElementById('factura-impresion');
-        const printWindow = window.open('', '', 'width=800,height=600');
-        printWindow.document.write(`<html><head><title>Factura</title></head><body>${facturaDiv.innerHTML}</body></html>`);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
-        printWindow.close();
-      };
-    }
-    const btnDescargar = document.getElementById('btn-descargar-factura');
-    if (btnDescargar) {
-      btnDescargar.onclick = async () => {
-        const facturaDiv = document.getElementById('factura-impresion');
-        if (window.html2pdf) {
-          await html2pdf().from(facturaDiv).save("FacturaHotel.pdf");
-        } else {
-          alert("No se encontró el generador de PDF. Solicite soporte técnico.");
-        }
-      };
-    }
-  }, 100);
+  // ========== LÓGICA FACTURAR ==========
+  waitForButtonAndBind('btn-facturar-final', (btnFacturar) => {
+    btnFacturar.onclick = async () => {
+      // Validar método de pago
+      const metodoPagoId = document.getElementById('metodoPagoFact').value;
+      if (!metodoPagoId) {
+        alert("Seleccione un método de pago.");
+        return;
+      }
+      // --- TURNO DE CAJA: SOLO REGISTRA SI HAY TURNO ACTIVO ---
+      const turnoId = (typeof turnoService !== "undefined" && turnoService.getActiveTurnId)
+        ? turnoService.getActiveTurnId()
+        : null;
+      if (!turnoId) {
+        mostrarInfoModalGlobal("No se puede registrar en caja porque no hay un turno activo.", "Turno requerido");
+        return;
+      }
+
+      let concepto = `Ingreso habitación ${room.nombre}\n`;
+      if (consumosTienda.length) {
+        concepto += `Tienda:\n`;
+        consumosTienda.forEach(t =>
+          concepto += `- ${t.nombre} x${t.cantidad}: ${formatCurrency(t.subtotal)}\n`
+        );
+        concepto += `Total Tienda: ${formatCurrency(totalTienda)}\n`;
+      }
+      if (consumosRest.length) {
+        concepto += `Restaurante:\n`;
+        consumosRest.forEach(r =>
+          concepto += `- ${r.nombre} x${r.cantidad}: ${formatCurrency(r.subtotal)}\n`
+        );
+        concepto += `Total Restaurante: ${formatCurrency(totalRest)}\n`;
+      }
+      if (consumosServicios.length) {
+        concepto += `Servicios:\n`;
+        consumosServicios.forEach(s =>
+          concepto += `- ${s.nombre} x${s.cantidad}: ${formatCurrency(s.subtotal)}\n`
+        );
+        concepto += `Total Servicios: ${formatCurrency(totalServicios)}\n`;
+      }
+      concepto += `TOTAL FACTURADO: ${formatCurrency(totalGeneral)}`;
+
+      // ========== REGISTRO EN CAJA ==========
+      const { error, data } = await supabase.from('caja').insert({
+        hotel_id: reserva.hotel_id,
+        tipo: 'ingreso',
+        monto: totalGeneral,
+        concepto: concepto,
+        fecha_movimiento: new Date().toISOString(),
+        metodo_pago_id: metodoPagoId,
+        usuario_id: currentUser.id,
+        reserva_id: reserva.id,
+        creado_en: new Date().toISOString(),
+        turno_id: turnoId  // <<<<<<  CLAVE PARA QUE REGISTRE BIEN
+      });
+
+      if (error) {
+        alert("❌ ERROR al registrar en CAJA:\n\n" + error.message);
+        console.error("Supabase caja error:", error);
+        return;
+      }
+      mostrarInfoModalGlobal(
+        "Factura registrada correctamente.<br>El ingreso quedó en caja.<br><small>Puedes revisar el concepto y monto en el módulo de Caja.</small>",
+        "Facturación completada"
+      );
+    };
+  });
 });
+
 
 
   // =================== BOTÓN INFO HUÉSPED (igual que antes)
@@ -2310,31 +2179,30 @@ function startCronometro(room, supabase, hotelId, listEl) {
 
             const cronometroId = `cronometro-${room.id}`;
             if (cronometrosInterval[cronometroId]) clearInterval(cronometrosInterval[cronometroId]);
-            
-            let tiempoAgotadoFlagInterna = false;
-            
+
+            // Necesitamos este flag para que el sonido solo suene una vez por "tiempo agotado"
+            let tiempoAgotadoFlagInterna = room.estado === "tiempo agotado";
+
             async function updateCronoDisplay() {
                 const now = new Date();
                 let fechaFinDefinitiva;
 
-                // CORRECCIÓN: Quitar .single() de esta consulta interna para evitar 406 si no hay cronómetro activo
+                // Consulta el cronómetro activo, o usa fecha_fin de reserva como fallback
                 const { data: cronoActivoArr, error: cronoError } = await supabase.from('cronometros')
                     .select('fecha_fin')
                     .eq('reserva_id', reservaActual.id)
                     .eq('activo', true)
-                    .limit(1); // Solo limit(1), no single()
+                    .limit(1);
 
                 if (cronoError) {
                     console.warn(`Error consultando cronómetro para reserva ${reservaActual.id}: ${cronoError.message}`);
-                    // Usar la fecha_fin de la reserva como fallback si hay error en crono
                     fechaFinDefinitiva = new Date(reservaActual.fecha_fin);
                 } else if (cronoActivoArr && cronoActivoArr.length > 0 && cronoActivoArr[0].fecha_fin) {
                     fechaFinDefinitiva = new Date(cronoActivoArr[0].fecha_fin);
                 } else {
-                    // No se encontró cronómetro activo, usar fecha_fin de la reserva
                     fechaFinDefinitiva = new Date(reservaActual.fecha_fin);
                 }
-                
+
                 let diff = fechaFinDefinitiva - now;
                 const cardElement = cronometroDiv.closest('.room-card');
                 const badgeElement = cardElement?.querySelector('span.badge');
@@ -2342,63 +2210,71 @@ function startCronometro(room, supabase, hotelId, listEl) {
                 cronometroDiv.className = 'cronometro-display mt-auto text-right font-mono text-xl flex items-center justify-end pt-4 border-t border-slate-200 group-hover:border-blue-200 transition-colors duration-200';
                 if (cardElement) cardElement.classList.remove('animate-pulse-fast', 'ring-4', 'ring-opacity-50', 'ring-red-500', 'ring-yellow-500');
 
-                if (diff <= 0) { 
+                // ---- TIEMPO AGOTADO (EXCEDIDO) ----
+                if (diff <= 0) {
                     if (!tiempoAgotadoFlagInterna) {
                         tiempoAgotadoFlagInterna = true;
                         const currentRoomInMap = currentRooms.find(r => r.id === room.id);
                         if (currentRoomInMap && currentRoomInMap.estado !== "tiempo agotado" && currentRoomInMap.estado !== "mantenimiento" && currentRoomInMap.estado !== "limpieza") {
-                             await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', id);
-                             if (cardElement) {
-                                 cardElement.classList.remove('border-yellow-500', 'bg-yellow-50', 'border-green-500', 'bg-white');
-                                 cardElement.classList.add('border-red-600', 'bg-red-50');
-                             }
-                             if(badgeElement) {
+                            await supabase.from('habitaciones').update({ estado: 'tiempo agotado' }).eq('id', room.id);
+                            if (cardElement) {
+                                cardElement.classList.remove('border-yellow-500', 'bg-yellow-50', 'border-green-500', 'bg-white');
+                                cardElement.classList.add('border-red-600', 'bg-red-50');
+                            }
+                            if (badgeElement) {
                                 badgeElement.innerHTML = `${estadoColores['tiempo agotado'].icon} <span class="ml-1">TIEMPO AGOTADO</span>`;
                                 badgeElement.className = `badge ${estadoColores['tiempo agotado'].badge} px-2.5 py-1.5 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm`;
-                             }
-                             currentRoomInMap.estado = 'tiempo agotado';
+                            }
+                            currentRoomInMap.estado = 'tiempo agotado';
+                            // ---- SONIDO ALERTA SOLO UNA VEZ ----
+                            playPopSound && playPopSound();
                         }
                     }
                     let diffPos = Math.abs(diff);
                     const h = String(Math.floor(diffPos / 3600000)).padStart(2, '0');
                     const m = String(Math.floor((diffPos % 3600000) / 60000)).padStart(2, '0');
                     const s = String(Math.floor((diffPos % 60000) / 1000)).padStart(2, '0');
-                    cronometroDiv.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1.5 inline text-red-500 animate-ping-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span class="font-bold text-red-500">-${h}:${m}:${s}</span>`;
+                    cronometroDiv.innerHTML = `
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1.5 inline text-red-500 animate-ping-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        <span class="font-bold text-red-500 animate-pulse">⏰ Tiempo excedido: -${h}:${m}:${s}</span>
+                    `;
                     if (cardElement) {
                         cardElement.classList.add('animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-opacity-50');
                     }
-                } else { 
-                    tiempoAgotadoFlagInterna = false; 
+                } else {
+                    // ---- NORMAL, FALTANDO ----
+                    tiempoAgotadoFlagInterna = false;
                     const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
                     const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
                     const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
-                    
+
                     let textColor = 'text-green-600';
                     let iconColor = 'text-green-500';
-                    if (diff < 10 * 60 * 1000) { 
+                    if (diff < 10 * 60 * 1000) {
                         textColor = 'text-yellow-600 font-semibold';
                         iconColor = 'text-yellow-500';
                         if (cardElement) cardElement.classList.add('ring-4', 'ring-yellow-500', 'ring-opacity-50');
-                    } else if (diff < 30 * 60 * 1000) { 
+                    } else if (diff < 30 * 60 * 1000) {
                         textColor = 'text-orange-500';
                         iconColor = 'text-orange-500';
                     }
 
                     cronometroDiv.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1.5 inline ${iconColor}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span class="${textColor}">${h}:${m}:${s}</span>`;
-                    
-                     const currentRoomInMap = currentRooms.find(r => r.id === room.id);
-                     if (currentRoomInMap && currentRoomInMap.estado === "tiempo agotado") { 
+
+                    // Si por error quedó como "tiempo agotado" pero ya está en tiempo normal, reestablece estado
+                    const currentRoomInMap = currentRooms.find(r => r.id === room.id);
+                    if (currentRoomInMap && currentRoomInMap.estado === "tiempo agotado") {
                         await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
                         if (cardElement) {
                             cardElement.classList.remove('border-red-600', 'bg-red-50', 'animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-opacity-50');
                             cardElement.classList.add('border-yellow-500', 'bg-yellow-50');
                         }
-                        if(badgeElement) {
-                           badgeElement.innerHTML = `${estadoColores['ocupada'].icon} <span class="ml-1">OCUPADA</span>`;
-                           badgeElement.className = `badge ${estadoColores['ocupada'].badge} px-2.5 py-1.5 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm`;
+                        if (badgeElement) {
+                            badgeElement.innerHTML = `${estadoColores['ocupada'].icon} <span class="ml-1">OCUPADA</span>`;
+                            badgeElement.className = `badge ${estadoColores['ocupada'].badge} px-2.5 py-1.5 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm`;
                         }
                         currentRoomInMap.estado = 'ocupada';
-                     }
+                    }
                 }
             }
             await updateCronoDisplay();
