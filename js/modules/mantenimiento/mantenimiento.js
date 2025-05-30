@@ -120,7 +120,18 @@ async function renderTareas(container, supabase, hotelId, currentUser) {
     if (select) {
       select.onchange = async function() {
         if (this.value === "editar") {
-          await showModalTarea(container, supabase, hotelId, currentUser, t, usuarios);
+          await showModalTarea(
+    fakeContainer,
+    supabase,
+    hotelId,
+    currentUser,
+    {
+        habitacion_id: room.id,
+        estado: 'pendiente',
+        titulo: `Mantenimiento de habitación ${room.nombre}`
+    }
+);
+
         } else if (this.value === "estado") {
           await cambiarEstadoTarea(container, supabase, hotelId, t);
         } else if (this.value === "eliminar") {
@@ -133,7 +144,13 @@ async function renderTareas(container, supabase, hotelId, currentUser) {
 }
 
 // --- MODAL CREAR/EDITAR TAREA MEJORADO ---
-async function showModalTarea(container, supabase, hotelId, currentUser, tarea = null, usuariosPasados = null) {
+let fakeContainer = document.createElement('div');
+fakeContainer.id = 'mant-modal-container-mapahab';
+document.body.appendChild(fakeContainer);
+// AGREGA EL DIV INTERNO ESPERADO:
+fakeContainer.innerHTML = '<div id="mant-modal"></div>';
+
+export async function showModalTarea(container, supabase, hotelId, currentUser, tarea = null, usuariosPasados = null) {
   const modal = container.querySelector('#mant-modal');
   // Traer habitaciones
   const { data: habitaciones } = await supabase.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId);
@@ -222,30 +239,27 @@ async function showModalTarea(container, supabase, hotelId, currentUser, tarea =
     }
     data.prioridad = Number(data.prioridad);
 
-    if (tarea) {
-      await supabase.from('tareas_mantenimiento').update(data).eq('id', tarea.id);
+    if (tarea && tarea.id) {
+  // update (editar tarea existente)
+  await supabase.from('tareas_mantenimiento').update(data).eq('id', tarea.id);
 
-      // --- ACTUALIZAR ESTADO DE LA HABITACIÓN SI SE ASIGNÓ ---
-      if (data.habitacion_id) {
-        if (data.estado === "pendiente" || data.estado === "en_progreso") {
-          await supabase.from('habitaciones').update({ estado: 'mantenimiento' }).eq('id', data.habitacion_id);
-        }
-        if (data.estado === "completada" || data.estado === "cancelada") {
-          await supabase.from('habitaciones').update({ estado: 'libre' }).eq('id', data.habitacion_id);
-        }
-      }
-    } else {
-      const { data: nuevaTarea, error: errorInsert } = await supabase.from('tareas_mantenimiento').insert([{
-        ...data,
-        hotel_id: hotelId,
-        estado: data.estado || "pendiente",
-        creada_por: currentUser?.id || null,
-      }]).select().single();
+  // ... (resto igual)
+} else {
+  // create (nueva tarea)
+  const { data: nuevaTarea, error: errorInsert } = await supabase.from('tareas_mantenimiento').insert([{
+    ...data,
+    hotel_id: hotelId,
+    estado: data.estado || "pendiente",
+    creada_por: currentUser?.id || null,
+  }]).select().single();
 
-      if (errorInsert) {
-        alert("Error al crear la tarea de mantenimiento: " + errorInsert.message);
-        return;
-      }
+  if (errorInsert) {
+    alert("Error al crear la tarea de mantenimiento: " + errorInsert.message);
+    return;
+  }
+
+  // ... (resto igual)
+
 
       // --- ACTUALIZAR ESTADO DE LA HABITACIÓN SI SE ASIGNÓ ---
       if (data.habitacion_id) {

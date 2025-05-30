@@ -11,13 +11,42 @@ export async function mount(container, supabaseClient, currentUser, currentHotel
 
   // Cargar datos previos si existen
   await cargarConfiguracionInicial();
+  await cargarMetodosPago();
 
-  // Eventos
+  // Eventos configuración hotel
   document.getElementById('config-form').addEventListener('submit', guardarConfiguracion);
   document.querySelector('input[name="logo"]').addEventListener('change', mostrarVistaPreviaLogo);
+
+  // Eventos Métodos de Pago
+  document.getElementById('nuevo-metodo-pago-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nombre = document.getElementById('nuevo-metodo-pago').value.trim();
+    if (!nombre) return;
+    await supabase.from('metodos_pago').insert([{ hotel_id: hotelId, nombre, activo: true }]);
+    document.getElementById('nuevo-metodo-pago').value = '';
+    cargarMetodosPago();
+  });
+
+  document.getElementById('lista-metodos-pago').addEventListener('change', async (e) => {
+    if (e.target.classList.contains('toggle-activo-metodo')) {
+      const id = e.target.dataset.metodoId;
+      await supabase.from('metodos_pago').update({ activo: e.target.checked }).eq('id', id);
+      cargarMetodosPago();
+    }
+  });
+
+  document.getElementById('lista-metodos-pago').addEventListener('click', async (e) => {
+    if (e.target.classList.contains('borrar-metodo-pago')) {
+      const id = e.target.dataset.metodoId;
+      if (confirm('¿Seguro que deseas borrar este método de pago?')) {
+        await supabase.from('metodos_pago').delete().eq('id', id);
+        cargarMetodosPago();
+      }
+    }
+  });
 }
 
-// GENERAR HTML BONITO
+// ======= GENERAR HTML =======
 function generarHTML() {
   return `
   <div class="max-w-3xl mx-auto bg-gradient-to-br from-blue-50 to-white shadow-2xl rounded-3xl overflow-hidden my-8 border border-blue-100">
@@ -112,15 +141,14 @@ function generarHTML() {
         </h3>
       </div>
       <div class="col-span-2">
-  <label class="block font-medium mb-1">
-    Correo para reportes <span class="text-xs text-gray-500">(solo uno, sin comas)</span>
-  </label>
-  <input name="correo_reportes" type="email" class="input w-full bg-blue-50 rounded-xl px-4 py-2" placeholder="ejemplo@email.com" required />
-  <div class="text-xs text-gray-500 mt-1">
-    Aquí llegará el reporte automático de cierres de caja y otras notificaciones importantes.
-  </div>
-</div>
-
+        <label class="block font-medium mb-1">
+          Correo para reportes <span class="text-xs text-gray-500">(solo uno, sin comas)</span>
+        </label>
+        <input name="correo_reportes" type="email" class="input w-full bg-blue-50 rounded-xl px-4 py-2" placeholder="ejemplo@email.com" required />
+        <div class="text-xs text-gray-500 mt-1">
+          Aquí llegará el reporte automático de cierres de caja y otras notificaciones importantes.
+        </div>
+      </div>
       <div class="col-span-2 flex justify-end mt-6">
         <button class="bg-gradient-to-r from-blue-700 to-blue-600 hover:from-blue-900 hover:to-blue-700 transition text-white px-10 py-3 rounded-2xl shadow-lg font-bold text-lg flex items-center gap-2">
           <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
@@ -128,13 +156,24 @@ function generarHTML() {
         </button>
       </div>
     </form>
+    <!-- Métodos de Pago (¡fuera del form principal!) -->
+    <div class="col-span-2 border-t pt-5 mt-8 p-8">
+      <h3 class="text-blue-700 text-lg font-semibold mb-2 flex items-center gap-2">
+        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 00.33 1.82c.63.63 1.71.18 1.71-.7V7.88A1.65 1.65 0 0019.4 9M4.6 9a1.65 1.65 0 00-.33-1.82c-.63-.63-1.71-.18-1.71.7v8.25c0 .88 1.08 1.33 1.71.7A1.65 1.65 0 004.6 15"></path></svg>
+        Métodos de Pago
+      </h3>
+      <form id="nuevo-metodo-pago-form" class="flex gap-2 mb-4">
+        <input type="text" id="nuevo-metodo-pago" placeholder="Ej: Efectivo, Nequi, Bancolombia, Datafono..." class="input bg-blue-50 px-4 py-2 rounded-xl" required>
+        <button type="submit" class="bg-blue-700 hover:bg-blue-900 text-white px-5 py-2 rounded-xl shadow font-bold">Agregar</button>
+      </form>
+      <div id="lista-metodos-pago" class="space-y-2"></div>
+    </div>
   </div>
   `;
 }
 
-// ----------------------------- CARGAR Y GUARDAR CONFIG -----------------------------
+// ======= CONFIGURACIÓN HOTEL =======
 
-// Carga la configuración inicial desde Supabase y llena el formulario
 async function cargarConfiguracionInicial() {
   try {
     const { data, error } = await supabase
@@ -152,7 +191,6 @@ async function cargarConfiguracionInicial() {
   }
 }
 
-// Llena el formulario con los datos existentes
 function poblarFormulario(config) {
   const form = document.getElementById('config-form');
   form.nombre_hotel.value = config.nombre_hotel || '';
@@ -169,13 +207,11 @@ function poblarFormulario(config) {
   form.correo_reportes.value = config.correo_reportes || '';
 }
 
-// Muestra logo existente guardado (url pública)
 function mostrarLogoGuardado(url) {
   const preview = document.getElementById('logo-preview');
   preview.innerHTML = `<img src="${url}" alt="Logo actual" class="h-16 mb-2 rounded shadow" />`;
 }
 
-// Vista previa del logo al seleccionarlo
 function mostrarVistaPreviaLogo(e) {
   const file = e.target.files[0];
   const preview = document.getElementById('logo-preview');
@@ -190,19 +226,17 @@ function mostrarVistaPreviaLogo(e) {
   }
 }
 
-// Guardar configuración al hacer submit
 async function guardarConfiguracion(e) {
   e.preventDefault();
   const form = e.target;
   const correo = form.correo_reportes.value.trim();
 
-  // Validar que no tenga comas ni espacios múltiples ni varios correos
+  // Validar correo (solo uno)
   if (correo.includes(",") || correo.split("@").length !== 2) {
     alert('Solo se permite ingresar un correo electrónico válido, sin comas ni espacios extra.');
     form.correo_reportes.focus();
     return;
   }
-  // Opcional: validar formato con regex
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(correo)) {
     alert('Por favor, ingresa un correo electrónico válido.');
@@ -210,7 +244,6 @@ async function guardarConfiguracion(e) {
     return;
   }
 
-  // ...el resto de la función igual...
   const config = {
     hotel_id: hotelId,
     nombre_hotel: form.nombre_hotel.value,
@@ -224,17 +257,15 @@ async function guardarConfiguracion(e) {
     encabezado_ticket: form.encabezado_ticket.value,
     pie_ticket: form.pie_ticket.value,
     mostrar_logo: form.mostrar_logo.checked,
-    correo_reportes: correo // ahora solo uno y validado
+    correo_reportes: correo
   };
-  
 
-  // Si hay un logo nuevo, súbelo a Supabase Storage y guarda la URL pública
+  // Subir logo si hay
   const logoInput = form.logo;
   if (logoInput.files && logoInput.files[0]) {
     const file = logoInput.files[0];
     const ext = file.name.split('.').pop();
     const filePath = `logos/${hotelId}.${ext}`;
-    // Sube a Supabase Storage (con upsert)
     let { error: uploadError } = await supabase.storage
       .from('hotel-logos')
       .upload(filePath, file, { upsert: true });
@@ -243,14 +274,12 @@ async function guardarConfiguracion(e) {
       alert('Error subiendo logo: ' + uploadError.message);
       return;
     }
-    // Obtiene URL pública del logo
     const { data: urlData } = supabase.storage.from('hotel-logos').getPublicUrl(filePath);
     config.logo_url = urlData.publicUrl;
   } else if (configActual && configActual.logo_url) {
     config.logo_url = configActual.logo_url;
   }
 
-  // Guarda o actualiza configuración
   const { error: errorSave } = await supabase
     .from('configuracion_hotel')
     .upsert([config], { onConflict: 'hotel_id' });
@@ -262,3 +291,34 @@ async function guardarConfiguracion(e) {
     if (config.logo_url) mostrarLogoGuardado(config.logo_url);
   }
 }
+
+// ======= MÉTODOS DE PAGO =======
+
+async function cargarMetodosPago() {
+  const { data, error } = await supabase
+    .from('metodos_pago')
+    .select('*')
+    .eq('hotel_id', hotelId)
+    .order('creado_en', { ascending: true });
+  if (error) {
+    document.getElementById('lista-metodos-pago').innerHTML = '<div class="text-red-500">Error al cargar métodos de pago</div>';
+    return;
+  }
+  renderizarMetodosPago(data);
+}
+
+function renderizarMetodosPago(metodos) {
+  const cont = document.getElementById('lista-metodos-pago');
+  if (!cont) return;
+  cont.innerHTML = metodos.map(met =>
+    `<div class="flex items-center gap-2 border p-2 rounded-xl bg-blue-50">
+      <span class="font-medium flex-1">${met.nombre}</span>
+      <label class="flex items-center gap-1 text-xs">
+        <input type="checkbox" ${met.activo ? 'checked' : ''} data-metodo-id="${met.id}" class="toggle-activo-metodo">
+        Activo
+      </label>
+      <button data-metodo-id="${met.id}" class="borrar-metodo-pago text-red-600 hover:text-red-800 px-2 py-1 rounded-lg">🗑</button>
+    </div>`
+  ).join('') || '<div class="text-gray-400 italic">No hay métodos de pago creados aún.</div>';
+}
+

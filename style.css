@@ -377,3 +377,46 @@ img, svg {
   max-width: 100%;
   height: auto; /* Maintain aspect ratio for images */
 }
+/* === MEJORA VISUAL MODAL SOLO PARA .modal-container === */
+.modal-container *,
+.modal-container input,
+.modal-container button {
+  font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
+  border-radius: 1rem !important;
+}
+.modal-container h3, 
+.modal-container h2, 
+.modal-container label,
+.modal-container .font-bold,
+.modal-container .button {
+  font-weight: 800 !important;
+  letter-spacing: 0.5px;
+}
+.modal-container .button-success {
+  background: linear-gradient(90deg,#16e49e,#14b789)!important;
+  color:#fff!important;
+  font-weight:900!important;
+  font-size:1.15em;
+  border: none !important;
+  box-shadow: 0 6px 30px 0 #14b78933;
+}
+.modal-container .button-neutral {
+  background:#e7e7e7!important;
+  color:#205157!important;
+  font-weight:900!important;
+  font-size:1.1em;
+  border: none !important;
+}
+.modal-container .shadow-2xl, .modal-container .shadow-xl {
+  box-shadow: 0 20px 50px 0 #1dd1a1 !important;
+}
+.modal-container .bg-green-50 { background: #eafff5!important; }
+.modal-container .border-green-100 { border-color: #bdfbe5!important; }
+.modal-container input[type="number"], 
+.modal-container input[type="text"], 
+.modal-container textarea {
+  background: #f8fffa!important;
+  font-size: 1.15em;
+}
+.modal-container .rounded-xl { border-radius: 1.25rem !important; }
+.modal-container .rounded-3xl { border-radius: 2rem !important; }

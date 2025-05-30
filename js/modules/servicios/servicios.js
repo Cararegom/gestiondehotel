@@ -1,15 +1,19 @@
 // js/modules/servicios/servicios.js
-// import { supabase } from '../../supabaseClient.js'; // Will use currentSupabaseInstance from mount
 
-// --- Module-Scoped Variables ---
 let moduleListeners = [];
 let currentHotelId = null;
 let currentModuleUser = null;
 let currentSupabaseInstance = null;
-let tiposServicioCache = []; // Cache for populating the select in the additional services form
+let tiposServicioCache = [];
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
-// --- UTILITIES ---
+const ACTIONS = {
+  EDIT_TIPO: 'editar-tipo',
+  TOGGLE_ACTIVO_TIPO: 'toggle-activo-tipo',
+  EDIT_SERVICIO: 'editar-servicio',
+  TOGGLE_ACTIVO_SERVICIO: 'toggle-activo-servicio',
+};
+
 const formatCurrencyLocal = (value, currency = 'COP') => {
   if (typeof value !== 'number' || isNaN(value)) {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency }).format(0);
@@ -17,93 +21,49 @@ const formatCurrencyLocal = (value, currency = 'COP') => {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency }).format(value);
 };
 
-// --- UI Helper Functions (Scoped) ---
-/**
- * Shows a feedback message.
- * @param {HTMLElement} feedbackEl - The feedback display element.
- * @param {string} message - The message to show.
- * @param {'success-indicator' | 'error-indicator' | 'info-indicator'} [typeClass='success-indicator'] - CSS class for feedback type.
- * @param {number} [duration=3000] - Duration in ms. 0 for indefinite.
- */
 function showServiciosFeedback(feedbackEl, message, typeClass = 'success-indicator', duration = 3000) {
-  if (!feedbackEl) {
-    console.warn("Feedback element not provided to showServiciosFeedback");
-    return;
-  }
+  if (!feedbackEl) return;
   feedbackEl.textContent = message;
-  let alertClasses = 'bg-green-100 border-green-300 text-green-700'; // success
-  if (typeClass === 'error-indicator') {
-    alertClasses = 'bg-red-100 border-red-300 text-red-700';
-  } else if (typeClass === 'info-indicator') {
-    alertClasses = 'bg-blue-100 border-blue-300 text-blue-700';
-  }
+  let alertClasses = 'bg-green-100 border-green-300 text-green-700';
+  if (typeClass === 'error-indicator') alertClasses = 'bg-red-100 border-red-300 text-red-700';
+  else if (typeClass === 'info-indicator') alertClasses = 'bg-blue-100 border-blue-300 text-blue-700';
   feedbackEl.className = `feedback-message mt-2 mb-3 p-3 rounded-md border text-sm ${alertClasses} visible`;
   feedbackEl.style.display = 'block';
   feedbackEl.setAttribute('aria-live', typeClass === 'error-indicator' ? 'assertive' : 'polite');
-
   if (typeClass.includes('error-indicator')) {
     feedbackEl.setAttribute('tabindex', '-1');
     feedbackEl.focus();
   }
-  if (duration > 0) {
-    setTimeout(() => clearServiciosFeedback(feedbackEl), duration);
-  }
+  if (duration > 0) setTimeout(() => clearServiciosFeedback(feedbackEl), duration);
 }
-
-/**
- * Clears the feedback message.
- * @param {HTMLElement} feedbackEl - The feedback display element.
- */
 function clearServiciosFeedback(feedbackEl) {
   if (!feedbackEl) return;
   feedbackEl.textContent = '';
-  feedbackEl.className = 'feedback-message mt-2 mb-3'; // Reset classes
+  feedbackEl.className = 'feedback-message mt-2 mb-3';
   feedbackEl.style.display = 'none';
   feedbackEl.removeAttribute('tabindex');
 }
-
-/**
- * Sets the loading state for a form.
- * @param {HTMLFormElement} formEl - The form element.
- * @param {boolean} isLoading - True if loading, false otherwise.
- * @param {HTMLButtonElement} buttonEl - The submit button.
- * @param {string} originalButtonText - The button's original text.
- * @param {string} [loadingButtonText='Procesando...'] - Text for the button when loading.
- */
 function setFormLoadingState(formEl, isLoading, buttonEl, originalButtonText, loadingButtonText = 'Procesando...') {
   if (!formEl) return;
   if (buttonEl) {
     buttonEl.disabled = isLoading;
     buttonEl.textContent = isLoading ? loadingButtonText : originalButtonText;
-    if(isLoading) buttonEl.classList.add('opacity-75', 'cursor-not-allowed');
+    if (isLoading) buttonEl.classList.add('opacity-75', 'cursor-not-allowed');
     else buttonEl.classList.remove('opacity-75', 'cursor-not-allowed');
   }
   Array.from(formEl.elements).forEach(el => {
-    if (el.type !== 'submit' && el.type !== 'button') { // Avoid re-disabling the submit button
-        el.disabled = isLoading;
-    }
+    if (el.type !== 'submit' && el.type !== 'button') el.disabled = isLoading;
   });
 }
 
-// --- Logic for Service Categories (Tipos de Servicio) ---
-/**
- * Loads and renders service categories into a table and a select element.
- * @param {HTMLElement} tbodyEl - The tbody element for the categories table.
- * @param {HTMLSelectElement} selectServicioTipoEl - The select element for service categories (in the additional services form).
- * @param {object} supabaseInstance - The Supabase client instance.
- * @param {string} hotelId - The current hotel ID.
- */
 async function cargarYRenderizarTiposServicio(tbodyEl, selectServicioTipoEl, supabaseInstance, hotelId) {
   if (!hotelId) {
-    console.error("Hotel ID missing for cargarYRenderizarTiposServicio");
     if (tbodyEl) tbodyEl.innerHTML = `<tr><td colspan="3" class="text-center p-2 text-red-600">Error: Hotel no identificado.</td></tr>`;
     if (selectServicioTipoEl) selectServicioTipoEl.innerHTML = `<option value="" disabled>Error</option>`;
     return;
   }
-
   if (tbodyEl) tbodyEl.innerHTML = `<tr><td colspan="3" class="text-center p-3 text-gray-500">Cargando categorías...</td></tr>`;
   if (selectServicioTipoEl) selectServicioTipoEl.innerHTML = `<option value="">Cargando categorías...</option>`;
-
   try {
     const { data: tipos, error } = await supabaseInstance
       .from('tipos_servicio')
@@ -111,10 +71,7 @@ async function cargarYRenderizarTiposServicio(tbodyEl, selectServicioTipoEl, sup
       .eq('hotel_id', hotelId)
       .order('nombre', { ascending: true });
     if (error) throw error;
-
     tiposServicioCache = tipos || [];
-
-    // Render table for service categories
     if (tbodyEl) {
       tbodyEl.innerHTML = '';
       if (tiposServicioCache.length === 0) {
@@ -132,8 +89,8 @@ async function cargarYRenderizarTiposServicio(tbodyEl, selectServicioTipoEl, sup
               </span>
             </td>
             <td class="px-4 py-2 whitespace-nowrap text-sm font-medium space-x-2">
-              <button class="button button-outline button-small text-xs" data-accion="editar-tipo" data-id="${tipo.id}" title="Editar ${tipo.nombre}">Editar</button>
-              <button class="button button-small text-xs ${tipo.activo ? 'button-warning' : 'button-success'}" data-accion="toggle-activo-tipo" data-id="${tipo.id}" data-estado-actual="${tipo.activo}" title="${tipo.activo ? 'Desactivar' : 'Activar'}">
+              <button class="button button-outline button-small text-xs" data-accion="${ACTIONS.EDIT_TIPO}" data-id="${tipo.id}" title="Editar ${tipo.nombre}">Editar</button>
+              <button class="button button-small text-xs ${tipo.activo ? 'button-warning' : 'button-success'}" data-accion="${ACTIONS.TOGGLE_ACTIVO_TIPO}" data-id="${tipo.id}" data-estado-actual="${tipo.activo}" title="${tipo.activo ? 'Desactivar' : 'Activar'}">
                 ${tipo.activo ? 'Desactivar' : 'Activar'}
               </button>
             </td>`;
@@ -141,8 +98,6 @@ async function cargarYRenderizarTiposServicio(tbodyEl, selectServicioTipoEl, sup
         });
       }
     }
-
-    // Populate select element (for additional services form)
     if (selectServicioTipoEl) {
       const activeTipos = tiposServicioCache.filter(t => t.activo);
       selectServicioTipoEl.innerHTML = activeTipos.length > 0
@@ -150,35 +105,20 @@ async function cargarYRenderizarTiposServicio(tbodyEl, selectServicioTipoEl, sup
         : `<option value="" disabled>No hay categorías activas. Cree una primero.</option>`;
     }
   } catch (err) {
-    console.error('Error loading service categories:', err);
     if (tbodyEl) tbodyEl.innerHTML = `<tr><td colspan="3" class="text-red-600 text-center p-3">Error al cargar categorías: ${err.message}</td></tr>`;
     if (selectServicioTipoEl) selectServicioTipoEl.innerHTML = `<option value="" disabled>Error al cargar categorías</option>`;
   }
 }
 
-/**
- * Populates the service category form for editing.
- * @param {HTMLFormElement} formEl - The form element.
- * @param {object} tipoServicioData - The service category data.
- * @param {HTMLButtonElement} btnCancelarEl - The cancel button.
- */
 function poblarFormularioTipoServicio(formEl, tipoServicioData, btnCancelarEl) {
   if (!formEl) return;
   formEl.reset();
   formEl.elements.tipoServicioIdEdit.value = tipoServicioData.id;
   formEl.elements.nombreTipo.value = tipoServicioData.nombre;
-  // Assuming 'activo' checkbox for category form, if not, this needs adjustment
-  // formEl.elements.activoTipo.checked = tipoServicioData.activo; 
   formEl.querySelector('#btn-guardar-tipo-servicio').textContent = 'Actualizar Categoría';
   if (btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
   formEl.elements.nombreTipo.focus();
 }
-
-/**
- * Resets the service category form.
- * @param {HTMLFormElement} formEl - The form element.
- * @param {HTMLButtonElement} btnCancelarEl - The cancel button.
- */
 function resetearFormularioTipoServicio(formEl, btnCancelarEl) {
   if (!formEl) return;
   formEl.reset();
@@ -188,32 +128,20 @@ function resetearFormularioTipoServicio(formEl, btnCancelarEl) {
   formEl.elements.nombreTipo.focus();
 }
 
-// --- Logic for Additional Services ---
-/**
- * Loads and renders additional services into a table.
- * @param {HTMLElement} tbodyEl - The tbody element for the services table.
- * @param {object} supabaseInstance - The Supabase client instance.
- * @param {string} hotelId - The current hotel ID.
- */
 async function cargarYRenderizarServiciosAdicionales(tbodyEl, supabaseInstance, hotelId) {
   if (!hotelId) {
-    console.error("Hotel ID missing for cargarYRenderizarServiciosAdicionales");
     if (tbodyEl) tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-2 text-red-600">Error: Hotel no identificado.</td></tr>`;
     return;
   }
-  if (!tbodyEl) {
-    console.error("Table body for additional services not found.");
-    return;
-  }
+  if (!tbodyEl) return;
   tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-gray-500">Cargando servicios adicionales...</td></tr>`;
   try {
     const { data: servicios, error } = await supabaseInstance
       .from('servicios_adicionales')
-      .select(`id, nombre, precio, activo, tipo_id, tipos_servicio(nombre)`) // Join with tipos_servicio
+      .select(`id, nombre, precio, activo, tipo_id, tipos_servicio(nombre)`)
       .eq('hotel_id', hotelId)
       .order('nombre', { ascending: true });
     if (error) throw error;
-
     tbodyEl.innerHTML = '';
     if (servicios.length === 0) {
       tbodyEl.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-gray-500">No hay servicios adicionales creados.</td></tr>`;
@@ -233,26 +161,18 @@ async function cargarYRenderizarServiciosAdicionales(tbodyEl, supabaseInstance, 
           </span>
         </td>
         <td class="px-4 py-2 whitespace-nowrap text-sm font-medium space-x-2">
-          <button class="button button-outline button-small text-xs" data-accion="editar-servicio" data-id="${s.id}" title="Editar ${s.nombre}">Editar</button>
-          <button class="button button-small text-xs ${s.activo ? 'button-warning' : 'button-success'}" data-accion="toggle-activo-servicio" data-id="${s.id}" data-estado-actual="${s.activo}" title="${s.activo ? 'Desactivar' : 'Activar'}">
+          <button class="button button-outline button-small text-xs" data-accion="${ACTIONS.EDIT_SERVICIO}" data-id="${s.id}" title="Editar ${s.nombre}">Editar</button>
+          <button class="button button-small text-xs ${s.activo ? 'button-warning' : 'button-success'}" data-accion="${ACTIONS.TOGGLE_ACTIVO_SERVICIO}" data-id="${s.id}" data-estado-actual="${s.activo}" title="${s.activo ? 'Desactivar' : 'Activar'}">
             ${s.activo ? 'Desactivar' : 'Activar'}
           </button>
         </td>`;
       tbodyEl.appendChild(tr);
     });
   } catch (err) {
-    console.error('Error loading additional services:', err);
     tbodyEl.innerHTML = `<tr><td colspan="5" class="text-red-600 text-center p-3">Error al cargar servicios: ${err.message}</td></tr>`;
   }
 }
 
-/**
- * Populates the additional service form for editing.
- * @param {HTMLFormElement} formEl - The form element.
- * @param {object} servicioData - The service data.
- * @param {HTMLElement} formTitleEl - The HMTL element for the form title.
- * @param {HTMLButtonElement} btnCancelarEl - The cancel button.
- */
 function poblarFormularioServicio(formEl, servicioData, formTitleEl, btnCancelarEl) {
   if (!formEl) return;
   formEl.reset();
@@ -266,13 +186,6 @@ function poblarFormularioServicio(formEl, servicioData, formTitleEl, btnCancelar
   if (btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
   formEl.elements.nombreServicio.focus();
 }
-
-/**
- * Resets the additional service form.
- * @param {HTMLFormElement} formEl - The form element.
- * @param {HTMLElement} formTitleEl - The HMTL element for the form title.
- * @param {HTMLButtonElement} btnCancelarEl - The cancel button.
- */
 function resetearFormularioServicio(formEl, formTitleEl, btnCancelarEl) {
   if (!formEl) return;
   formEl.reset();
@@ -283,19 +196,17 @@ function resetearFormularioServicio(formEl, formTitleEl, btnCancelarEl) {
   formEl.elements.nombreServicio.focus();
 }
 
-// --- Main Module Mount Function ---
-/**
- * Mounts the services module.
- * @param {HTMLElement} container - The main container for the module.
- * @param {object} sbInstance - The Supabase client instance.
- * @param {object} user - The current authenticated user.
- */
+// MAIN EXPORT
 export async function mount(container, sbInstance, user) {
-  unmount(container); // Clean up previous instance
+  if (!container) return;
+  unmount(container);
 
   currentSupabaseInstance = sbInstance;
   currentModuleUser = user;
-
+  if (!currentModuleUser || !currentSupabaseInstance) {
+    container.innerHTML = `<div class="p-4 text-red-600">Error crítico: Faltan datos de inicialización para el módulo de servicios.</div>`;
+    return;
+  }
   currentHotelId = currentModuleUser?.user_metadata?.hotel_id;
   if (!currentHotelId && currentModuleUser?.id) {
     try {
@@ -303,12 +214,8 @@ export async function mount(container, sbInstance, user) {
         .from('usuarios').select('hotel_id').eq('id', currentModuleUser.id).single();
       if (perfilError && perfilError.code !== 'PGRST116') throw perfilError;
       currentHotelId = perfil?.hotel_id;
-    } catch (e) {
-      console.error('Servicios Module: Error fetching hotelId from profile:', e);
-    }
+    } catch (e) { }
   }
-
-  // Full HTML structure for the module
   container.innerHTML = `
     <div class="card servicios-module shadow-lg rounded-lg">
       <div class="card-header bg-gray-100 p-4 border-b">
@@ -316,14 +223,13 @@ export async function mount(container, sbInstance, user) {
       </div>
       <div class="card-body p-4 md:p-6 space-y-8">
         <div id="servicios-feedback" role="status" aria-live="polite" style="display:none;" class="feedback-message mb-4"></div>
-
         <section id="section-tipos-servicio" class="p-4 border rounded-md bg-gray-50 shadow-sm">
           <h3 class="text-lg font-semibold text-gray-700 mb-3">Categorías de Servicios</h3>
-          <form id="form-tipo-servicio" class="form space-y-3 mb-4" novalidate>
+          <form id="form-tipo-servicio" class="form space-y-3 mb-4" novalidate autocomplete="off">
             <input type="hidden" id="tipoServicioIdEdit" name="tipoServicioIdEdit" />
             <div>
               <label for="nombreTipo" class="block text-sm font-medium text-gray-600">Nombre de la Categoría *</label>
-              <input type="text" id="nombreTipo" name="nombreTipo" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required maxlength="100" />
+              <input type="text" id="nombreTipo" name="nombreTipo" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required maxlength="100" autocomplete="off" />
             </div>
             <div class="form-actions flex items-center gap-3">
               <button type="submit" id="btn-guardar-tipo-servicio" class="button button-primary text-sm py-2 px-3 rounded-md">Guardar Categoría</button>
@@ -343,16 +249,14 @@ export async function mount(container, sbInstance, user) {
             </table>
           </div>
         </section>
-
         <hr class="my-6"/>
-
         <section id="section-servicios-adicionales" class="p-4 border rounded-md bg-gray-50 shadow-sm">
           <h3 id="form-servicio-adicional-titulo" class="text-lg font-semibold text-gray-700 mb-3">Agregar Nuevo Servicio Adicional</h3>
-          <form id="form-servicio-adicional" class="form grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" novalidate>
+          <form id="form-servicio-adicional" class="form grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" novalidate autocomplete="off">
             <input type="hidden" id="servicioIdEdit" name="servicioIdEdit" />
             <div class="form-group">
               <label for="nombreServicio" class="block text-sm font-medium text-gray-600">Nombre del Servicio *</label>
-              <input type="text" id="nombreServicio" name="nombreServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required maxlength="150" />
+              <input type="text" id="nombreServicio" name="nombreServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required maxlength="150" autocomplete="off" />
             </div>
             <div class="form-group">
               <label for="servicio-tipo" class="block text-sm font-medium text-gray-600">Categoría del Servicio</label>
@@ -362,7 +266,7 @@ export async function mount(container, sbInstance, user) {
             </div>
             <div class="form-group">
               <label for="precioServicio" class="block text-sm font-medium text-gray-600">Precio *</label>
-              <input type="number" id="precioServicio" name="precioServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required min="0" step="0.01" />
+              <input type="number" id="precioServicio" name="precioServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required min="0" step="0.01" autocomplete="off" />
             </div>
             <div class="form-group flex items-center pt-6">
               <input type="checkbox" id="activoServicio" name="activoServicio" class="form-check-input h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked />
@@ -391,69 +295,78 @@ export async function mount(container, sbInstance, user) {
       </div>
     </div>`;
 
-  // DOM Element References (scoped to container)
+  // DOMS
   const feedbackGlobalEl = container.querySelector('#servicios-feedback');
-  
   const formTipoServicioEl = container.querySelector('#form-tipo-servicio');
   const tablaTiposServicioBodyEl = container.querySelector('#tabla-tipos-servicio-body');
   const btnGuardarTipoServicioEl = container.querySelector('#btn-guardar-tipo-servicio');
   const btnCancelarEdicionTipoEl = container.querySelector('#btn-cancelar-edicion-tipo');
-
   const formServicioAdicionalEl = container.querySelector('#form-servicio-adicional');
   const tablaServiciosAdicionalesBodyEl = container.querySelector('#tabla-servicios-adicionales-body');
-  const selectServicioTipoEl = container.querySelector('#servicio-tipo'); // For the services form
+  const selectServicioTipoEl = container.querySelector('#servicio-tipo');
   const btnGuardarServicioEl = container.querySelector('#btn-guardar-servicio');
   const btnCancelarEdicionServicioEl = container.querySelector('#btn-cancelar-edicion-servicio');
   const formServicioAdicionalTitleEl = container.querySelector('#form-servicio-adicional-titulo');
 
-
   if (!currentHotelId) {
     showServiciosFeedback(feedbackGlobalEl, 'Error crítico: No se pudo determinar el hotel. Módulo deshabilitado.', 'error-indicator', 0);
-    // Disable all forms if hotelId is missing
-    if(formTipoServicioEl) formTipoServicioEl.querySelectorAll('input, button, select').forEach(el => el.disabled = true);
-    if(formServicioAdicionalEl) formServicioAdicionalEl.querySelectorAll('input, button, select').forEach(el => el.disabled = true);
+    if (formTipoServicioEl) Array.from(formTipoServicioEl.elements).forEach(el => el.disabled = true);
+    if (formServicioAdicionalEl) Array.from(formServicioAdicionalEl.elements).forEach(el => el.disabled = true);
     return;
   }
 
-  // --- Event Handlers & Logic for Service Categories (Tipos de Servicio) ---
+  // --- FORM HANDLER CATEGORIA ---
   const tipoServicioFormSubmitHandler = async (event) => {
     event.preventDefault();
     clearServiciosFeedback(feedbackGlobalEl);
     const originalButtonText = btnGuardarTipoServicioEl.textContent;
     setFormLoadingState(formTipoServicioEl, true, btnGuardarTipoServicioEl, originalButtonText, 'Guardando...');
+    // Aquí la diferencia CLAVE respecto a FormData:
 
-    const formData = new FormData(formTipoServicioEl);
-    const idEdit = formData.get('tipoServicioIdEdit');
-    const nombreTipo = formData.get('nombreTipo')?.trim();
+   
+
+    const nombreTipoInput = formTipoServicioEl.querySelector('[name="nombreTipo"]');
+    const nombreTipo = nombreTipoInput ? nombreTipoInput.value.trim() : '';
+    const idEdit = formTipoServicioEl.querySelector('[name="tipoServicioIdEdit"]')?.value;
+
+    // debug: verás el valor real en consola SIEMPRE
+    console.log('DEBUG NOMBRE TIPO:', nombreTipo, '|');
 
     if (!nombreTipo) {
       showServiciosFeedback(feedbackGlobalEl, 'El nombre de la categoría es obligatorio.', 'error-indicator');
       setFormLoadingState(formTipoServicioEl, false, btnGuardarTipoServicioEl, originalButtonText);
-      formTipoServicioEl.elements.nombreTipo.focus();
+      if(nombreTipoInput) nombreTipoInput.focus();
       return;
     }
-
     const payload = {
       hotel_id: currentHotelId,
-      nombre: nombreTipo,
-      activo: true // By default, new categories are active. Add checkbox if needed.
+      nombre: nombreTipo
     };
-
+    if (!idEdit) payload.activo = true;
     try {
-      if (idEdit) { // Update
+      let bitacoraAccion = '';
+       console.log('Usuario autenticado:', currentModuleUser);
+console.log('Payload a insertar:', {
+  hotel_id: currentHotelId,
+  nombre: nombreTipo
+});
+      if (idEdit) {
         const { error } = await currentSupabaseInstance.from('tipos_servicio')
-          .update(payload).eq('id', idEdit).eq('hotel_id', currentHotelId);
+          .update({ nombre: nombreTipo }).eq('id', idEdit).eq('hotel_id', currentHotelId);
         if (error) throw error;
         showServiciosFeedback(feedbackGlobalEl, 'Categoría actualizada exitosamente.', 'success-indicator');
-      } else { // Create
-        const { error } = await currentSupabaseInstance.from('tipos_servicio').insert(payload);
+        bitacoraAccion = 'UPDATE_TIPO_SERVICIO';
+      } else {
+        const { data, error } = await currentSupabaseInstance.from('tipos_servicio').insert(payload).select().single();
         if (error) throw error;
         showServiciosFeedback(feedbackGlobalEl, 'Categoría creada exitosamente.', 'success-indicator');
+        bitacoraAccion = 'CREATE_TIPO_SERVICIO';
+        if (data && currentModuleUser?.id && currentHotelId) registrarEnBitacora(currentModuleUser.id, currentHotelId, bitacoraAccion, `Categoría ID ${data.id}: ${nombreTipo}`);
       }
+      if (idEdit && currentModuleUser?.id && currentHotelId) registrarEnBitacora(currentModuleUser.id, currentHotelId, bitacoraAccion, `Categoría ID ${idEdit} actualizada: ${nombreTipo}`);
       resetearFormularioTipoServicio(formTipoServicioEl, btnCancelarEdicionTipoEl);
       await cargarYRenderizarTiposServicio(tablaTiposServicioBodyEl, selectServicioTipoEl, currentSupabaseInstance, currentHotelId);
     } catch (err) {
-      console.error('Error saving service category:', err);
       showServiciosFeedback(feedbackGlobalEl, `Error al guardar categoría: ${err.message}`, 'error-indicator', 0);
     } finally {
       setFormLoadingState(formTipoServicioEl, false, btnGuardarTipoServicioEl, originalButtonText);
@@ -467,31 +380,29 @@ export async function mount(container, sbInstance, user) {
     clearServiciosFeedback(feedbackGlobalEl);
   });
   moduleListeners.push({ element: btnCancelarEdicionTipoEl, type: 'click', handler: () => resetearFormularioTipoServicio(formTipoServicioEl, btnCancelarEdicionTipoEl) });
-  
-  // Event delegation for actions on the service categories table
+
   const tablaTiposServicioClickHandler = async (event) => {
     const button = event.target.closest('button[data-accion]');
     if (!button) return;
-
     const tipoId = button.dataset.id;
     const accion = button.dataset.accion;
     clearServiciosFeedback(feedbackGlobalEl);
-
-    if (accion === 'editar-tipo') {
+    if (accion === ACTIONS.EDIT_TIPO) {
       const tipoToEdit = tiposServicioCache.find(t => t.id.toString() === tipoId);
       if (tipoToEdit) {
         poblarFormularioTipoServicio(formTipoServicioEl, tipoToEdit, btnCancelarEdicionTipoEl);
-        window.scrollTo({ top: formTipoServicioEl.offsetTop - 20, behavior: 'smooth' });
+        formTipoServicioEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
       } else {
         showServiciosFeedback(feedbackGlobalEl, 'Categoría no encontrada para editar.', 'error-indicator');
       }
-    } else if (accion === 'toggle-activo-tipo') {
+    } else if (accion === ACTIONS.TOGGLE_ACTIVO_TIPO) {
       const estadoActual = button.dataset.estadoActual === 'true';
       try {
         const { error } = await currentSupabaseInstance.from('tipos_servicio')
           .update({ activo: !estadoActual }).eq('id', tipoId).eq('hotel_id', currentHotelId);
         if (error) throw error;
         showServiciosFeedback(feedbackGlobalEl, `Categoría ${!estadoActual ? 'activada' : 'desactivada'}.`, 'success-indicator');
+        if (currentModuleUser?.id && currentHotelId) registrarEnBitacora(currentModuleUser.id, currentHotelId, 'TOGGLE_TIPO_SERVICIO_STATUS', `Categoría ID ${tipoId} estado cambiado a ${!estadoActual}`);
         await cargarYRenderizarTiposServicio(tablaTiposServicioBodyEl, selectServicioTipoEl, currentSupabaseInstance, currentHotelId);
       } catch (err) {
         showServiciosFeedback(feedbackGlobalEl, `Error al cambiar estado: ${err.message}`, 'error-indicator', 0);
@@ -501,55 +412,60 @@ export async function mount(container, sbInstance, user) {
   tablaTiposServicioBodyEl.addEventListener('click', tablaTiposServicioClickHandler);
   moduleListeners.push({ element: tablaTiposServicioBodyEl, type: 'click', handler: tablaTiposServicioClickHandler });
 
-
-  // --- Event Handlers & Logic for Additional Services ---
+  // Servicios adicionales
   const servicioAdicionalFormSubmitHandler = async (event) => {
     event.preventDefault();
     clearServiciosFeedback(feedbackGlobalEl);
     const originalButtonText = btnGuardarServicioEl.textContent;
     setFormLoadingState(formServicioAdicionalEl, true, btnGuardarServicioEl, originalButtonText, 'Guardando...');
-
-    const formData = new FormData(formServicioAdicionalEl);
-    const idEdit = formData.get('servicioIdEdit');
-    const nombreServicio = formData.get('nombreServicio')?.trim();
-    const precioServicio = parseFloat(formData.get('precioServicio'));
+    const nombreServicioInput = formServicioAdicionalEl.querySelector('[name="nombreServicio"]');
+    const nombreServicio = nombreServicioInput ? nombreServicioInput.value.trim() : '';
+    const precioServicioInput = formServicioAdicionalEl.querySelector('[name="precioServicio"]');
+    const precioServicio = precioServicioInput ? parseFloat(precioServicioInput.value) : NaN;
+    const idEdit = formServicioAdicionalEl.querySelector('[name="servicioIdEdit"]')?.value;
+    const tipoIdInput = formServicioAdicionalEl.querySelector('[name="tipo_id"]');
+    const tipoId = tipoIdInput ? tipoIdInput.value : null;
+    const activoServicioInput = formServicioAdicionalEl.querySelector('[name="activoServicio"]');
+    const activoServicio = activoServicioInput ? activoServicioInput.checked : false;
 
     if (!nombreServicio) {
       showServiciosFeedback(feedbackGlobalEl, 'El nombre del servicio es obligatorio.', 'error-indicator');
       setFormLoadingState(formServicioAdicionalEl, false, btnGuardarServicioEl, originalButtonText);
-      formServicioAdicionalEl.elements.nombreServicio.focus();
+      if(nombreServicioInput) nombreServicioInput.focus();
       return;
     }
     if (isNaN(precioServicio) || precioServicio < 0) {
       showServiciosFeedback(feedbackGlobalEl, 'El precio del servicio debe ser un número positivo.', 'error-indicator');
       setFormLoadingState(formServicioAdicionalEl, false, btnGuardarServicioEl, originalButtonText);
-      formServicioAdicionalEl.elements.precioServicio.focus();
+      if(precioServicioInput) precioServicioInput.focus();
       return;
     }
-    
     const payload = {
       hotel_id: currentHotelId,
       nombre: nombreServicio,
-      tipo_id: formData.get('tipo_id') || null,
+      tipo_id: tipoId || null,
       precio: precioServicio,
-      activo: formServicioAdicionalEl.elements.activoServicio.checked
+      activo: activoServicio
     };
-
     try {
-      if (idEdit) { // Update
+      let bitacoraAccion = '';
+      if (idEdit) {
         const { error } = await currentSupabaseInstance.from('servicios_adicionales')
           .update(payload).eq('id', idEdit).eq('hotel_id', currentHotelId);
         if (error) throw error;
         showServiciosFeedback(feedbackGlobalEl, 'Servicio actualizado exitosamente.', 'success-indicator');
-      } else { // Create
-        const { error } = await currentSupabaseInstance.from('servicios_adicionales').insert(payload);
+        bitacoraAccion = 'UPDATE_SERVICIO_ADICIONAL';
+      } else {
+        const { data, error } = await currentSupabaseInstance.from('servicios_adicionales').insert(payload).select().single();
         if (error) throw error;
         showServiciosFeedback(feedbackGlobalEl, 'Servicio creado exitosamente.', 'success-indicator');
+        bitacoraAccion = 'CREATE_SERVICIO_ADICIONAL';
+        if (data && currentModuleUser?.id && currentHotelId) registrarEnBitacora(currentModuleUser.id, currentHotelId, bitacoraAccion, `Servicio ID ${data.id}: ${nombreServicio}`);
       }
+      if (idEdit && currentModuleUser?.id && currentHotelId) registrarEnBitacora(currentModuleUser.id, currentHotelId, bitacoraAccion, `Servicio ID ${idEdit} actualizado: ${nombreServicio}`);
       resetearFormularioServicio(formServicioAdicionalEl, formServicioAdicionalTitleEl, btnCancelarEdicionServicioEl);
       await cargarYRenderizarServiciosAdicionales(tablaServiciosAdicionalesBodyEl, currentSupabaseInstance, currentHotelId);
     } catch (err) {
-      console.error('Error saving additional service:', err);
       showServiciosFeedback(feedbackGlobalEl, `Error al guardar servicio: ${err.message}`, 'error-indicator', 0);
     } finally {
       setFormLoadingState(formServicioAdicionalEl, false, btnGuardarServicioEl, originalButtonText);
@@ -557,46 +473,44 @@ export async function mount(container, sbInstance, user) {
   };
   formServicioAdicionalEl.addEventListener('submit', servicioAdicionalFormSubmitHandler);
   moduleListeners.push({ element: formServicioAdicionalEl, type: 'submit', handler: servicioAdicionalFormSubmitHandler });
-  
+
   btnCancelarEdicionServicioEl.addEventListener('click', () => {
     resetearFormularioServicio(formServicioAdicionalEl, formServicioAdicionalTitleEl, btnCancelarEdicionServicioEl);
     clearServiciosFeedback(feedbackGlobalEl);
   });
   moduleListeners.push({ element: btnCancelarEdicionServicioEl, type: 'click', handler: () => resetearFormularioServicio(formServicioAdicionalEl, formServicioAdicionalTitleEl, btnCancelarEdicionServicioEl) });
 
-  // Event delegation for actions on the additional services table
   const tablaServiciosAdicionalesClickHandler = async (event) => {
     const button = event.target.closest('button[data-accion]');
     if (!button) return;
-
     const servicioId = button.dataset.id;
     const accion = button.dataset.accion;
     clearServiciosFeedback(feedbackGlobalEl);
-
-    if (accion === 'editar-servicio') {
-        try {
-            const { data: servicioToEdit, error } = await currentSupabaseInstance.from('servicios_adicionales')
-                .select('*, tipos_servicio(nombre)') // Ensure you fetch all needed data for the form
-                .eq('id', servicioId)
-                .eq('hotel_id', currentHotelId)
-                .single();
-            if (error) throw error;
-            if (servicioToEdit) {
-                poblarFormularioServicio(formServicioAdicionalEl, servicioToEdit, formServicioAdicionalTitleEl, btnCancelarEdicionServicioEl);
-                 window.scrollTo({ top: formServicioAdicionalEl.offsetTop - 20, behavior: 'smooth' });
-            } else {
-                showServiciosFeedback(feedbackGlobalEl, 'Servicio no encontrado para editar.', 'error-indicator');
-            }
-        } catch (err) {
-            showServiciosFeedback(feedbackGlobalEl, `Error al cargar servicio para editar: ${err.message}`, 'error-indicator', 0);
+    if (accion === ACTIONS.EDIT_SERVICIO) {
+      try {
+        const { data: servicioToEdit, error } = await currentSupabaseInstance.from('servicios_adicionales')
+          .select('*, tipos_servicio(nombre)')
+          .eq('id', servicioId)
+          .eq('hotel_id', currentHotelId)
+          .single();
+        if (error) throw error;
+        if (servicioToEdit) {
+          poblarFormularioServicio(formServicioAdicionalEl, servicioToEdit, formServicioAdicionalTitleEl, btnCancelarEdicionServicioEl);
+          formServicioAdicionalEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          showServiciosFeedback(feedbackGlobalEl, 'Servicio no encontrado para editar.', 'error-indicator');
         }
-    } else if (accion === 'toggle-activo-servicio') {
+      } catch (err) {
+        showServiciosFeedback(feedbackGlobalEl, `Error al cargar servicio para editar: ${err.message}`, 'error-indicator', 0);
+      }
+    } else if (accion === ACTIONS.TOGGLE_ACTIVO_SERVICIO) {
       const estadoActual = button.dataset.estadoActual === 'true';
       try {
         const { error } = await currentSupabaseInstance.from('servicios_adicionales')
           .update({ activo: !estadoActual }).eq('id', servicioId).eq('hotel_id', currentHotelId);
         if (error) throw error;
         showServiciosFeedback(feedbackGlobalEl, `Servicio ${!estadoActual ? 'activado' : 'desactivado'}.`, 'success-indicator');
+        if (currentModuleUser?.id && currentHotelId) registrarEnBitacora(currentModuleUser.id, currentHotelId, 'TOGGLE_SERVICIO_STATUS', `Servicio ID ${servicioId} estado cambiado a ${!estadoActual}`);
         await cargarYRenderizarServiciosAdicionales(tablaServiciosAdicionalesBodyEl, currentSupabaseInstance, currentHotelId);
       } catch (err) {
         showServiciosFeedback(feedbackGlobalEl, `Error al cambiar estado del servicio: ${err.message}`, 'error-indicator', 0);
@@ -606,39 +520,25 @@ export async function mount(container, sbInstance, user) {
   tablaServiciosAdicionalesBodyEl.addEventListener('click', tablaServiciosAdicionalesClickHandler);
   moduleListeners.push({ element: tablaServiciosAdicionalesBodyEl, type: 'click', handler: tablaServiciosAdicionalesClickHandler });
 
-
-  // Initial data load
+  // Inicializa datos
   setFormLoadingState(formTipoServicioEl, true, btnGuardarTipoServicioEl, 'Guardar Categoría', 'Cargando...');
   setFormLoadingState(formServicioAdicionalEl, true, btnGuardarServicioEl, 'Guardar Servicio', 'Cargando...');
-  
   await cargarYRenderizarTiposServicio(tablaTiposServicioBodyEl, selectServicioTipoEl, currentSupabaseInstance, currentHotelId);
   await cargarYRenderizarServiciosAdicionales(tablaServiciosAdicionalesBodyEl, currentSupabaseInstance, currentHotelId);
-  
   setFormLoadingState(formTipoServicioEl, false, btnGuardarTipoServicioEl, 'Guardar Categoría');
   setFormLoadingState(formServicioAdicionalEl, false, btnGuardarServicioEl, 'Guardar Servicio');
-  formTipoServicioEl.elements.nombreTipo.focus();
+  if (formTipoServicioEl.elements.nombreTipo) formTipoServicioEl.elements.nombreTipo.focus();
 }
 
-/**
- * Unmounts the services module, cleaning up listeners and state.
- * @param {HTMLElement} container - The main container of the module.
- */
 export function unmount(container) {
   moduleListeners.forEach(({ element, type, handler }) => {
-    if (element && typeof element.removeEventListener === 'function') {
-      element.removeEventListener(type, handler);
-    }
+    if (element && typeof element.removeEventListener === 'function') element.removeEventListener(type, handler);
   });
   moduleListeners = [];
-
-  // Reset module-scoped variables
   currentHotelId = null;
   tiposServicioCache = [];
   currentModuleUser = null;
   currentSupabaseInstance = null;
-
-  if (container && typeof container.innerHTML === 'string') {
-    container.innerHTML = ''; // Clear the container's content
-  }
+  if (container && typeof container.innerHTML === 'string') container.innerHTML = '';
   console.log('Servicios module unmounted.');
 }

@@ -68,26 +68,26 @@ let posFiltro = '';
 async function cargarDatosPOS() {
   // Productos disponibles para venta
   let { data: productos } = await currentSupabase
-  .from('productos_tienda')
-  .select('id, nombre, precio_venta, imagen_url, stock_actual, categoria_id, codigo_barras')
-  .eq('hotel_id', currentHotelId)
-  .eq('activo', true)
-  .gt('stock_actual', 0);
+    .from('productos_tienda')
+    .select('id, nombre, precio_venta, imagen_url, stock_actual, categoria_id, codigo_barras')
+    .eq('hotel_id', currentHotelId)
+    .eq('activo', true)
+    .gt('stock_actual', 0);
 
-// 2. Obtener categorías
-let { data: categorias } = await currentSupabase
-  .from('categorias_producto')
-  .select('id, nombre');
+  // 2. Obtener categorías
+  let { data: categorias } = await currentSupabase
+    .from('categorias_producto')
+    .select('id, nombre');
 
-// 3. Relacionar categorías con productos
-const catMap = Object.fromEntries((categorias || []).map(cat => [cat.id, cat.nombre]));
-posProductos = (productos || []).map(p => ({
-  ...p,
-  categoria_nombre: catMap[p.categoria_id] || 'Sin Cat.'
-}));
+  // 3. Relacionar categorías con productos
+  const catMap = Object.fromEntries((categorias || []).map(cat => [cat.id, cat.nombre]));
+  posProductos = (productos || []).map(p => ({
+    ...p,
+    categoria_nombre: catMap[p.categoria_id] || 'Sin Cat.'
+  }));
 
   // Métodos de pago
-  let {data: metodos} = await currentSupabase
+  let { data: metodos } = await currentSupabase
     .from('metodos_pago')
     .select('id, nombre')
     .eq('hotel_id', currentHotelId)
@@ -95,7 +95,7 @@ posProductos = (productos || []).map(p => ({
   posMetodosPago = metodos || [];
 
   // Habitaciones ocupadas desde el mapa de habitaciones (estado: 'ocupada')
-  let {data: habitaciones} = await currentSupabase
+  let { data: habitaciones } = await currentSupabase
     .from('habitaciones')
     .select('id, nombre')
     .eq('hotel_id', currentHotelId)
@@ -114,8 +114,6 @@ async function renderPOS() {
   cont.innerHTML = `
     <div style="
   display: flex; 
-  
-  
   flex-wrap: wrap; 
   gap: 32px; 
   align-items: flex-start; 
@@ -129,7 +127,6 @@ async function renderPOS() {
   <!-- PRODUCTOS -->
   <div style="
     flex: 1 1 340px; 
-     
     background: #fff; 
     border-radius: 16px; 
     box-shadow: 0 2px 18px #b6d0f912; 
@@ -160,7 +157,6 @@ async function renderPOS() {
       <!-- Aquí van las tarjetas de productos generadas por JS -->
     </div>
   </div>
-
   <!-- CARRITO Y VENTA -->
   <div style="
     min-width:340px; 
@@ -170,6 +166,10 @@ async function renderPOS() {
     border-radius: 16px; 
     box-shadow: 0 2px 14px #b6d0f922; 
     padding: 28px 24px;
+    position: sticky;
+    top: 20px;
+    align-self: flex-start;
+    z-index: 10;
   ">
     <h2 style="font-size: 1.4rem; color: #22c55e; font-weight: bold; margin-bottom: 16px; letter-spacing: 1px;">
       <span style="font-size:1.1em;">🛍️</span> Carrito de venta
@@ -214,11 +214,9 @@ async function renderPOS() {
     >Registrar Venta</button>
     <div id="msgPOS" style="color:#e11d48;margin-top:10px;font-weight:bold;min-height:28px;"></div>
   </div>
-</div>
-
   `;
 
-  // --- MUEVE LA ASIGNACIÓN DE EVENTOS AQUÍ, DESPUÉS DE ESTABLECER innerHTML ---
+  // --- ASIGNACIÓN DE EVENTOS ---
   const buscadorPOSEl = document.getElementById('buscadorPOS');
   if (buscadorPOSEl) {
     buscadorPOSEl.oninput = (e) => {
@@ -246,20 +244,10 @@ async function renderPOS() {
     console.error("Elemento #modoPOS no encontrado.");
   }
 
-  const btnVentaPOSEl = document.getElementById('btnVentaPOS');
-  if (btnVentaPOSEl) {
-    btnVentaPOSEl.onclick = registrarVentaPOS;
-  } else {
-    console.error("Elemento #btnVentaPOS no encontrado.");
-  }
-  // --- FIN DE MOVIMIENTO DE EVENTOS ---
-
-
   renderProductosPOS();
   renderCarritoPOS();
   renderMetodosPagoPOS();
   renderHabitacionesPOS();
-
 
   document.getElementById('modoPOS').onchange = (e)=>{
     const modo = e.target.value;
@@ -269,12 +257,22 @@ async function renderPOS() {
   };
   document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
 }
+
 function renderMetodosPagoPOS() {
   const sel = document.getElementById('metodoPOS');
   if (!sel) return;
   sel.innerHTML = '<option value="">Selecciona método de pago...</option>';
   posMetodosPago.forEach(m => {
     sel.innerHTML += `<option value="${m.id}">${m.nombre}</option>`;
+  });
+}
+
+function renderHabitacionesPOS() {
+  const sel = document.getElementById('habitacionPOS');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Selecciona habitación...</option>';
+  posHabitacionesOcupadas.forEach(hab => {
+    sel.innerHTML += `<option value="${hab.id}">${hab.nombre}</option>`;
   });
 }
 
@@ -350,12 +348,12 @@ function renderProductosPOS() {
       </button>
     `;
 
-    // Agregar evento (no uses window para evitar problemas de scope)
     card.querySelector('.agregar-btn-pos').onclick = () => addToCartPOS(prod.id);
 
     cont.appendChild(card);
   });
 }
+
 function renderCarritoPOS() {
   const tbody = document.getElementById('carritoPOS');
   if (!tbody) return;
@@ -381,7 +379,6 @@ function renderCarritoPOS() {
 }
 
 // Declarar funciones auxiliares en window si usas atributos en HTML (mejor práctica para apps modulares: usar solo eventos JS)
-// Así:
 window.updateQtyPOS = function(id, val){
   let item = posCarrito.find(i=>i.id===id);
   if(item){
@@ -395,7 +392,6 @@ window.removeCartPOS = function(id){
   renderCarritoPOS();
 };
 
-// Debajo declara tu addToCartPOS:
 function addToCartPOS(id){
   const prod = posProductos.find(p=>p.id===id);
   if(!prod) return;
@@ -408,10 +404,16 @@ function addToCartPOS(id){
   renderCarritoPOS();
 }
 
+// ====================== REGISTRAR VENTA POS ===========================
+let ventaPOSenCurso = false;
 
-
-// ----- Registrar venta -----
 async function registrarVentaPOS() {
+  if (ventaPOSenCurso) return; // Bloqueo para evitar doble click rápido
+  ventaPOSenCurso = true;
+
+  const btnVentaPOSEl = document.getElementById('btnVentaPOS');
+  if (btnVentaPOSEl) btnVentaPOSEl.disabled = true;
+
   try {
     if(posCarrito.length === 0) {
       document.getElementById('msgPOS').textContent = "Carrito vacío";
@@ -460,7 +462,7 @@ async function registrarVentaPOS() {
       hotel_id: currentHotelId,
       usuario_id: currentUser.id,
       habitacion_id: habitacion_id,
-      reserva_id: reservaId, // 👈 ESTA LÍNEA ASOCIA LA VENTA A LA RESERVA ACTIVA
+      reserva_id: reservaId, // 👈 ASOCIA LA VENTA A LA RESERVA ACTIVA
       metodo_pago_id: metodo_pago_id,
       cliente_temporal,
       total_venta: total,
@@ -500,28 +502,34 @@ async function registrarVentaPOS() {
       return; // Detenemos la función aquí.
     }
 
-    // 3. Si hay turno, preparamos el movimiento de caja y AÑADIMOS EL TURNO_ID
+    // 3. Si hay turno, registrar movimiento en caja solo si es "inmediato"
     const nombresProductos = posCarrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
 
-    const movimientoCaja = {
-      hotel_id: currentHotelId,
-      tipo: 'ingreso',
-      monto: total,
-      concepto: `Venta: ${nombresProductos}`,  // <--- Aquí se listan productos y cantidades
-      fecha_movimiento: new Date().toISOString(),
-      metodo_pago_id: metodo_pago_id,
-      usuario_id: currentUser.id,
-      venta_tienda_id: ventaId,
-      turno_id: turnoId
-    };
+    if (modo === 'inmediato') {
+      // Solo registrar en caja si es pago inmediato
+      const movimientoCaja = {
+        hotel_id: currentHotelId,
+        tipo: 'ingreso',
+        monto: total,
+        concepto: `Venta: ${nombresProductos}`,
+        fecha_movimiento: new Date().toISOString(),
+        metodo_pago_id: metodo_pago_id,
+        usuario_id: currentUser.id,
+        venta_tienda_id: ventaId,
+        turno_id: turnoId
+      };
 
-    // 4. Insertamos en la tabla caja
-    const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja); // Ya no es un array
+      // 4. Insertamos en la tabla caja
+      const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja);
 
-    if (errorCaja) {
-      console.error("Error registrando en caja desde POS:", errorCaja);
-      if (msgPOSEl) showError(msgPOSEl, `Error al registrar en caja: <span class="math-inline">{errorCaja.message}. La venta #${ventaId} podría necesitar ajuste manual en caja.`);
-      // OJO: Aquí la venta en tienda SÍ se creó. Es un caso especial de error.
+      if (errorCaja) {
+        console.error("Error registrando en caja desde POS:", errorCaja);
+        if (msgPOSEl) showError(msgPOSEl, `Error al registrar en caja: <span class="math-inline">{errorCaja.message}. La venta #${ventaId} podría necesitar ajuste manual en caja.`);
+      }
+      document.getElementById('msgPOS').textContent = "¡Venta registrada!";
+    } else {
+      // Si es carga a habitación, solo mostrar mensaje diferente
+      document.getElementById('msgPOS').textContent = "Consumo cargado a la cuenta de la habitación.";
     }
 
     // Limpia
@@ -529,18 +537,26 @@ async function registrarVentaPOS() {
     renderCarritoPOS();
     await cargarDatosPOS();
     renderProductosPOS();
-    document.getElementById('msgPOS').textContent = "¡Venta registrada!";
     setTimeout(()=>{document.getElementById('msgPOS').textContent="";},1700);
 
   } catch(err){
     document.getElementById('msgPOS').textContent = err.message;
+  } finally {
+    ventaPOSenCurso = false;
+    // Rehabilita el botón SIEMPRE, incluso con error
+    const btnVentaPOSEl = document.getElementById('btnVentaPOS');
+    if (btnVentaPOSEl) btnVentaPOSEl.disabled = false;
   }
 }
 
-// =============== FIN BLOQUE POS ===============
+// Importante: asegúrate que tu botón tenga el id="btnVentaPOS"
+// y que la asignación del evento sea (después de renderizar el POS):
 
+setTimeout(() => {
+  const btnVentaPOSEl = document.getElementById('btnVentaPOS');
+  if (btnVentaPOSEl) btnVentaPOSEl.onclick = registrarVentaPOS;
+}, 0);
 
-// ===================  AQUÍ VA LA SEGUNDA PARTE  ===================
 // ====================  PESTAÑA INVENTARIO  ====================
 let inventarioProductos = [];
 
@@ -867,6 +883,7 @@ window.toggleActivoProducto = async (id,act)=>{
   await cargarProductosInventario();
   renderTablaInventario('');
 };
+
 
 
 // ====================  PESTAÑA CATEGORÍAS  ====================
@@ -1797,7 +1814,13 @@ async function registrarCompraProveedor() {
         subtotal: item.cantidad * item.precio,
         hotel_id: currentHotelId
       }]);
-    }
+      await currentSupabase
+      .from('productos_tienda')
+     .update({ precio: item.precio })
+      .eq('id', item.id);
+    
+}
+
 
     function mostrarAlertaCompraExitosa(msg) {
   // Si ya existe una alerta, elimínala

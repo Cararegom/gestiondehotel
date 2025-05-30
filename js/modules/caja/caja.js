@@ -22,13 +22,8 @@ const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb
 
 // --- LÓGICA DE TURNOS ---
 
-/**
- * Verifica si el usuario actual tiene un turno abierto.
- * @returns {Promise<object|null>} El objeto del turno si existe, o null.
- */
 async function verificarTurnoActivo() {
   if (!currentModuleUser?.id || !currentHotelId) return null;
-
   const { data, error } = await currentSupabaseInstance
     .from('turnos')
     .select('*')
@@ -36,23 +31,24 @@ async function verificarTurnoActivo() {
     .eq('hotel_id', currentHotelId)
     .eq('estado', 'abierto')
     .maybeSingle();
-
   if (error) {
     console.error("Error verificando turno activo:", error);
     showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No se pudo verificar el estado del turno.');
     return null;
   }
   if (data) {
-  // Si encontramos un turno activo, se lo comunicamos al servicio.
-  turnoService.setActiveTurn(data.id);
-}
+    turnoService.setActiveTurn(data.id);
+  }
   return data;
 }
 
-/**
- * Inicia un nuevo turno para el usuario actual.
- */
 async function abrirTurno() {
+  const montoInicialStr = prompt("¿Cuál es el monto inicial de caja?");
+  const montoInicial = parseFloat(montoInicialStr);
+  if (isNaN(montoInicial) || montoInicial < 0) {
+    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'Monto inválido. Turno no iniciado.');
+    return;
+  }
   showGlobalLoading("Abriendo nuevo turno...");
   try {
     const { data: nuevoTurno, error } = await currentSupabaseInstance
@@ -64,14 +60,20 @@ async function abrirTurno() {
       })
       .select()
       .single();
-
     if (error) throw error;
-
     turnoActivo = nuevoTurno;
-    turnoService.setActiveTurn(turnoActivo.id); 
-    await renderizarUI(); // Vuelve a renderizar la UI en el estado "turno abierto"
+    turnoService.setActiveTurn(turnoActivo.id);
+    await currentSupabaseInstance.from('caja').insert({
+      tipo: 'apertura',
+      monto: montoInicial,
+      concepto: 'Apertura de caja',
+      hotel_id: currentHotelId,
+      usuario_id: currentModuleUser.id,
+      turno_id: turnoActivo.id,
+      fecha_movimiento: new Date().toISOString()
+    });
+    await renderizarUI();
     showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno iniciado con éxito!');
-
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error al abrir turno: ${err.message}`);
   } finally {
@@ -79,48 +81,34 @@ async function abrirTurno() {
   }
 }
 
-/**
- * Cierra el turno actual, calcula totales y envía el reporte.
- */
 async function cerrarTurno() {
   if (!turnoActivo) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay un turno activo para cerrar.');
     return;
   }
   showGlobalLoading("Realizando cierre de turno...");
-
   try {
-    // 1. Obtener todos los movimientos del turno actual
     const { data: movimientos, error: movError } = await currentSupabaseInstance
       .from('caja')
       .select('*, usuarios(nombre), metodos_pago(nombre)')
       .eq('turno_id', turnoActivo.id)
       .order('creado_en', { ascending: true });
-
     if (movError) throw movError;
-
     if (movimientos.length === 0) {
       showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos en este turno para generar un reporte.');
       return;
     }
-
-    // 2. Calcular totales
     const totalIngresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + Number(m.monto), 0);
     const totalEgresos = movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + Number(m.monto), 0);
     const balance = totalIngresos - totalEgresos;
-
-    // 3. Generar y enviar el reporte por email
     const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
     const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Usuario del Sistema';
     const htmlReporte = generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaCierre);
-
     await enviarReporteCierreCaja({
       asunto: `Cierre de Turno - ${usuarioNombre} - ${fechaCierre}`,
       htmlReporte: htmlReporte,
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
-    
-    // 4. Actualizar el turno en la base de datos a 'cerrado'
     const { error: updateError } = await currentSupabaseInstance
       .from('turnos')
       .update({
@@ -129,14 +117,11 @@ async function cerrarTurno() {
         balance_final: balance
       })
       .eq('id', turnoActivo.id);
-
     if (updateError) throw updateError;
-    
     showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno cerrado y reporte enviado con éxito!');
     turnoActivo = null;
     turnoService.clearActiveTurn();
-    await renderizarUI(); // Vuelve a renderizar la UI en el estado "turno cerrado"
-
+    await renderizarUI();
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error en el cierre de turno: ${err.message}`);
   } finally {
@@ -144,64 +129,123 @@ async function cerrarTurno() {
   }
 }
 
-
 // --- LÓGICA DE MOVIMIENTOS Y RENDERIZADO ---
 
-/**
- * Carga y muestra los movimientos del turno activo.
- */
 async function loadAndRenderMovements(tBodyEl, summaryEls) {
   tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">Cargando movimientos del turno...</td></tr>`;
-
   try {
     const { data: movements, error } = await currentSupabaseInstance
       .from('caja')
       .select('id,tipo,monto,concepto,creado_en,usuario_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre)')
       .eq('hotel_id', currentHotelId)
-      .eq('turno_id', turnoActivo.id) // La clave: solo movimientos del turno activo
+      .eq('turno_id', turnoActivo.id)
       .order('creado_en', { ascending: false });
-
     if (error) throw error;
-
     let ingresos = 0, egresos = 0;
     tBodyEl.innerHTML = '';
-
     if (!movements || movements.length === 0) {
       tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">No hay movimientos en este turno.</td></tr>`;
     } else {
       movements.forEach(mv => {
         if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
         else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
-        
         const tr = document.createElement('tr');
         tr.className = "hover:bg-gray-50";
         tr.innerHTML = `
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
-          <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.metodos_pago?.nombre || 'N/A'}</td>
-        `;
+  <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
+  <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
+  <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
+  <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
+  <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
+  <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+    ${mv.metodos_pago?.nombre || 'N/A'}
+    <button class="ml-2 text-blue-500 hover:underline" data-edit-metodo="${mv.id}">✏️</button>
+  </td>
+`;
+
         tBodyEl.appendChild(tr);
       });
-    }
+      movements.forEach(mv => {
+  if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
+  else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
+  const tr = document.createElement('tr');
+  tr.className = "hover:bg-gray-50";
+  tr.innerHTML = `
+    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
+    <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
+    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
+    <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
+    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
+    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+      ${mv.metodos_pago?.nombre || 'N/A'}
+      <button class="ml-2 text-blue-500 hover:underline" data-edit-metodo="${mv.id}">✏️</button>
+    </td>
+  `;
+  tBodyEl.appendChild(tr);
+});
 
-    // Actualizar los totales del turno
+// --- Agrega el listener para editar método de pago ---
+tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
+  btn.onclick = async () => {
+    const movimientoId = btn.getAttribute('data-edit-metodo');
+    const { data: metodosPago } = await currentSupabaseInstance
+      .from('metodos_pago')
+      .select('id, nombre')
+      .eq('hotel_id', currentHotelId)
+      .eq('activo', true);
+
+    let selectHtml = '<select id="select-nuevo-metodo-pago" class="input px-2 py-1 rounded-md border border-gray-300">';
+    metodosPago.forEach(mp => {
+      selectHtml += `<option value="${mp.id}">${mp.nombre}</option>`;
+    });
+    selectHtml += '</select>';
+
+    const confirmDiv = document.createElement('div');
+    confirmDiv.innerHTML = `
+      <div class="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-[99999]">
+        <div class="bg-white rounded-xl p-6 border-4 border-green-200 shadow-xl w-full max-w-xs text-center">
+          <h4 class="text-lg font-bold mb-3">Cambiar método de pago</h4>
+          ${selectHtml}
+          <div class="mt-4 flex gap-2 justify-center">
+            <button id="btn-confirm-metodo-pago" class="button button-success px-4 py-2 rounded">Guardar</button>
+            <button id="btn-cancel-metodo-pago" class="button button-neutral px-4 py-2 rounded">Cancelar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(confirmDiv);
+
+    document.getElementById('btn-cancel-metodo-pago').onclick = () => confirmDiv.remove();
+
+    document.getElementById('btn-confirm-metodo-pago').onclick = async () => {
+      const nuevoMetodoId = document.getElementById('select-nuevo-metodo-pago').value;
+      const { error } = await currentSupabaseInstance
+        .from('caja')
+        .update({ metodo_pago_id: nuevoMetodoId })
+        .eq('id', movimientoId);
+      if (error) {
+        alert('Error actualizando método de pago: ' + error.message);
+      } else {
+        confirmDiv.remove();
+        await loadAndRenderMovements(tBodyEl, summaryEls);
+      }
+    };
+  };
+});
+
+    }
     const balance = ingresos - egresos;
     summaryEls.ingresos.textContent = formatCurrency(ingresos);
     summaryEls.egresos.textContent = formatCurrency(egresos);
     summaryEls.balance.textContent = formatCurrency(balance);
     summaryEls.balance.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
-
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error cargando movimientos: ${err.message}`);
   }
 }
 
-/**
- * Renderiza la interfaz de usuario cuando hay un turno activo.
- */
+// --- UI CON CHECKBOX PARA EGRESO FUERA DE TURNO ---
+
 async function renderizarUIAbierta() {
   currentContainerEl.innerHTML = `
     <div class="card caja-module shadow-lg rounded-lg">
@@ -262,13 +306,16 @@ async function renderizarUIAbierta() {
             <label>Concepto/Descripción *</label>
             <input type="text" name="concepto" class="form-control" required minlength="3" />
           </div>
+          <div class="mb-4" style="display:flex;align-items:center;gap:7px;">
+            <input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" style="transform:scale(1.3);">
+            <label for="egreso-fuera-turno" style="margin:0;">Registrar egreso fuera del turno/caja</label>
+          </div>
           <button type="submit" class="button button-accent">＋ Agregar Movimiento</button>
           <div id="turno-add-feedback" class="feedback-message mt-3"></div>
         </form>
       </div>
     </div>`;
 
-  // --- Aquí siguen los listeners y lógica ---
   const tBodyEl = currentContainerEl.querySelector('#turno-movements-body');
   const summaryEls = {
     ingresos: currentContainerEl.querySelector('#turno-total-ingresos'),
@@ -283,12 +330,17 @@ async function renderizarUIAbierta() {
   await popularMetodosPagoSelect(metodoPagoSelect);
 
   // SUBMIT DEL FORMULARIO
-  // SUBMIT DEL FORMULARIO
   addFormEl.addEventListener('submit', async (e) => {
     e.preventDefault();
-    
-    // 1. Lee los datos del formulario MIENTRAS los campos aún están activos.
     const formData = new FormData(addFormEl);
+    const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
+    let turnoIdToSave = turnoActivo.id;
+
+    // Si tipo es egreso y el checkbox está activo => guardar egreso fuera de turno (turno_id null)
+    if (formData.get('tipo') === "egreso" && esEgresoFueraTurno) {
+      turnoIdToSave = null;
+    }
+
     const newMovement = {
       tipo: formData.get('tipo'),
       monto: parseFloat(formData.get('monto')),
@@ -296,22 +348,17 @@ async function renderizarUIAbierta() {
       metodo_pago_id: formData.get('metodoPagoId'),
       usuario_id: currentModuleUser.id,
       hotel_id: currentHotelId,
-      turno_id: turnoActivo.id
+      turno_id: turnoIdToSave
     };
-    
-    // 2. Ahora sí, deshabilita el formulario para prevenir doble clic.
-    setFormLoadingState(addFormEl, true);
-    
-    console.log('Nuevo movimiento:', newMovement); // ¡Ahora debería mostrar los valores correctos!
 
-    // VALIDACIÓN
+    setFormLoadingState(addFormEl, true);
+
     if (!(newMovement.monto > 0) || !newMovement.concepto || !newMovement.metodo_pago_id || !newMovement.tipo) {
       showError(addFormEl.querySelector('#turno-add-feedback'), 'Todos los campos son obligatorios.');
       setFormLoadingState(addFormEl, false);
       return;
     }
 
-    // ... el resto de la lógica para insertar en la DB
     const { error } = await currentSupabaseInstance.from('caja').insert(newMovement);
     if (error) {
       showError(addFormEl.querySelector('#turno-add-feedback'), `Error: ${error.message}`);
@@ -322,14 +369,11 @@ async function renderizarUIAbierta() {
     }
     setFormLoadingState(addFormEl, false);
   });
+
   // Botón de cerrar turno
   currentContainerEl.querySelector('#btn-cerrar-turno').addEventListener('click', cerrarTurno);
 }
 
-
-/**
- * Renderiza la interfaz cuando NO hay un turno activo.
- */
 function renderizarUICerrada() {
   currentContainerEl.innerHTML = `
     <div class="card shadow-lg rounded-lg">
@@ -343,42 +387,34 @@ function renderizarUICerrada() {
   currentContainerEl.querySelector('#btn-abrir-turno').addEventListener('click', abrirTurno);
 }
 
-/**
- * Función principal que determina qué UI mostrar.
- */
 async function renderizarUI() {
-    turnoActivo = await verificarTurnoActivo();
-    if (turnoActivo) {
-        await renderizarUIAbierta();
-    } else {
-        renderizarUICerrada();
-    }
+  turnoActivo = await verificarTurnoActivo();
+  if (turnoActivo) {
+    await renderizarUIAbierta();
+  } else {
+    renderizarUICerrada();
+  }
 }
-
 
 // --- FUNCIONES AUXILIARES (Email, Métodos de Pago, etc.) ---
 
 async function popularMetodosPagoSelect(selectEl) {
-    if (!selectEl) return;
-    selectEl.innerHTML = '<option value="">Cargando...</option>';
-    const { data, error } = await currentSupabaseInstance
-        .from('metodos_pago')
-        .select('id, nombre')
-        .eq('hotel_id', currentHotelId)
-        .eq('activo', true);
-
-    if (error || !data.length) {
-        selectEl.innerHTML = '<option value="" disabled>No hay métodos</option>';
-    } else {
-        selectEl.innerHTML = `<option value="">-- Seleccione --</option>${data.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')}`;
-        // Si solo hay un método de pago, lo selecciona automáticamente
-        if (data.length === 1) selectEl.value = data[0].id;
-    }
+  if (!selectEl) return;
+  selectEl.innerHTML = '<option value="">Cargando...</option>';
+  const { data, error } = await currentSupabaseInstance
+    .from('metodos_pago')
+    .select('id, nombre')
+    .eq('hotel_id', currentHotelId)
+    .eq('activo', true);
+  if (error || !data.length) {
+    selectEl.innerHTML = '<option value="" disabled>No hay métodos</option>';
+  } else {
+    selectEl.innerHTML = `<option value="">-- Seleccione --</option>${data.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')}`;
+    if (data.length === 1) selectEl.value = data[0].id;
+  }
 }
 
-
 function generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaCierre) {
-  // Esta función se mantiene igual que en tu código original
   return `
     <h2 style="color:#2061a9; font-family: Arial, sans-serif;">Cierre de Turno - ${fechaCierre}</h2>
     <p style="font-family: Arial, sans-serif;"><b>Realizado por:</b> ${usuarioNombre}</p>
@@ -404,54 +440,36 @@ function generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, bala
 }
 
 async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
-  // Traer el/los correos de destino configurados por el hotel
   const { data: config } = await currentSupabaseInstance
-      .from('configuracion_hotel')
-      .select('correo_reportes, correo_remitente')
-      .eq('hotel_id', currentHotelId)
-      .maybeSingle();
-
-  // Usar el nuevo campo, y hacer backup por si el admin lo deja vacío
+    .from('configuracion_hotel')
+    .select('correo_reportes, correo_remitente')
+    .eq('hotel_id', currentHotelId)
+    .maybeSingle();
   let toCorreos = (config?.correo_reportes || '').trim();
-  // Como fallback, usa el email del usuario actual o uno de backup duro
   if (!toCorreos) {
     toCorreos = currentModuleUser.email || "tucorreo@tudominio.com";
   }
-
-  // Validar que haya al menos un correo válido
-  // (aquí validamos solo que tenga @, si quieres un validador más pro, avísame)
   if (!toCorreos || !toCorreos.split(',').some(correo => correo.trim().includes('@'))) {
     showError(feedbackEl, "No hay correo de destino válido para enviar el cierre de caja. Configúralo en Ajustes.");
     return;
   }
-
-  // Si quieres, limpia espacios y quita dobles comas
   toCorreos = toCorreos.split(',').map(c => c.trim()).filter(c => !!c).join(',');
-
-  // El 'from' solo si tu sistema lo usa (Brevo permite, Gmail API no)
   const fromCorreo = config?.correo_remitente || "no-reply@gestiondehotel.com";
-
-  // Armar el payload que espera tu Make/Brevo (si tu scenario acepta varios correos juntos)
   const payload = {
-    to: toCorreos,         // puede ser: admin@hotel.com,gerente@hotel.com
+    to: toCorreos,
     from: fromCorreo,
     subject: asunto,
     html: htmlReporte
   };
-
-  // Enviar al webhook de Make.com
   const response = await fetch(EMAIL_REPORT_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload)
   });
-
   if (!response.ok) {
-      showError(feedbackEl, 'No se pudo enviar el reporte por email.');
+    showError(feedbackEl, 'No se pudo enviar el reporte por email.');
   }
 }
-
-
 
 // --- MOUNT / UNMOUNT ---
 
@@ -460,16 +478,12 @@ export async function mount(container, supabaseInst, user) {
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
-  
-  // Obtener hotel_id del perfil del usuario
   const { data: perfil } = await supabaseInst.from('usuarios').select('hotel_id').eq('id', user.id).single();
   currentHotelId = perfil?.hotel_id;
-
   if (!currentHotelId) {
     container.innerHTML = `<div class="p-4 text-red-600">Error: Hotel no identificado.</div>`;
     return;
   }
-  
   container.innerHTML = `<div class="p-8 text-center">Cargando estado de la caja...</div>`;
   await renderizarUI();
 }
