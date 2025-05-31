@@ -76,6 +76,7 @@ async function abrirTurno() {
     showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno iniciado con éxito!');
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error al abrir turno: ${err.message}`);
+    await renderizarUI();
   } finally {
     hideGlobalLoading();
   }
@@ -94,7 +95,7 @@ async function cerrarTurno() {
       .eq('turno_id', turnoActivo.id)
       .order('creado_en', { ascending: true });
     if (movError) throw movError;
-    if (movimientos.length === 0) {
+    if (!movimientos || movimientos.length === 0) {
       showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos en este turno para generar un reporte.');
       return;
     }
@@ -124,6 +125,7 @@ async function cerrarTurno() {
     await renderizarUI();
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error en el cierre de turno: ${err.message}`);
+    await renderizarUI();
   } finally {
     hideGlobalLoading();
   }
@@ -140,6 +142,7 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
       .eq('hotel_id', currentHotelId)
       .eq('turno_id', turnoActivo.id)
       .order('creado_en', { ascending: false });
+    console.log('Movimientos recibidos de Supabase:', movements);
     if (error) throw error;
     let ingresos = 0, egresos = 0;
     tBodyEl.innerHTML = '';
@@ -169,11 +172,16 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
       tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
         btn.onclick = async () => {
           const movimientoId = btn.getAttribute('data-edit-metodo');
-          const { data: metodosPago } = await currentSupabaseInstance
+          const { data: metodosPago, error: metError } = await currentSupabaseInstance
             .from('metodos_pago')
             .select('id, nombre')
             .eq('hotel_id', currentHotelId)
             .eq('activo', true);
+
+          if (metError || !metodosPago || !metodosPago.length) {
+            alert('No hay métodos de pago activos para este hotel.');
+            return;
+          }
 
           let selectHtml = '<select id="select-nuevo-metodo-pago" class="input px-2 py-1 rounded-md border border-gray-300">';
           metodosPago.forEach(mp => {
@@ -227,6 +235,7 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
 // --- UI CON CHECKBOX PARA EGRESO FUERA DE TURNO ---
 
 async function renderizarUIAbierta() {
+  console.log("renderizarUIAbierta llamado");
   currentContainerEl.innerHTML = `
     <div class="card caja-module shadow-lg rounded-lg">
       <div class="card-header bg-gray-100 p-4 border-b flex justify-between items-center">
@@ -296,6 +305,12 @@ async function renderizarUIAbierta() {
       </div>
     </div>`;
 
+  // --- Limpieza previa de listeners anteriores (si existiera) ---
+  moduleListeners.forEach(({ element, type, handler }) => {
+    element?.removeEventListener(type, handler);
+  });
+  moduleListeners = [];
+
   const tBodyEl = currentContainerEl.querySelector('#turno-movements-body');
   const summaryEls = {
     ingresos: currentContainerEl.querySelector('#turno-total-ingresos'),
@@ -309,8 +324,8 @@ async function renderizarUIAbierta() {
   const metodoPagoSelect = addFormEl.elements.metodoPagoId;
   await popularMetodosPagoSelect(metodoPagoSelect);
 
-  // SUBMIT DEL FORMULARIO
-  addFormEl.addEventListener('submit', async (e) => {
+  // --- SUBMIT DEL FORMULARIO ---
+  const submitHandler = async (e) => {
     e.preventDefault();
     const formData = new FormData(addFormEl);
     const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
@@ -332,10 +347,12 @@ async function renderizarUIAbierta() {
     };
 
     setFormLoadingState(addFormEl, true);
+    addFormEl.querySelector('button[type="submit"]').disabled = true;
 
     if (!(newMovement.monto > 0) || !newMovement.concepto || !newMovement.metodo_pago_id || !newMovement.tipo) {
       showError(addFormEl.querySelector('#turno-add-feedback'), 'Todos los campos son obligatorios.');
       setFormLoadingState(addFormEl, false);
+      addFormEl.querySelector('button[type="submit"]').disabled = false;
       return;
     }
 
@@ -348,10 +365,17 @@ async function renderizarUIAbierta() {
       await loadAndRenderMovements(tBodyEl, summaryEls);
     }
     setFormLoadingState(addFormEl, false);
-  });
+    addFormEl.querySelector('button[type="submit"]').disabled = false;
+  };
 
-  // Botón de cerrar turno
-  currentContainerEl.querySelector('#btn-cerrar-turno').addEventListener('click', cerrarTurno);
+  addFormEl.addEventListener('submit', submitHandler);
+  moduleListeners.push({ element: addFormEl, type: 'submit', handler: submitHandler });
+
+  // --- Botón de cerrar turno (ahora abre el resumen/modal) ---
+  const cerrarTurnoBtn = currentContainerEl.querySelector('#btn-cerrar-turno');
+  const resumenCorteHandler = () => mostrarResumenCorteDeCaja();
+  cerrarTurnoBtn.addEventListener('click', resumenCorteHandler);
+  moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: resumenCorteHandler });
 }
 
 function renderizarUICerrada() {
@@ -364,15 +388,209 @@ function renderizarUICerrada() {
         <button id="btn-abrir-turno" class="button button-primary button-lg py-3 px-6 text-lg">Abrir Turno</button>
       </div>
     </div>`;
-  currentContainerEl.querySelector('#btn-abrir-turno').addEventListener('click', abrirTurno);
+  const abrirTurnoBtn = currentContainerEl.querySelector('#btn-abrir-turno');
+  abrirTurnoBtn.addEventListener('click', abrirTurno);
+  moduleListeners.push({ element: abrirTurnoBtn, type: 'click', handler: abrirTurnoBtn });
 }
 
 async function renderizarUI() {
+  console.log("renderizarUI llamado");
   turnoActivo = await verificarTurnoActivo();
   if (turnoActivo) {
     await renderizarUIAbierta();
   } else {
     renderizarUICerrada();
+  }
+}
+
+// --- MODAL DE RESUMEN DE CAJA ANTES DE CORTE (CON IMPRESIÓN) ---
+
+async function mostrarResumenCorteDeCaja() {
+  showGlobalLoading('Cargando resumen del turno...');
+  try {
+    // Traer los movimientos del turno actual
+    const { data: movimientos, error } = await currentSupabaseInstance
+      .from('caja')
+      .select('*, usuarios(nombre), metodos_pago(nombre)')
+      .eq('turno_id', turnoActivo.id)
+      .order('creado_en', { ascending: true });
+
+    if (error || !movimientos || movimientos.length === 0) {
+      showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos en este turno para generar un resumen.');
+      hideGlobalLoading();
+      return;
+    }
+
+    // Calcular totales
+    let ingresos = 0, egresos = 0;
+    const ingresosPorMetodo = {};
+    const egresosPorMetodo = {};
+
+    movimientos.forEach(mv => {
+      if (mv.tipo === 'ingreso') {
+        ingresos += Number(mv.monto);
+        const nombre = mv.metodos_pago?.nombre || 'N/A';
+        if (!ingresosPorMetodo[nombre]) ingresosPorMetodo[nombre] = 0;
+        ingresosPorMetodo[nombre] += Number(mv.monto);
+      } else if (mv.tipo === 'egreso') {
+        egresos += Number(mv.monto);
+        const nombre = mv.metodos_pago?.nombre || 'N/A';
+        if (!egresosPorMetodo[nombre]) egresosPorMetodo[nombre] = 0;
+        egresosPorMetodo[nombre] += Number(mv.monto);
+      }
+    });
+    const balance = ingresos - egresos;
+
+    // HTML del modal
+    let html = `
+      <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-3xl mx-auto border border-slate-200 relative animate-fade-in-down">
+        <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-blue-100 to-green-100 flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="#fff"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2l4 -4" /></svg>
+          <h2 class="text-2xl font-bold text-slate-800 ml-2">Resumen de Corte de Caja</h2>
+        </div>
+        <div class="p-6 md:p-10 space-y-3">
+          <div id="print-corte-caja">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+              <div>
+                <span class="block text-xs text-gray-500">Ingresos Totales</span>
+                <span class="text-2xl font-bold text-green-600">${formatCurrency(ingresos)}</span>
+              </div>
+              <div>
+                <span class="block text-xs text-gray-500">Egresos Totales</span>
+                <span class="text-2xl font-bold text-red-600">${formatCurrency(egresos)}</span>
+              </div>
+              <div>
+                <span class="block text-xs text-gray-500">Balance</span>
+                <span class="text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-700'}">${formatCurrency(balance)}</span>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-2 gap-4 mt-6">
+              <div>
+                <span class="block font-semibold mb-2 text-green-700">Ingresos por Método de Pago</span>
+                <ul class="pl-4 space-y-1">
+                  ${Object.entries(ingresosPorMetodo).map(([metodo, total]) => `
+                    <li class="flex items-center gap-2">
+                      <span class="text-gray-700">${metodo}</span>
+                      <span class="font-semibold text-green-700 ml-auto">${formatCurrency(total)}</span>
+                    </li>
+                  `).join('')}
+                </ul>
+              </div>
+              <div>
+                <span class="block font-semibold mb-2 text-red-700">Egresos por Método de Pago</span>
+                <ul class="pl-4 space-y-1">
+                  ${Object.entries(egresosPorMetodo).length === 0 
+                    ? '<li class="text-gray-400 italic">Sin egresos</li>' 
+                    : Object.entries(egresosPorMetodo).map(([metodo, total]) => `
+                      <li class="flex items-center gap-2">
+                        <span class="text-gray-700">${metodo}</span>
+                        <span class="font-semibold text-red-600 ml-auto">${formatCurrency(total)}</span>
+                      </li>
+                    `).join('')}
+                </ul>
+              </div>
+            </div>
+            <div class="mt-6">
+              <details class="transition-all duration-200">
+                <summary class="cursor-pointer text-blue-700 underline font-semibold hover:text-blue-900 mb-2">📋 Ver detalle de movimientos</summary>
+                <div class="overflow-x-auto overflow-y-auto mt-3 border rounded-xl shadow-sm bg-gray-50"
+                     style="max-height: 340px;">
+                  <table class="min-w-full text-xs md:text-sm">
+                    <thead>
+                      <tr class="bg-slate-100 border-b">
+                        <th class="px-2 py-1 text-left">Fecha</th>
+                        <th class="px-2 py-1 text-left">Tipo</th>
+                        <th class="px-2 py-1 text-right">Monto</th>
+                        <th class="px-2 py-1 text-left">Concepto</th>
+                        <th class="px-2 py-1 text-left">Método</th>
+                        <th class="px-2 py-1 text-left">Usuario</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${movimientos.map(mv => `
+                        <tr class="border-t hover:bg-slate-100">
+                          <td class="px-2 py-1">${formatDateTime(mv.creado_en)}</td>
+                          <td class="px-2 py-1">${mv.tipo}</td>
+                          <td class="px-2 py-1 text-right font-mono ${mv.tipo === 'ingreso' ? 'text-green-700' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
+                          <td class="px-2 py-1">${mv.concepto || ''}</td>
+                          <td class="px-2 py-1">${mv.metodos_pago?.nombre || 'N/A'}</td>
+                          <td class="px-2 py-1">${mv.usuarios?.nombre || 'Sistema'}</td>
+                        </tr>
+                      `).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          </div>
+          <div class="flex flex-col md:flex-row justify-end gap-3 mt-6">
+            <button id="btn-imprimir-corte-caja" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-blue-100 text-blue-800 font-semibold transition order-2 md:order-1">🖨️ Imprimir</button>
+            <button id="btn-cancelar-corte-caja" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition order-1 md:order-2">Cancelar</button>
+            <button id="btn-confirmar-corte-caja" class="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-700 text-white font-bold shadow transition order-3">Confirmar Corte y Enviar</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Crear el modal y agregarlo al DOM
+    let modal = document.createElement('div');
+    modal.id = "modal-corte-caja";
+    modal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50";
+    modal.innerHTML = html;
+    document.body.appendChild(modal);
+
+    hideGlobalLoading();
+
+    // --- Listeners ---
+    // Imprimir
+    document.getElementById('btn-imprimir-corte-caja').onclick = () => {
+      const printContents = document.getElementById('print-corte-caja').innerHTML;
+      const originalTitle = document.title;
+      const w = window.open('', '', 'height=900,width=900');
+      w.document.write(`
+        <html>
+          <head>
+            <title>${originalTitle} - Corte de Caja</title>
+            <style>
+              body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: #fff;}
+              h2 { color: #246a3e; margin-bottom: 18px;}
+              .text-green-700 { color: #166534 !important; }
+              .text-red-600 { color: #dc2626 !important; }
+              .text-blue-700 { color: #1d4ed8 !important; }
+              .font-bold { font-weight: bold; }
+              table { width: 100%; border-collapse: collapse; margin: 16px 0;}
+              th, td { border: 1px solid #ccc; padding: 7px 4px; font-size: 12px; }
+              th { background: #f4f4f4; }
+              .detalle { font-size: 11px; color: #888; }
+              @media print { button, .no-print { display:none !important; } }
+            </style>
+          </head>
+          <body>
+            <div style="padding:32px;max-width:900px;margin:auto;">
+              ${printContents}
+            </div>
+          </body>
+        </html>
+      `);
+      w.document.close();
+      setTimeout(() => { w.focus(); w.print(); }, 200);
+    };
+
+    // Cancelar
+    document.getElementById('btn-cancelar-corte-caja').onclick = () => {
+      modal.remove();
+    };
+
+    // Confirmar Corte y Enviar
+    document.getElementById('btn-confirmar-corte-caja').onclick = async () => {
+      modal.remove();
+      await cerrarTurno();
+    };
+
+  } catch (e) {
+    hideGlobalLoading();
+    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'Error generando el resumen de corte.');
+    console.error('Error en mostrarResumenCorteDeCaja:', e);
   }
 }
 
@@ -454,6 +672,7 @@ async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
 // --- MOUNT / UNMOUNT ---
 
 export async function mount(container, supabaseInst, user) {
+  console.log("MOUNT caja.js llamado");
   unmount();
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
@@ -469,6 +688,7 @@ export async function mount(container, supabaseInst, user) {
 }
 
 export function unmount() {
+  // Limpia todos los listeners registrados
   moduleListeners.forEach(({ element, type, handler }) => {
     element?.removeEventListener(type, handler);
   });

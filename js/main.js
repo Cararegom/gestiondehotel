@@ -30,6 +30,7 @@ let userInfoNav = null;
 let notificacionesCampanitaContainer = null;
 let campanitaInicializada = false;
 let currentPathLoaded = null; // NUEVO: Para rastrear la ruta actual
+let routerBusy = false;
 
 const routes = {
   '/dashboard': Dashboard,
@@ -129,98 +130,105 @@ function updateUserInfo(user) {
 }
 
 async function router() {
-  if (!appContainer) {
-    console.error("Router: appContainer no está definido.");
-    document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Falta #app-container.</p>";
+  if (routerBusy) {
+    console.warn('[Router] Ya estoy montando, ignoro esta llamada.');
     return;
   }
-
-  const path = window.location.hash.slice(1) || '/dashboard';
-  const baseRoute = path.split('?')[0];
-
-  // NUEVO: Evitar recargar el mismo módulo si la ruta no ha cambiado
-  if (currentPathLoaded === baseRoute && appContainer.innerHTML !== '' && !appContainer.innerHTML.includes('Cargando...')) {
-      console.log(`[Router] Ruta ${baseRoute} ya cargada. Omitiendo re-montaje.`);
-      hideGlobalLoading(); // Asegurar que el loading se oculte si se omitió el montaje
-      updateActiveNavLink(baseRoute); // Asegurar que el link activo se actualice
+  routerBusy = true;
+  try {
+    if (!appContainer) {
+      console.error("Router: appContainer no está definido.");
+      document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Falta #app-container.</p>";
       return;
-  }
-  
-  console.log(`[Router] Navegando a: ${baseRoute}. Módulo anterior: ${currentPathLoaded}`);
-  showGlobalLoading(`Cargando ${baseRoute}...`);
-
-  if (typeof currentModuleUnmount === 'function') {
-    try {
-      console.log(`[Router] Desmontando módulo para: ${currentPathLoaded}`);
-      currentModuleUnmount(appContainer);
-    } catch (e) {
-      console.error("[Router] Error al desmontar el módulo anterior:", currentPathLoaded, e);
     }
-  }
-  currentModuleUnmount = null;
-  appContainer.innerHTML = '<div class="p-8 text-center text-gray-500">Cargando vista...</div>'; // Mensaje de carga
 
-  const moduleToLoad = routes[baseRoute];
-  const userForModule = getCurrentUser();
+    const path = window.location.hash.slice(1) || '/dashboard';
+    const baseRoute = path.split('?')[0];
 
-  if (!userForModule && baseRoute !== '/login' && baseRoute !== '/registro' && baseRoute !== '/password-reset') {
-      console.log("[Router] Usuario no autenticado. Redirigiendo a login.");
-      hideGlobalLoading();
-      // No limpiar appContainer aquí, onAuthStateChange lo hará o redirigirá
-      // Si login.html es una página separada, la redirección en onAuthStateChange es suficiente.
-      // Si es parte de la SPA, el router debería manejar una ruta #/login
-      if (!window.location.pathname.endsWith('/login.html')) {
-          window.location.href = '/login.html'; // Redirigir si no estamos en login.html
+    if (
+      currentPathLoaded === baseRoute &&
+      appContainer.innerHTML !== '' &&
+      !appContainer.innerHTML.includes('Cargando...')
+    ) {
+        console.log(`[Router] Ruta ${baseRoute} ya cargada. Omitiendo re-montaje.`);
+        hideGlobalLoading();
+        updateActiveNavLink(baseRoute);
+        return;
+    }
+
+    console.log(`[Router] Navegando a: ${baseRoute}. Módulo anterior: ${currentPathLoaded}`);
+    showGlobalLoading(`Cargando ${baseRoute}...`);
+
+    if (typeof currentModuleUnmount === 'function') {
+      try {
+        console.log(`[Router] Desmontando módulo para: ${currentPathLoaded}`);
+        currentModuleUnmount(appContainer);
+      } catch (e) {
+        console.error("[Router] Error al desmontar el módulo anterior:", currentPathLoaded, e);
       }
-      return;
-  }
+    }
+    currentModuleUnmount = null;
+    appContainer.innerHTML = '<div class="p-8 text-center text-gray-500">Cargando vista...</div>'; // Mensaje de carga
 
-  if (moduleToLoad) {
-    if (typeof moduleToLoad.mount !== 'function') {
-      // Para módulos que podrían no tener un export 'mount' estándar (ej. funciones simples)
-      // Esto es un fallback, idealmente todos los módulos de página tendrían mount/unmount
-      if (typeof moduleToLoad.default === 'function') {
-        console.warn(`[Router] Módulo para "${baseRoute}" no tiene función mount, usando default.`);
-        await moduleToLoad.default(appContainer, supabase, userForModule);
-        currentModuleUnmount = null; // No hay unmount definido
+    const moduleToLoad = routes[baseRoute];
+    const userForModule = getCurrentUser();
+
+    if (!userForModule && baseRoute !== '/login' && baseRoute !== '/registro' && baseRoute !== '/password-reset') {
+        console.log("[Router] Usuario no autenticado. Redirigiendo a login.");
+        hideGlobalLoading();
+        if (!window.location.pathname.endsWith('/login.html')) {
+            window.location.href = '/login.html';
+        }
+        return;
+    }
+
+    if (moduleToLoad) {
+      if (typeof moduleToLoad.mount !== 'function') {
+        if (typeof moduleToLoad.default === 'function') {
+          console.warn(`[Router] Módulo para "${baseRoute}" no tiene función mount, usando default.`);
+          await moduleToLoad.default(appContainer, supabase, userForModule);
+          currentModuleUnmount = null;
+        } else {
+          console.error(`[Router] El módulo para "${baseRoute}" no es una función ni tiene mount.`);
+          appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error: Módulo para "${baseRoute}" inválido.</p>`;
+        }
       } else {
-        console.error(`[Router] El módulo para "${baseRoute}" no es una función ni tiene mount.`);
-        appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error: Módulo para "${baseRoute}" inválido.</p>`;
+        try {
+          let hotelIdForModule = userForModule?.user_metadata?.hotel_id || userForModule?.app_metadata?.hotel_id;
+          if (!hotelIdForModule && userForModule?.id) {
+              try {
+                  const { data: perfil } = await supabase.from('usuarios').select('hotel_id').eq('id', userForModule.id).single();
+                  hotelIdForModule = perfil?.hotel_id;
+              } catch (err) {
+                  console.warn("[Router] No se pudo obtener hotelId del perfil para el módulo:", baseRoute, err);
+              }
+          }
+          
+          if (!hotelIdForModule && baseRoute !== '/dashboard') {
+              console.warn(`[Router] Hotel ID no disponible para el módulo ${baseRoute}. El módulo podría no funcionar correctamente.`);
+          }
+
+          console.log(`[Router] Montando módulo para: ${baseRoute}`);
+          await moduleToLoad.mount(appContainer, supabase, userForModule, hotelIdForModule);
+          currentModuleUnmount = moduleToLoad.unmount || null;
+          currentPathLoaded = baseRoute;
+        } catch (error) {
+          console.error(`[Router] Error al montar módulo para "${baseRoute}":`, error);
+          if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error al cargar módulo: ${error.message}</p>`;
+          currentPathLoaded = null;
+        }
       }
     } else {
-      try {
-        let hotelIdForModule = userForModule?.user_metadata?.hotel_id || userForModule?.app_metadata?.hotel_id; // Checar ambos metadatos
-        if (!hotelIdForModule && userForModule?.id) {
-            try {
-                const { data: perfil } = await supabase.from('usuarios').select('hotel_id').eq('id', userForModule.id).single();
-                hotelIdForModule = perfil?.hotel_id;
-            } catch (err) {
-                console.warn("[Router] No se pudo obtener hotelId del perfil para el módulo:", baseRoute, err);
-            }
-        }
-        
-        if (!hotelIdForModule && baseRoute !== '/dashboard') { // Asumiendo que dashboard puede funcionar sin hotelId o lo maneja internamente
-            console.warn(`[Router] Hotel ID no disponible para el módulo ${baseRoute}. El módulo podría no funcionar correctamente.`);
-            // Podrías mostrar un error o permitir que el módulo lo maneje
-        }
-
-        console.log(`[Router] Montando módulo para: ${baseRoute}`);
-        await moduleToLoad.mount(appContainer, supabase, userForModule, hotelIdForModule);
-        currentModuleUnmount = moduleToLoad.unmount || null;
-        currentPathLoaded = baseRoute; // NUEVO: Marcar la ruta como cargada
-      } catch (error) {
-        console.error(`[Router] Error al montar módulo para "${baseRoute}":`, error);
-        if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error al cargar módulo: ${error.message}</p>`;
-        currentPathLoaded = null; // Resetear si falló el montaje
-      }
+      if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-8 text-center text-xl">404 - Página no encontrada (${baseRoute})</p>`;
+      currentPathLoaded = null;
     }
-  } else {
-    if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-8 text-center text-xl">404 - Página no encontrada (${baseRoute})</p>`;
-    currentPathLoaded = null; // Resetear si la ruta no existe
+    hideGlobalLoading();
+    updateActiveNavLink(baseRoute);
+  } finally {
+    routerBusy = false;
   }
-  hideGlobalLoading();
-  updateActiveNavLink(baseRoute);
 }
+
 
 function updateActiveNavLink(currentPath) {
     if (!mainNav) return;
