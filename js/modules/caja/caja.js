@@ -403,12 +403,19 @@ async function renderizarUI() {
   }
 }
 
-// --- MODAL DE RESUMEN DE CAJA ANTES DE CORTE (CON IMPRESIÓN) ---
+// --- MODAL DE RESUMEN DE CAJA ANTES DE CORTE (CON IMPRESIÓN ADAPTABLE) ---
 
 async function mostrarResumenCorteDeCaja() {
   showGlobalLoading('Cargando resumen del turno...');
   try {
-    // Traer los movimientos del turno actual
+    // 1. Traer la configuración del hotel
+    const { data: configHotel } = await currentSupabaseInstance
+      .from('configuracion_hotel')
+      .select('logo_url, nombre_hotel, direccion_fiscal, nit_rut, razon_social, tipo_impresora, tamano_papel, encabezado_ticket, pie_ticket, mostrar_logo')
+      .eq('hotel_id', currentHotelId)
+      .maybeSingle();
+
+    // 2. Traer los movimientos del turno actual
     const { data: movimientos, error } = await currentSupabaseInstance
       .from('caja')
       .select('*, usuarios(nombre), metodos_pago(nombre)')
@@ -421,7 +428,7 @@ async function mostrarResumenCorteDeCaja() {
       return;
     }
 
-    // Calcular totales
+    // 3. Calcular totales
     let ingresos = 0, egresos = 0;
     const ingresosPorMetodo = {};
     const egresosPorMetodo = {};
@@ -441,7 +448,7 @@ async function mostrarResumenCorteDeCaja() {
     });
     const balance = ingresos - egresos;
 
-    // HTML del modal
+    // 4. Render HTML del modal normal (pantalla)
     let html = `
       <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-3xl mx-auto border border-slate-200 relative animate-fade-in-down">
         <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-blue-100 to-green-100 flex items-center gap-2">
@@ -544,36 +551,7 @@ async function mostrarResumenCorteDeCaja() {
     // --- Listeners ---
     // Imprimir
     document.getElementById('btn-imprimir-corte-caja').onclick = () => {
-      const printContents = document.getElementById('print-corte-caja').innerHTML;
-      const originalTitle = document.title;
-      const w = window.open('', '', 'height=900,width=900');
-      w.document.write(`
-        <html>
-          <head>
-            <title>${originalTitle} - Corte de Caja</title>
-            <style>
-              body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 0; background: #fff;}
-              h2 { color: #246a3e; margin-bottom: 18px;}
-              .text-green-700 { color: #166534 !important; }
-              .text-red-600 { color: #dc2626 !important; }
-              .text-blue-700 { color: #1d4ed8 !important; }
-              .font-bold { font-weight: bold; }
-              table { width: 100%; border-collapse: collapse; margin: 16px 0;}
-              th, td { border: 1px solid #ccc; padding: 7px 4px; font-size: 12px; }
-              th { background: #f4f4f4; }
-              .detalle { font-size: 11px; color: #888; }
-              @media print { button, .no-print { display:none !important; } }
-            </style>
-          </head>
-          <body>
-            <div style="padding:32px;max-width:900px;margin:auto;">
-              ${printContents}
-            </div>
-          </body>
-        </html>
-      `);
-      w.document.close();
-      setTimeout(() => { w.focus(); w.print(); }, 200);
+      imprimirCorteCajaAdaptable(configHotel, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo);
     };
 
     // Cancelar
@@ -592,6 +570,121 @@ async function mostrarResumenCorteDeCaja() {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), 'Error generando el resumen de corte.');
     console.error('Error en mostrarResumenCorteDeCaja:', e);
   }
+}
+
+// --- IMPRESIÓN ADAPTABLE POR TIPO DE IMPRESORA ---
+function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo) {
+  let tamano = (config?.tamano_papel || '').toLowerCase();
+  let tipo = (config?.tipo_impresora || '').toLowerCase();
+  let esTermica = tipo === 'termica' || ['58mm','80mm'].includes(tamano);
+
+  // --- Header personalizable ---
+  let encabezado = config?.encabezado_ticket || '';
+  let pie = config?.pie_ticket || '';
+  let logoUrl = config?.mostrar_logo !== false && config?.logo_url ? config.logo_url : null;
+  let hotelNombre = config?.nombre_hotel || '';
+  let direccion = config?.direccion_fiscal || '';
+  let nit = config?.nit_rut || '';
+  let razon = config?.razon_social || '';
+  
+  // --- Generar HTML segun tamaño ---
+  let style = '';
+  let anchoMax = '100%';
+  if (tamano === '58mm') {
+    anchoMax = '55mm'; style = `
+      body{font-family:monospace;font-size:11px;max-width:55mm;margin:0;padding:0;}
+      .ticket{max-width:55mm;margin:auto;}
+      table{width:100%;font-size:11px;}
+      th,td{padding:2px 2px;}
+      .title{font-size:13px;}
+      .totales span{font-size:11px;}
+      .linea{border-bottom:1px dashed #444;margin:3px 0;}
+    `;
+  } else if (tamano === '80mm') {
+    anchoMax = '78mm'; style = `
+      body{font-family:monospace;font-size:12px;max-width:78mm;margin:0;padding:0;}
+      .ticket{max-width:78mm;margin:auto;}
+      table{width:100%;font-size:12px;}
+      th,td{padding:3px 2px;}
+      .title{font-size:15px;}
+      .totales span{font-size:13px;}
+      .linea{border-bottom:1px dashed #444;margin:4px 0;}
+    `;
+  } else {
+    anchoMax = '850px'; style = `
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:15px;max-width:850px;margin:0 auto;}
+      .ticket{max-width:850px;margin:auto;}
+      table{width:100%;font-size:15px;}
+      th,td{padding:6px 5px;}
+      .title{font-size:22px;}
+      .totales span{font-size:17px;}
+      .linea{border-bottom:1px solid #ccc;margin:10px 0;}
+    `;
+  }
+  // --- HTML ticket ---
+  let html = `
+    <div class="ticket">
+      ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:45mm;max-height:30px;"></div>` : ''}
+      <div class="title" style="text-align:center;font-weight:bold;">${hotelNombre}</div>
+      <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
+      ${encabezado ? `<div style="text-align:center;margin:2px 0 5px 0;">${encabezado}</div>` : ''}
+      <div class="linea"></div>
+      <div style="font-size:13px;"><b>CIERRE DE CAJA</b></div>
+      <div class="linea"></div>
+      <div class="totales">
+        <span>Ingresos: <b>${formatCurrency(ingresos)}</b></span><br>
+        <span>Egresos: <b>${formatCurrency(egresos)}</b></span><br>
+        <span>Balance: <b>${formatCurrency(balance)}</b></span>
+      </div>
+      <div class="linea"></div>
+      <div><b>Ingresos por método:</b></div>
+      <ul style="margin:0;padding-left:14px;">
+        ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+      </ul>
+      <div><b>Egresos por método:</b></div>
+      <ul style="margin:0;padding-left:14px;">
+        ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+      </ul>
+      <div class="linea"></div>
+      <table>
+        <thead>
+          <tr><th>Fec</th><th>Tp</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
+        </thead>
+        <tbody>
+          ${movimientos.map(mv => `
+            <tr>
+              <td>${formatDateTime(mv.creado_en).slice(0, 10)}</td>
+              <td>${mv.tipo.charAt(0).toUpperCase()}</td>
+              <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#166534' : '#dc2626'};">${formatCurrency(mv.monto)}</td>
+              <td>${mv.concepto || ''}</td>
+              <td>${mv.metodos_pago?.nombre || 'N/A'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div class="linea"></div>
+      ${pie ? `<div style="text-align:center;margin-top:6px;">${pie}</div>` : ''}
+    </div>
+  `;
+
+  // --- Ventana de impresión ---
+  let w = window.open('', '', `width=400,height=700`);
+  w.document.write(`
+    <html>
+      <head>
+        <title>Corte de Caja</title>
+        <style>
+          ${style}
+          @media print { .no-print {display:none;} }
+        </style>
+      </head>
+      <body>
+        ${html}
+      </body>
+    </html>
+  `);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 250);
 }
 
 // --- FUNCIONES AUXILIARES (Email, Métodos de Pago, etc.) ---

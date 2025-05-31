@@ -40,7 +40,132 @@ function waitForButtonAndBind(id, fn) {
   }
   tryBind();
 }
+async function imprimirTicketHabitacion({ supabase, hotelId, datosTicket, tipoDocumento }) {
+  // 1. Leer configuración de impresora
+  const { data: config } = await supabase
+    .from('configuracion_hotel')
+    .select('logo_url, nombre_hotel, direccion_fiscal, nit_rut, razon_social, tipo_impresora, tamano_papel, encabezado_ticket, pie_ticket, mostrar_logo')
+    .eq('hotel_id', hotelId)
+    .maybeSingle();
 
+  // 2. Decidir el ancho/tipo
+  let tamano = (config?.tamano_papel || '').toLowerCase();
+  let tipo = (config?.tipo_impresora || '').toLowerCase();
+
+  // --- Datos del ticket (ajusta según tus necesidades)
+  const {
+    habitacion,
+    cliente,
+    fechaIngreso,
+    fechaSalida,
+    consumos, // array [{nombre, cantidad, precio, total}]
+    totalConsumo,
+    otrosDatos // opcional
+  } = datosTicket;
+
+  // --- Estilos y HTML base según impresora ---
+  let style = '';
+  let anchoMax = '100%';
+  if (tamano === '58mm') {
+    anchoMax = '55mm'; style = `
+      body{font-family:monospace;font-size:11px;max-width:55mm;margin:0;padding:0;}
+      .ticket{max-width:55mm;margin:auto;}
+      table{width:100%;font-size:11px;}
+      th,td{padding:2px 2px;}
+      .title{font-size:13px;}
+      .linea{border-bottom:1px dashed #444;margin:3px 0;}
+    `;
+  } else if (tamano === '80mm') {
+    anchoMax = '78mm'; style = `
+      body{font-family:monospace;font-size:13px;max-width:78mm;margin:0;padding:0;}
+      .ticket{max-width:78mm;margin:auto;}
+      table{width:100%;font-size:13px;}
+      th,td{padding:3px 2px;}
+      .title{font-size:17px;}
+      .linea{border-bottom:1px dashed #444;margin:4px 0;}
+    `;
+  } else {
+    anchoMax = '850px'; style = `
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:15px;max-width:850px;margin:0 auto;}
+      .ticket{max-width:850px;margin:auto;}
+      table{width:100%;font-size:15px;}
+      th,td{padding:6px 5px;}
+      .title{font-size:22px;}
+      .linea{border-bottom:1px solid #ccc;margin:10px 0;}
+    `;
+  }
+
+  // --- HTML ticket --- (ajusta aquí tu template según lo que imprimas: factura, consumo, etc)
+  let html = `
+    <div class="ticket">
+      ${config?.mostrar_logo !== false && config?.logo_url ? `<div style="text-align:center;margin-bottom:4px;"><img src="${config.logo_url}" style="max-width:45mm;max-height:30px;"></div>` : ''}
+      <div class="title" style="text-align:center;font-weight:bold;">${config?.nombre_hotel || ''}</div>
+      <div style="text-align:center;">${config?.direccion_fiscal || ''}${config?.nit_rut ? '<br/>NIT: ' + config.nit_rut : ''}${config?.razon_social ? '<br/>' + config.razon_social : ''}</div>
+      ${config?.encabezado_ticket ? `<div style="text-align:center;margin:2px 0 5px 0;">${config.encabezado_ticket}</div>` : ''}
+      <div class="linea"></div>
+      <div style="font-size:13px;"><b>${tipoDocumento || "Ticket de Consumo"}</b></div>
+      <div class="linea"></div>
+      <div><b>Habitación:</b> ${habitacion || ""}</div>
+      <div><b>Cliente:</b> ${cliente || ""}</div>
+      <div><b>Ingreso:</b> ${fechaIngreso ? formatDateTime(fechaIngreso) : ""}</div>
+      <div><b>Salida:</b> ${fechaSalida ? formatDateTime(fechaSalida) : ""}</div>
+      <div class="linea"></div>
+      <table>
+        <thead>
+          <tr><th>Producto</th><th>Cant</th><th>Precio</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          ${(consumos || []).map(item => `
+            <tr>
+              <td>${item.nombre || ""}</td>
+              <td>${item.cantidad || ""}</td>
+              <td style="text-align:right;">${formatCurrency(item.precio || 0)}</td>
+              <td style="text-align:right;">${formatCurrency(item.total || 0)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div class="linea"></div>
+      <div style="text-align:right;font-size:14px;">
+        <b>TOTAL: ${formatCurrency(totalConsumo || 0)}</b>
+      </div>
+      ${otrosDatos ? `<div>${otrosDatos}</div>` : ''}
+      <div class="linea"></div>
+      ${config?.pie_ticket ? `<div style="text-align:center;margin-top:6px;">${config.pie_ticket}</div>` : ''}
+    </div>
+  `;
+
+  // --- Ventana de impresión ---
+  let w = window.open('', '', `width=400,height=700`);
+  w.document.write(`
+    <html>
+      <head>
+        <title>${tipoDocumento || 'Ticket'}</title>
+        <style>
+          ${style}
+          @media print { .no-print {display:none;} }
+        </style>
+      </head>
+      <body>
+        ${html}
+      </body>
+    </html>
+  `);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 250);
+}
+
+// ---------------------------------------------------
+// Exporta la función para usarla desde los botones:
+
+export async function imprimirConsumosHabitacion(supabase, hotelId, datosTicket) {
+  await imprimirTicketHabitacion({
+    supabase,
+    hotelId,
+    datosTicket,
+    tipoDocumento: 'Ticket de Consumo'
+  });
+}
 
 // --- Funciones auxiliares de formato ---
 function formatCurrency(value, currency = 'COP') {
@@ -1639,18 +1764,20 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             getMetodosPago(supabase, hotelId)
         ]);
     } catch (err) {
-        console.error("Error cargando datos para modal de alquiler:", err);
         mostrarInfoModalGlobal("No se pudieron cargar los datos necesarios para el alquiler. Intente de nuevo.", "Error de Carga", modalContainer);
         return;
     }
-    
+
+    // Asegura la opción "Pago Mixto"
+    const pagoMixto = { id: "mixto", nombre: "Pago Mixto" };
+    metodosPago = [pagoMixto, ...metodosPago];
+
     const tarifaNocheUnica = tiempos.find(t => t.tipo_unidad === 'noche' && t.cantidad_unidad === 1);
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, tarifaNocheUnica, room);
     const opcionesHoras = crearOpcionesHoras(tiempos);
 
     const modalContent = document.createElement('div');
     modalContent.className = "bg-gradient-to-br from-slate-50 to-gray-100 rounded-xl shadow-2xl w-full max-w-3xl p-0 m-auto animate-fade-in-up overflow-hidden";
-    
     modalContent.innerHTML = `
         <div class="flex flex-col md:flex-row">
             <div class="w-full md:w-3/5 p-6 md:p-8 space-y-5">
@@ -1677,7 +1804,7 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                                     ${opcionesNoches.map(o => `<option value="${o.noches}">${o.label}</option>`).join('')}
                                 </select>
                             </div>
-                             <div class="flex flex-col" id="container-noches-personalizada" style="display:none;">
+                            <div class="flex flex-col" id="container-noches-personalizada" style="display:none;">
                                 <label for="input-noches-personalizada" class="text-xs text-gray-500 mb-1">Noches (Personalizado):</label>
                                 <input type="number" min="1" max="365" step="1" placeholder="N°" id="input-noches-personalizada" name="noches_personalizada" class="form-control"/>
                             </div>
@@ -1692,9 +1819,16 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div><label for="cantidad_huespedes" class="form-label">Cant. Huéspedes</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" max="${room.capacidad_maxima || 10}" value="2"></div>
-                        <div><label for="metodo_pago_id" class="form-label">Método de Pago</label><select required name="metodo_pago_id" id="metodo_pago_id" class="form-control"><option value="">-- Seleccionar --</option>${metodosPago.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}</select></div>
+                        <div>
+                            <label for="metodo_pago_id" class="form-label">Método de Pago</label>
+                            <select required name="metodo_pago_id" id="metodo_pago_id" class="form-control">
+                                ${metodosPago.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}
+                            </select>
+                        </div>
                     </div>
-                     <div class="pt-3"><button type="submit" id="btn-alquilar-hab" class="button button-success w-full py-3 text-lg font-semibold">Confirmar y Registrar Alquiler</button></div>
+                    <div class="pt-3">
+                        <button type="submit" id="btn-alquilar-hab" class="button button-success w-full py-3 text-lg font-semibold">Confirmar y Registrar Alquiler</button>
+                    </div>
                 </form>
             </div>
             <div class="w-full md:w-2/5 bg-slate-800 text-white p-6 md:p-8 flex flex-col justify-between">
@@ -1714,18 +1848,8 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         </div>
     `;
     modalContainer.appendChild(modalContent);
-    document.getElementById('cantidad_huespedes').addEventListener('input', function() {
-        actualizarTotalHabitacion();
-    });
 
-    function actualizarTotalHabitacion() {
-        const dataForm = {
-            cantidad_personas: parseInt(document.getElementById('cantidad_huespedes').value, 10) || 1,
-        };
-        const detalles = calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNocheUnica);
-        document.getElementById('total-habitacion').textContent = `Total: $${detalles.precioTotal.toLocaleString()}`;
-    }
-
+    // ---- Interacciones normales ----
     const formEl = modalContent.querySelector('#alquilar-form-pos');
     const selectNochesEl = modalContent.querySelector('#select-noches');
     const inputNochesPersonalizadaEl = modalContent.querySelector('#input-noches-personalizada');
@@ -1769,26 +1893,18 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         modalContainer.style.display = "none"; modalContainer.innerHTML = '';
     };
 
+    // ==================== FLUJO DE SUBMIT: PAGO MIXTO ====================
     formEl.onsubmit = async (e) => {
         e.preventDefault();
-        // --- BLOQUE ANTI DOBLE SUBMIT ---
+
         const submitBtn = formEl.querySelector('button[type="submit"], #btn-alquilar-hab');
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.textContent = "Registrando...";
-        }
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Registrando..."; }
 
         try {
             const formData = Object.fromEntries(new FormData(formEl));
             const detallesEstancia = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica);
-
-            if (detallesEstancia.precioTotal <= 0 && (!detallesEstancia.tipoCalculo) ) {
+            if (detallesEstancia.precioTotal <= 0 && (!detallesEstancia.tipoCalculo)) {
                 alert('Debe seleccionar una duración válida para la estancia (noches u horas).');
-                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
-                return;
-            }
-            if (!formData.metodo_pago_id) {
-                alert('Por favor, seleccione un método de pago.');
                 if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
                 return;
             }
@@ -1804,73 +1920,176 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             }
             await supabase.from('cronometros').update({ activo: false }).eq('habitacion_id', room.id).eq('activo', true).is('reserva_id', null);
 
-            // --- CREA LA RESERVA
-            const { data: reservaData, error: errRes } = await supabase.from('reservas').insert([{
-                cliente_nombre: formData.cliente_nombre, cedula: formData.cedula, telefono: formData.telefono,
-                habitacion_id: room.id, hotel_id: hotelId,
-                fecha_inicio: detallesEstancia.inicioAt.toISOString(), fecha_fin: detallesEstancia.finAt.toISOString(),
-                monto_total: detallesEstancia.precioTotal, estado: "activa", 
-                cantidad_huespedes: Number(formData.cantidad_huespedes), metodo_pago_id: formData.metodo_pago_id,
-            }]).select().single();
-
-            if (errRes) { 
-                console.error("Error creando reserva:", errRes); 
-                alert("Error creando reserva: " + errRes.message); 
-                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
-                return; 
-            }
-            const reservaId = reservaData?.id;
-
-            // --- TURNO DE CAJA: SOLO REGISTRA SI HAY TURNO ACTIVO
-            const turnoId = turnoService.getActiveTurnId();
-            if (!turnoId) {
-                mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No se puede registrar el alquiler en caja porque no hay un turno activo.", "Turno Requerido", modalContainer);
-                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
-                return;
+            // --- FLUJO PAGO MIXTO ---
+            if (formData.metodo_pago_id === "mixto") {
+                mostrarModalPagosMixtos(detallesEstancia.precioTotal, metodosPago.filter(m => m.id !== "mixto"), async (pagosMixtos) => {
+                    if (!pagosMixtos) {
+                        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
+                        return;
+                    }
+                    await registrarReservaYMovimientosCaja({ pagos: pagosMixtos, isMixto: true });
+                });
             } else {
-                const movimientoCajaAlquiler = {
-                    hotel_id: hotelId, 
-                    tipo: 'ingreso', 
-                    monto: detallesEstancia.precioTotal,
-                    concepto: `Alquiler ${room.nombre} (${detallesEstancia.descripcionEstancia}) - ${formData.cliente_nombre || 'Cliente Directo'}`,
-                    fecha_movimiento: detallesEstancia.inicioAt.toISOString(), 
-                    usuario_id: currentUser?.id, 
-                    reserva_id: reservaId,
-                    metodo_pago_id: formData.metodo_pago_id,
-                    turno_id: turnoId
-                };
-                const { error: errorCajaAlquiler } = await supabase.from('caja').insert(movimientoCajaAlquiler);
-                if (errorCajaAlquiler) {
-                    console.error("Error registrando alquiler en caja:", errorCajaAlquiler);
-                    mostrarInfoModalGlobal(`Error al registrar el alquiler en caja: <span class="math-inline">${errorCajaAlquiler.message}. La reserva #${reservaId} podría necesitar ajuste manual en caja.`, "Error en Caja", modalContainer);
+                await registrarReservaYMovimientosCaja({
+                    pagos: [{
+                        metodo_pago_id: formData.metodo_pago_id,
+                        monto: detallesEstancia.precioTotal
+                    }],
+                    isMixto: false
+                });
+            }
+
+            async function registrarReservaYMovimientosCaja({ pagos, isMixto }) {
+                // 1. Crear la reserva (con metodo_pago_id null si es mixto)
+                const { data: reservaData, error: errRes } = await supabase.from('reservas').insert([{
+                    cliente_nombre: formData.cliente_nombre, cedula: formData.cedula, telefono: formData.telefono,
+                    habitacion_id: room.id, hotel_id: hotelId,
+                    fecha_inicio: detallesEstancia.inicioAt.toISOString(), fecha_fin: detallesEstancia.finAt.toISOString(),
+                    monto_total: detallesEstancia.precioTotal, estado: "activa", 
+                    cantidad_huespedes: Number(formData.cantidad_huespedes), 
+                    metodo_pago_id: isMixto ? null : pagos[0].metodo_pago_id
+                }]).select().single();
+
+                if (errRes) { 
+                    alert("Error creando reserva: " + errRes.message); 
+                    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
+                    return; 
+                }
+                const reservaId = reservaData?.id;
+
+                // 2. TurNo de caja
+                const turnoId = turnoService.getActiveTurnId();
+                if (!turnoId) {
+                    mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No se puede registrar el alquiler en caja porque no hay un turno activo.", "Turno Requerido", modalContainer);
                     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
                     return;
                 }
+
+                // 3. Un movimiento en caja por cada pago
+                for (const pago of pagos) {
+                    const movimientoCaja = {
+                        hotel_id: hotelId, 
+                        tipo: 'ingreso', 
+                        monto: Number(pago.monto),
+                        concepto: `Alquiler ${room.nombre} (${detallesEstancia.descripcionEstancia}) - ${formData.cliente_nombre || 'Cliente Directo'}`,
+                        fecha_movimiento: detallesEstancia.inicioAt.toISOString(), 
+                        usuario_id: currentUser?.id, 
+                        reserva_id: reservaId,
+                        metodo_pago_id: pago.metodo_pago_id,
+                        turno_id: turnoId
+                    };
+                    await supabase.from('caja').insert(movimientoCaja);
+                }
+
+                // 4. Crea cronómetro y actualiza habitación
+                await supabase.from('cronometros').insert([{
+                    hotel_id: hotelId, reserva_id: reservaId, habitacion_id: room.id,
+                    fecha_inicio: detallesEstancia.inicioAt.toISOString(), fecha_fin: detallesEstancia.finAt.toISOString(), activo: true,
+                }]);
+                await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
+
+                modalContainer.style.display = "none";
+                modalContainer.innerHTML = '';
+                await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
             }
 
-            // --- CREA EL CRONÓMETRO Y ACTUALIZA HABITACIÓN
-            await supabase.from('cronometros').insert([{
-                hotel_id: hotelId, reserva_id: reservaId, habitacion_id: room.id,
-                fecha_inicio: detallesEstancia.inicioAt.toISOString(), fecha_fin: detallesEstancia.finAt.toISOString(), activo: true,
-            }]);
-            await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
+            // --- Modal pagos mixtos auxiliar ---
+            function mostrarModalPagosMixtos(total, metodosPago, callback) {
+                const body = document.body;
+                let pagos = [{ metodo_pago_id: '', monto: '' }];
+                const modal = document.createElement('div');
+                modal.className = "fixed inset-0 bg-black/40 z-[9999] flex items-center justify-center";
+                modal.innerHTML = `
+                    <div class="bg-white rounded-2xl shadow-xl p-6 max-w-md w-full mx-auto animate-fade-in-up" style="font-family:'Segoe UI',sans-serif;">
+                        <h3 class="text-xl font-bold text-blue-700 mb-4 text-center">Pagos Mixtos</h3>
+                        <div style="margin-bottom:8px;">Total de la estancia: <b style="color:#0ea5e9;font-size:18px;">$${total}</b></div>
+                        <form id="formPagosMixtosPOS">
+                            <div id="pagosMixtosPOSCampos"></div>
+                            <div style="margin:13px 0;">
+                                <button type="button" id="agregarPagoPOS" style="background:#e0e7ff;color:#2563eb;border:none;border-radius:7px;padding:7px 18px;font-weight:600;font-size:1em;cursor:pointer;">+ Agregar Pago</button>
+                            </div>
+                            <div style="font-size:15px;margin-bottom:8px;color:#f43f5e;" id="msgPagosMixtosPOS"></div>
+                            <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
+                                <button type="submit" style="background:linear-gradient(90deg,#22c55e,#2563eb);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #22c55e22;cursor:pointer;">Registrar Pagos</button>
+                                <button type="button" id="cancelarPagoPOS" style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #64748b15;cursor:pointer;">Cancelar</button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+                body.appendChild(modal);
 
-            modalContainer.style.display = "none";
-            modalContainer.innerHTML = '';
-            await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+                function renderPagosCampos() {
+                    const campos = modal.querySelector('#pagosMixtosPOSCampos');
+                    campos.innerHTML = '';
+                    pagos.forEach((pago, idx) => {
+                        campos.innerHTML += `
+                            <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+                                <select required style="flex:2;padding:7px;border-radius:7px;border:1.5px solid #d1d5db;" name="metodo_pago_id" data-idx="${idx}">
+                                    <option value="">Método...</option>
+                                    ${metodosPago.map(mp => `<option value="${mp.id}" ${mp.id === pago.metodo_pago_id ? 'selected' : ''}>${mp.nombre}</option>`).join('')}
+                                </select>
+                                <input required type="number" min="1" max="${total}" name="monto" data-idx="${idx}" style="flex:1;padding:7px 12px;border-radius:7px;border:1.5px solid #d1d5db;" placeholder="Monto" value="${pago.monto || ''}">
+                                ${pagos.length > 1 ? `<button type="button" data-idx="${idx}" class="btnEliminarPagoPOS" style="color:#e11d48;font-size:1.2em;background:transparent;border:none;cursor:pointer;padding:0 5px;">✕</button>` : ''}
+                            </div>
+                        `;
+                    });
+
+                    // Evento para eliminar
+                    campos.querySelectorAll('.btnEliminarPagoPOS').forEach(btn => {
+                        btn.onclick = (e) => {
+                            const idx = Number(btn.dataset.idx);
+                            pagos.splice(idx, 1);
+                            renderPagosCampos();
+                        };
+                    });
+                    // Evento para cambio
+                    campos.querySelectorAll('select[name="metodo_pago_id"]').forEach(sel => {
+                        sel.onchange = (e) => {
+                            pagos[Number(sel.dataset.idx)].metodo_pago_id = sel.value;
+                        };
+                    });
+                    campos.querySelectorAll('input[name="monto"]').forEach(inp => {
+                        inp.oninput = (e) => {
+                            pagos[Number(inp.dataset.idx)].monto = inp.value;
+                        };
+                    });
+                }
+                renderPagosCampos();
+
+                modal.querySelector('#agregarPagoPOS').onclick = () => {
+                    pagos.push({ metodo_pago_id: '', monto: '' });
+                    renderPagosCampos();
+                };
+
+                modal.querySelector('#cancelarPagoPOS').onclick = () => {
+                    body.removeChild(modal);
+                    callback(null);
+                };
+
+                modal.querySelector('#formPagosMixtosPOS').onsubmit = (e) => {
+                    e.preventDefault();
+                    const totalPagado = pagos.reduce((sum, p) => sum + Number(p.monto || 0), 0);
+                    const msgEl = modal.querySelector('#msgPagosMixtosPOS');
+                    msgEl.textContent = '';
+                    if (pagos.some(p => !p.metodo_pago_id || !p.monto)) {
+                        msgEl.textContent = "Completa todos los métodos y montos.";
+                        return;
+                    }
+                    if (totalPagado !== total) {
+                        msgEl.textContent = "El total de los pagos debe sumar exactamente $" + total;
+                        return;
+                    }
+                    body.removeChild(modal);
+                    callback(pagos.map(p => ({ metodo_pago_id: p.metodo_pago_id, monto: Number(p.monto) })));
+                };
+            }
 
         } catch (err) {
-            // Si hubo error, vuelve a habilitar el botón para reintentar
-            const submitBtn = formEl.querySelector('button[type="submit"], #btn-alquilar-hab');
-            if (submitBtn) {
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Confirmar y Registrar Alquiler";
-            }
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
             alert("Error: " + (err.message || "Ocurrió un problema al registrar la reserva"));
         }
     };
 }
-
 
 // ===================== MODAL EXTENDER TIEMPO (POS STYLE - COMPLETO) =====================
 async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer) {

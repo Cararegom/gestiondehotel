@@ -1029,7 +1029,7 @@ export async function mount(container, supabaseClient, user, hotelId) {
             </div>
             <div>
               <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes*</label>
-              <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="1" class="form-control" required />
+              <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="2" class="form-control" required />
             </div>
           </div>
         </fieldset>

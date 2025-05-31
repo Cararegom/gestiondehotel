@@ -57,7 +57,7 @@ function renderTiendaTabs(tab) {
 
 }
 
-// ====================  BLOQUE POS COMPLETO Y CORREGIDO ====================
+// ====================  BLOQUE POS COMPLETO CON "PAGO MIXTO" POR DEFECTO ====================
 
 let posProductos = [];
 let posMetodosPago = [];
@@ -66,7 +66,6 @@ let posCarrito = [];
 let posFiltro = '';
 
 async function cargarDatosPOS() {
-  // Productos disponibles para venta
   let { data: productos } = await currentSupabase
     .from('productos_tienda')
     .select('id, nombre, precio_venta, imagen_url, stock_actual, categoria_id, codigo_barras')
@@ -74,27 +73,28 @@ async function cargarDatosPOS() {
     .eq('activo', true)
     .gt('stock_actual', 0);
 
-  // 2. Obtener categorías
   let { data: categorias } = await currentSupabase
     .from('categorias_producto')
     .select('id, nombre');
 
-  // 3. Relacionar categorías con productos
   const catMap = Object.fromEntries((categorias || []).map(cat => [cat.id, cat.nombre]));
   posProductos = (productos || []).map(p => ({
     ...p,
     categoria_nombre: catMap[p.categoria_id] || 'Sin Cat.'
   }));
 
-  // Métodos de pago
   let { data: metodos } = await currentSupabase
     .from('metodos_pago')
     .select('id, nombre')
     .eq('hotel_id', currentHotelId)
     .eq('activo', true);
-  posMetodosPago = metodos || [];
 
-  // Habitaciones ocupadas desde el mapa de habitaciones (estado: 'ocupada')
+  // "Pago Mixto" siempre primero y seleccionado por defecto
+  posMetodosPago = [
+    { id: "mixto", nombre: "Pago Mixto (varios métodos)" },
+    ...(metodos || [])
+  ];
+
   let { data: habitaciones } = await currentSupabase
     .from('habitaciones')
     .select('id, nombre')
@@ -103,145 +103,74 @@ async function cargarDatosPOS() {
   posHabitacionesOcupadas = habitaciones || [];
 }
 
-// Dentro de tu tienda.js
-
 async function renderPOS() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `<div>Cargando...</div>`;
-  await cargarDatosPOS(); // Esta función ya la tienes
+  await cargarDatosPOS();
 
-  // HTML del POS
   cont.innerHTML = `
-    <div style="
-  display: flex; 
-  flex-wrap: wrap; 
-  gap: 32px; 
-  align-items: flex-start; 
-  justify-content: center;
-  background: #f3f6fa; 
-  border-radius: 16px; 
-  padding: 32px 18px 26px 18px; 
-  box-shadow: 0 6px 32px #23408c12;
-  margin-top:20px;
-">
-  <!-- PRODUCTOS -->
-  <div style="
-    flex: 1 1 340px; 
-    background: #fff; 
-    border-radius: 16px; 
-    box-shadow: 0 2px 18px #b6d0f912; 
-    padding: 28px 22px 28px 22px; 
-    min-width: 320px;
-    margin-bottom: 12px;
-  ">
-    <h2 style="font-size: 1.4rem; color: #2563eb; font-weight: bold; margin-bottom: 22px; letter-spacing: 1px;">
-      <span style="font-size:1.1em;">🛒</span> Productos disponibles
-    </h2>
-    <input id="buscadorPOS" 
-      placeholder="🔍 Buscar producto, categoría o código..." 
-      style="
-        width:100%;margin-bottom:16px;padding:11px 15px;font-size:16px;
-        border-radius:9px;border:1.5px solid #cbd5e1; background:#f9fafb; 
-        outline:none; box-shadow:0 1px 6px #2563eb11; transition: border .2s;
-      "
-      onfocus="this.style.borderColor='#2563eb'"
-      onblur="this.style.borderColor='#cbd5e1'"
-    >
-    <div id="productosPOS" 
-      style="
-        display: grid;
-        grid-template-columns: repeat(auto-fill,minmax(180px,1fr));
-        gap:18px;
-        margin-bottom:8px;
-      ">
-      <!-- Aquí van las tarjetas de productos generadas por JS -->
-    </div>
-  </div>
-  <!-- CARRITO Y VENTA -->
-  <div style="
-    min-width:340px; 
-    max-width: 410px; 
-    flex: 1 1 340px; 
-    background: #fff; 
-    border-radius: 16px; 
-    box-shadow: 0 2px 14px #b6d0f922; 
-    padding: 28px 24px;
-    position: sticky;
-    top: 20px;
-    align-self: flex-start;
-    z-index: 10;
-  ">
-    <h2 style="font-size: 1.4rem; color: #22c55e; font-weight: bold; margin-bottom: 16px; letter-spacing: 1px;">
-      <span style="font-size:1.1em;">🛍️</span> Carrito de venta
-    </h2>
-    <table style="width:100%;font-size:15px;margin-bottom:14px;border-radius:10px;overflow:hidden;">
-      <thead>
-        <tr style="background:#f1f5f9;">
-          <th>Producto</th>
-          <th>Cant.</th>
-          <th>Precio</th>
-          <th>Subtotal</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="carritoPOS">
-        <!-- Aquí van los items del carrito -->
-      </tbody>
-    </table>
-    <div style="text-align:right;font-size:1.15rem;font-weight:700;margin-bottom:14px;">
-      Total: <span id="totalPOS" style="color:#1d4ed8">$0</span>
-    </div>
-    <div style="display:flex;gap:8px;margin-bottom:12px;">
-      <select id="modoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;">
-        <option value="inmediato">Pago Inmediato</option>
-        <option value="habitacion">Cargar a Habitación</option>
-      </select>
-      <select id="metodoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
-      <select id="habitacionPOS" style="flex:1;display:none;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
-    </div>
-    <input id="clientePOS" placeholder="Cliente (opcional)" 
-      style="width:100%;margin-bottom:12px;padding:8px 12px;font-size:1rem;border-radius:7px;border:1.5px solid #e5e7eb;">
-    <button id="btnVentaPOS" style="
-      width:100%;
-      background:linear-gradient(90deg,#22c55e,#38bdf8 92%);
-      color:#fff;font-size:1.13rem;font-weight:700;
-      border:none;padding:13px 0;border-radius:9px;box-shadow:0 2px 6px #22c55e33;
-      margin-bottom:4px;letter-spacing:0.8px;cursor:pointer;
-      transition: background .18s;
-    "
-    onmouseover="this.style.background='linear-gradient(90deg,#38bdf8,#22c55e 92%)'"
-    onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#38bdf8 92%)'"
-    >Registrar Venta</button>
-    <div id="msgPOS" style="color:#e11d48;margin-top:10px;font-weight:bold;min-height:28px;"></div>
-  </div>
-  `;
+    <div style="display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start; justify-content: center; background: #f3f6fa; border-radius: 16px; padding: 32px 18px 26px 18px; box-shadow: 0 6px 32px #23408c12; margin-top:20px;">
+      <div style="flex: 1 1 340px; background: #fff; border-radius: 16px; box-shadow: 0 2px 18px #b6d0f912; padding: 28px 22px 28px 22px; min-width: 320px; margin-bottom: 12px;">
+        <h2 style="font-size: 1.4rem; color: #2563eb; font-weight: bold; margin-bottom: 22px; letter-spacing: 1px;">
+          <span style="font-size:1.1em;">🛒</span> Productos disponibles
+        </h2>
+        <input id="buscadorPOS" placeholder="🔍 Buscar producto, categoría o código..." style="width:100%;margin-bottom:16px;padding:11px 15px;font-size:16px;border-radius:9px;border:1.5px solid #cbd5e1; background:#f9fafb; outline:none; box-shadow:0 1px 6px #2563eb11; transition: border .2s;"
+        onfocus="this.style.borderColor='#2563eb'"
+        onblur="this.style.borderColor='#cbd5e1'">
+        <div id="productosPOS" style="display: grid; grid-template-columns: repeat(auto-fill,minmax(180px,1fr)); gap:18px; margin-bottom:8px;"></div>
+      </div>
+      <div style="min-width:340px; max-width: 410px; flex: 1 1 340px; background: #fff; border-radius: 16px; box-shadow: 0 2px 14px #b6d0f922; padding: 28px 24px; position: sticky; top: 20px; align-self: flex-start; z-index: 10;">
+        <h2 style="font-size: 1.4rem; color: #22c55e; font-weight: bold; margin-bottom: 16px; letter-spacing: 1px;">
+          <span style="font-size:1.1em;">🛍️</span> Carrito de venta
+        </h2>
+        <table style="width:100%;font-size:15px;margin-bottom:14px;border-radius:10px;overflow:hidden;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th>Producto</th>
+              <th>Cant.</th>
+              <th>Precio</th>
+              <th>Subtotal</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="carritoPOS"></tbody>
+        </table>
+        <div style="text-align:right;font-size:1.15rem;font-weight:700;margin-bottom:14px;">
+          Total: <span id="totalPOS" style="color:#1d4ed8">$0</span>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <select id="modoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;">
+            <option value="inmediato">Pago Inmediato</option>
+            <option value="habitacion">Cargar a Habitación</option>
+          </select>
+          <select id="metodoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
+          <select id="habitacionPOS" style="flex:1;display:none;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
+        </div>
+        <input id="clientePOS" placeholder="Cliente (opcional)" style="width:100%;margin-bottom:12px;padding:8px 12px;font-size:1rem;border-radius:7px;border:1.5px solid #e5e7eb;">
+        <button id="btnVentaPOS" style="width:100%; background:linear-gradient(90deg,#22c55e,#38bdf8 92%); color:#fff;font-size:1.13rem;font-weight:700; border:none;padding:13px 0;border-radius:9px;box-shadow:0 2px 6px #22c55e33; margin-bottom:4px;letter-spacing:0.8px;cursor:pointer; transition: background .18s;"
+        onmouseover="this.style.background='linear-gradient(90deg,#38bdf8,#22c55e 92%)'"
+        onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#38bdf8 92%)'">Registrar Venta</button>
+        <div id="msgPOS" style="color:#e11d48;margin-top:10px;font-weight:bold;min-height:28px;"></div>
+      </div>
+    </div>`;
 
-  // --- ASIGNACIÓN DE EVENTOS ---
   const buscadorPOSEl = document.getElementById('buscadorPOS');
   if (buscadorPOSEl) {
     buscadorPOSEl.oninput = (e) => {
       posFiltro = e.target.value.toLowerCase();
       renderProductosPOS();
     };
-  } else {
-    console.error("Elemento #buscadorPOS no encontrado después de renderizar POS.");
   }
 
   const modoPOSEl = document.getElementById('modoPOS');
   if (modoPOSEl) {
-    modoPOSEl.onchange = (e)=>{
+    modoPOSEl.onchange = (e) => {
       const modo = e.target.value;
-      const metodoPOSEl = document.getElementById('metodoPOS');
-      const clientePOSEl = document.getElementById('clientePOS');
-      const habitacionPOSEl = document.getElementById('habitacionPOS');
-
-      if (metodoPOSEl) metodoPOSEl.style.display = modo==='inmediato'?'block':'none';
-      if (clientePOSEl) clientePOSEl.style.display = modo==='inmediato'?'block':'none';
-      if (habitacionPOSEl) habitacionPOSEl.style.display = modo==='habitacion'?'block':'none';
+      document.getElementById('metodoPOS').style.display = modo === 'inmediato' ? 'block' : 'none';
+      document.getElementById('clientePOS').style.display = modo === 'inmediato' ? 'block' : 'none';
+      document.getElementById('habitacionPOS').style.display = modo === 'habitacion' ? 'block' : 'none';
     };
-    modoPOSEl.dispatchEvent(new Event('change')); // Para el estado inicial
-  } else {
-    console.error("Elemento #modoPOS no encontrado.");
+    modoPOSEl.dispatchEvent(new Event('change'));
   }
 
   renderProductosPOS();
@@ -249,21 +178,15 @@ async function renderPOS() {
   renderMetodosPagoPOS();
   renderHabitacionesPOS();
 
-  document.getElementById('modoPOS').onchange = (e)=>{
-    const modo = e.target.value;
-    document.getElementById('metodoPOS').style.display = modo==='inmediato'?'block':'none';
-    document.getElementById('clientePOS').style.display = modo==='inmediato'?'block':'none';
-    document.getElementById('habitacionPOS').style.display = modo==='habitacion'?'block':'none';
-  };
   document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
 }
 
 function renderMetodosPagoPOS() {
   const sel = document.getElementById('metodoPOS');
   if (!sel) return;
-  sel.innerHTML = '<option value="">Selecciona método de pago...</option>';
-  posMetodosPago.forEach(m => {
-    sel.innerHTML += `<option value="${m.id}">${m.nombre}</option>`;
+  sel.innerHTML = '';
+  posMetodosPago.forEach((m, idx) => {
+    sel.innerHTML += `<option value="${m.id}" ${idx === 0 ? 'selected' : ''}>${m.nombre}</option>`;
   });
 }
 
@@ -280,8 +203,6 @@ function renderProductosPOS() {
   const cont = document.getElementById('productosPOS');
   if (!cont) return;
   cont.innerHTML = '';
-
-  // Permitir búsqueda por nombre, código de barras y categoría
   let productosFiltrados = posProductos;
   if (posFiltro && posFiltro.trim()) {
     const fil = posFiltro.trim().toLowerCase();
@@ -291,12 +212,10 @@ function renderProductosPOS() {
       (p.codigo_barras || '').toLowerCase().includes(fil)
     );
   }
-
-  if(productosFiltrados.length === 0) {
+  if (productosFiltrados.length === 0) {
     cont.innerHTML = `<div style="color:#888;">No hay productos encontrados</div>`;
     return;
   }
-
   productosFiltrados.forEach(prod => {
     let card = document.createElement('div');
     card.style = `
@@ -326,8 +245,8 @@ function renderProductosPOS() {
     };
 
     card.innerHTML = `
-      <img src="${prod.imagen_url || 'https://via.placeholder.com/180x180?text=Sin+Imagen'}" 
-           style="width:170px;height:140px;object-fit:contain;border-radius:8px;background:#f7fafc;margin-bottom:5px;">
+      <img src="${prod.imagen_url || 'https://via.placeholder.com/180x180?text=Sin+Imagen'}"
+        style="width:170px;height:140px;object-fit:contain;border-radius:8px;background:#f7fafc;margin-bottom:5px;">
       <div style="font-weight:600;color:#1e293b;word-break:break-all;margin-bottom:2px;">
         ${prod.nombre}
       </div>
@@ -342,14 +261,11 @@ function renderProductosPOS() {
       <button class="agregar-btn-pos" style="
         margin-top:7px;background:linear-gradient(90deg,#2563eb,#22d3ee);
         color:#fff;border:none;padding:7px 15px;border-radius:6px;cursor:pointer;
-        font-weight:600;box-shadow:0 1px 3px #1d4ed840;transition:background 0.18s;
-      ">
+        font-weight:600;box-shadow:0 1px 3px #1d4ed840;transition:background 0.18s;">
         Agregar
       </button>
     `;
-
     card.querySelector('.agregar-btn-pos').onclick = () => addToCartPOS(prod.id);
-
     cont.appendChild(card);
   });
 }
@@ -378,184 +294,258 @@ function renderCarritoPOS() {
   document.getElementById('totalPOS').textContent = `$${total}`;
 }
 
-// Declarar funciones auxiliares en window si usas atributos en HTML (mejor práctica para apps modulares: usar solo eventos JS)
-window.updateQtyPOS = function(id, val){
-  let item = posCarrito.find(i=>i.id===id);
-  if(item){
+window.updateQtyPOS = function (id, val) {
+  let item = posCarrito.find(i => i.id === id);
+  if (item) {
     let v = parseInt(val);
-    if(v>0 && v<=item.stock_actual) item.cantidad=v;
+    if (v > 0 && v <= item.stock_actual) item.cantidad = v;
     renderCarritoPOS();
   }
 };
-window.removeCartPOS = function(id){
-  posCarrito = posCarrito.filter(i=>i.id!==id);
+window.removeCartPOS = function (id) {
+  posCarrito = posCarrito.filter(i => i.id !== id);
   renderCarritoPOS();
 };
 
-function addToCartPOS(id){
-  const prod = posProductos.find(p=>p.id===id);
-  if(!prod) return;
-  let item = posCarrito.find(i=>i.id===id);
-  if(item){
-    if(item.cantidad < prod.stock_actual) item.cantidad++;
-  }else{
-    posCarrito.push({...prod, cantidad:1});
+function addToCartPOS(id) {
+  const prod = posProductos.find(p => p.id === id);
+  if (!prod) return;
+  let item = posCarrito.find(i => i.id === id);
+  if (item) {
+    if (item.cantidad < prod.stock_actual) item.cantidad++;
+  } else {
+    posCarrito.push({ ...prod, cantidad: 1 });
   }
   renderCarritoPOS();
 }
 
-// ====================== REGISTRAR VENTA POS ===========================
 let ventaPOSenCurso = false;
 
 async function registrarVentaPOS() {
-  if (ventaPOSenCurso) return; // Bloqueo para evitar doble click rápido
+  if (ventaPOSenCurso) return;
   ventaPOSenCurso = true;
-
   const btnVentaPOSEl = document.getElementById('btnVentaPOS');
   if (btnVentaPOSEl) btnVentaPOSEl.disabled = true;
 
   try {
-    if(posCarrito.length === 0) {
+    if (posCarrito.length === 0) {
       document.getElementById('msgPOS').textContent = "Carrito vacío";
       return;
     }
     const modo = document.getElementById('modoPOS').value;
-    let metodo_pago_id = null, habitacion_id = null, cliente_temporal = null;
+    let habitacion_id = null, cliente_temporal = null;
 
-    if(modo === 'inmediato') {
-      metodo_pago_id = document.getElementById('metodoPOS').value;
-      // VALIDAR QUE SE SELECCIONE MÉTODO DE PAGO
-      if (!metodo_pago_id) {
-        document.getElementById('msgPOS').textContent = "Selecciona un método de pago";
-        document.getElementById('metodoPOS').focus();
-        return;
-      }
+    if (modo === 'inmediato') {
+      const metodo_pago_id = document.getElementById('metodoPOS').value;
       cliente_temporal = document.getElementById('clientePOS').value || null;
+      const total = posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
+
+      if (metodo_pago_id === "mixto") {
+        // Si selecciona pago mixto, muestra el modal
+        await mostrarModalPagoMixto(total, async function (pagos) {
+          if (!pagos) return;
+          await procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo, total });
+        });
+        return;
+      } else {
+        // Un solo método, pago tradicional
+        await procesarVentaConPagos({
+          pagos: [{ metodo_pago_id, monto: total }],
+          habitacion_id,
+          cliente_temporal,
+          modo,
+          total
+        });
+      }
+
     } else {
       habitacion_id = document.getElementById('habitacionPOS').value;
       if (habitacion_id === "") habitacion_id = null;
-      if(!habitacion_id) {
+      if (!habitacion_id) {
         document.getElementById('msgPOS').textContent = "Selecciona una habitación";
         return;
       }
+      await procesarVentaConPagos({ pagos: [], habitacion_id, cliente_temporal, modo, total: null });
     }
-
-    let total = posCarrito.reduce((a,b)=>a+b.precio_venta*b.cantidad,0);
-    let reservaId = null;
-    if (habitacion_id) {
-      // Buscar reserva activa en esa habitación
-      const { data: reservasActivas } = await currentSupabase
-        .from('reservas')
-        .select('id')
-        .eq('habitacion_id', habitacion_id)
-        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-        .order('fecha_inicio', { ascending: false })
-        .limit(1);
-
-      if (reservasActivas && reservasActivas.length > 0) {
-        reservaId = reservasActivas[0].id;
-      }
-    }
-
-    // Crear venta_tienda (principal)
-    let ventaPayload = {
-      hotel_id: currentHotelId,
-      usuario_id: currentUser.id,
-      habitacion_id: habitacion_id,
-      reserva_id: reservaId, // 👈 ASOCIA LA VENTA A LA RESERVA ACTIVA
-      metodo_pago_id: metodo_pago_id,
-      cliente_temporal,
-      total_venta: total,
-      fecha: new Date().toISOString(),
-      creado_en: new Date().toISOString()
-    };
-    console.log('Debug venta POS:', ventaPayload);
-
-    let {data: ventas, error} = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
-    if(error || !ventas?.[0]) throw new Error("Error guardando venta");
-    let ventaId = ventas[0].id;
-
-    // Detalle y stock
-    for(let item of posCarrito){
-      await currentSupabase.from('detalle_ventas_tienda').insert([{
-        venta_id: ventaId,
-        producto_id: item.id,
-        cantidad: item.cantidad,
-        precio_unitario_venta: item.precio_venta,
-        subtotal: item.cantidad*item.precio_venta,
-        hotel_id: currentHotelId,
-        creado_en: new Date().toISOString()
-      }]);
-      // Descuenta stock_actual
-      await currentSupabase.from('productos_tienda').update({
-        stock_actual: item.stock_actual-item.cantidad
-      }).eq('id',item.id);
-    }
-
-    // 1. Preguntamos al "conserje" por el ID del turno activo
-    const turnoId = turnoService.getActiveTurnId();
-    const msgPOSEl = document.getElementById('msgPOS'); // El div donde muestras mensajes en el POS
-
-    // 2. VALIDACIÓN CLAVE: Si el conserje dice que no hay turno, bloqueamos la acción.
-    if (!turnoId) {
-      if (msgPOSEl) showError(msgPOSEl, "ACCIÓN BLOQUEADA: No se puede registrar la venta porque no hay un turno de caja activo.");
-      return; // Detenemos la función aquí.
-    }
-
-    // 3. Si hay turno, registrar movimiento en caja solo si es "inmediato"
-    const nombresProductos = posCarrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
-
-    if (modo === 'inmediato') {
-      // Solo registrar en caja si es pago inmediato
-      const movimientoCaja = {
-        hotel_id: currentHotelId,
-        tipo: 'ingreso',
-        monto: total,
-        concepto: `Venta: ${nombresProductos}`,
-        fecha_movimiento: new Date().toISOString(),
-        metodo_pago_id: metodo_pago_id,
-        usuario_id: currentUser.id,
-        venta_tienda_id: ventaId,
-        turno_id: turnoId
-      };
-
-      // 4. Insertamos en la tabla caja
-      const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja);
-
-      if (errorCaja) {
-        console.error("Error registrando en caja desde POS:", errorCaja);
-        if (msgPOSEl) showError(msgPOSEl, `Error al registrar en caja: <span class="math-inline">{errorCaja.message}. La venta #${ventaId} podría necesitar ajuste manual en caja.`);
-      }
-      document.getElementById('msgPOS').textContent = "¡Venta registrada!";
-    } else {
-      // Si es carga a habitación, solo mostrar mensaje diferente
-      document.getElementById('msgPOS').textContent = "Consumo cargado a la cuenta de la habitación.";
-    }
-
-    // Limpia
-    posCarrito = [];
-    renderCarritoPOS();
-    await cargarDatosPOS();
-    renderProductosPOS();
-    setTimeout(()=>{document.getElementById('msgPOS').textContent="";},1700);
-
-  } catch(err){
+  } catch (err) {
     document.getElementById('msgPOS').textContent = err.message;
   } finally {
     ventaPOSenCurso = false;
-    // Rehabilita el botón SIEMPRE, incluso con error
     const btnVentaPOSEl = document.getElementById('btnVentaPOS');
     if (btnVentaPOSEl) btnVentaPOSEl.disabled = false;
   }
 }
 
-// Importante: asegúrate que tu botón tenga el id="btnVentaPOS"
-// y que la asignación del evento sea (después de renderizar el POS):
+// ================== BLOQUE UTILIDAD MODAL PAGO MIXTO Y PROCESO DE VENTA ==================
+async function mostrarModalPagoMixto(total, callback) {
+  let pagos = [{ metodo_pago_id: '', monto: '' }];
+  const body = document.body;
+  const modal = document.createElement('div');
+  modal.id = 'modal-pagos-mixtos-pos';
+  modal.style = `
+    position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:99999;
+    background:rgba(30,41,59,0.45);display:flex;align-items:center;justify-content:center;`;
+  modal.innerHTML = `
+    <div style="background:#fff;max-width:430px;width:95vw;padding:38px 28px 22px 28px;border-radius:20px;box-shadow:0 2px 32px #2563eb44;">
+      <h3 style="font-size:1.22rem;font-weight:700;color:#2563eb;margin-bottom:15px;text-align:center;">Métodos de Pago Mixtos</h3>
+      <div style="font-size:15px;color:#64748b;margin-bottom:8px;">Total de la venta: <b style="color:#0ea5e9;font-size:18px;">$${total}</b></div>
+      <form id="formPagosMixtosPOS">
+        <div id="pagosMixtosPOSCampos"></div>
+        <div style="margin:13px 0;">
+          <button type="button" id="agregarPagoPOS" style="background:#e0e7ff;color:#2563eb;border:none;border-radius:7px;padding:7px 18px;font-weight:600;font-size:1em;cursor:pointer;">+ Agregar Pago</button>
+        </div>
+        <div style="font-size:15px;margin-bottom:8px;color:#f43f5e;" id="msgPagosMixtosPOS"></div>
+        <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
+          <button type="submit" style="background:linear-gradient(90deg,#22c55e,#2563eb);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #22c55e22;cursor:pointer;">Registrar Pagos</button>
+          <button type="button" id="cancelarPagoPOS" style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #64748b15;cursor:pointer;">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  `;
+  body.appendChild(modal);
 
-setTimeout(() => {
-  const btnVentaPOSEl = document.getElementById('btnVentaPOS');
-  if (btnVentaPOSEl) btnVentaPOSEl.onclick = registrarVentaPOS;
-}, 0);
+  function renderPagosCampos() {
+    const campos = modal.querySelector('#pagosMixtosPOSCampos');
+    campos.innerHTML = '';
+    pagos.forEach((pago, idx) => {
+      campos.innerHTML += `
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
+          <select required style="padding:7px 12px;border-radius:7px;border:1.5px solid #cbd5e1;flex:2;" data-idx="${idx}">
+            <option value="">Método de pago...</option>
+            ${posMetodosPago.filter(m => m.id !== "mixto").map(m => `<option value="${m.id}" ${pago.metodo_pago_id === m.id ? 'selected' : ''}>${m.nombre}</option>`).join('')}
+          </select>
+          <input type="number" required min="1" style="flex:1.5;padding:7px 11px;border-radius:7px;border:1.5px solid #cbd5e1;" placeholder="Monto" value="${pago.monto}" data-idx="${idx}" />
+          ${pagos.length > 1 ? `<button type="button" data-remove="${idx}" style="background:#fee2e2;color:#f43f5e;border:none;border-radius:5px;padding:3px 10px;font-size:1em;cursor:pointer;">✖</button>` : ''}
+        </div>
+      `;
+    });
+    campos.querySelectorAll('button[data-remove]').forEach(btn => {
+      btn.onclick = () => {
+        const idx = parseInt(btn.getAttribute('data-remove'));
+        pagos.splice(idx, 1);
+        renderPagosCampos();
+      };
+    });
+    campos.querySelectorAll('select[data-idx]').forEach(sel => {
+      sel.onchange = (e) => {
+        pagos[parseInt(sel.getAttribute('data-idx'))].metodo_pago_id = sel.value;
+      };
+    });
+    campos.querySelectorAll('input[type="number"][data-idx]').forEach(inp => {
+      inp.oninput = (e) => {
+        pagos[parseInt(inp.getAttribute('data-idx'))].monto = inp.value;
+      };
+    });
+  }
+  renderPagosCampos();
+
+  modal.querySelector('#agregarPagoPOS').onclick = () => {
+    pagos.push({ metodo_pago_id: '', monto: '' });
+    renderPagosCampos();
+  };
+  modal.querySelector('#cancelarPagoPOS').onclick = () => {
+    body.removeChild(modal);
+    callback(null);
+  };
+  modal.querySelector('#formPagosMixtosPOS').onsubmit = (e) => {
+    e.preventDefault();
+    const suma = pagos.reduce((s, p) => s + Number(p.monto || 0), 0);
+    if (suma !== total) {
+      modal.querySelector('#msgPagosMixtosPOS').textContent = `La suma de los pagos ($${suma}) debe ser igual al total de la venta ($${total}).`;
+      return;
+    }
+    for (let p of pagos) {
+      if (!p.metodo_pago_id) {
+        modal.querySelector('#msgPagosMixtosPOS').textContent = `Falta seleccionar método de pago.`;
+        return;
+      }
+    }
+    body.removeChild(modal);
+    callback(pagos);
+  };
+}
+
+async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo, total }) {
+  const msgPOSEl = document.getElementById('msgPOS');
+  let totalVenta = total ?? posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
+  let reservaId = null;
+  if (habitacion_id) {
+    const { data: reservasActivas } = await currentSupabase
+      .from('reservas')
+      .select('id')
+      .eq('habitacion_id', habitacion_id)
+      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+      .order('fecha_inicio', { ascending: false })
+      .limit(1);
+    if (reservasActivas && reservasActivas.length > 0) {
+      reservaId = reservasActivas[0].id;
+    }
+  }
+  let ventaPayload = {
+    hotel_id: currentHotelId,
+    usuario_id: currentUser.id,
+    habitacion_id: habitacion_id,
+    reserva_id: reservaId,
+    total_venta: totalVenta,
+    fecha: new Date().toISOString(),
+    creado_en: new Date().toISOString(),
+    cliente_temporal,
+    metodo_pago_id: modo === 'inmediato' && pagos.length === 1 ? pagos[0].metodo_pago_id : null
+  };
+  let { data: ventas, error } = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
+  if (error || !ventas?.[0]) throw new Error("Error guardando venta");
+  let ventaId = ventas[0].id;
+
+  for (let item of posCarrito) {
+    await currentSupabase.from('detalle_ventas_tienda').insert([{
+      venta_id: ventaId,
+      producto_id: item.id,
+      cantidad: item.cantidad,
+      precio_unitario_venta: item.precio_venta,
+      subtotal: item.cantidad * item.precio_venta,
+      hotel_id: currentHotelId,
+      creado_en: new Date().toISOString()
+    }]);
+    await currentSupabase.from('productos_tienda').update({
+      stock_actual: item.stock_actual - item.cantidad
+    }).eq('id', item.id);
+  }
+
+  const turnoId = turnoService.getActiveTurnId();
+  if (modo === 'inmediato') {
+    if (!turnoId) {
+      if (msgPOSEl) showError(msgPOSEl, "No hay un turno de caja activo.");
+      return;
+    }
+    const nombresProductos = posCarrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
+    for (let p of pagos) {
+      const movimientoCaja = {
+        hotel_id: currentHotelId,
+        tipo: 'ingreso',
+        monto: Number(p.monto),
+        concepto: `Venta: ${nombresProductos}`,
+        fecha_movimiento: new Date().toISOString(),
+        metodo_pago_id: p.metodo_pago_id,
+        usuario_id: currentUser.id,
+        venta_tienda_id: ventaId,
+        turno_id: turnoId
+      };
+      const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja);
+      if (errorCaja) {
+        if (msgPOSEl) showError(msgPOSEl, `Error al registrar pago en caja: ${errorCaja.message}`);
+      }
+    }
+    msgPOSEl.textContent = "¡Venta registrada!";
+  } else {
+    msgPOSEl.textContent = "Consumo cargado a la cuenta de la habitación.";
+  }
+
+  posCarrito = [];
+  renderCarritoPOS();
+  await cargarDatosPOS();
+  renderProductosPOS();
+  setTimeout(() => { msgPOSEl.textContent = ""; }, 1700);
+}
 
 // ====================  PESTAÑA INVENTARIO  ====================
 let inventarioProductos = [];
