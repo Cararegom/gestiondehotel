@@ -26,19 +26,31 @@
 <body>
   <div id="main-wrapper" style="display: flex; height: 100vh;">
     <aside id="sidebar" class="bg-[#2a3647] min-w-[200px] flex flex-col items-center py-4" style="height: 100vh;">
-  <a href="#" class="flex items-center justify-center px-4 py-3" style="text-decoration:none;">
-    <img src="icons/logo.jpeg"
-      alt="Gestión de Hotel"
-      style="max-width:140px; width:100%; height:auto; display:block;" />
-  </a>
-  <nav id="main-nav" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
-  <div id="user-info-nav" class="mt-auto w-full"></div>
-</aside>
+      <a href="#" class="flex items-center justify-center px-4 py-3" style="text-decoration:none;">
+        <img src="icons/logo.jpeg"
+          alt="Gestión de Hotel"
+          style="max-width:140px; width:100%; height:auto; display:block;" />
+      </a>
+      <nav id="main-nav" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
+      <div id="user-info-nav" class="mt-auto w-full"></div>
+    </aside>
 
     <div id="main-content-area" style="flex:1; display:flex; flex-direction:column; min-width:0; background:#f7fafc; overflow:hidden;">
       <div id="notificaciones-campanita-container" style="position:fixed; top:1rem; right:1rem; z-index:50;"></div>
       <div id="app-global-feedback-banner" class="app-global-feedback" style="display:none;"></div>
       <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-6">
+        <!--
+          ¡IMPORTANTE!
+          Tu sistema debe renderizar aquí, al entrar a la sección TIENDA,
+          el siguiente bloque:
+            <div id="tienda-wrapper">
+              ... (tabs, botones, etc)
+              <div id="contenidoTiendaTab"></div>
+            </div>
+          Así todas las funciones de tienda podrán operar sobre #contenidoTiendaTab.
+          No dejes <div id="contenidoTiendaTab"></div> vacío aquí,
+          sólo créalo dinámicamente al cargar la tienda.
+        -->
         <p class="text-center text-gray-500">Cargando aplicación...</p>
       </main>
     </div>
@@ -48,12 +60,26 @@
       <div class="spinner"></div>
       <p id="global-loading-message">Cargando...</p>
   </div>
-<!-- Incluye html2pdf.js en tu HTML: -->
-<!-- <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script> -->
+  
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  
   <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-  
   <script type="module" src="js/main.js"></script>
+
+  <!-- ======================= MODALES UNIVERSALES ======================= -->
+  <!-- Solo deja estos dos modales, SIEMPRE al final del body -->
+
+  <!-- Modal Global (recomendado para TODO: mensajes, cobros, etc) -->
+  <div id="modal-global" style="
+    display: none;
+    position: fixed;
+    z-index: 99999;
+    left: 0; top: 0; width: 100vw; height: 100vh;
+    background: rgba(0,0,0,0.18);
+    align-items: center; justify-content: center;
+  "></div>
+
+  <!-- Modal Container clásico (solo si aún lo usa tu código, pero usa SOLO uno de los dos en producción) -->
+  <div id="modal-container" style="display:none"></div>
+  <!-- ================================================================ -->
 </body>
 </html>

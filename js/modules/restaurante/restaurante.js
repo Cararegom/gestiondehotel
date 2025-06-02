@@ -28,6 +28,23 @@ const formatDateLocal = (dateStr, options = { dateStyle: 'medium', timeStyle: 's
   return isNaN(date.getTime()) ? 'Fecha Inválida' : date.toLocaleString('es-CO', options);
 };
 
+import { fetchTurnoActivo } from '../../services/turnoService.js';
+
+async function checkTurnoActivo(supabase, hotelId, usuarioId) {
+  const turno = await fetchTurnoActivo(supabase, hotelId, usuarioId);
+  if (!turno) {
+    // Bloquea acciones aquí y muestra mensaje:
+    mostrarInfoModalGlobal(
+      "Acción bloqueada: No hay un turno de caja abierto. Ábrelo desde el módulo de Caja.",
+      "Turno Requerido"
+    );
+    // O muestra un botón para abrir el turno directamente (solo si es seguro).
+    return false;
+  }
+  // Si hay turno, sigue con el flujo normal
+  return true;
+}
+
 // --- UI Helper Functions (Scoped) ---
 function showRestauranteFeedback(feedbackEl, message, typeClass = 'success-indicator', duration = 3500) {
   if (!feedbackEl) return;

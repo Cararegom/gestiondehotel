@@ -8,8 +8,11 @@ let currentModuleUser = null;
 let currentChartInstances = {}; // Use an object to manage multiple chart instances
 let supabaseClient = null; // Assigned in mount
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
+import { formatCurrency, formatDateTime } from '../../uiUtils.js'; // Assuming these are available globally or adjust path
 
 // --- Utilities ---
+// Use existing formatCurrency and formatDateTime from uiUtils if they match this signature
+// If not, you can keep these local versions or adapt uiUtils.
 const formatCurrencyLocal = (value, currency = 'COP') => {
   if (typeof value !== 'number' || isNaN(value)) {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: currency }).format(0);
@@ -22,6 +25,7 @@ const formatDateLocal = (dateStr, options = { dateStyle: 'short', timeStyle: 'sh
   const date = new Date(dateStr);
   return isNaN(date.getTime()) ? 'Fecha Inválida' : date.toLocaleString('es-CO', options);
 };
+
 
 // --- UI Helper Functions ---
 function showReportesFeedback(feedbackEl, message, typeClass = 'info-indicator', duration = 0) {
@@ -161,7 +165,6 @@ async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInpu
 
 async function generarReporteIngresosPorPeriodo(resultsContainerEl, fechaInicioInput, fechaFinInput) {
   // ... (Código sin cambios significativos, igual al proporcionado anteriormente)
-  // Considerar si este reporte es redundante ahora con generarReporteFinancieroGlobal
   if (!resultsContainerEl) return;
   resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando reporte de ingresos por habitaciones (Caja)...</p>';
 
@@ -243,10 +246,8 @@ function robustPeriodSort(a, b) {
     if (partsA.length === 1) return -1; // Annual A comes before period B
     if (partsB.length === 1) return 1;  // Annual B comes after period A
 
-    // If period types are different (e.g. 'M' vs 'B'), not directly comparable unless defined order
-    // For now, assume if types are letters, they define groups that are then numerically sorted
     if (periodTypeA !== periodTypeB && periodTypeA.match(/[A-Za-z]/) && periodTypeB.match(/[A-Za-z]/)) {
-        if (periodTypeA < periodTypeB) return -1; // Lexicographical sort for B, M, S, T
+        if (periodTypeA < periodTypeB) return -1; 
         if (periodTypeA > periodTypeB) return 1;
     }
     return periodNumA - periodNumB;
@@ -269,6 +270,7 @@ function categorizarMovimiento(movimiento, serviciosAdicionales = []) {
         if (conceptoLower.includes('alquiler') || conceptoLower.includes('estadia') || conceptoLower.includes('noche adicional') || conceptoLower.includes('habitación')) {
              return 'Ingreso: Habitación (Concepto)';
         }
+         if (conceptoLower.includes('apertura de caja')) return 'Ingreso: Apertura Caja'; // Categorize opening amount
         if (conceptoLower.includes('abono reserva') || conceptoLower.includes('pago reserva')) {
             return 'Ingreso: Habitación (Abono/Pago)';
         }
@@ -319,21 +321,21 @@ function renderTablaMovimientos(movimientos, tituloTabla) {
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Categoría</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Concepto</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Monto</th>
-            </tr>
+               <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Método Pago</th> </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">`;
 
     if (movimientos.length === 0) {
-        tablaHtml += `<tr><td colspan="4" class="px-4 py-4 text-sm text-gray-500 text-center">No hay movimientos para mostrar.</td></tr>`;
+        tablaHtml += `<tr><td colspan="5" class="px-4 py-4 text-sm text-gray-500 text-center">No hay movimientos para mostrar.</td></tr>`; // Adjusted colspan
     } else {
         movimientos.forEach(mov => {
             tablaHtml += `
                 <tr class="hover:bg-gray-50 transition-colors duration-150">
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(mov.fecha_movimiento)}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-medium">${mov.categoria}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(mov.fecha_movimiento || mov.creado_en)}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-medium">${mov.categoria || mov.tipo}</td>
                     <td class="px-4 py-3 text-sm text-gray-600 break-words min-w-[200px] max-w-[400px]">${mov.concepto || 'N/A'}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold ${mov.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrencyLocal(mov.monto)}</td>
-                </tr>`;
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${mov.metodos_pago?.nombre || 'N/A'}</td> </tr>`;
         });
     }
     tablaHtml += '</tbody></table></div>';
@@ -357,9 +359,19 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
         const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
         const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
 
+        // --- Adjusted to fetch metodos_pago needed for renderTablaMovimientos ---
         const { data: movimientos, error: errorMovimientos } = await supabaseClient
-            .from('caja').select(`id, fecha_movimiento, tipo, monto, concepto, reserva_id, venta_tienda_id, venta_restaurante_id, compra_tienda_id`)
-            .eq('hotel_id', currentHotelId).gte('fecha_movimiento', fechaInicioQuery).lte('fecha_movimiento', fechaFinQuery).order('fecha_movimiento', { ascending: true });
+            .from('caja')
+            .select(`
+                id, fecha_movimiento, tipo, monto, concepto, reserva_id, 
+                venta_tienda_id, venta_restaurante_id, compra_tienda_id,
+                metodo_pago_id, metodos_pago(nombre), creado_en 
+            `)
+            .eq('hotel_id', currentHotelId)
+            .gte('fecha_movimiento', fechaInicioQuery)
+            .lte('fecha_movimiento', fechaFinQuery)
+            .order('fecha_movimiento', { ascending: true });
+
         if (errorMovimientos) throw errorMovimientos;
 
         if (!movimientos || movimientos.length === 0) {
@@ -396,7 +408,6 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
             html += renderTablaMovimientos(movimientosCategorizados, 'Listado Detallado de Todos los Movimientos');
             resultsContainerEl.innerHTML = html;
 
-            // Ingresos vs Egresos Bar Chart
             const ingresosAgrupados = agregarDatosPorPeriodo(ingresos, agrupacion);
             const egresosAgrupados = agregarDatosPorPeriodo(egresos, agrupacion);
             const todasLasEtiquetas = [...new Set([...ingresosAgrupados.labels, ...egresosAgrupados.labels])].sort(robustPeriodSort);
@@ -406,22 +417,18 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
             const ctxBar = resultsContainerEl.querySelector('#reporte-ingresos-egresos-chart')?.getContext('2d');
             if (ctxBar) currentChartInstances['reporte-ingresos-egresos-chart'] = new Chart(ctxBar, { type: 'bar', data: { labels: todasLasEtiquetas, datasets: [ { label: 'Ingresos', data: dataIngresosFinal, backgroundColor: 'rgba(75, 192, 192, 0.7)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1}, { label: 'Egresos', data: dataEgresosFinal, backgroundColor: 'rgba(255, 99, 132, 0.7)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1} ] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: value => formatCurrencyLocal(value) } }, x: { title: { display: true, text: `Período (${agrupacion})` } } }, plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatCurrencyLocal(ctx.parsed.y)}` } } } } });
             
-            // Income Breakdown Pie Chart
             const ingresosPorCat = ingresos.reduce((acc, mov) => { acc[mov.categoria] = (acc[mov.categoria] || 0) + mov.monto; return acc; }, {});
             const catIngLabels = Object.keys(ingresosPorCat); const catIngData = Object.values(ingresosPorCat);
             const ctxPieIng = resultsContainerEl.querySelector('#reporte-ingresos-categoria-pie-chart')?.getContext('2d');
             if(ctxPieIng && catIngLabels.length > 0) currentChartInstances['reporte-ingresos-categoria-pie-chart'] = new Chart(ctxPieIng, {type: 'pie', data: {labels: catIngLabels, datasets:[{label:'Desglose Ingresos', data:catIngData, backgroundColor:['rgba(75,192,192,0.8)','rgba(255,159,64,0.8)','rgba(153,102,255,0.8)','rgba(255,205,86,0.8)','rgba(54,162,235,0.8)']}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right'}, title:{display:true, text:'Desglose de Ingresos'}, tooltip:{callbacks:{label:ctx => `${ctx.label}: ${formatCurrencyLocal(ctx.parsed)} (${((ctx.parsed/ctx.chart.getDatasetMeta(0).total)*100).toFixed(1)}%)`}}}}});
 
-            // Expense Breakdown Pie Chart
             const egresosPorCat = egresos.reduce((acc, mov) => { acc[mov.categoria] = (acc[mov.categoria] || 0) + mov.monto; return acc; }, {});
             const catEgrLabels = Object.keys(egresosPorCat); const catEgrData = Object.values(egresosPorCat);
             const ctxPieEgr = resultsContainerEl.querySelector('#reporte-egresos-categoria-pie-chart')?.getContext('2d');
             if(ctxPieEgr && catEgrLabels.length > 0) currentChartInstances['reporte-egresos-categoria-pie-chart'] = new Chart(ctxPieEgr, {type: 'pie', data: {labels: catEgrLabels, datasets:[{label:'Desglose Egresos', data:catEgrData, backgroundColor:['rgba(255,99,132,0.8)','rgba(255,짜0,0,0.8)','rgba(100,100,255,0.8)','rgba(200,200,100,0.8)','rgba(100,200,200,0.8)']}]}, options:{responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'right'}, title:{display:true, text:'Desglose de Egresos'}, tooltip:{callbacks:{label:ctx => `${ctx.label}: ${formatCurrencyLocal(ctx.parsed)} (${((ctx.parsed/ctx.chart.getDatasetMeta(0).total)*100).toFixed(1)}%)`}}}}});
 
         } else if (tipoReporteEspecifico === 'detalle_ingresos_categoria') {
-            // ... (Similar al código anterior, pero sin el resumen de egresos/balance y solo enfocado en ingresos)
-            // ... (Se mantiene el Pie Chart de Ingresos y la tabla detallada de Ingresos)
-             html += `<h4 class="text-xl font-semibold mb-4 text-gray-800">Detalle de Ingresos por Categoría ${tituloBase}</h4>`;
+            html += `<h4 class="text-xl font-semibold mb-4 text-gray-800">Detalle de Ingresos por Categoría ${tituloBase}</h4>`;
             const ingresos = movimientosCategorizados.filter(m => m.tipo === 'ingreso');
             const ingresosPorCategoriaData = ingresos.reduce((acc, mov) => {
                 const cat = mov.categoria;
@@ -445,7 +452,6 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
             }
 
         } else if (tipoReporteEspecifico === 'detalle_egresos_categoria') {
-            // ... (Similar, enfocado en egresos, puede tener su propio pie chart de egresos si se desea)
             html += `<h4 class="text-xl font-semibold mb-4 text-gray-800">Detalle de Egresos por Categoría ${tituloBase}</h4>`;
             const egresos = movimientosCategorizados.filter(m => m.tipo === 'egreso');
             const egresosPorCategoriaData = egresos.reduce((acc, mov) => {
@@ -484,7 +490,7 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
 async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fechaFinInput) {
     if (!resultsContainerEl) return;
     resultsContainerEl.innerHTML = `<p class="loading-indicator text-center p-4 text-gray-500">Generando reporte de ocupación...</p>`;
-    destroyChartInstance('reporte-ocupacion-chart'); // Make sure destroyChartInstance is defined and works
+    destroyChartInstance('reporte-ocupacion-chart'); 
 
     if (!window.Chart) {
         resultsContainerEl.innerHTML = '<p class="error-indicator text-center p-4 text-red-600">Librería de gráficos (Chart.js) no está cargada.</p>';
@@ -492,10 +498,9 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
     }
 
     try {
-        // Correctly fetch the count of active rooms
         const { count: totalHabitacionesDisponibles, error: errHab } = await supabaseClient
             .from('habitaciones')
-            .select('*', { count: 'exact', head: true }) // Use head:true to only get count, not data
+            .select('*', { count: 'exact', head: true }) 
             .eq('hotel_id', currentHotelId)
             .eq('activo', true);
 
@@ -504,7 +509,6 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
             throw new Error(`Error al obtener conteo de habitaciones: ${errHab.message}`);
         }
         
-        // Log para depuración
         console.log("Total Habitaciones Activas Contadas:", totalHabitacionesDisponibles);
 
         if (totalHabitacionesDisponibles === null || totalHabitacionesDisponibles === undefined) {
@@ -520,8 +524,7 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
         const fechaInicio = new Date(`${fechaInicioInput}T00:00:00.000Z`);
         const fechaFin = new Date(`${fechaFinInput}T23:59:59.999Z`);
         
-        // VERIFY THE EXACT ENUM VALUES FOR 'estado' IN YOUR DATABASE (e.g., 'confirmada', 'activa', 'check_in')
-        const estadosOcupadosValidos = ['confirmada', 'activa', 'check_in']; // Ensure these match your DB enum exactly
+        const estadosOcupadosValidos = ['confirmada', 'activa', 'check_in']; 
 
         const { data: todasLasReservas, error: errRes } = await supabaseClient
             .from('reservas')
@@ -607,7 +610,7 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
 
         if (occupancyData.length > 0) {
             const ctx = resultsContainerEl.querySelector('#reporte-ocupacion-chart').getContext('2d');
-            currentChartInstances['reporte-ocupacion-chart'] = new Chart(ctx, { // Ensure currentChartInstances is defined
+            currentChartInstances['reporte-ocupacion-chart'] = new Chart(ctx, { 
                 type: 'line',
                 data: {
                     labels: occupancyData.map(item => formatDateLocal(item.date, {month:'short', day:'numeric'})),
@@ -634,6 +637,266 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
     }
 }
 
+
+// --- NEW: Function to show shift closure details in a modal ---
+async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
+    const modalId = `modal-detalle-cierre-${turnoId}`;
+    let existingModal = document.getElementById(modalId);
+    if (existingModal) existingModal.remove();
+
+    const loadingModal = document.createElement('div');
+    loadingModal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50";
+    loadingModal.innerHTML = `<div class="bg-white p-10 rounded-lg shadow-xl text-center"><p class="text-lg font-medium text-gray-700">Cargando detalles del cierre...</p></div>`;
+    document.body.appendChild(loadingModal);
+
+    try {
+        // 1. Fetch shift details (including user name)
+        const { data: turnoData, error: turnoError } = await supabaseClient
+        .from('turnos')
+        .select('id, fecha_cierre, balance_final, fecha_apertura, usuarios(nombre, email)') // MODIFICADO: created_at -> fecha_apertura
+        .eq('id', turnoId)
+        .eq('hotel_id', currentHotelId)
+        .single();
+
+        if (turnoError) throw turnoError;
+        if (!turnoData) throw new Error('No se encontró el turno especificado.');
+
+        // 2. Fetch movements for this specific shift
+        const { data: movimientos, error: movError } = await supabaseClient
+            .from('caja')
+            .select('*, usuarios(nombre), metodos_pago(nombre)')
+            .eq('turno_id', turnoId)
+            .order('creado_en', { ascending: true });
+
+        if (movError) throw movError;
+
+        // 3. Calculate totals from movements (more reliable than just stored balance_final for detail view)
+        let ingresos = 0, egresos = 0;
+        const ingresosPorMetodo = {};
+        const egresosPorMetodo = {};
+        let montoApertura = 0;
+
+        (movimientos || []).forEach(mv => {
+            // The 'apertura' movement is an ingreso, but often listed separately or pre-accounted.
+            // For this detail, we'll sum it with other ingresos unless explicitly asked to separate.
+            if (mv.tipo === 'ingreso' || mv.tipo === 'apertura') {
+                ingresos += Number(mv.monto);
+                 if (mv.tipo === 'apertura') montoApertura = Number(mv.monto);
+                const nombreMetodo = mv.metodos_pago?.nombre || (mv.tipo === 'apertura' ? 'Monto Inicial' : 'N/A');
+                if (!ingresosPorMetodo[nombreMetodo]) ingresosPorMetodo[nombreMetodo] = 0;
+                ingresosPorMetodo[nombreMetodo] += Number(mv.monto);
+            } else if (mv.tipo === 'egreso') {
+                egresos += Number(mv.monto);
+                const nombreMetodo = mv.metodos_pago?.nombre || 'N/A';
+                if (!egresosPorMetodo[nombreMetodo]) egresosPorMetodo[nombreMetodo] = 0;
+                egresosPorMetodo[nombreMetodo] += Number(mv.monto);
+            }
+        });
+        // Balance here is calculated from *all* movements in the shift.
+        // The `turnoData.balance_final` is the one calculated at the time of `cerrarTurno` in caja.js
+        // which is (totalIngresos - totalEgresos) where totalIngresos includes the apertura.
+        const balanceCalculado = ingresos - egresos; 
+        
+        const usuarioNombre = turnoData.usuarios?.nombre || turnoData.usuarios?.email || 'Usuario Desconocido';
+    const fechaCierreStr = formatDateLocal(turnoData.fecha_cierre, { dateStyle: 'full', timeStyle: 'short' });
+    const fechaAperturaStr = formatDateLocal(turnoData.fecha_apertura, { dateStyle: 'full', timeStyle: 'short' }); // MODIFICADO: turnoData.created_at -> turnoData.fecha_apertura
+
+
+        // 4. Render HTML for the modal (inspired by caja.js's mostrarResumenCorteDeCaja)
+        let html = `
+          <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-3xl mx-auto border border-slate-200 relative animate-fade-in-down">
+            <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-slate-100 to-gray-100 flex items-center justify-between">
+              <div>
+                <h2 class="text-2xl font-bold text-slate-800">Detalle de Cierre de Caja</h2>
+                <p class="text-sm text-gray-600">Cerrado por: ${usuarioNombre} el ${fechaCierreStr}</p>
+                <p class="text-sm text-gray-600">Turno abierto el: ${fechaAperturaStr}</p>
+              </div>
+              <button id="btn-close-detalle-modal-${turnoId}" class="text-gray-500 hover:text-red-600 transition-colors text-2xl">&times;</button>
+            </div>
+            <div class="p-6 md:p-8 space-y-3">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                <div>
+                  <span class="block text-xs text-gray-500">Ingresos Totales (incl. apertura)</span>
+                  <span class="text-2xl font-bold text-green-600">${formatCurrencyLocal(ingresos)}</span>
+                </div>
+                <div>
+                  <span class="block text-xs text-gray-500">Egresos Totales</span>
+                  <span class="text-2xl font-bold text-red-600">${formatCurrencyLocal(egresos)}</span>
+                </div>
+                <div>
+                  <span class="block text-xs text-gray-500">Balance del Turno</span>
+                  <span class="text-2xl font-bold ${balanceCalculado < 0 ? 'text-red-600' : 'text-green-700'}">${formatCurrencyLocal(balanceCalculado)}</span>
+                </div>
+              </div>
+                ${ montoApertura > 0 ? `<p class="text-sm text-center text-gray-500 italic">Monto de apertura: ${formatCurrencyLocal(montoApertura)}</p>` : ''}
+
+              <div class="grid md:grid-cols-2 gap-4 mt-6">
+                <div>
+                  <span class="block font-semibold mb-2 text-green-700">Ingresos por Método de Pago</span>
+                  <ul class="pl-4 space-y-1 text-sm">
+                    ${Object.entries(ingresosPorMetodo).map(([metodo, total]) => `
+                      <li class="flex items-center gap-2">
+                        <span class="text-gray-700">${metodo}</span>
+                        <span class="font-semibold text-green-700 ml-auto">${formatCurrencyLocal(total)}</span>
+                      </li>
+                    `).join('') || '<li class="text-gray-400 italic">Sin ingresos detallados por método.</li>'}
+                  </ul>
+                </div>
+                <div>
+                  <span class="block font-semibold mb-2 text-red-700">Egresos por Método de Pago</span>
+                  <ul class="pl-4 space-y-1 text-sm">
+                    ${Object.entries(egresosPorMetodo).length === 0 
+                      ? '<li class="text-gray-400 italic">Sin egresos</li>' 
+                      : Object.entries(egresosPorMetodo).map(([metodo, total]) => `
+                        <li class="flex items-center gap-2">
+                          <span class="text-gray-700">${metodo}</span>
+                          <span class="font-semibold text-red-600 ml-auto">${formatCurrencyLocal(total)}</span>
+                        </li>
+                      `).join('')}
+                  </ul>
+                </div>
+              </div>
+              <div class="mt-6">
+                <h5 class="text-md font-semibold mb-2 text-gray-700">Detalle de Movimientos del Turno</h5>
+                  <div class="table-container overflow-x-auto shadow-sm rounded-lg border bg-gray-50 max-h-[300px] overflow-y-auto">
+                    <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
+                      <thead class="bg-gray-100 sticky top-0">
+                        <tr>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Fecha</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Tipo</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Concepto</th>
+                          <th class="px-3 py-2 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Monto</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Método Pago</th>
+                          <th class="px-3 py-2 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Usuario Mov.</th>
+                        </tr>
+                      </thead>
+                      <tbody class="bg-white divide-y divide-gray-200">
+                        ${(movimientos && movimientos.length > 0) ? movimientos.map(mv => `
+                          <tr class="hover:bg-slate-50">
+                            <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">${formatDateLocal(mv.creado_en)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-xs"><span class="badge ${mv.tipo === 'ingreso' || mv.tipo === 'apertura' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
+                            <td class="px-3 py-2 text-xs text-gray-600 break-words min-w-[150px] max-w-[300px]">${mv.concepto || 'N/A'}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-xs text-right font-semibold ${mv.tipo === 'ingreso' || mv.tipo === 'apertura' ? 'text-green-600' : 'text-red-600'}">${formatCurrencyLocal(mv.monto)}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">${mv.metodos_pago?.nombre || (mv.tipo === 'apertura' ? 'N/A (Apertura)' : 'N/A')}</td>
+                            <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
+                          </tr>
+                        `).join('') : '<tr><td colspan="6" class="text-center p-4 text-sm text-gray-500">No hay movimientos en este turno.</td></tr>'}
+                      </tbody>
+                    </table>
+                  </div>
+              </div>
+              <div class="flex justify-end gap-3 mt-6">
+                <button id="btn-cerrar-detalle-modal-action-${turnoId}" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition">Cerrar Vista</button>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        loadingModal.remove(); // Remove loading modal
+        const detailModal = document.createElement('div');
+        detailModal.id = modalId;
+        detailModal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50 p-4 overflow-auto";
+        detailModal.innerHTML = html;
+        document.body.appendChild(detailModal);
+
+        document.getElementById(`btn-close-detalle-modal-${turnoId}`).onclick = () => detailModal.remove();
+        document.getElementById(`btn-cerrar-detalle-modal-action-${turnoId}`).onclick = () => detailModal.remove();
+
+    } catch (err) {
+        loadingModal.remove();
+        console.error("Error al mostrar detalle de cierre de caja:", err);
+        showReportesFeedback(feedbackElToUse || document.getElementById('reportes-feedback'), `Error al cargar detalle: ${err.message}`, 'error-indicator', 5000);
+    }
+}
+
+
+// --- NEW: Function to generate "Historial de Cierres de Caja" report ---
+async function generarReporteCierresDeCaja(resultsContainerEl, fechaInicioInput, fechaFinInput) {
+    if (!resultsContainerEl) return;
+    resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando historial de cierres de caja...</p>';
+    const feedbackEl = document.getElementById('reportes-feedback'); // General feedback element for the module
+
+    try {
+        const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
+        const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
+
+        const { data: cierres, error } = await supabaseClient
+        .from('turnos')
+        .select(`
+            id,
+            usuario_id,
+            usuarios (nombre, email),
+            fecha_cierre,
+            balance_final,
+            fecha_apertura 
+        `) // MODIFICADO: created_at -> fecha_apertura
+        .eq('hotel_id', currentHotelId)
+        .eq('estado', 'cerrado')
+        .gte('fecha_cierre', fechaInicioQuery)
+        .lte('fecha_cierre', fechaFinQuery)
+        .order('fecha_cierre', { ascending: false });
+
+    if (error) throw error;
+
+    if (!cierres || cierres.length === 0) {
+        resultsContainerEl.innerHTML = '<p class="text-center text-gray-500 p-4">No se encontraron cierres de caja para los criterios seleccionados.</p>';
+        return;
+    }
+
+        let html = `
+          <h4 class="text-lg font-semibold mb-3">Historial de Cierres de Caja (${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})})</h4>
+          <div class="table-container overflow-x-auto shadow-md rounded-lg">
+            <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-100">
+                <tr>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Usuario</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Fecha Apertura</th>
+                  <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Fecha Cierre</th>
+                  <th class="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Balance Final</th>
+                  <th class="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Acciones</th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">`;
+
+        cierres.forEach(cierre => {
+            const userName = cierre.usuarios?.nombre || cierre.usuarios?.email || 'Usuario del Sistema'; // Punto y coma añadido aquí
+            html += `
+                <tr class="hover:bg-gray-50 transition-colors duration-150">
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${userName}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(cierre.fecha_apertura)}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(cierre.fecha_cierre)}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 text-right font-medium">${formatCurrencyLocal(cierre.balance_final)}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-center">
+                        <button class="button button-outline button-small view-cierre-details" data-turno-id="${cierre.id}">
+                            Ver Detalle
+                        </button>
+                    </td>
+                </tr>`;
+        });
+
+        html += `
+              </tbody>
+            </table>
+          </div>`;
+        
+        resultsContainerEl.innerHTML = html;
+
+        // Add event listeners for "Ver Detalle" buttons
+        resultsContainerEl.querySelectorAll('.view-cierre-details').forEach(button => {
+            const turnoId = button.dataset.turnoId;
+            const buttonClickHandler = () => mostrarDetalleCierreCajaModal(turnoId, feedbackEl); // Asumiendo que feedbackEl está definido
+            button.addEventListener('click', buttonClickHandler);
+            moduleListeners.push({ element: button, type: 'click', handler: buttonClickHandler });
+        });
+
+    } catch (err) {
+        console.error('Error generating shift closures report:', err);
+        resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar historial de cierres: ${err.message}</p>`;
+        if (feedbackEl) showReportesFeedback(feedbackEl, `Error: ${err.message}`, 'error-indicator', 5000);
+    }
+}
+
+
 // --- Mount / Unmount ---
 export async function mount(container, sbInstance, user) {
   unmount(container); 
@@ -658,7 +921,7 @@ export async function mount(container, sbInstance, user) {
                 <option value="movimientos_financieros_global">Resumen Financiero Global</option>
                 <option value="detalle_ingresos_categoria">Detalle de Ingresos por Categoría</option>
                 <option value="detalle_egresos_categoria">Detalle de Egresos por Categoría</option>
-              </select>
+                <option value="cierres_de_caja">Historial de Cierres de Caja</option> </select>
             </div>
             <div class="form-group lg:col-span-1"><label for="reporte-fecha-inicio" class="block text-sm font-medium text-gray-700 mb-1">Desde:</label><input type="date" id="reporte-fecha-inicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
             <div class="form-group lg:col-span-1"><label for="reporte-fecha-fin" class="block text-sm font-medium text-gray-700 mb-1">Hasta:</label><input type="date" id="reporte-fecha-fin" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
@@ -692,11 +955,10 @@ export async function mount(container, sbInstance, user) {
   fechaFinEl.value = today.toISOString().split('T')[0];
 
   currentHotelId = user?.user_metadata?.hotel_id;
-  // ... (resto de la lógica de currentHotelId y carga de Chart.js como antes)
    if (!currentHotelId && user?.id) {
     try {
       const { data: perfil, error: perfilError } = await supabaseClient.from('usuarios').select('hotel_id').eq('id', user.id).single();
-      if (perfilError && perfilError.code !== 'PGRST116') throw perfilError;
+      if (perfilError && perfilError.code !== 'PGRST116') throw perfilError; // PGROST116: "No rows found" - allow this
       currentHotelId = perfil?.hotel_id;
     } catch(err) { console.error("Reports: Error fetching hotel_id from profile:", err); }
   }
@@ -715,9 +977,26 @@ export async function mount(container, sbInstance, user) {
     script.onload = () => console.log('Chart.js loaded for reports.');
     script.onerror = () => { console.error('Failed to load Chart.js'); showReportesFeedback(feedbackEl, 'Error al cargar librería de gráficos.', 'error-indicator', 5000);};
     document.head.appendChild(script);
-    moduleListeners.push({ element: script, type: 'remove-on-unmount' });
+    moduleListeners.push({ element: script, type: 'remove-on-unmount' }); // Special type to handle script removal
   }
 
+  // --- Manage visibility of 'Agrupar por' based on report type ---
+  const handleTipoReporteChange = () => {
+      const tipoReporte = tipoSelectEl.value;
+      const reportsRequiringAgrupacion = ['movimientos_financieros_global', 'detalle_ingresos_categoria', 'detalle_egresos_categoria'];
+      // Agrupacion is not relevant for listados, ocupacion (handled internally), or cierres_de_caja
+      const isAgrupacionRelevant = reportsRequiringAgrupacion.includes(tipoReporte);
+      agrupacionPeriodoEl.disabled = !isAgrupacionRelevant;
+      agrupacionPeriodoEl.parentElement.style.display = isAgrupacionRelevant ? 'block' : 'none';
+
+      if (!isAgrupacionRelevant) {
+          // Optional: Reset or set a default if not relevant
+          // agrupacionPeriodoEl.value = 'mensual'; 
+      }
+  };
+  tipoSelectEl.addEventListener('change', handleTipoReporteChange);
+  moduleListeners.push({ element: tipoSelectEl, type: 'change', handler: handleTipoReporteChange });
+  handleTipoReporteChange(); // Initial call to set visibility
 
   const handleGenerateClick = async () => {
     const tipoReporte = tipoSelectEl.value;
@@ -733,9 +1012,7 @@ export async function mount(container, sbInstance, user) {
     if (reportsRequiringAgrupacion.includes(tipoReporte) && !agrupacion) {
         showReportesFeedback(feedbackEl, 'Seleccione un período de agrupación.', 'error-indicator', 3000); return;
     }
-    agrupacionPeriodoEl.disabled = !reportsRequiringAgrupacion.includes(tipoReporte) && tipoReporte !== 'ocupacion' /* Ocupacion usa agrupacion diaria internamente */;
-
-
+    
     showReportesLoading(loadingEl, btnGenerarEl, true, 'Generando reporte, un momento...');
     clearReportesFeedback(feedbackEl);
     limpiarAreaResultados(resultadoContainerEl); 
@@ -744,49 +1021,35 @@ export async function mount(container, sbInstance, user) {
       if (tipoReporte === 'listado_reservas') await generarReporteListadoReservas(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'ocupacion') await generarReporteOcupacion(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'ingresos_por_habitaciones_periodo') await generarReporteIngresosPorPeriodo(resultadoContainerEl, fechaInicio, fechaFin);
+      else if (tipoReporte === 'cierres_de_caja') await generarReporteCierresDeCaja(resultadoContainerEl, fechaInicio, fechaFin); // --- NEW ---
       else if (reportsRequiringAgrupacion.includes(tipoReporte)) await generarReporteFinancieroGlobal(resultadoContainerEl, fechaInicio, fechaFin, agrupacion, tipoReporte);
       else {
         showReportesFeedback(feedbackEl, 'Tipo de reporte no implementado.', 'info-indicator', 3000);
         resultadoContainerEl.innerHTML = `<p class="text-gray-500 text-center p-4">El tipo de reporte '${tipoReporte}' no está disponible.</p>`;
       }
-      await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Generación reporte: ${tipoReporte}`, { fechaInicio, fechaFin, agrupacion });
+      await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Generación reporte: ${tipoReporte}`, { fechaInicio, fechaFin, agrupacion: agrupacionPeriodoEl.disabled ? 'N/A' : agrupacion });
     } catch (err) {
         console.error("Error in handleGenerateClick:", err);
         showReportesFeedback(feedbackEl, `Error al generar reporte: ${err.message}`, 'error-indicator', 0);
         resultadoContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error inesperado. Revise consola.</p>`;
-        await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Error reporte: ${tipoReporte}`, { error: err.message, fechaInicio, fechaFin, agrupacion });
+        await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Error reporte: ${tipoReporte}`, { error: err.message, fechaInicio, fechaFin, agrupacion: agrupacionPeriodoEl.disabled ? 'N/A' : agrupacion });
     } finally {
         showReportesLoading(loadingEl, btnGenerarEl, false);
     }
   };
   
-  tipoSelectEl.addEventListener('change', () => {
-      const tipoReporte = tipoSelectEl.value;
-      const reportsRequiringAgrupacion = ['movimientos_financieros_global', 'detalle_ingresos_categoria', 'detalle_egresos_categoria'];
-      // Ocupacion no usa el selector de agrupacion, siempre es diario internamente para el gráfico de linea.
-      // Para otros reportes que no sean financieros detallados, la agrupación puede no ser relevante.
-      const isAgrupacionRelevant = reportsRequiringAgrupacion.includes(tipoReporte);
-      agrupacionPeriodoEl.disabled = !isAgrupacionRelevant;
-      if (!isAgrupacionRelevant) {
-          // Opcional: resetear o poner un valor por defecto si no es relevante
-          // agrupacionPeriodoEl.value = 'mensual'; 
-      }
-  });
-
-
   btnGenerarEl.addEventListener('click', handleGenerateClick);
   moduleListeners.push({ element: btnGenerarEl, type: 'click', handler: handleGenerateClick });
-  moduleListeners.push({ element: tipoSelectEl, type: 'change', handler: tipoSelectEl.onchange });
 }
 
 export function unmount(container) {
-  // ... (Código sin cambios significativos, igual al proporcionado anteriormente)
   Object.keys(currentChartInstances).forEach(destroyChartInstance);
   currentChartInstances = {};
 
   moduleListeners.forEach(({ element, type, handler }) => {
     if (type === 'remove-on-unmount' && element && element.parentNode) {
-        // element.parentNode.removeChild(element); 
+        // For scripts specifically
+        // element.parentNode.removeChild(element); // Be cautious with this, ensure it's what you want.
     } else if (element && typeof element.removeEventListener === 'function') {
       element.removeEventListener(type, handler);
     }
@@ -794,7 +1057,11 @@ export function unmount(container) {
   moduleListeners = [];
   currentHotelId = null; currentModuleUser = null; supabaseClient = null; 
 
-  if (container) {
+  // Remove any dynamically created modals that might persist
+  const modals = document.querySelectorAll('div[id^="modal-detalle-cierre-"]');
+  modals.forEach(modal => modal.remove());
+
+  if (container) { // Check if container exists before trying to query its children
       const feedbackEl = container.querySelector('#reportes-feedback');
       if (feedbackEl) clearReportesFeedback(feedbackEl);
       const resultadoContainerEl = container.querySelector('#reporte-resultado-container');

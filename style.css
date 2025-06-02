@@ -339,10 +339,7 @@ html, body {
 .mt-auto { margin-top: auto; }
 .px-4 { padding-left: 1rem; padding-right: 1rem; }
 .p-4 { padding: 1rem; }
-.md\:p-6 { /* This is a Tailwind-like class, ensure you have a system for this or use standard CSS */
-  /* Assuming this means "padding: 1.5rem on medium screens and up" */
-  /* This would typically be handled by a utility class system or more specific media queries */
-}
+
 @media (min-width: 768px) { /* Example for md: breakpoint */
   .md\:p-6 {
     padding: 1.5rem;

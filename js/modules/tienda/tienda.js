@@ -15,6 +15,24 @@ let productosCache = [];
 
 import { turnoService } from '../../services/turnoService.js';
 import { showError, showSuccess } from '../../uiUtils.js';
+import { fetchTurnoActivo } from '../../services/turnoService.js';
+
+async function checkTurnoActivo(supabase, hotelId, usuarioId) {
+  const turno = await fetchTurnoActivo(supabase, hotelId, usuarioId);
+  if (!turno) {
+    // Bloquea acciones aquí y muestra mensaje:
+    mostrarInfoModalGlobal(
+      "Acción bloqueada: No hay un turno de caja abierto. Ábrelo desde el módulo de Caja.",
+      "Turno Requerido"
+    );
+    // O muestra un botón para abrir el turno directamente (solo si es seguro).
+    return false;
+  }
+  // Si hay turno, sigue con el flujo normal
+  return true;
+}
+
+
 // ---------  MONTAJE PRINCIPAL Y NAVEGACION DE PESTAÑAS ----------
 export async function mount(container, supabase, user, hotelId) {
   currentContainerEl = container;
@@ -55,6 +73,33 @@ function renderTiendaTabs(tab) {
   if(tab === 'Compras') renderModuloCompras();
   if(tab === 'Compras Pendientes') renderComprasPendientes();
 
+}
+// ==== FUNCIONES UTILITARIAS PARA TIENDA.JS ====
+
+// Formatea un número a moneda local (COP)
+function formatCurrency(num) {
+  return '$' + Number(num || 0).toLocaleString('es-CO', { minimumFractionDigits: 0 });
+}
+
+// Muestra un loader global (puedes personalizar esto)
+function showGlobalLoading(msg="Cargando...") {
+  if (document.getElementById('globalLoadingModal')) return;
+  const div = document.createElement('div');
+  div.id = 'globalLoadingModal';
+  div.style = `
+    position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:999999;
+    background:rgba(51,65,85,0.13);display:flex;align-items:center;justify-content:center;`;
+  div.innerHTML = `<div style="background:#fff;padding:36px 36px 22px 36px;border-radius:16px;box-shadow:0 8px 60px #2563eb40;text-align:center;">
+    <div style="font-size:2em;color:#1d4ed8;margin-bottom:14px;">⏳</div>
+    <div style="font-size:1.13em;font-weight:600;">${msg}</div>
+  </div>`;
+  document.body.appendChild(div);
+}
+
+// Oculta el loader global
+function hideGlobalLoading() {
+  let modal = document.getElementById('globalLoadingModal');
+  if (modal) modal.remove();
 }
 
 // ====================  BLOQUE POS COMPLETO CON "PAGO MIXTO" POR DEFECTO ====================
@@ -2096,50 +2141,25 @@ async function cargarDetallesCompras(compras) {
 }
 
 // 9. Renderiza una tarjeta de compra pendiente con inputs de recepción
+// NUEVAS FUNCIONES PARA EDITAR Y CANCELAR COMPRAS PENDIENTES
+
+// Botón "Editar" y "Cancelar" para cada compra pendiente
 function renderTarjetaCompraPendiente(compra) {
   let productosHtml = '';
   if (compra.detalles) {
     productosHtml = compra.detalles.map(det => `
       <li style="padding:7px 0; border-bottom:1px solid #fef9c3;">
         <span style="font-weight:600; color:#1e293b;">${det.nombre}:</span>
-        <b style="color:#0ea5e9; margin-left:3px;">${det.cantidad}</b>
-        <span style="color:#64748b;">x</span>
-        <span style="color:#059669;">$${parseFloat(det.precio_unitario).toLocaleString('es-CO')}</span>
-        <br>
-        <label style="font-size:0.95em; color:#444;">
-          Recibido:
-          <input type="number"
-            id="recibido_${compra.id}_${det.producto_id}"
-            value="${det.cantidad}"
-            max="${det.cantidad}"
-            min="0"
-            style="
-              width:65px;
-              margin-left:7px;
-              padding:5px 7px;
-              border-radius:6px;
-              border:1.3px solid #cbd5e1;
-              background:#f9fafb;
-              text-align:center;
-            ">
-        </label>
+        <input type="number" id="edit_cantidad_${compra.id}_${det.producto_id}" value="${det.cantidad}" min="0" style="width:65px; padding:5px 7px; border-radius:6px; border:1.3px solid #cbd5e1; background:#f9fafb; text-align:center;">
+        x
+        <input type="number" id="edit_precio_${compra.id}_${det.producto_id}" value="${det.precio_unitario}" min="0" step="0.01" style="width:80px; padding:5px 7px; border-radius:6px; border:1.3px solid #cbd5e1; background:#f9fafb; text-align:center;">
       </li>
     `).join('');
   }
 
   return `
-    <div style="
-      border-radius:11px;
-      background:#fef9c3;
-      border:1.7px solid #fde047;
-      box-shadow:0 2px 10px #fde04738;
-      margin-bottom:23px;
-      padding:24px 18px 16px 18px;
-      max-width:520px;
-      font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
-    " data-id="${compra.id}">
+    <div style="border-radius:11px;background:#fef9c3;border:1.7px solid #fde047;box-shadow:0 2px 10px #fde04738;margin-bottom:23px;padding:24px 18px 16px 18px;max-width:520px;">
       <div style="margin-bottom:11px; font-size:1.07em; font-weight:700; color:#b45309;">
-        <span style="font-size:1.25em;vertical-align:-4px;">🏢</span>
         Proveedor: <span style="color:#2563eb;">${getProveedorNombre(compra.proveedor_id)}</span>
       </div>
       <ul style="list-style:disc inside;margin-bottom:13px;">
@@ -2148,27 +2168,51 @@ function renderTarjetaCompraPendiente(compra) {
       <div style="margin-bottom:13px; font-weight:700; font-size:1.1em; color:#166534;">
         Total: $${parseFloat(compra.total_compra).toLocaleString('es-CO')}
       </div>
-      <button onclick="window.recibirPedido('${compra.id}')"
-        style="
-          background:linear-gradient(90deg,#16a34a,#22c55e);
-          color:#fff;
-          font-size:1em;
-          padding:8px 28px;
-          border:none;
-          border-radius:7px;
-          font-weight:700;
-          cursor:pointer;
-          box-shadow:0 1px 5px #22c55e22;
-          transition:background 0.18s;
-          margin-right:13px;
-        "
-        onmouseover="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
-        onmouseout="this.style.background='linear-gradient(90deg,#16a34a,#22c55e)'"
-      >Recibir pedido</button>
-      <span id="msgRecibido_${compra.id}" style="margin-left:13px; font-size:0.99em; color:#64748b;"></span>
-    </div>
-  `;
+      <div style="display:flex;gap:8px;">
+        <button onclick="window.guardarEdicionCompra('${compra.id}')" style="background:#3b82f6;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;">💾 Guardar</button>
+        <button onclick="window.recibirPedido('${compra.id}')" style="background:#16a34a;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;">✔️ Recibir</button>
+        <button onclick="window.cancelarCompra('${compra.id}')" style="background:#ef4444;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;">❌ Cancelar</button>
+      </div>
+      <div id="msgRecibido_${compra.id}" style="margin-top:6px;font-size:0.95em;color:#64748b;"></div>
+    </div>`;
 }
+
+window.guardarEdicionCompra = async function (compraId) {
+  const { data: detalles } = await currentSupabase
+    .from('detalle_compras_tienda')
+    .select('*')
+    .eq('compra_id', compraId);
+
+  let totalNuevo = 0;
+
+  for (let det of detalles) {
+    const nuevaCantidad = Number(document.getElementById(`edit_cantidad_${compraId}_${det.producto_id}`).value);
+    const nuevoPrecio = Number(document.getElementById(`edit_precio_${compraId}_${det.producto_id}`).value);
+    const subtotal = nuevaCantidad * nuevoPrecio;
+    totalNuevo += subtotal;
+
+    await currentSupabase.from('detalle_compras_tienda')
+      .update({ cantidad: nuevaCantidad, precio_unitario: nuevoPrecio, subtotal })
+      .eq('compra_id', compraId)
+      .eq('producto_id', det.producto_id);
+  }
+
+  await currentSupabase.from('compras_tienda')
+    .update({ total_compra: totalNuevo })
+    .eq('id', compraId);
+
+  showSuccess(document.getElementById(`msgRecibido_${compraId}`), 'Cambios guardados.');
+  renderComprasPendientes();
+};
+
+window.cancelarCompra = async function (compraId) {
+  await currentSupabase.from('compras_tienda')
+    .update({ estado: 'cancelada' })
+    .eq('id', compraId);
+
+  showSuccess(document.getElementById(`msgRecibido_${compraId}`), 'Compra cancelada.');
+  renderComprasPendientes();
+};
 
 
 // 10. Obtiene el nombre del proveedor por id (de tu cache)

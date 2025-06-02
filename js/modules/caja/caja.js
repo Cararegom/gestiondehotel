@@ -94,31 +94,77 @@ async function cerrarTurno() {
       .select('*, usuarios(nombre), metodos_pago(nombre)')
       .eq('turno_id', turnoActivo.id)
       .order('creado_en', { ascending: true });
+
     if (movError) throw movError;
     if (!movimientos || movimientos.length === 0) {
       showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos en este turno para generar un reporte.');
+      hideGlobalLoading();
       return;
     }
-    const totalIngresos = movimientos.filter(m => m.tipo === 'ingreso').reduce((acc, m) => acc + Number(m.monto), 0);
-    const totalEgresos = movimientos.filter(m => m.tipo === 'egreso').reduce((acc, m) => acc + Number(m.monto), 0);
-    const balance = totalIngresos - totalEgresos;
+
+    const montoApertura = parseFloat(movimientos.find(m => m.tipo === 'apertura')?.monto || 0);
+
+    const totalIngresosOperacionales = movimientos
+      .filter(m => m.tipo === 'ingreso') // Solo ingresos operacionales
+      .reduce((acc, m) => acc + Number(m.monto), 0);
+
+    const totalEgresos = movimientos
+      .filter(m => m.tipo === 'egreso')
+      .reduce((acc, m) => acc + Number(m.monto), 0);
+
+    const balanceOperacional = totalIngresosOperacionales - totalEgresos;
+    const balanceFinalEnCaja = montoApertura + balanceOperacional; // Este es el que se guarda
+
     const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
     const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Usuario del Sistema';
-    const htmlReporte = generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaCierre);
+
+    const ingresosOperacionalesPorMetodo = {}; // Solo para ingresos de tipo 'ingreso'
+    const egresosPorMetodo = {};
+
+    movimientos.forEach(mv => {
+      const nombreMetodo = mv.metodos_pago?.nombre || 'No especificado';
+      if (mv.tipo === 'ingreso') { // Excluye 'apertura' para este desglose
+        if (!ingresosOperacionalesPorMetodo[nombreMetodo]) {
+          ingresosOperacionalesPorMetodo[nombreMetodo] = 0;
+        }
+        ingresosOperacionalesPorMetodo[nombreMetodo] += Number(mv.monto);
+      } else if (mv.tipo === 'egreso') {
+        if (!egresosPorMetodo[nombreMetodo]) {
+          egresosPorMetodo[nombreMetodo] = 0;
+        }
+        egresosPorMetodo[nombreMetodo] += Number(mv.monto);
+      }
+    });
+
+    const htmlReporte = generarHTMLReporteCierre(
+      movimientos,
+      montoApertura,
+      totalIngresosOperacionales,
+      totalEgresos,
+      balanceOperacional,         // Balance de las operaciones
+      balanceFinalEnCaja,         // Dinero total esperado en caja
+      usuarioNombre,
+      fechaCierre,
+      ingresosOperacionalesPorMetodo, // Desglose de ingresos operacionales
+      egresosPorMetodo
+    );
+
     await enviarReporteCierreCaja({
       asunto: `Cierre de Turno - ${usuarioNombre} - ${fechaCierre}`,
       htmlReporte: htmlReporte,
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
+
     const { error: updateError } = await currentSupabaseInstance
       .from('turnos')
       .update({
         estado: 'cerrado',
         fecha_cierre: new Date().toISOString(),
-        balance_final: balance
+        balance_final: balanceFinalEnCaja // Se guarda el balance final completo
       })
       .eq('id', turnoActivo.id);
     if (updateError) throw updateError;
+
     showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno cerrado y reporte enviado con éxito!');
     turnoActivo = null;
     turnoService.clearActiveTurn();
@@ -705,29 +751,126 @@ async function popularMetodosPagoSelect(selectEl) {
   }
 }
 
-function generarHTMLReporteCierre(movimientos, totalIngresos, totalEgresos, balance, usuarioNombre, fechaCierre) {
+function generarHTMLReporteCierre(
+  movimientos,
+  montoApertura,
+  totalIngresosOperacionales,
+  totalEgresos,
+  balanceOperacional,      // Balance de Ingresos Op. vs Egresos
+  balanceFinalEnCaja,      // Monto Apertura + Balance Op.
+  usuarioNombre,
+  fechaCierre,
+  ingresosOperacionalesPorMetodo, // Ya no incluye "Saldo Apertura"
+  egresosPorMetodo
+) {
+  const styles = {
+    body: `font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; background-color: #f4f4f4; margin: 0; padding: 20px;`,
+    container: `max-width: 700px; margin: 20px auto; padding: 25px; border: 1px solid #ddd; border-radius: 10px; background-color: #ffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);`,
+    header: `color: #2c3e50; font-size: 24px; text-align: center; margin-bottom: 10px; border-bottom: 2px solid #3498db; padding-bottom: 10px;`,
+    subHeader: `font-size: 16px; color: #555; text-align: center; margin-bottom: 25px;`,
+    sectionTitle: `font-size: 18px; color: #3498db; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 8px;`,
+    table: `width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 13px;`,
+    th: `border: 1px solid #ddd; padding: 10px; text-align: left; background-color: #eaf2f8; color: #333; font-weight: bold;`,
+    td: `border: 1px solid #ddd; padding: 10px; text-align: left;`,
+    summaryTable: `width: auto; margin-left: auto; margin-right: auto; margin-top: 20px; font-size: 14px; min-width: 450px;`,
+    summaryTdLabel: `border: 1px solid #ddd; padding: 10px; text-align: right; font-weight: bold; background-color: #f9f9f9; white-space: nowrap;`,
+    summaryTdValue: `border: 1px solid #ddd; padding: 10px; text-align: right;`,
+    aperturaColor: `color: #8e44ad; font-weight: bold;`,
+    ingresosColor: `color: #27ae60; font-weight: bold;`,
+    egresosColor: `color: #c0392b; font-weight: bold;`,
+    balanceOpColorPos: `color: #16a085; font-weight: bold;`, // Turquesa
+    balanceOpColorNeg: `color: #e67e22; font-weight: bold;`, // Naranja
+    balanceFinalColorPos: `color: #2980b9; font-weight: bold; font-size: 1.1em;`, // Azul
+    balanceFinalColorNeg: `color: #c0392b; font-weight: bold; font-size: 1.1em;`, // Rojo
+    footer: `text-align: center; font-size: 12px; color: #777; margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee;`
+  };
+
+  let desgloseIngresosHtml = '';
+  if (Object.keys(ingresosOperacionalesPorMetodo).length > 0) {
+    for (const metodo in ingresosOperacionalesPorMetodo) {
+      desgloseIngresosHtml += `<tr><td style="${styles.td}">${metodo}</td><td style="${styles.td} text-align:right; ${styles.ingresosColor}">${formatCurrency(ingresosOperacionalesPorMetodo[metodo])}</td></tr>`;
+    }
+  } else {
+    desgloseIngresosHtml = `<tr><td colspan="2" style="${styles.td} text-align:center;">No hubo ingresos operacionales detallados por método.</td></tr>`;
+  }
+
+  let desgloseEgresosHtml = '';
+  if (Object.keys(egresosPorMetodo).length > 0) {
+    for (const metodo in egresosPorMetodo) {
+      desgloseEgresosHtml += `<tr><td style="${styles.td}">${metodo}</td><td style="${styles.td} text-align:right; ${styles.egresosColor}">${formatCurrency(egresosPorMetodo[metodo])}</td></tr>`;
+    }
+  } else {
+    desgloseEgresosHtml = `<tr><td colspan="2" style="${styles.td} text-align:center;">No hubo egresos detallados por método.</td></tr>`;
+  }
+
   return `
-    <h2 style="color:#2061a9; font-family: Arial, sans-serif;">Cierre de Turno - ${fechaCierre}</h2>
-    <p style="font-family: Arial, sans-serif;"><b>Realizado por:</b> ${usuarioNombre}</p>
-    <table border="1" cellpadding="7" cellspacing="0" style="width:100%;">
-      <thead style="background:#f0f0f0;">
-        <tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Método Pago</th></tr>
-      </thead>
-      <tbody>
-        ${movimientos.map(mv => `
-          <tr>
-            <td>${formatDateTime(mv.creado_en)}</td>
-            <td>${mv.tipo}</td>
-            <td style="text-align:right; color: ${mv.tipo === 'ingreso' ? 'green' : 'red'};">${formatCurrency(mv.monto)}</td>
-            <td>${mv.concepto || ''}</td>
-            <td>${mv.metodos_pago?.nombre || 'N/A'}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-    <p><b>Ingresos totales:</b> ${formatCurrency(totalIngresos)}<br>
-       <b>Egresos totales:</b> ${formatCurrency(totalEgresos)}<br>
-       <b style="font-size: 1.1em;">Balance del Turno: ${formatCurrency(balance)}</b></p>`;
+    <body style="${styles.body}">
+      <div style="${styles.container}">
+        <h1 style="${styles.header}">Reporte de Cierre de Turno</h1>
+        <p style="${styles.subHeader}"><strong>Realizado por:</strong> ${usuarioNombre}<br>
+        <strong>Fecha de Cierre:</strong> ${fechaCierre}</p>
+
+        <h2 style="${styles.sectionTitle}">Resumen General del Turno</h2>
+        <table style="${styles.table} ${styles.summaryTable}">
+          <tr><td style="${styles.summaryTdLabel}">Monto de Apertura:</td><td style="${styles.summaryTdValue} ${styles.aperturaColor}">${formatCurrency(montoApertura)}</td></tr>
+          <tr><td style="${styles.summaryTdLabel}">Total Ingresos (Operacionales):</td><td style="${styles.summaryTdValue} ${styles.ingresosColor}">${formatCurrency(totalIngresosOperacionales)}</td></tr>
+          <tr><td style="${styles.summaryTdLabel}">Total Egresos (Operacionales):</td><td style="${styles.summaryTdValue} ${styles.egresosColor}">${formatCurrency(totalEgresos)}</td></tr>
+          <tr><td style="${styles.summaryTdLabel}">Balance de Operaciones del Turno:</td><td style="${styles.summaryTdValue} ${balanceOperacional >= 0 ? styles.balanceOpColorPos : styles.balanceOpColorNeg}">${formatCurrency(balanceOperacional)}</td></tr>
+          <tr><td style="${styles.summaryTdLabel}">Efectivo Esperado en Caja al Cierre:</td><td style="${styles.summaryTdValue} ${balanceFinalEnCaja >= 0 ? styles.balanceFinalColorPos : styles.balanceFinalColorNeg}">${formatCurrency(balanceFinalEnCaja)}</td></tr>
+        </table>
+
+        <h2 style="${styles.sectionTitle}">Desglose de Movimientos Operacionales por Método de Pago</h2>
+        <h3 style="font-size: 16px; color: #27ae60; margin-top: 20px; margin-bottom: 10px;">Ingresos Operacionales por Método:</h3>
+        <table style="${styles.table}">
+          <thead><tr><th style="${styles.th}">Método de Pago</th><th style="${styles.th}" style="text-align:right;">Monto Ingresado</th></tr></thead>
+          <tbody>${desgloseIngresosHtml}</tbody>
+        </table>
+
+        <h3 style="font-size: 16px; color: #c0392b; margin-top: 20px; margin-bottom: 10px;">Egresos por Método:</h3>
+        <table style="${styles.table}">
+          <thead><tr><th style="${styles.th}">Método de Pago</th><th style="${styles.th}" style="text-align:right;">Monto Egresado</th></tr></thead>
+          <tbody>${desgloseEgresosHtml}</tbody>
+        </table>
+        
+        <h2 style="${styles.sectionTitle}">Detalle de Todos los Movimientos del Turno (Incl. Apertura)</h2>
+        <table style="${styles.table}">
+          <thead>
+            <tr>
+              <th style="${styles.th}">Fecha</th>
+              <th style="${styles.th}">Tipo</th>
+              <th style="${styles.th}">Concepto</th>
+              <th style="${styles.th}">Método Pago</th>
+              <th style="${styles.th}" style="text-align:right;">Monto</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${movimientos.map(mv => {
+              let tipoDisplay = mv.tipo.charAt(0).toUpperCase() + mv.tipo.slice(1);
+              let montoColorStyle = ''; 
+              if (mv.tipo === 'apertura') {
+                montoColorStyle = styles.aperturaColor;
+              } else if (mv.tipo === 'ingreso') {
+                montoColorStyle = styles.ingresosColor;
+              } else if (mv.tipo === 'egreso') {
+                montoColorStyle = styles.egresosColor;
+              }
+              
+              return `
+              <tr>
+                <td style="${styles.td}">${formatDateTime(mv.creado_en)}</td>
+                <td style="${styles.td}">${tipoDisplay}</td>
+                <td style="${styles.td}">${mv.concepto || ''}</td>
+                <td style="${styles.td}">${mv.metodos_pago?.nombre || (mv.tipo === 'apertura' ? 'N/A (Apertura)' : 'N/A')}</td>
+                <td style="${styles.td} text-align:right; ${montoColorStyle}">
+                  ${formatCurrency(mv.monto)}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        <div style="${styles.footer}">Este es un reporte automático generado por el sistema.</div>
+      </div>
+    </body>`;
 }
 
 async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
