@@ -5,130 +5,130 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iniciar Sesión - Gestión Hotelera</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        .loader {
-            border: 4px solid #f3f3f3; /* Light grey */
-            border-top: 4px solid #3498db; /* Blue */
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            margin-right: 8px;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+      body {
+        font-family: 'Montserrat', 'Segoe UI', 'Inter', Arial, sans-serif;
+        /* Fondo degradado animado */
+        background: linear-gradient(120deg, #0f172a 0%, #2563eb 100%);
+        min-height: 100vh;
+      }
+      .login-card {
+        background: rgba(255,255,255,0.98);
+        border-radius: 1.5rem;
+        box-shadow: 0 12px 40px 0 #0f172a44, 0 2px 6px #2563eb22;
+        border: 1.5px solid #dbeafe;
+        margin-top: 3rem;
+        margin-bottom: 3rem;
+        transition: box-shadow .2s;
+      }
+      .login-card:focus-within {
+        box-shadow: 0 20px 50px 0 #1e40af66;
+      }
+      .loader {
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #2563eb;
+          border-radius: 50%;
+          width: 24px;
+          height: 24px;
+          animation: spin 1s linear infinite;
+          margin-right: 8px;
+      }
+      @keyframes spin {
+          0% { transform: rotate(0deg);}
+          100% { transform: rotate(360deg);}
+      }
     </style>
 </head>
-<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+<body class="flex items-center justify-center min-h-screen">
 
-    <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md">
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-bold text-gray-800">Bienvenido</h1>
-            <p class="text-gray-600 mt-2">Inicia sesión para administrar tu hotel.</p>
-        </div>
-
-        <form id="login-form" class="space-y-6">
-            <div>
-                <label for="email" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
-                <input type="email" name="email" id="email" required
-                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                       placeholder="tu@correo.com">
-            </div>
-
-            <div>
-                <label for="password" class="block text-sm font-medium text-gray-700">Contraseña</label>
-                <input type="password" name="password" id="password" required
-                       class="mt-1 block w-full px-4 py-3 border border-gray-300 rounded-lg shadow-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                       placeholder="Tu contraseña">
-            </div>
-
-            <div id="login-error-message" class="text-red-500 text-sm font-medium text-center" role="alert" aria-live="assertive">
-                </div>
-
-            <div>
-                <button type="submit" id="login-submit-button"
-                        class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70">
-                    <span class="loader" style="display: none;"></span>
-                    <span class="button-text">Iniciar Sesión</span>
-                </button>
-            </div>
-        </form>
-        <p class="mt-6 text-center text-sm text-gray-600">
-            ¿No tienes cuenta? <a href="#/registro" class="font-medium text-indigo-600 hover:text-indigo-500">Regístrate aquí</a>
-            <br>
-            <a href="#/password-reset" class="font-medium text-indigo-600 hover:text-indigo-500 mt-2 inline-block">¿Olvidaste tu contraseña?</a>
-        </p>
+  <div class="w-full max-w-md mx-auto login-card p-8 shadow-2xl border relative">
+    <div class="flex flex-col items-center mb-7">
+      <img src="/icons/logo.jpeg" alt="Gestión Hotelera" style="width:75px;height:75px;object-fit:cover;border-radius:20px;box-shadow:0 2px 12px #2563eb33;">
+      <h1 class="text-3xl md:text-4xl font-extrabold text-gray-900 mt-4 text-center tracking-tight drop-shadow-lg">Gestión de Hotel</h1>
+      <span class="text-indigo-700 text-lg font-bold mt-1 mb-2">Inicio de Sesión</span>
     </div>
+    <form id="login-form" class="space-y-6">
+        <div>
+            <label for="email" class="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
+            <input type="email" name="email" id="email" required
+                   class="mt-1 block w-full px-4 py-3 border-2 border-indigo-100 rounded-xl shadow focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-blue-50 text-gray-700 placeholder-gray-400 text-base transition"
+                   placeholder="tu@correo.com">
+        </div>
+        <div>
+            <label for="password" class="block text-sm font-bold text-gray-700 mb-1">Contraseña</label>
+            <input type="password" name="password" id="password" required
+                   class="mt-1 block w-full px-4 py-3 border-2 border-indigo-100 rounded-xl shadow focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-blue-50 text-gray-700 placeholder-gray-400 text-base transition"
+                   placeholder="Tu contraseña">
+        </div>
+        <div id="login-error-message" class="text-red-600 text-sm font-bold text-center" role="alert" aria-live="assertive"></div>
+        <div>
+            <button type="submit" id="login-submit-button"
+                class="w-full flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-lg font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-70">
+                <span class="loader" style="display: none;"></span>
+                <span class="button-text">Iniciar Sesión</span>
+            </button>
+        </div>
+    </form>
+    <p class="mt-7 text-center text-sm text-gray-600">
+    ¿No tienes cuenta? 
+    <a href="/index.html?modal=registro" class="font-extrabold text-indigo-600 hover:text-indigo-500 transition">Regístrate aquí</a>
+    <br>
+    <a href="/password-reset.html" class="font-bold text-indigo-600 hover:text-indigo-500 mt-2 inline-block">¿Olvidaste tu contraseña?</a>
+</p>
+    <div class="w-full h-2 rounded-full bg-gradient-to-r from-indigo-500 via-blue-400 to-cyan-400 opacity-90 mt-6"></div>
+  </div>
 
-    <script type="module">
-      // Importar la instancia de supabase directamente.
-      // Asumiendo que login.html está en la raíz y js/supabaseClient.js es la ruta correcta.
-      import { supabase } from './js/supabaseClient.js'; 
+  <script type="module">
+    import { supabase } from './js/supabaseClient.js'; 
 
-      const loginForm = document.getElementById('login-form');
-      const errorMessageElement = document.getElementById('login-error-message');
-      const submitButton = document.getElementById('login-submit-button');
-      const loader = submitButton.querySelector('.loader');
-      const buttonTextSpan = submitButton.querySelector('.button-text'); // Para el texto del botón
+    const loginForm = document.getElementById('login-form');
+    const errorMessageElement = document.getElementById('login-error-message');
+    const submitButton = document.getElementById('login-submit-button');
+    const loader = submitButton.querySelector('.loader');
+    const buttonTextSpan = submitButton.querySelector('.button-text');
 
-      if (loginForm) {
-        loginForm.addEventListener('submit', async (e) => {
-          e.preventDefault();
-          if (errorMessageElement) errorMessageElement.textContent = ''; 
-          
-          const emailInput = loginForm.querySelector('input[name="email"]');
-          const passwordInput = loginForm.querySelector('input[name="password"]');
+    if (loginForm) {
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (errorMessageElement) errorMessageElement.textContent = ''; 
+        const emailInput = loginForm.querySelector('input[name="email"]');
+        const passwordInput = loginForm.querySelector('input[name="password"]');
+        if (!emailInput || !passwordInput) {
+            if (errorMessageElement) errorMessageElement.textContent = 'Error interno del formulario.';
+            return;
+        }
+        const email = emailInput.value;
+        const password = passwordInput.value;
 
-          if (!emailInput || !passwordInput) {
-              console.error("No se encontraron los campos de email o contraseña en el formulario de login.");
-              if (errorMessageElement) errorMessageElement.textContent = 'Error interno del formulario.';
-              return;
+        if (submitButton) {
+          submitButton.disabled = true;
+          if(loader) loader.style.display = 'inline-block';
+          if(buttonTextSpan) buttonTextSpan.textContent = 'Procesando...';
+        }
+
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email: email,
+            password: password,
+          });
+
+          if (error) {
+            if (errorMessageElement) errorMessageElement.textContent = error.message || "Correo o contraseña incorrectos.";
+          } else {
+            window.location.href = '/app/index.html#/dashboard'; 
           }
-
-          const email = emailInput.value;
-          const password = passwordInput.value;
-
+        } catch (err) {
+          if (errorMessageElement) errorMessageElement.textContent = 'Ocurrió un error inesperado. Intente de nuevo.';
+        } finally {
           if (submitButton) {
-            submitButton.disabled = true;
-            if(loader) loader.style.display = 'inline-block';
-            if(buttonTextSpan) buttonTextSpan.textContent = 'Procesando...';
+              submitButton.disabled = false;
+              if(loader) loader.style.display = 'none';
+              if(buttonTextSpan) buttonTextSpan.textContent = 'Iniciar Sesión';
           }
-
-          try {
-            const { data, error } = await supabase.auth.signInWithPassword({
-              email: email,
-              password: password,
-            });
-
-            if (error) {
-              console.error("Error de inicio de sesión:", error.message);
-              if (errorMessageElement) errorMessageElement.textContent = error.message || "Correo o contraseña incorrectos.";
-            } else {
-              console.log("Inicio de sesión exitoso. Usuario:", data.user);
-              // Redirigir a la página principal que carga main.js
-              // Asegúrate de que '/index.html' sea la página correcta.
-              // Si tu servidor sirve index.html en la raíz ('/'), puedes usar solo '/#/dashboard'.
-              window.location.href = '/index.html#/dashboard'; 
-            }
-          } catch (err) {
-            console.error("Excepción durante el inicio de sesión:", err);
-            if (errorMessageElement) errorMessageElement.textContent = 'Ocurrió un error inesperado. Intente de nuevo.';
-          } finally {
-            if (submitButton) {
-                submitButton.disabled = false;
-                if(loader) loader.style.display = 'none';
-                if(buttonTextSpan) buttonTextSpan.textContent = 'Iniciar Sesión';
-            }
-          }
-        });
-      } else {
-        console.warn("Formulario de login con id 'login-form' no encontrado.");
-      }
-    </script>
+        }
+      });
+    }
+  </script>
 </body>
 </html>

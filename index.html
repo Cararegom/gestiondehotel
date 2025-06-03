@@ -2,84 +2,665 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <title>Gestión de Hotel | Transforma tu Hotel - Prueba TODO GRATIS 30 Días</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Hotel</title>
+    <meta name="description" content="Software de gestión hotelera diseñado para Latinoamérica. Optimiza reservas (¡también por horas!), habitaciones y aumenta tu rentabilidad. Prueba TODAS las funciones GRATIS por 30 días. Sin tarjeta, solo regístrate.">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              'primary': '#1d4ed8',
-              'secondary': '#f59e0b',
-              'accent': '#10b981',
-            }
-          }
-        }
+    <script type="importmap">
+    {
+      "imports": {
+        "chart.js": "https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js",
+        "bootstrap": "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
       }
+    }
     </script>
-    <!-- Fuente Montserrat PRO para modales bonitos -->
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            line-height: 1.7;
+            color: #333;
+        }
+
+        .hero-section {
+            /* --- AJUSTES PARA MEJORAR LEGIBILIDAD DEL TEXTO --- */
+            /* Incrementamos la opacidad del gradiente para oscurecer más el fondo */
+            background-image: linear-gradient(rgba(26, 92, 163, 0.92), rgba(26, 92, 163, 0.88)), url('hero-background.png');
+            /* Si tu imagen es muy clara, podrías probar valores aún más altos, ej: 0.95, 0.90 */
+            /* O un color más oscuro en el gradiente, ej: rgba(10, 50, 100, 0.92), rgba(10, 50, 100, 0.88) */
+
+            background-size: cover;
+            background-position: center center;
+            color: #fff; /* Mantenemos el color de texto principal en blanco */
+            padding-top: 160px;
+            padding-bottom: 120px;
+            min-height: 75vh;
+            display: flex;
+            align-items: center;
+            text-align: center;
+            /* Quitamos el borde rojo de debugging si ya no es necesario */
+            /* border: 5px solid red; */
+        }
+
+        .hero-section .container {
+            max-width: 850px;
+            animation: fadeInHeroContent 1s ease-out forwards;
+        }
+
+        @keyframes fadeInHeroContent {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .hero-section h1 {
+            font-weight: 800;
+            font-size: clamp(2.8rem, 5.5vw, 4rem);
+            line-height: 1.15;
+            margin-bottom: 1rem;
+            /* Sombra de texto más definida */
+            text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.65);
+        }
+
+        .hero-section .lead {
+            font-size: clamp(1.15rem, 2.6vw, 1.45rem);
+            font-weight: 400;
+            margin-bottom: 1.8rem;
+            line-height: 1.75;
+            /* Sombra de texto también para el lead, un poco más sutil */
+            text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.6);
+        }
+
+        .hero-section .sub-offer {
+            font-size: clamp(1.05rem, 2.1vw, 1.2rem);
+            font-weight: 600;
+            color: #ffdd57; /* Mantenemos el amarillo brillante */
+            background-color: rgba(0,0,0,0.35); /* Fondo un poco más oscuro para la oferta */
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            display: inline-block;
+            margin-bottom: 2.8rem;
+            border: 1px solid rgba(255,222,89,0.4);
+             /* Sombra de texto para la sub-oferta si es necesario, aunque el fondo ayuda */
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
+        }
+        /* --- FIN DE AJUSTES DE LEGIBILIDAD --- */
+
+
+        .hero-section .btn {
+            padding: 1rem 2.2rem;
+            font-size: 1.1rem;
+            margin: 0.5rem;
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+        }
+        .hero-section .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+        }
+
+        .btn-custom-warning {
+            background-color: #ffc107;
+            border-color: #ffc107;
+            color: #333; /* Texto oscuro para buen contraste en botón amarillo */
+            font-weight: 700;
+            padding: 0.8rem 1.8rem;
+            transition: all 0.3s ease;
+        }
+        .btn-custom-warning:hover {
+            background-color: #e0a800;
+            border-color: #d39e00;
+            transform: translateY(-3px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .btn-outline-light-custom {
+            border-width: 2px;
+            font-weight: 600;
+            padding: 0.7rem 1.7rem;
+            color: #fff;
+            border-color: #fff;
+            text-shadow: none; /* Evitar doble sombra si el botón ya es claro */
+        }
+         .btn-outline-light-custom:hover {
+            background-color: #fff;
+            color: #1a5ca3;
+        }
+        .section-title {
+            font-weight: 700;
+            margin-bottom: 1rem;
+            font-size: 2.5rem;
+        }
+        .section-subtitle {
+            font-size: 1.1rem;
+            color: #555;
+            margin-bottom: 3rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .card {
+            border: 1px solid #e9ecef;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-7px);
+            box-shadow: 0 0.75rem 1.5rem rgba(0,0,0,.1)!important;
+        }
+        .card-header {
+            font-weight: 700;
+            font-size: 1.3rem;
+        }
+        .plan-badge {
+            position: absolute;
+            top: -15px;
+            right: -15px;
+            transform: rotate(10deg);
+            z-index: 10;
+            font-size: 0.9rem;
+        }
+        .pricing-card-title {
+            font-weight: 700;
+        }
+        .list-unstyled li {
+            padding-bottom: 0.5rem;
+        }
+        .testimonial-card {
+            background-color: #fff;
+            border: 1px solid #e9ecef;
+            padding: 25px;
+            border-radius: 8px;
+        }
+        .testimonial-card img {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-bottom: 15px;
+            border: 3px solid #2061a9;
+        }
+        .testimonial-card .quote-icon {
+            font-size: 2rem;
+            color: #2061a9;
+            opacity: 0.6;
+        }
+        .accordion-button:not(.collapsed) {
+            color: #fff;
+            background-color: #2061a9;
+        }
+        .accordion-button:focus {
+            box-shadow: 0 0 0 0.25rem rgba(32, 97, 169, 0.25);
+        }
+        .footer {
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 4rem 0;
+        }
+        .footer a {
+            color: #ffc107;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            color: #fff;
+            text-decoration: underline;
+        }
+        .navbar-brand img {
+            max-height: 45px;
+        }
+        .navbar {
+             padding-top: 1rem;
+             padding-bottom: 1rem;
+             background-color: #ffffff !important;
+        }
+        .why-choose-us-icon {
+            font-size: 3rem;
+            color: #1a5ca3;
+            margin-bottom: 1rem;
+        }
+        .modal-header.bg-primary {
+            background-color: #1a5ca3 !important;
+        }
+    </style>
 </head>
 <body>
-  <div id="main-wrapper" style="display: flex; height: 100vh;">
-    <aside id="sidebar" class="bg-[#2a3647] min-w-[200px] flex flex-col items-center py-4" style="height: 100vh;">
-      <a href="#" class="flex items-center justify-center px-4 py-3" style="text-decoration:none;">
-        <img src="icons/logo.jpeg"
-          alt="Gestión de Hotel"
-          style="max-width:140px; width:100%; height:auto; display:block;" />
-      </a>
-      <nav id="main-nav" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
-      <div id="user-info-nav" class="mt-auto w-full"></div>
-    </aside>
-
-    <div id="main-content-area" style="flex:1; display:flex; flex-direction:column; min-width:0; background:#f7fafc; overflow:hidden;">
-      <div id="notificaciones-campanita-container" style="position:fixed; top:1rem; right:1rem; z-index:50;"></div>
-      <div id="app-global-feedback-banner" class="app-global-feedback" style="display:none;"></div>
-      <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-6">
-        <!--
-          ¡IMPORTANTE!
-          Tu sistema debe renderizar aquí, al entrar a la sección TIENDA,
-          el siguiente bloque:
-            <div id="tienda-wrapper">
-              ... (tabs, botones, etc)
-              <div id="contenidoTiendaTab"></div>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm fixed-top">
+        <div class="container">
+            <a class="navbar-brand" href="index.html">
+                <img src="https://placehold.co/180x45/1a5ca3/ffffff?text=Gesti%C3%B3nHotelPro" alt="Gestión de Hotel Logo" class="me-2">
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Menú">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
+                <ul class="navbar-nav align-items-center">
+                    <li class="nav-item"><a class="nav-link fw-medium" href="#features">Funcionalidades</a></li>
+                    <li class="nav-item"><a class="nav-link fw-medium" href="#why-choose-us">¿Por Qué Elegirnos?</a></li>
+                    <li class="nav-item"><a class="nav-link fw-medium" href="#pricing">Planes</a></li>
+                    <li class="nav-item"><a class="nav-link fw-medium" href="#testimonials">Testimonios</a></li>
+                    <li class="nav-item"><a class="nav-link fw-medium" href="#faq">FAQ</a></li>
+                    <li class="nav-item"><a class="btn btn-sm btn-custom-warning ms-lg-3 px-3 py-2" data-bs-toggle="modal" data-bs-target="#registroModal"><i class="bi bi-rocket-launch-fill me-1"></i> ¡Prueba TODO GRATIS!</a></li>
+                    <li class="nav-item"><a class="btn btn-sm btn-outline-primary ms-2 px-3 py-2" href="login.html"><i class="bi bi-box-arrow-in-right me-1"></i> Iniciar sesión</a></li>
+                </ul>
             </div>
-          Así todas las funciones de tienda podrán operar sobre #contenidoTiendaTab.
-          No dejes <div id="contenidoTiendaTab"></div> vacío aquí,
-          sólo créalo dinámicamente al cargar la tienda.
-        -->
-        <p class="text-center text-gray-500">Cargando aplicación...</p>
-      </main>
+        </div>
+    </nav>
+
+    <header class="hero-section">
+        <div class="container">
+            <h1 class="display-3 fw-bold">Deja de Perder Dinero y Tiempo. ¡Gestiona tu Hotel como un Experto!</h1>
+            <p class="lead mb-4">Descubre cómo "Gestión de Hotel" simplifica tus operaciones, maximiza tus reservas (¡incluyendo por horas!) y te da el control total. <br><strong>Empieza HOY con nuestra prueba de 30 DÍAS GRATIS.</strong></p>
+            <p class="sub-offer mb-4">Acceso completo a TODAS las funcionalidades. Sin tarjeta de crédito. Solo crea tu cuenta.</p>
+            <div>
+                <a href="#pricing" class="btn btn-custom-warning btn-lg me-sm-2 mb-2 mb-sm-0"><i class="bi bi-calendar-check-fill me-2"></i> Quiero mi Prueba GRATIS de 30 Días</a>
+                <a href="#features" class="btn btn-outline-light-custom btn-lg mb-2 mb-sm-0"><i class="bi bi-eye-fill me-2"></i> Ver Funcionalidades Clave</a>
+            </div>
+        </div>
+    </header>
+
+    <section id="why-choose-us" class="py-5">
+        <div class="container">
+            <h2 class="text-center section-title">¿Por Qué "Gestión de Hotel" es tu Mejor Aliado?</h2>
+            <p class="text-center section-subtitle">No somos solo otro software. Somos la solución pensada para los desafíos reales de hoteles y moteles en Latinoamérica.</p>
+            <div class="row g-4 text-center">
+                <div class="col-lg-3 col-md-6">
+                    <div class="card h-100 p-4 shadow-sm">
+                        <i class="bi bi-clock-history why-choose-us-icon"></i>
+                        <h5 class="fw-bold">Maximiza Ingresos con Reservas por Horas</h5>
+                        <p class="small">Nuestra especialidad. Atrae un nuevo segmento de clientes y optimiza cada habitación, cada hora del día.</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card h-100 p-4 shadow-sm">
+                        <i class="bi bi-pc-display-horizontal why-choose-us-icon"></i>
+                        <h5 class="fw-bold">Intuitivo y Fácil de Usar (¡De Verdad!)</h5>
+                        <p class="small">Olvídate de sistemas complejos. Empieza a gestionar tu hotel eficientemente desde el primer día, sin necesidad de ser un experto en tecnología.</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card h-100 p-4 shadow-sm">
+                        <i class="bi bi-headset why-choose-us-icon"></i>
+                        <h5 class="fw-bold">Soporte en Español y Cercano</h5>
+                        <p class="small">Estamos aquí para ayudarte a crecer. Recibe asistencia rápida y en tu idioma cuando la necesites.</p>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6">
+                    <div class="card h-100 p-4 shadow-sm">
+                        <i class="bi bi-building-gear why-choose-us-icon"></i>
+                        <h5 class="fw-bold">Adaptado a las Necesidades de LATAM</h5>
+                        <p class="small">Entendemos tu mercado. Funcionalidades pensadas para los requerimientos específicos de hoteles y moteles en la región.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="pricing" class="py-5 bg-light">
+        <div class="container">
+            <h2 class="text-center section-title">Planes Flexibles Pensados para Ti</h2>
+            <p class="text-center section-subtitle">Elige el plan que mejor se adapte a tu hotel y recuerda: <strong>¡Prueba TODAS las funcionalidades GRATIS por 30 días!</strong> Sin riesgos, sin pedir tu tarjeta.</p>
+            <div class="row justify-content-center">
+                <div class="col-lg-4 col-md-6 mb-4">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header text-white bg-success py-3">
+                            <h4 class="my-0 fw-bold">Lite</h4>
+                        </div>
+                        <div class="card-body d-flex flex-column p-4">
+                            <h2 class="card-title pricing-card-title mb-0">$99.000 <small class="text-muted fw-light">/mes</small></h2>
+                            <p class="text-muted small">Ideal para hoteles pequeños y moteles que inician y quieren control total.</p>
+                            <ul class="list-unstyled mt-3 mb-4 small text-start">
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Hasta 10 habitaciones</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Reservas ilimitadas (por horas y noches)</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Facturación PDF básica</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Manejo de tienda y caja simplificado</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Soporte estándar</li>
+                                <li><i class="bi bi-x-circle-fill text-danger me-2"></i>Sin WhatsApp / Sin Piscina</li>
+                            </ul>
+                            <button type="button" class="w-100 btn btn-lg btn-outline-success mt-auto plan-button" data-plan-id="lite" data-bs-toggle="modal" data-bs-target="#registroModal">
+                                Empezar Prueba Lite GRATIS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6 mb-4 position-relative">
+                    <span class="badge bg-warning text-dark plan-badge p-2 shadow-sm fw-bold">MÁS POPULAR</span>
+                    <div class="card h-100 shadow border-warning">
+                        <div class="card-header text-dark bg-warning py-3">
+                            <h4 class="my-0 fw-bold">Pro</h4>
+                        </div>
+                        <div class="card-body d-flex flex-column p-4">
+                            <h2 class="card-title pricing-card-title mb-0">$149.000 <small class="text-muted fw-light">/mes</small></h2>
+                            <p class="text-muted small">Perfecto para hoteles en crecimiento que buscan automatización y más control.</p>
+                            <ul class="list-unstyled mt-3 mb-4 small text-start">
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Hasta 20 habitaciones</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Reservas ilimitadas (por horas y noches)</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Caja y facturación avanzada</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Servicios adicionales y tienda completa</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Integración WhatsApp para notificaciones</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Soporte prioritario</li>
+                                <li><i class="bi bi-x-circle-fill text-danger me-2"></i>Sin Módulo de Piscina</li>
+                            </ul>
+                            <button type="button" class="w-100 btn btn-lg btn-warning mt-auto plan-button" data-plan-id="pro" data-bs-toggle="modal" data-bs-target="#registroModal">
+                                Empezar Prueba Pro GRATIS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-4 col-md-6 mb-4">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header text-white bg-danger py-3">
+                            <h4 class="my-0 fw-bold">Max</h4>
+                        </div>
+                        <div class="card-body d-flex flex-column p-4">
+                            <h2 class="card-title pricing-card-title mb-0">$199.000 <small class="text-muted fw-light">/mes</small></h2>
+                            <p class="text-muted small">La solución completa para hoteles que desean todas las funcionalidades y soporte premium.</p>
+                            <ul class="list-unstyled mt-3 mb-4 small text-start">
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Habitaciones Ilimitadas</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Todo lo del Plan Pro</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Módulo piscina y mantenimiento avanzado</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Conexión OTAs (Booking, Airbnb, etc.)</li>
+                                <li><i class="bi bi-check-circle-fill text-success me-2"></i>Facturación electrónica (según disponibilidad)</li>
+                                <li><i class="bi bi-patch-check-fill text-primary me-2"></i>Soporte VIP y consultoría inicial</li>
+                            </ul>
+                            <button type="button" class="w-100 btn btn-lg btn-outline-danger mt-auto plan-button" data-plan-id="max" data-bs-toggle="modal" data-bs-target="#registroModal">
+                                Empezar Prueba Max GRATIS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="text-center mt-4">
+                <button id="btnPagar" class="btn btn-success btn-lg d-none">
+                    <i class="bi bi-cash-coin me-2"></i> Pagar Suscripción
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="py-5">
+      <div class="container">
+        <h2 class="text-center section-title">Funcionalidades Diseñadas para tu Éxito Diario</h2>
+        <p class="text-center section-subtitle">Herramientas poderosas y fáciles de usar que te devuelven el control de tu tiempo y la rentabilidad de tu hotel.</p>
+        <div class="row g-4">
+          <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 p-4 text-center shadow-sm">
+                <i class="bi bi-calendar3-week h1 text-success mb-3"></i>
+                <h5 class="fw-bold">Reservas Flexibles (Horas y Noches)</h5>
+                <p class="small">Gestiona reservas en tiempo real, por horas, noches o día completo. Maximiza ocupación e ingresos con total flexibilidad.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 p-4 text-center shadow-sm">
+                <i class="bi bi-calculator-fill h1 text-success mb-3"></i>
+                <h5 class="fw-bold">Caja y Facturación sin Complicaciones</h5>
+                <p class="small">Control total de caja, ventas, abonos y facturación PDF. Ahorra tiempo valioso y evita errores costosos.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 p-4 text-center shadow-sm">
+                <i class="bi bi-map-fill h1 text-success mb-3"></i>
+                <h5 class="fw-bold">Mapa de Habitaciones Interactivo</h5>
+                <p class="small">Visualiza disponibilidad, estado de limpieza y mantenimiento de un vistazo. Gestión visual e instantánea.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 p-4 text-center shadow-sm">
+                <i class="bi bi-shop h1 text-success mb-3"></i>
+                <h5 class="fw-bold">Tienda y Productos Adicionales</h5>
+                <p class="small">Administra venta de bebidas, snacks y más. Controla inventario automáticamente e incrementa tus ingresos.</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 p-4 text-center shadow-sm">
+                <i class="bi bi-whatsapp h1 text-success mb-3"></i>
+                <h5 class="fw-bold">WhatsApp y Comunicación Directa</h5>
+                <p class="small">Integra WhatsApp para notificaciones y confirmaciones automáticas. Mejora la comunicación con tus huéspedes (Plan Pro y Max).</p>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100 p-4 text-center shadow-sm">
+                <i class="bi bi-graph-up-arrow h1 text-success mb-3"></i>
+                <h5 class="fw-bold">Reportes Inteligentes para Decisiones</h5>
+                <p class="small">Analiza ocupación, ingresos y tendencias con reportes claros. Toma decisiones basadas en datos para hacer crecer tu negocio.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="testimonials" class="py-5 bg-light">
+        <div class="container">
+            <h2 class="text-center section-title">Hoteleros Reales, Resultados Reales</h2>
+            <p class="text-center section-subtitle">No solo lo decimos nosotros. Escucha a quienes ya están transformando su gestión con "Gestión de Hotel".</p>
+            <div class="row">
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="testimonial-card h-100 shadow">
+                        <div class="d-flex align-items-center mb-3">
+                            <img src="https://placehold.co/70x70/6E2590/ffffff?text=LC" alt="Laura Cárdenas, Hotel Paraíso Azul">
+                            <div class="ms-3">
+                                <h6 class="fw-bold mb-0">Laura Cárdenas</h6>
+                                <p class="small text-muted mb-0">Propietaria, Hotel Paraíso Azul</p>
+                            </div>
+                        </div>
+                        <p class="fst-italic mb-0"><i class="bi bi-quote quote-icon me-2"></i>Desde que usamos Gestión de Hotel, nuestras reservas por horas se dispararon un 40%. El sistema es súper fácil de usar y el soporte siempre está ahí. ¡Lo recomiendo a ojos cerrados!</p>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="testimonial-card h-100 shadow">
+                         <div class="d-flex align-items-center mb-3">
+                            <img src="https://placehold.co/70x70/25907B/ffffff?text=RM" alt="Ricardo Morales, Motel El Descanso">
+                            <div class="ms-3">
+                                <h6 class="fw-bold mb-0">Ricardo Morales</h6>
+                                <p class="small text-muted mb-0">Gerente, Motel El Descanso</p>
+                            </div>
+                        </div>
+                        <p class="fst-italic mb-0"><i class="bi bi-quote quote-icon me-2"></i>Antes perdíamos mucho tiempo con la caja y las facturas. Ahora todo es automático y sin errores. La integración con WhatsApp es una maravilla para confirmar reservas. ¡Un alivio total!</p>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="testimonial-card h-100 shadow">
+                        <div class="d-flex align-items-center mb-3">
+                            <img src="https://placehold.co/70x70/902536/ffffff?text=SP" alt="Sofía Peña, Hostal Aventura">
+                            <div class="ms-3">
+                                <h6 class="fw-bold mb-0">Sofía Peña</h6>
+                                <p class="small text-muted mb-0">Administradora, Hostal Aventura</p>
+                            </div>
+                        </div>
+                        <p class="fst-italic mb-0"><i class="bi bi-quote quote-icon me-2"></i>Lo que más me gusta es el mapa de habitaciones y lo fácil que es ver la disponibilidad. El primer mes gratis nos convenció y ahora no podríamos vivir sin él. ¡Gracias, Gestión de Hotel!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="faq" class="py-5">
+      <div class="container">
+        <h2 class="text-center section-title">Resolvemos tus Dudas</h2>
+        <p class="text-center section-subtitle">Aquí encontrarás respuestas a las preguntas más comunes. Si tienes otra, ¡no dudes en contactarnos!</p>
+        <div class="accordion" id="faqAccordion">
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="faqHeading1">
+              <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faqCollapse1" aria-expanded="true" aria-controls="faqCollapse1">
+                ¿Cómo funciona la prueba GRATIS de 30 días?
+              </button>
+            </h2>
+            <div id="faqCollapse1" class="accordion-collapse collapse show" aria-labelledby="faqHeading1" data-bs-parent="#faqAccordion">
+              <div class="accordion-body">
+                Es muy simple: te registras (sin necesidad de tarjeta de crédito) y obtienes acceso COMPLETO a TODAS las funcionalidades del plan que elijas durante 30 días. Queremos que pruebes a fondo el sistema y veas cómo puede transformar la gestión de tu hotel.
+              </div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="faqHeading2">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faqCollapse2" aria-expanded="false" aria-controls="faqCollapse2">
+                ¿Qué pasa después de los 30 días de prueba?
+              </button>
+            </h2>
+            <div id="faqCollapse2" class="accordion-collapse collapse" aria-labelledby="faqHeading2" data-bs-parent="#faqAccordion">
+              <div class="accordion-body">
+                Antes de que finalice tu prueba, te contactaremos. Si decides continuar (¡estamos seguros de que así será!), podrás elegir tu plan y realizar el pago de forma segura para seguir disfrutando de Gestión de Hotel sin interrupciones. Si no, tu cuenta simplemente se desactivará, sin cargos ni compromisos.
+              </div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="faqHeading3">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faqCollapse3" aria-expanded="false" aria-controls="faqCollapse3">
+                ¿Puedo cambiar de plan o cancelar en cualquier momento?
+              </button>
+            </h2>
+            <div id="faqCollapse3" class="accordion-collapse collapse" aria-labelledby="faqHeading3" data-bs-parent="#faqAccordion">
+              <div class="accordion-body">
+                ¡Totalmente! Creemos en la flexibilidad. Puedes cambiar de plan (subir o bajar) o cancelar tu suscripción cuando quieras, sin contratos a largo plazo ni penalizaciones. Tú tienes el control.
+              </div>
+            </div>
+          </div>
+          <div class="accordion-item">
+            <h2 class="accordion-header" id="faqHeading4">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faqCollapse4" aria-expanded="false" aria-controls="faqCollapse4">
+                ¿Qué tipo de soporte ofrecen?
+              </button>
+            </h2>
+            <div id="faqCollapse4" class="accordion-collapse collapse" aria-labelledby="faqHeading4" data-bs-parent="#faqAccordion">
+              <div class="accordion-body">
+                Ofrecemos soporte técnico en español a través de chat, email y, para planes superiores, telefónico. Contamos con guías detalladas y tutoriales. Nuestro objetivo es que le saques el máximo provecho al sistema. El Plan Max incluye soporte VIP y consultoría inicial.
+              </div>
+            </div>
+          </div>
+           <div class="accordion-item">
+            <h2 class="accordion-header" id="faqHeading5">
+              <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faqCollapse5" aria-expanded="false" aria-controls="faqCollapse5">
+                ¿Es complicado instalar o configurar "Gestión de Hotel"?
+              </button>
+            </h2>
+            <div id="faqCollapse5" class="accordion-collapse collapse" aria-labelledby="faqHeading5" data-bs-parent="#faqAccordion">
+              <div class="accordion-body">
+                ¡Para nada! "Gestión de Hotel" es un sistema en la nube, lo que significa que no necesitas instalar nada. Solo te registras y accedes desde cualquier dispositivo con internet. La configuración inicial es guiada y muy intuitiva.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer class="footer text-center">
+      <div class="container">
+        <p class="mb-2">&copy; 2025 Gestión de Hotel - Innovando la Hotelería en Latinoamérica.</p>
+        <p class="mb-2">
+            <a href="/cdn-cgi/l/email-protection#7c0f130c130e08193c1b190f0815131218191413081910521f1311" class="me-3"><i class="bi bi-envelope-fill me-1"></i> <span class="__cf_email__" data-cfemail="f2819d829d808697b2959781869b9d9c96979a9d86979e">[email&#160;protected]</span></a>
+            <a href="https://wa.me/573001112233" class="me-3" target="_blank"><i class="bi bi-whatsapp me-1"></i> WhatsApp (+57 300 111 2233)</a>
+        </p>
+        <p class="small text-white-50">Cartagena, Colombia</p>
+      </div>
+    </footer>
+
+    <div class="modal fade" id="registroModal" tabindex="-1" aria-labelledby="registroModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form id="registroForm">
+                    <div class="modal-header bg-primary text-white">
+                        <h5 class="modal-title" id="registroModalLabel">¡Estás a un paso de Transformar tu Hotel!</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="text-center fw-bold">Completa tus datos y obtén 30 DÍAS GRATIS con TODAS las funcionalidades.</p>
+                        <p class="text-center small mb-3">Sin tarjeta de crédito requerida. Sin compromisos.</p>
+                        <div id="registroFormAlert" class="alert d-none" role="alert"></div>
+                        <div class="mb-3">
+                            <label for="hotelName" class="form-label">Nombre del Hotel <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="hotelName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="adminName" class="form-label">Tu Nombre (Administrador) <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="adminName" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="registroEmail" class="form-label">Email <span class="text-danger">*</span></label>
+                            <input type="email" class="form-control" id="registroEmail" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="registroPassword" class="form-label">Contraseña <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="registroPassword" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirmar Contraseña <span class="text-danger">*</span></label>
+                            <input type="password" class="form-control" id="confirmPassword" required>
+                        </div>
+                         <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" value="" id="termsCheck" required>
+                            <label class="form-check-label small" for="termsCheck">
+                                He leído y acepto los <a href="#terminos" data-bs-toggle="modal" data-bs-target="#terminosModal" class="text-decoration-underline">Términos y Condiciones</a> y la <a href="#privacidad" data-bs-toggle="modal" data-bs-target="#privacidadModal" class="text-decoration-underline">Política de Privacidad</a>. <span class="text-danger">*</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-custom-warning w-100 py-2">¡Crear mi Cuenta y Empezar Prueba GRATIS!</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
-  </div>
 
-  <div id="app-global-loading-overlay" style="display:none;">
-      <div class="spinner"></div>
-      <p id="global-loading-message">Cargando...</p>
-  </div>
-  
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-  <script type="module" src="js/main.js"></script>
+    <div class="modal fade" id="modalBloqueoSuscripcion" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title">Tu Suscripción Requiere Atención</h5>
+          </div>
+          <div class="modal-body text-center">
+            <p>Tu periodo de prueba de 30 días ha finalizado o tu suscripción está vencida.<br>
+               Para continuar usando todas las funcionalidades del sistema, por favor realiza el pago de tu plan:</p>
+            <button id="btnPagarModal" class="btn btn-success btn-lg">
+                <i class="bi bi-cash-coin me-2"></i> Pagar Suscripción Ahora
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="modal fade" id="terminosModal" tabindex="-1" aria-labelledby="terminosModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="terminosModalLabel">Términos y Condiciones de Uso</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>Bienvenido a Gestión de Hotel. Al utilizar nuestros servicios, aceptas los siguientes términos y condiciones:</p>
+            <h6>1. Prueba Gratuita y Suscripción</h6>
+            <p>Ofrecemos una prueba gratuita de 30 días con acceso a todas las funcionalidades. No se requiere tarjeta de crédito para la prueba. Al finalizar el periodo de prueba, para continuar utilizando el servicio, deberás seleccionar un plan de suscripción y realizar el pago correspondiente. Las tarifas de suscripción se detallan en nuestra sección de Planes y Precios.</p>
+            <h6>2. Uso Aceptable</h6>
+            <p>Te comprometes a utilizar el software Gestión de Hotel únicamente para fines lícitos y relacionados con la administración de tu establecimiento hotelero. No podrás utilizar el servicio para transmitir material ilegal, difamatorio, o que infrinja derechos de terceros.</p>
+            <p><em>Este es un ejemplo. Debes reemplazarlo con tus términos y condiciones legales completos, redactados por un profesional.</em></p>
+          </div>
+           <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+      </div>
+    </div>
 
-  <!-- ======================= MODALES UNIVERSALES ======================= -->
-  <!-- Solo deja estos dos modales, SIEMPRE al final del body -->
+    <div class="modal fade" id="privacidadModal" tabindex="-1" aria-labelledby="privacidadModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="privacidadModalLabel">Política de Privacidad</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p>En Gestión de Hotel, la privacidad de tus datos es fundamental. Esta política describe cómo recopilamos, usamos y protegemos tu información:</p>
+            <h6>1. Información que Recopilamos</h6>
+            <p>Recopilamos información que nos proporcionas durante el registro (nombre, email, nombre del hotel) y datos generados por el uso del sistema (reservas, datos de huéspedes bajo tu responsabilidad, configuraciones). No almacenamos datos de tarjetas de crédito directamente; estos son procesados por pasarelas de pago seguras.</p>
+            <h6>2. Uso de la Información</h6>
+            <p>Utilizamos tu información para operar y mejorar el servicio, comunicarnos contigo, procesar pagos y cumplir con obligaciones legales. Los datos de tus huéspedes son gestionados por ti, y nosotros solo actuamos como procesadores de datos según tus instrucciones.</p>
+            <p><em>Este es un ejemplo. Debes reemplazarlo con tu política de privacidad legal completa, redactada por un profesional.</em></p>
+          </div>
+           <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+            </div>
+        </div>
+      </div>
+    </div>
 
-  <!-- Modal Global (recomendado para TODO: mensajes, cobros, etc) -->
-  <div id="modal-global" style="
-    display: none;
-    position: fixed;
-    z-index: 99999;
-    left: 0; top: 0; width: 100vw; height: 100vh;
-    background: rgba(0,0,0,0.18);
-    align-items: center; justify-content: center;
-  "></div>
-
-  <!-- Modal Container clásico (solo si aún lo usa tu código, pero usa SOLO uno de los dos en producción) -->
-  <div id="modal-container" style="display:none"></div>
-  <!-- ================================================================ -->
+    <script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="script.js"></script>
 </body>
 </html>

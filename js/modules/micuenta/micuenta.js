@@ -23,10 +23,29 @@ function showSnackbar(container, message, type = 'success') {
   snackbarTimeout = setTimeout(() => { snackbar.style.opacity = '0'; }, 3300);
 }
 
+function alertaVencimientoHTML(diasRestantes, estado, enGracia) {
+  if (estado === 'vencido') {
+    return `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 mb-6 rounded">
+      <b>¡Tu suscripción está vencida!</b> Tienes <b>${diasRestantes}</b> días de gracia para renovar antes del bloqueo total.
+    </div>`;
+  }
+  if (enGracia) {
+    return `<div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 mb-6 rounded">
+      <b>¡Atención!</b> Tu periodo de gracia termina en <b>${diasRestantes}</b> días. Renueva tu plan para evitar bloqueo.
+    </div>`;
+  }
+  if (diasRestantes <= 3) {
+    return `<div class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-900 p-3 mb-6 rounded">
+      <b>¡Tu suscripción vence pronto!</b> Quedan <b>${diasRestantes}</b> días para renovar o cambiar de plan.
+    </div>`;
+  }
+  return '';
+}
+
 export async function mount(container, supabase, user, hotelId) {
   container.innerHTML = `<div class="flex justify-center items-center min-h-[60vh] text-xl text-gray-500 animate-pulse">Cargando tu cuenta...</div>`;
 
-  // 1. Trae datos
+  // 1. Trae datos base
   const { data: userProfile } = await supabase
     .from('usuarios').select('*').eq('id', user.id).single();
   const { data: hotel } = await supabase
@@ -34,6 +53,17 @@ export async function mount(container, supabase, user, hotelId) {
   const { data: plans } = await supabase
     .from('planes').select('*').order('precio_mensual', { ascending: true });
 
+  // 2. Datos adicionales (pagos, cambios plan, referidos)
+  const { data: pagos = [] } = await supabase
+    .from('pagos').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false }) || {};
+  const { data: cambiosPlan = [] } = await supabase
+    .from('cambios_plan').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false }) || {};
+  const { data: referidos = [] } = await supabase
+    .from('referidos').select('*').eq('referidor_id', hotelId).order('fecha_registro', { ascending: false }) || {};
+
+    const pagosSafe = Array.isArray(pagos) ? pagos : [];
+const cambiosPlanSafe = Array.isArray(cambiosPlan) ? cambiosPlan : [];
+const referidosSafe = Array.isArray(referidos) ? referidos : [];
   // --- VERIFICACIÓN DE PERMISOS (solo creador o superadmin puede acceder) ---
   const esSuperAdmin = (
     userProfile.rol === 'admin' || userProfile.rol === 'superadmin' ||
@@ -53,7 +83,7 @@ export async function mount(container, supabase, user, hotelId) {
     return;
   }
 
-  // --- Panel profesional y seguro ---
+  // --- Lógica de suscripción, fechas y alertas ---
   const planActivo = plans?.find(p =>
     p.nombre?.toLowerCase() === hotel.plan?.toLowerCase() || p.id === hotel.plan_id
   );
@@ -62,10 +92,20 @@ export async function mount(container, supabase, user, hotelId) {
   const hoy = new Date();
   const diasCiclo = Math.ceil((fechaFin - fechaInicio) / (1000 * 60 * 60 * 24));
   const diasConsumidos = Math.ceil((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
-  const diasRestantes = Math.max(0, diasCiclo - diasConsumidos);
+  let diasRestantes = Math.max(0, diasCiclo - diasConsumidos);
+
+  // Lógica de gracia (debes mejorar la detección según tu backend real)
+  let enGracia = false;
+  if (hotel.estado_suscripcion === 'vencido' && hotel.dias_gracia) {
+    diasRestantes = hotel.dias_gracia;
+    enGracia = true;
+  }
+
+  // Generar link de referido único
+  const refLink = `${window.location.origin}/registro?ref=${hotel.id}`;
 
   container.innerHTML = `
-    <div class="max-w-3xl mx-auto py-8 px-4 relative">
+    <div class="max-w-4xl mx-auto py-8 px-2 relative">
       <div class="flex items-center mb-8 gap-4">
         <div class="flex items-center justify-center w-14 h-14 rounded-full bg-blue-100 text-blue-600 text-3xl shadow-sm"><span>👤</span></div>
         <div>
@@ -73,6 +113,7 @@ export async function mount(container, supabase, user, hotelId) {
           <div class="text-sm text-gray-400">Hotel: <span class="font-medium text-blue-600">${hotel.nombre}</span></div>
         </div>
       </div>
+      ${alertaVencimientoHTML(diasRestantes, hotel.estado_suscripcion, enGracia)}
       <div class="bg-white shadow rounded-2xl p-6 mb-8">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
@@ -87,10 +128,22 @@ export async function mount(container, supabase, user, hotelId) {
             </div>
             <div class="text-gray-600 text-sm mb-1"><span class="font-semibold">Vence:</span> ${fechaFin ? fechaFin.toLocaleDateString('es-CO') : 'N/A'}</div>
           </div>
-          <div class="flex gap-2">
-            <button class="btn btn-outline-primary border-blue-600 text-blue-700 hover:bg-blue-50 transition" id="btnCambiarCorreo"><i class="bi bi-envelope-at-fill mr-1"></i> Cambiar correo</button>
-            <button class="btn btn-outline-secondary border-gray-400 text-gray-700 hover:bg-gray-100 transition" id="btnCambiarPass"><i class="bi bi-key-fill mr-1"></i> Cambiar contraseña</button>
-          </div>
+        </div>
+        <div class="flex flex-wrap gap-4 mt-6">
+          <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-blue-600 to-indigo-500 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnCambiarCorreo">
+            <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-envelope-at-fill"></i></span>
+            Cambiar correo
+          </button>
+          <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-gray-500 to-gray-700 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnCambiarPass">
+            <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-key-fill"></i></span>
+            Cambiar contraseña
+          </button>
+          ${hotel.estado_suscripcion !== 'activo' ? `
+            <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnRenovarPlan">
+              <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-arrow-repeat"></i></span>
+              Renovar plan
+            </button>
+          ` : ''}
         </div>
       </div>
       <div class="bg-white shadow rounded-2xl p-6 mb-10">
@@ -114,11 +167,100 @@ export async function mount(container, supabase, user, hotelId) {
           `).join('')}
         </div>
       </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div class="bg-white shadow rounded-2xl p-6 mb-8">
+          <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-clock-history text-blue-500"></i> Historial de Pagos</h3>
+          <div class="overflow-auto">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="text-left text-gray-600 border-b">
+                  <th class="py-2">Fecha</th>
+                  <th>Plan</th>
+                  <th>Monto</th>
+                  <th>Método</th>
+                  <th>Factura</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${pagosSafe.length === 0 ? `
+                  <tr><td colspan="5" class="text-gray-400 py-3 text-center">Sin pagos registrados</td></tr>
+                ` : pagosSafe.map(p => `
+                  <tr>
+                    <td>${new Date(p.fecha).toLocaleDateString('es-CO')}</td>
+                    <td>${p.plan || '-'}</td>
+                    <td>$${(p.monto || 0).toLocaleString('es-CO')}</td>
+                    <td>${p.metodo_pago || '-'}</td>
+                    <td>${p.url_factura ? `<a href="${p.url_factura}" target="_blank" class="text-blue-600 underline">Ver PDF</a>` : '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="bg-white shadow rounded-2xl p-6 mb-8">
+          <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-arrow-repeat text-green-600"></i> Cambios de Plan</h3>
+          <div class="overflow-auto">
+            <table class="w-full text-xs">
+              <thead>
+                <tr class="text-left text-gray-600 border-b">
+                  <th class="py-2">Fecha</th>
+                  <th>De</th>
+                  <th>A</th>
+                  <th>Usuario</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${cambiosPlanSafe.length === 0 ? `
+                  <tr><td colspan="4" class="text-gray-400 py-3 text-center">Sin cambios registrados</td></tr>
+                ` : cambiosPlanSafe.map(c => `
+                  <tr>
+                    <td>${new Date(c.fecha).toLocaleDateString('es-CO')}</td>
+                    <td>${c.plan_anterior || '-'}</td>
+                    <td>${c.plan_nuevo || '-'}</td>
+                    <td>${c.usuario_nombre || '-'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="bg-white shadow rounded-2xl p-6 mb-8">
+        <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-share-fill text-indigo-600"></i> Programa de Referidos</h3>
+        <div class="flex items-center gap-3 mb-2">
+          <input type="text" class="form-control w-full" value="${refLink}" readonly id="refLinkInput">
+          <button class="btn btn-accent" id="btnCopyRefLink">Copiar enlace</button>
+        </div>
+        <div class="overflow-auto">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="text-left text-gray-600 border-b">
+                <th class="py-2">Hotel referido</th>
+                <th>Estado</th>
+                <th>Registro</th>
+                <th>Recompensa</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${referidosSafe.length === 0 ? `
+                <tr><td colspan="4" class="text-gray-400 py-3 text-center">Sin referidos aún</td></tr>
+              ` : referidosSafe.map(r => `
+                <tr>
+                  <td>${r.nombre_hotel_referido || '-'}</td>
+                  <td>${r.estado || '-'}</td>
+                  <td>${r.fecha_registro ? new Date(r.fecha_registro).toLocaleDateString('es-CO') : '-'}</td>
+                  <td>${r.recompensa_otorgada ? '✔️' : '-'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
       <div class="flex justify-end text-xs text-gray-400 pt-3">
         <span>Último acceso: ${new Date(userProfile.actualizado_en || userProfile.creado_en).toLocaleString('es-CO')}</span>
       </div>
     </div>
-    <!-- Snackbar, modal upgrade, modal cambio correo y clave igual que en el módulo funcional anterior... -->
+    <!-- Modales y snackbar igual que antes... -->
     <div id="modalUpgrade" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden">
       <div class="bg-white p-6 rounded-2xl shadow-xl max-w-md w-full relative animate-fade-in">
         <button id="closeUpgradeModal" class="absolute top-2 right-3 text-gray-400 hover:text-red-400 text-2xl">&times;</button>
@@ -157,7 +299,24 @@ export async function mount(container, supabase, user, hotelId) {
     </div>
   `;
 
-  // --- UPGRADE DE PLAN (con prorrateo)
+
+  // --- Copiar enlace de referido
+  container.querySelector('#btnCopyRefLink')?.addEventListener('click', () => {
+    const input = container.querySelector('#refLinkInput');
+    input.select();
+    document.execCommand('copy');
+    showSnackbar(container, '¡Enlace copiado!', 'success');
+  });
+
+  // --- Renovar plan actual (pago)
+  container.querySelector('#btnRenovarPlan')?.addEventListener('click', () => {
+    if (!planActivo) return;
+    const ref = `renew-${hotel.id}-${planActivo.id}-${Date.now()}`;
+    window.open(`https://checkout.wompi.co/p/?public-key=${WOMPI_PUBLIC_KEY}&currency=COP&amount-in-cents=${planActivo.precio_mensual*100}&reference=${ref}&customer-email=${user.email}`, '_blank');
+    showSnackbar(container, 'Redirigiendo a Wompi para renovar...', 'success');
+  });
+
+  // --- Upgrade de plan (prorrateo)
   let upgradePlanSelected = null;
   container.querySelectorAll('button[data-plan-id]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -169,7 +328,6 @@ export async function mount(container, supabase, user, hotelId) {
       const credito = (diasRestantes / diasCiclo) * precioActual;
       const costoNuevo = (diasRestantes / diasCiclo) * precioNuevo;
       const montoPagar = Math.max(0, Math.round(costoNuevo - credito));
-
       container.querySelector('#modalUpgrade').classList.remove('hidden');
       container.querySelector('#modalPlanName').innerHTML = `Plan <b>${upgradePlanSelected.nombre}</b> (${diasRestantes} días restantes)`;
       container.querySelector('#prorrateoDetalle').innerHTML = `
@@ -191,7 +349,7 @@ export async function mount(container, supabase, user, hotelId) {
     upgradePlanSelected = null;
   });
 
-  // --- CAMBIO DE CORREO
+  // --- Cambio de correo
   container.querySelector('#btnCambiarCorreo')?.addEventListener('click', () => {
     container.querySelector('#modalCorreo').classList.remove('hidden');
   });
@@ -215,7 +373,7 @@ export async function mount(container, supabase, user, hotelId) {
     }
   });
 
-  // --- CAMBIO DE CONTRASEÑA
+  // --- Cambio de contraseña
   container.querySelector('#btnCambiarPass')?.addEventListener('click', () => {
     container.querySelector('#modalPass').classList.remove('hidden');
   });

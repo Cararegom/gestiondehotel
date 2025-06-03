@@ -289,7 +289,7 @@ async function initializeApp() {
       const currentHash = window.location.hash.slice(1) || '/dashboard';
       if (window.location.pathname.endsWith('/login.html')) {
         console.log("[Auth] Usuario autenticado en login.html, redirigiendo a #/dashboard.");
-        window.location.href = `/index.html#/dashboard`; // Asumiendo que index.html es tu app principal
+        window.location.href = `/app/index.html#/dashboard`; // Asumiendo que index.html es tu app principal
       } else if (currentPathLoaded !== currentHash || appContainer.innerHTML === '' || appContainer.innerHTML.includes('Cargando...')) {
         // Si estamos en la app principal, y la ruta actual no es la que ya está cargada, o si el appContainer está vacío.
         console.log(`[Auth] Usuario autenticado. Ruta actual: ${currentHash}. Cargando módulo...`);
