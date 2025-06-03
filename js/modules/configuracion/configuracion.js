@@ -380,20 +380,22 @@ async function guardarConfiguracionHotel() {
 
 
   if (logoFile) {
-    const fileName = `logos_hoteles/logo_hotel_${currentHotelId}_${Date.now()}_${logoFile.name.replace(/\s+/g, '_')}`;
-    const { data: uploadData, error: uploadError } = await currentSupabaseInstance.storage
-      .from('logos_hoteles') 
-      .upload(fileName, logoFile, { cacheControl: '3600', upsert: true });
+  // Usar la carpeta 'logos/' dentro del bucket 'hotel-logos'
+  const fileName = `logos/logo_hotel_${currentHotelId}_${Date.now()}_${logoFile.name.replace(/\s+/g, '_')}`;
+  const { data: uploadData, error: uploadError } = await currentSupabaseInstance.storage
+    .from('hotel-logos') 
+    .upload(fileName, logoFile, { cacheControl: '3600', upsert: true });
 
-    if (uploadError) {
-      console.error("Error subiendo logo:", uploadError);
-      feedbackEl.textContent = `Error al subir el logo: ${uploadError.message}`;
-      feedbackEl.className = 'feedback-error';
-      return; 
-    }
-    const { data: publicUrlData } = currentSupabaseInstance.storage.from('logos_hoteles').getPublicUrl(fileName);
-    logoUrlParaGuardar = publicUrlData.publicUrl;
+  if (uploadError) {
+    console.error("Error subiendo logo:", uploadError);
+    feedbackEl.textContent = `Error al subir el logo: ${uploadError.message}`;
+    feedbackEl.className = 'feedback-error';
+    return; 
   }
+  const { data: publicUrlData } = currentSupabaseInstance.storage.from('hotel-logos').getPublicUrl(fileName);
+  logoUrlParaGuardar = publicUrlData.publicUrl;
+}
+
 
   const configHotelData = {
     hotel_id: currentHotelId,

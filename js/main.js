@@ -19,7 +19,8 @@ import * as Integraciones from './modules/integraciones/integraciones.js';
 import * as MapaHabitaciones from './modules/mapa-habitaciones/mapa-habitaciones.js';
 import * as NotificacionesPage from './modules/notificaciones/notificaciones.js';
 import * as Mantenimiento from './modules/mantenimiento/mantenimiento.js';
-import * as Bitacora from './modules/bitacora/bitacora.js';
+import * as Descuentos from './modules/descuentos/descuentos.js';
+import * as Micuenta from './modules/micuenta/micuenta.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -48,7 +49,8 @@ const routes = {
   '/integraciones': Integraciones,
   '/notificaciones': NotificacionesPage,
   '/mantenimiento': Mantenimiento,
-  '/bitacora': Bitacora
+  '/descuentos': Descuentos,
+  '/micuenta': Micuenta
 };
 
 const navLinksConfig = [
@@ -63,11 +65,12 @@ const navLinksConfig = [
     { path: '#/limpieza', text: 'Limpieza', icon: '🧹' },
     { path: '#/reportes', text: 'Reportes', icon: '📈' },
     { path: '#/mantenimiento', text: 'Mantenimiento', icon: '🛠️' },
-    { path: '#/bitacora', text: 'Bitácora', icon: '📓' },
+    { path: '#/descuentos', text: 'Descuentos', icon: '🏷️' },
     { path: '#/usuarios', text: 'Usuarios', icon: '👥' },
     { path: '#/configuracion', text: 'Configuración', icon: '⚙️' },
     { path: '#/integraciones', text: 'Integraciones', icon: '🔗' },
     { path: '#/notificaciones', text: 'Ver Notificaciones', icon: '📜' },
+    { path: '#/micuenta', text: 'Mi cuenta', icon: '🛡️' }
 ];
 
 function renderNavigation(user) {

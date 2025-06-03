@@ -622,7 +622,8 @@ async function mostrarResumenCorteDeCaja() {
 function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo) {
   let tamano = (config?.tamano_papel || '').toLowerCase();
   let tipo = (config?.tipo_impresora || '').toLowerCase();
-  let esTermica = tipo === 'termica' || ['58mm','80mm'].includes(tamano);
+  console.log('Tamaño papel recibido:', tamano);
+  let esTermica = tipo === 'termica' || ['58mm', '80mm'].includes(tamano);
 
   // --- Header personalizable ---
   let encabezado = config?.encabezado_ticket || '';
@@ -632,21 +633,73 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
   let direccion = config?.direccion_fiscal || '';
   let nit = config?.nit_rut || '';
   let razon = config?.razon_social || '';
-  
-  // --- Generar HTML segun tamaño ---
+
   let style = '';
+  let html = '';
   let anchoMax = '100%';
+
+  // === NUEVO FORMATO 58mm ===
   if (tamano === '58mm') {
-    anchoMax = '55mm'; style = `
+    anchoMax = '55mm';
+    style = `
+      @page { size: 58mm auto; margin: 0; }
       body{font-family:monospace;font-size:11px;max-width:55mm;margin:0;padding:0;}
       .ticket{max-width:55mm;margin:auto;}
-      table{width:100%;font-size:11px;}
-      th,td{padding:2px 2px;}
-      .title{font-size:13px;}
-      .totales span{font-size:11px;}
-      .linea{border-bottom:1px dashed #444;margin:3px 0;}
+      .hotel-title{text-align:center;font-weight:bold;font-size:13px;}
+      .info{text-align:center;font-size:10px;}
+      .line{border-bottom:1px dashed #444;margin:3px 0;}
+      .totales{margin-bottom:2px;}
+      .totales b{float:right;}
+      ul.resumido{margin:0;padding-left:0;list-style:none;}
+      ul.resumido li{display:flex;justify-content:space-between;}
+      .movs-table{width:100%;font-size:10px;border-collapse:collapse;}
+      .movs-table th,.movs-table td{padding:1px 2px;}
+      .pie{text-align:center;margin-top:4px;font-size:10px;}
     `;
-  } else if (tamano === '80mm') {
+    // Solo 5 últimos movimientos
+    let movsCortos = movimientos;
+    html = `
+      <div class="ticket">
+        ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:45mm;max-height:30px;"></div>` : ''}
+        <div class="hotel-title">${hotelNombre}</div>
+        <div class="info">${direccion ? direccion + '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
+        <div class="line"></div>
+        <div style="text-align:center;font-size:12px;"><b>CIERRE DE CAJA</b></div>
+        <div style="text-align:center;font-size:10px;">${formatDateTime(new Date())}</div>
+        <div class="line"></div>
+        <div class="totales">Apertura:<b>${formatCurrency(movsCortos.find(m => m.tipo === 'apertura')?.monto ?? 0)}</b></div>
+        <div class="totales">Ingresos:<b>${formatCurrency(ingresos)}</b></div>
+        <div class="totales">Egresos:<b>${formatCurrency(egresos)}</b></div>
+        <div class="totales">Balance:<b>${formatCurrency(balance)}</b></div>
+        <div class="line"></div>
+        <div><b>Ingresos x método:</b></div>
+        <ul class="resumido">
+          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}<b>${formatCurrency(v)}</b></li>`).join('') || '<li>Sin ingresos</li>'}
+        </ul>
+        <div><b>Egresos x método:</b></div>
+        <ul class="resumido">
+          ${Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}<b>${formatCurrency(v)}</b></li>`).join('') || '<li>Sin egresos</li>'}
+        </ul>
+        <div class="line"></div>
+        <div><b>Movimientos recientes:</b></div>
+        <table class="movs-table">
+  <tr><th>Fec</th><th>Tp</th><th>Mon</th><th>Conc</th></tr>
+  ${movimientos.map(mv => `
+    <tr>
+      <td>${new Date(mv.creado_en).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
+      <td>${mv.tipo.charAt(0).toUpperCase()}</td>
+      <td>${formatCurrency(mv.monto)}</td>
+      <td>${(mv.concepto || '').slice(0, 11)}</td>
+    </tr>
+  `).join('')}
+</table>
+        <div class="line"></div>
+        ${pie ? `<div class="pie">${pie}</div>` : ''}
+      </div>
+    `;
+  }
+  // === FORMATO PARA 80mm o Carta ===
+  else if (tamano === '80mm') {
     anchoMax = '78mm'; style = `
       body{font-family:monospace;font-size:12px;max-width:78mm;margin:0;padding:0;}
       .ticket{max-width:78mm;margin:auto;}
@@ -655,6 +708,50 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
       .title{font-size:15px;}
       .totales span{font-size:13px;}
       .linea{border-bottom:1px dashed #444;margin:4px 0;}
+    `;
+    html = `
+      <div class="ticket">
+        ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:70mm;max-height:40px;"></div>` : ''}
+        <div class="title" style="text-align:center;font-weight:bold;">${hotelNombre}</div>
+        <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
+        ${encabezado ? `<div style="text-align:center;margin:2px 0 5px 0;">${encabezado}</div>` : ''}
+        <div class="linea"></div>
+        <div style="font-size:13px;"><b>CIERRE DE CAJA</b></div>
+        <div class="linea"></div>
+        <div class="totales">
+          <span>Ingresos: <b>${formatCurrency(ingresos)}</b></span><br>
+          <span>Egresos: <b>${formatCurrency(egresos)}</b></span><br>
+          <span>Balance: <b>${formatCurrency(balance)}</b></span>
+        </div>
+        <div class="linea"></div>
+        <div><b>Ingresos por método:</b></div>
+        <ul style="margin:0;padding-left:14px;">
+          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+        </ul>
+        <div><b>Egresos por método:</b></div>
+        <ul style="margin:0;padding-left:14px;">
+          ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+        </ul>
+        <div class="linea"></div>
+        <table>
+          <thead>
+            <tr><th>Fec</th><th>Tp</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
+          </thead>
+          <tbody>
+            ${movimientos.map(mv => `
+              <tr>
+                <td>${formatDateTime(mv.creado_en).slice(0, 10)}</td>
+                <td>${mv.tipo.charAt(0).toUpperCase()}</td>
+                <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#166534' : '#dc2626'};">${formatCurrency(mv.monto)}</td>
+                <td>${mv.concepto || ''}</td>
+                <td>${mv.metodos_pago?.nombre || 'N/A'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="linea"></div>
+        ${pie ? `<div style="text-align:center;margin-top:6px;">${pie}</div>` : ''}
+      </div>
     `;
   } else {
     anchoMax = '850px'; style = `
@@ -666,52 +763,51 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
       .totales span{font-size:17px;}
       .linea{border-bottom:1px solid #ccc;margin:10px 0;}
     `;
-  }
-  // --- HTML ticket ---
-  let html = `
-    <div class="ticket">
-      ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:45mm;max-height:30px;"></div>` : ''}
-      <div class="title" style="text-align:center;font-weight:bold;">${hotelNombre}</div>
-      <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
-      ${encabezado ? `<div style="text-align:center;margin:2px 0 5px 0;">${encabezado}</div>` : ''}
-      <div class="linea"></div>
-      <div style="font-size:13px;"><b>CIERRE DE CAJA</b></div>
-      <div class="linea"></div>
-      <div class="totales">
-        <span>Ingresos: <b>${formatCurrency(ingresos)}</b></span><br>
-        <span>Egresos: <b>${formatCurrency(egresos)}</b></span><br>
-        <span>Balance: <b>${formatCurrency(balance)}</b></span>
+    html = `
+      <div class="ticket">
+        ${logoUrl ? `<div style="text-align:center;margin-bottom:8px;"><img src="${logoUrl}" style="max-width:120px;max-height:40px;"></div>` : ''}
+        <div class="title" style="text-align:center;font-weight:bold;">${hotelNombre}</div>
+        <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
+        ${encabezado ? `<div style="text-align:center;margin:2px 0 8px 0;">${encabezado}</div>` : ''}
+        <div class="linea"></div>
+        <div style="font-size:16px;"><b>CIERRE DE CAJA</b></div>
+        <div class="linea"></div>
+        <div class="totales">
+          <span>Ingresos: <b>${formatCurrency(ingresos)}</b></span><br>
+          <span>Egresos: <b>${formatCurrency(egresos)}</b></span><br>
+          <span>Balance: <b>${formatCurrency(balance)}</b></span>
+        </div>
+        <div class="linea"></div>
+        <div><b>Ingresos por método:</b></div>
+        <ul style="margin:0;padding-left:14px;">
+          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+        </ul>
+        <div><b>Egresos por método:</b></div>
+        <ul style="margin:0;padding-left:14px;">
+          ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+        </ul>
+        <div class="linea"></div>
+        <table>
+          <thead>
+            <tr><th>Fec</th><th>Tp</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
+          </thead>
+          <tbody>
+            ${movimientos.map(mv => `
+              <tr>
+                <td>${formatDateTime(mv.creado_en).slice(0, 10)}</td>
+                <td>${mv.tipo.charAt(0).toUpperCase()}</td>
+                <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#166534' : '#dc2626'};">${formatCurrency(mv.monto)}</td>
+                <td>${mv.concepto || ''}</td>
+                <td>${mv.metodos_pago?.nombre || 'N/A'}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="linea"></div>
+        ${pie ? `<div style="text-align:center;margin-top:6px;">${pie}</div>` : ''}
       </div>
-      <div class="linea"></div>
-      <div><b>Ingresos por método:</b></div>
-      <ul style="margin:0;padding-left:14px;">
-        ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-      </ul>
-      <div><b>Egresos por método:</b></div>
-      <ul style="margin:0;padding-left:14px;">
-        ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-      </ul>
-      <div class="linea"></div>
-      <table>
-        <thead>
-          <tr><th>Fec</th><th>Tp</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
-        </thead>
-        <tbody>
-          ${movimientos.map(mv => `
-            <tr>
-              <td>${formatDateTime(mv.creado_en).slice(0, 10)}</td>
-              <td>${mv.tipo.charAt(0).toUpperCase()}</td>
-              <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#166534' : '#dc2626'};">${formatCurrency(mv.monto)}</td>
-              <td>${mv.concepto || ''}</td>
-              <td>${mv.metodos_pago?.nombre || 'N/A'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-      <div class="linea"></div>
-      ${pie ? `<div style="text-align:center;margin-top:6px;">${pie}</div>` : ''}
-    </div>
-  `;
+    `;
+  }
 
   // --- Ventana de impresión ---
   let w = window.open('', '', `width=400,height=700`);
