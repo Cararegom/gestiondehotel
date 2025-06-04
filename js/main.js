@@ -391,6 +391,9 @@ function updateActiveNavLink(currentPath) {
     });
 }
 
+// js/main.js
+// ... (todos tus imports y variables globales como currentActiveHotel, currentUserRole, etc. deben estar definidas antes) ...
+
 async function initializeApp() {
   appContainer = document.getElementById('app-container');
   mainNav = document.getElementById('main-nav'); 
@@ -398,24 +401,28 @@ async function initializeApp() {
   notificacionesCampanitaContainer = document.getElementById('notificaciones-campanita-container');
 
   if (!appContainer || !mainNav) {
-      console.error("initializeApp: Faltan elementos HTML esenciales.");
-      if(document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Faltan elementos base.</p>";
+      console.error("initializeApp: Faltan elementos HTML esenciales (app-container o main-nav). La aplicación no puede continuar.");
+      if(document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Faltan elementos base de la aplicación. Revise los IDs #app-container y #main-nav en su HTML.</p>";
       return;
   }
+  // Asegurar que exista el contenedor para los links dinámicos de navegación
   if (mainNav && !mainNav.querySelector('#dynamic-nav-links')) {
       const dynamicLinksDiv = document.createElement('div');
       dynamicLinksDiv.id = 'dynamic-nav-links';
+      // Podrías añadirlo en un lugar específico del mainNav si es necesario, o al final.
       mainNav.appendChild(dynamicLinksDiv); 
   }
   
   showGlobalLoading("Inicializando aplicación...");
 
-  onAuthStateChange(async (user, session) => {
+  onAuthStateChange(async (user, session) => { // 'user' aquí es el currentUser de authService
     const appUser = user; 
     console.log("[Auth] Estado de autenticación cambiado. Usuario actual:", appUser ? appUser.email : "Ninguno");
 
     if (appUser) {
         let hotelIdToLoad = appUser.user_metadata?.hotel_id || appUser.app_metadata?.hotel_id;
+        
+        // Obtener hotel_id Y rol desde la tabla usuarios
         const { data: perfil, error: perfilError } = await supabase
             .from('usuarios')
             .select('hotel_id, rol')
@@ -423,50 +430,58 @@ async function initializeApp() {
             .single();
 
         if (perfilError) {
-            console.error("onAuthStateChange: Error obteniendo perfil:", perfilError);
-            currentUserRole = "Usuario"; 
+            console.error("onAuthStateChange: Error obteniendo perfil (hotel_id, rol):", perfilError.message);
+            currentUserRole = "Usuario"; // Fallback conservador
         } else if (perfil) {
-            if (!hotelIdToLoad) hotelIdToLoad = perfil.hotel_id;
-            currentUserRole = perfil.rol || "Usuario";
+            if (!hotelIdToLoad) hotelIdToLoad = perfil.hotel_id; // Usar hotel_id del perfil si no estaba en metadata
+            currentUserRole = perfil.rol || "Usuario"; // Asignar rol o fallback
         } else {
-            console.warn("onAuthStateChange: No se encontró perfil.");
-            currentUserRole = "Usuario";
+            console.warn("onAuthStateChange: No se encontró perfil de usuario en la tabla 'usuarios'.");
+            currentUserRole = "Usuario"; // Fallback si no hay perfil
         }
         
-        updateUserInfo(appUser); 
+        updateUserInfo(appUser); // Actualizar UI con email y rol ANTES de cargar plan
 
         if (hotelIdToLoad) {
-            await loadHotelAndPlanDetails(hotelIdToLoad, supabase);
+            await loadHotelAndPlanDetails(hotelIdToLoad, supabase); // Carga currentActiveHotel y currentActivePlanDetails
             if (currentActiveHotel) { 
                 isSubscriptionFueraDeGracia = calculateSubscriptionExpiredStatus(currentActiveHotel);
             } else {
-                 isSubscriptionFueraDeGracia = false;
+                 // Si currentActiveHotel es null después de loadHotelAndPlanDetails, hubo un error o no se encontró
+                 isSubscriptionFueraDeGracia = false; // Asumir no vencida si no hay datos de hotel
+                 console.warn("onAuthStateChange: currentActiveHotel no se pudo cargar, usando estado de suscripción por defecto.");
             }
         } else {
-            console.warn("Usuario autenticado pero sin hotel_id. Usando plan/estado por defecto.");
-            currentActiveHotel = null;
-            currentActivePlanDetails = { nombre: "UsuarioSinHotel", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['dashboard', 'micuenta'] } };
-            isSubscriptionFueraDeGracia = false;
+            console.warn("Usuario autenticado pero sin hotel_id asociado. Usando plan/estado de suscripción por defecto.");
+            currentActiveHotel = null; // Asegurar que esté limpio
+            // Plan por defecto para usuarios sin hotel o con error al cargar hotelId
+            currentActivePlanDetails = { nombre: "UsuarioSinHotel", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['micuenta'] } }; // Solo micuenta
+            isSubscriptionFueraDeGracia = false; // No se puede determinar, asumir no vencida
         }
         
-        renderNavigation(appUser);
+        renderNavigation(appUser); // Renderizar navegación DESPUÉS de cargar rol, hotel y plan
 
-        if (notificacionesCampanitaContainer && !campanitaInicializada) {
-            await inicializarCampanitaGlobal(notificacionesCampanitaContainer, supabase, appUser);
+        if (notificacionesCampanitaContainer && !campanitaInicializada && hotelIdToLoad) { // Solo inicializar si hay hotelId
+            await inicializarCampanitaGlobal(notificacionesCampanitaContainer, supabase, appUser, hotelIdToLoad); // Pasar hotelId
             campanitaInicializada = true;
         }
         
         if (window.location.pathname.endsWith('/login.html')) {
+            // El script de login.html ya debería haber redirigido a #/micuenta o #/dashboard según el estado.
+            // Si por alguna razón llega aquí sin hash, lo mandamos a dashboard.
             let targetHash = window.location.hash || '#/dashboard';
+            console.log(`[Auth] Usuario autenticado en login.html, redirigiendo a la app con hash: ${targetHash}`);
             window.location.href = `/app/index.html${targetHash}`;
         } else {
-            await router(); 
+            console.log(`[Auth] Usuario autenticado en la app. Actualizando/Enrutando...`);
+            await router(); // El router usará los datos globales actualizados
         }
-    } else { 
+    } else { // No hay usuario (logout o sesión no iniciada)
         currentActiveHotel = null;
         currentActivePlanDetails = null;
         currentUserRole = null;
         isSubscriptionFueraDeGracia = false;
+
         if (campanitaInicializada) {
             desmontarCampanitaGlobal(supabase); 
             if (notificacionesCampanitaContainer) notificacionesCampanitaContainer.innerHTML = '';
@@ -475,10 +490,13 @@ async function initializeApp() {
         updateUserInfo(null); 
         renderNavigation(null); 
         currentPathLoaded = null; 
+
         if (!window.location.pathname.endsWith('/login.html')) {
+            console.log("[Auth] Usuario no autenticado. Redirigiendo a login.html.");
             window.location.href = '/login.html';
         } else {
-            hideGlobalLoading();
+            console.log("[Auth] Usuario no autenticado. Ya en login.html.");
+            hideGlobalLoading(); // Ocultar si estaba visible
         }
     }
   });
@@ -487,8 +505,37 @@ async function initializeApp() {
       console.log("[Router] Evento hashchange detectado. Nuevo hash:", window.location.hash);
       await router(); 
   });
-}
 
+  // --- LÓGICA DEL MENÚ HAMBURGUESA ---
+  const hamburgerButton = document.getElementById('hamburger-button');
+  const sidebar = document.getElementById('sidebar');
+  const menuOverlay = document.getElementById('menu-overlay'); 
+  // const mainContentArea = document.getElementById('main-content-area'); // Descomentar si usas pointerEvents
+
+  if (hamburgerButton && sidebar) {
+    hamburgerButton.addEventListener('click', () => {
+      const isOpen = sidebar.classList.toggle('open');
+      hamburgerButton.setAttribute('aria-expanded', String(isOpen)); // aria-expanded debe ser string "true" o "false"
+      if (menuOverlay) {
+        menuOverlay.classList.toggle('active', isOpen);
+      }
+      // if(mainContentArea) mainContentArea.style.pointerEvents = isOpen ? 'none' : 'auto'; 
+    });
+  }
+
+  if (menuOverlay && sidebar) { // Solo añadir listener si menuOverlay existe
+    menuOverlay.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      menuOverlay.classList.remove('active');
+      if(hamburgerButton) hamburgerButton.setAttribute('aria-expanded', 'false');
+      // if(mainContentArea) mainContentArea.style.pointerEvents = 'auto';
+    });
+  }
+  // --- FIN LÓGICA MENÚ HAMBURGUESA ---
+
+  // hideGlobalLoading() es llamado dentro del router o en onAuthStateChange si no hay usuario.
+  // No es necesario una llamada explícita aquí, ya que onAuthStateChange se ejecutará.
+}
 document.addEventListener('DOMContentLoaded', () => {
   if (!document.getElementById('app-container')) {
       console.error("Falta #app-container en DOMContentLoaded.");
