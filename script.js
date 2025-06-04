@@ -166,36 +166,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // ---- BLOQUEO AUTOMÁTICO POR TRIAL O SUSCRIPCIÓN ----
-    async function checkSubscriptionStatus() {
-        // Obtén el usuario logueado de Supabase
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return; // No logueado
 
-        const userEmail = session.user.email;
-        // Busca el hotel del usuario (ajusta según lógica real)
-        const { data: hotelData, error } = await supabase
-            .from('hoteles')
-            .select('trial_fin, suscripcion_fin, plan, estado_suscripcion')
-            .eq('correo', userEmail)
-            .single();
-        if (error) return;
+// ---- BLOQUEO AUTOMÁTICO POR TRIAL O SUSCRIPCIÓN ----
+async function checkSubscriptionStatus() {
+    // Obtén el usuario logueado de Supabase
+    const { data: { session } } = await supabase.auth.getSession();
 
-        const trialFin = hotelData.trial_fin ? new Date(hotelData.trial_fin) : null;
-        const suscripcionFin = hotelData.suscripcion_fin ? new Date(hotelData.suscripcion_fin) : null;
-        const hoy = new Date();
+    // SOLO SIGUE SI HAY USUARIO LOGUEADO
+    if (!session || !session.user) return;
 
-        // Bloquea si terminó trial y no tiene suscripción activa
-        if ((trialFin && hoy > trialFin) && (!suscripcionFin || hoy > suscripcionFin)) {
-            // BLOQUEAR ACCESO, mostrar modal de pago
-            const modal = new bootstrap.Modal(document.getElementById('modalBloqueoSuscripcion'));
-            modal.show();
-            document.body.classList.add('bloqueado-por-suscripcion');
-        }
+    // Aquí va el resto de tu lógica
+    const userEmail = session.user.email;
+
+    // Busca el hotel del usuario (ajusta según lógica real si usas otro identificador)
+    const { data: hotelData, error } = await supabase
+        .from('hoteles')
+        .select('trial_fin, suscripcion_fin, plan, estado_suscripcion')
+        .eq('correo', userEmail)
+        .single();
+
+    if (error) return;
+
+    const trialFin = hotelData.trial_fin ? new Date(hotelData.trial_fin) : null;
+    const suscripcionFin = hotelData.suscripcion_fin ? new Date(hotelData.suscripcion_fin) : null;
+    const hoy = new Date();
+
+    // Bloquea si terminó trial y no tiene suscripción activa
+    if ((trialFin && hoy > trialFin) && (!suscripcionFin || hoy > suscripcionFin)) {
+        // BLOQUEAR ACCESO, mostrar modal de pago
+        const modal = new bootstrap.Modal(document.getElementById('modalBloqueoSuscripcion'));
+        modal.show();
+        document.body.classList.add('bloqueado-por-suscripcion');
     }
+}
 
-    // Llama a la función al cargar
-    checkSubscriptionStatus();
 
     // ---- PAGO DE SUSCRIPCIÓN (WOMPI) ----
     function handlePago(planOverride) {

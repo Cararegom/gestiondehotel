@@ -4,10 +4,19 @@
   --color-secondary: #f59e0b;
   --color-accent: #10b981;
   --color-bg-main: #f7fafc;
-  --color-sidebar: #2d3748;
+  --color-sidebar: #2d3748; /* Color de fondo para el menú lateral en desktop y desplegable en móvil */
+  --color-topbar-mobile: #2d3748; /* Color para la barra superior en móvil donde iría el logo y hamburguesa */
   --color-card-bg: #fff;
   --color-card-border: #e2e8f0;
   --color-text-main: #22223b;
+  --color-text-sidebar: #e2e8f0; /* Texto para el sidebar */
+  --sidebar-width-desktop: 250px;
+  --topbar-height-mobile: 56px; /* Altura de la barra superior en móvil */
+  /* Variables de color para Focus Rings (añadidas para completar) */
+  --color-primary-light: rgba(29, 78, 216, 0.3);
+  --color-secondary-light: rgba(245, 158, 11, 0.4);
+  --color-accent-light: rgba(16, 185, 129, 0.4);
+  --color-danger-light: rgba(239, 68, 68, 0.4);
 }
 
 /* ======== GLOBAL RESETS & DEFAULTS ======== */
@@ -24,36 +33,35 @@ html, body {
   font-family: 'Segoe UI', 'Inter', 'Helvetica Neue', Arial, sans-serif;
   background: var(--color-bg-main);
   color: var(--color-text-main);
-  /* Consider adding a default line-height for better readability */
   line-height: 1.5;
+  overflow-x: hidden; /* Prevenir scroll horizontal en el body */
 }
 
 /* ======== LAYOUT SPA GENERAL ======== */
 #main-wrapper {
   display: flex;
   min-height: 100vh;
-  /* Using height: 100vh ensures it tries to fill the viewport height exactly. */
-  /* width: 100vw can sometimes cause issues with scrollbars; often width: 100% on body/html is enough. */
-  /* However, if this works for your layout, it's acceptable. */
-  width: 100vw;
+  width: 100%; 
   background: var(--color-bg-main);
 }
 
+/* Sidebar para Desktop */
 #sidebar {
-  width: 250px;
-  min-width: 180px; /* Ensures sidebar doesn't get too small before media query kicks in */
+  width: var(--sidebar-width-desktop);
+  min-width: 200px; 
   background: var(--color-sidebar);
-  color: #fff;
+  color: var(--color-text-sidebar);
   display: flex;
   flex-direction: column;
   padding: 1.2rem 1rem 1rem 1rem;
   box-shadow: 1px 0 18px 0 rgba(30,41,59,0.08);
-  z-index: 2; /* Ensure sidebar is above main content if overlapping could occur */
-  position: relative; /* For z-index to work effectively if not a direct child of stacking context */
+  z-index: 100; 
+  transition: transform 0.3s ease-in-out, width 0.3s ease-in-out; 
+  position: relative; /* Para que el z-index funcione bien si hay otros elementos con position */
 }
 
 #sidebar a {
-  color: #e2e8f0;
+  color: var(--color-text-sidebar);
   text-decoration: none;
   padding: 10px 18px;
   display: flex;
@@ -61,7 +69,7 @@ html, body {
   border-radius: 8px;
   transition: background 0.18s, color 0.18s;
   font-weight: 500;
-  gap: 8px; /* Modern way to space icon and text */
+  gap: 10px; 
 }
 
 #sidebar a.active,
@@ -70,88 +78,135 @@ html, body {
   color: #fff;
 }
 
-#sidebar svg {
-  margin-right: 10px; /* Retained as per original, but `gap` on `a` tag is often preferred */
+#sidebar svg, #sidebar .nav-icon {
   height: 1.3em;
   width: 1.3em;
-  flex-shrink: 0; /* Prevents icons from shrinking if text is long */
+  flex-shrink: 0;
 }
 
 #main-content-area {
-  flex: 1 1 0; /* Allows this area to grow and shrink */
+  flex: 1 1 0; 
   display: flex;
   flex-direction: column;
-  min-width: 0; /* Crucial for flex children to prevent overflow */
+  min-width: 0; 
   background: var(--color-bg-main);
-  /* Removed overflow: hidden; to allow #app-container to manage its own scroll */
+  padding-top: 0; 
 }
 
 #app-container, main#app-container {
-  flex: 1 1 0; /* Allows app-container to fill main-content-area */
-  min-height: 0; /* Important for nested flex scrolling */
-  background: #f7fafc; /* Slightly different from --color-bg-main, ensure this is intended */
+  flex: 1 1 0; 
+  min-height: 0; 
+  background: var(--color-bg-main); 
   padding: 28px 20px;
-  overflow-x: auto; /* Allow horizontal scrolling if content overflows */
-  overflow-y: auto; /* Allow vertical scrolling for the main app content */
-  /* box-sizing: border-box; was here, moved to global reset */
+  overflow-x: hidden; 
+  overflow-y: auto; 
   z-index: 1;
 }
 
+/* ======== BARRA SUPERIOR PARA MÓVILES (DONDE IRÍA EL BOTÓN HAMBURGUESA) ======== */
+#mobile-topbar {
+  display: none; 
+  height: var(--topbar-height-mobile);
+  background-color: var(--color-topbar-mobile);
+  color: var(--color-text-sidebar);
+  padding: 0 15px;
+  align-items: center;
+  justify-content: space-between; 
+  position: fixed; 
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 101; 
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+
+#hamburger-button { 
+  background: none;
+  border: none;
+  color: var(--color-text-sidebar);
+  font-size: 1.8rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex; /* Para centrar el icono si usas <i> o <svg> adentro */
+  align-items: center;
+  justify-content: center;
+}
+#mobile-topbar .logo-mobile img { /* Estilo para el logo en la barra móvil */
+    max-height: calc(var(--topbar-height-mobile) - 20px); /* Ejemplo de tamaño */
+    width: auto;
+}
+
+
 /* ======== RESPONSIVE LAYOUT ADJUSTMENTS ======== */
+
 @media (max-width: 900px) {
-  #main-wrapper {
-    flex-direction: column; /* Stack sidebar (now top bar) and content vertically */
-  }
-
   #sidebar {
-    flex-direction: row; /* Sidebar becomes a horizontal top bar */
-    width: 100vw;
-    min-width: 0;
-    height: 54px; /* Fixed height for the top bar */
-    min-height: 54px; /* Ensure it doesn't shrink below this */
-    padding: 0 10px; /* Adjusted padding for horizontal layout */
-    align-items: center; /* Vertically align items in the top bar */
-    /* Consider justify-content if you want to space out links, e.g., justify-content: space-around; */
+    position: fixed; 
+    top: 0; 
+    left: 0;
+    height: 100vh; 
+    transform: translateX(-100%); 
+    box-shadow: 2px 0 5px rgba(0,0,0,0.2);
+    z-index: 200; /* Más alto para que se superponga */
+    /* El padding y flex-direction se mantienen de la definición original */
   }
 
-  /* Hide text labels in the top bar, show only icons */
-  #sidebar span,
-  #sidebar .sidebar-text {
-    display: none;
+  #sidebar.open {
+    transform: translateX(0);
   }
 
-  #sidebar a {
-    padding: 8px 12px; /* Adjust padding for links in horizontal bar */
-  }
+  /* Ya no se ocultan los textos dentro del sidebar en móvil, se ve completo */
+  /* #sidebar span, */
+  /* #sidebar .sidebar-text { */
+  /* display: block;  */
+  /* } */
 
-  #sidebar svg {
-    margin-right: 0; /* Remove or adjust margin if only icons are shown */
+  #mobile-topbar {
+    display: flex; 
   }
-
+  
   #main-content-area {
-    min-height: calc(100vh - 54px); /* Account for top bar height */
-    height: calc(100vh - 54px); /* Ensure it fills the remaining space */
+    padding-top: var(--topbar-height-mobile); 
   }
 
   #app-container, main#app-container {
-    padding: 15px 10px; /* Slightly reduced padding for smaller screens */
+    padding: 20px 15px; /* Ajustar padding para pantallas medianas */
   }
 }
 
+/* Móvil Pequeño (ej: <= 600px) */
 @media (max-width: 600px) {
   #sidebar {
-    display: none; /* Completely hide sidebar on very small screens */
+    width: 280px; 
+    min-width: 250px;
   }
-
+  
+  #mobile-topbar {
+    /* Ya está display: flex */
+  }
+  
   #main-content-area {
-    padding: 0; /* Remove padding if sidebar is gone and content should be edge-to-edge */
-    min-height: 100vh; /* Occupy full viewport height */
-    height: 100vh;
+    /* padding-top ya está definido */
   }
-
+  
   #app-container, main#app-container {
-    padding: 10px 5px; /* Minimal padding for app content */
+    padding: 15px 10px; /* Menor padding para móviles pequeños */
   }
+}
+
+/* Overlay para el menú en móvil */
+#menu-overlay {
+  display: none; 
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  z-index: 199; /* Debajo del menú (z-index: 200), encima del contenido */
+}
+#menu-overlay.active {
+  display: block;
 }
 
 
@@ -160,7 +215,7 @@ html, body {
   position: fixed;
   top: 1.2rem;
   right: 1.2rem;
-  z-index: 1000;
+  z-index: 1000; /* Asegurar que esté por encima de la mayoría de las cosas, pero por debajo de modales/loaders críticos */
 }
 
 #app-global-feedback-banner {
@@ -171,7 +226,7 @@ html, body {
   border-radius: 0.375rem;
   box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
   z-index: 1050;
-  display: none; /* Controlled by JavaScript */
+  display: none;
   max-width: 400px;
 }
 .app-global-feedback.success { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
@@ -181,12 +236,12 @@ html, body {
 
 #app-global-loading-overlay {
   position: fixed;
-  inset: 0; /* shorthand for top, right, bottom, left = 0 */
+  inset: 0; 
   background-color: rgba(0,0,0,0.4);
-  display: flex; /* Changed from none to flex by JS */
+  display: none; /* Se cambia a flex por JS */
   align-items: center;
   justify-content: center;
-  z-index: 2000;
+  z-index: 2000; /* Muy alto para estar encima de todo */
   color: white;
   flex-direction: column;
   gap: 1rem;
@@ -194,7 +249,7 @@ html, body {
 #app-global-loading-overlay .spinner {
   border: 4px solid rgba(255,255,255,0.3);
   border-radius: 50%;
-  border-top-color: white; /* Or var(--color-primary) for branded spinner */
+  border-top-color: white; 
   width: 40px;
   height: 40px;
   animation: spin 1s linear infinite;
@@ -215,10 +270,10 @@ html, body {
 }
 .card-header {
   padding: 1rem 1.5rem;
-  border-bottom: 1px solid var(--color-card-border); /* Use variable for consistency */
+  border-bottom: 1px solid var(--color-card-border); 
   font-size: 1.22rem;
   font-weight: 600;
-  background: #f3f6fc; /* Consider making this a CSS variable if used elsewhere */
+  background: #f3f6fc; 
 }
 .card-body {
   padding: 1.5rem;
@@ -228,16 +283,16 @@ html, body {
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 1.5rem;
-  background: var(--color-card-bg); /* Consistent with card background */
+  background: var(--color-card-bg); 
 }
 .table th,
 .table td {
-  border: 1px solid var(--color-card-border); /* Use variable */
+  border: 1px solid var(--color-card-border); 
   padding: 0.65rem 1rem;
   text-align: left;
 }
 .table th {
-  background: #f1f5f9; /* Consider making this a CSS variable */
+  background: #f1f5f9; 
   font-weight: 600;
 }
 
@@ -249,41 +304,41 @@ html, body {
   display: block;
   margin-bottom: 0.45rem;
   font-weight: 500;
-  color: #2c3e50; /* Consider var(--color-text-main) or a new variable */
+  color: #2c3e50; 
 }
 .form-control {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid #cbd5e0; /* Consider var(--color-card-border) or new variable */
+  border: 1px solid #cbd5e0; 
   border-radius: 0.375rem;
   box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
   font-size: 1rem;
-  background: var(--color-card-bg); /* Consistent background */
-  color: var(--color-text-main); /* Ensure text color is inherited or set */
+  background: var(--color-card-bg); 
+  color: var(--color-text-main); 
 }
 .form-control:focus {
   border-color: var(--color-primary);
-  outline: 2px solid transparent; /* Modern focus outline */
-  box-shadow: 0 0 0 2px var(--color-primary-light, rgba(29, 78, 216, 0.3)); /* Example focus ring, define --color-primary-light */
+  outline: 2px solid transparent; 
+  box-shadow: 0 0 0 2px var(--color-primary-light);
 }
 
 /* ======== BOTONES ======== */
 .button {
   padding: 0.5rem 1.1rem;
   border-radius: 0.375rem;
-  border: 1px solid transparent; /* Add transparent border for consistent sizing on hover/focus if border is added then */
+  border: 1px solid transparent; 
   cursor: pointer;
   font-weight: 500;
   transition: background 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s;
   font-size: 1rem;
   text-align: center;
-  display: inline-flex; /* For aligning text/icons if any */
+  display: inline-flex; 
   align-items: center;
   justify-content: center;
 }
 .button:focus {
   outline: 2px solid transparent;
-  box-shadow: 0 0 0 3px var(--color-primary-light, rgba(29, 78, 216, 0.4)); /* Example focus ring */
+  box-shadow: 0 0 0 3px var(--color-primary-light); 
 }
 
 .button-primary {
@@ -291,33 +346,32 @@ html, body {
   color: #fff;
 }
 .button-primary:hover {
-  background: #2563eb; /* Darken primary */
+  background: #2563eb; /* Un poco más claro o más oscuro que var(--color-primary) */
 }
 .button-primary:focus {
-  box-shadow: 0 0 0 3px var(--color-primary-light, rgba(59, 130, 246, 0.4)); /* Lighter for primary */
+  box-shadow: 0 0 0 3px var(--color-primary-light); 
 }
 
 .button-secondary {
   background: var(--color-secondary);
-  color: #fff; /* Ensure contrast, #fff might be too light on yellow. Consider a dark text. */
+  color: #333; /* Texto oscuro para mejor contraste con amarillo */
 }
 .button-secondary:hover {
-  background: #d97706; /* Darken secondary */
+  background: #d97706; 
 }
 .button-secondary:focus {
-  box-shadow: 0 0 0 3px var(--color-secondary-light, rgba(245, 158, 11, 0.4));
+  box-shadow: 0 0 0 3px var(--color-secondary-light);
 }
-
 
 .button-accent {
   background: var(--color-accent);
   color: #fff;
 }
 .button-accent:hover {
-  background: #059669; /* Darken accent */
+  background: #059669; 
 }
 .button-accent:focus {
-  box-shadow: 0 0 0 3px var(--color-accent-light, rgba(16, 185, 129, 0.4));
+  box-shadow: 0 0 0 3px var(--color-accent-light);
 }
 
 .button-danger {
@@ -325,10 +379,10 @@ html, body {
   color: #fff;
 }
 .button-danger:hover {
-  background: #dc2626; /* Darken danger */
+  background: #dc2626; 
 }
 .button-danger:focus {
-  box-shadow: 0 0 0 3px var(--color-danger-light, rgba(239, 68, 68, 0.4));
+  box-shadow: 0 0 0 3px var(--color-danger-light);
 }
 
 
@@ -340,41 +394,41 @@ html, body {
 .px-4 { padding-left: 1rem; padding-right: 1rem; }
 .p-4 { padding: 1rem; }
 
-@media (min-width: 768px) { /* Example for md: breakpoint */
+@media (min-width: 768px) { 
   .md\:p-6 {
     padding: 1.5rem;
   }
 }
 
 .space-x-2 > * + * {
-  margin-left: 0.5rem; /* For horizontal spacing between direct children */
+  margin-left: 0.5rem; 
 }
 .flex { display: flex; }
 .flex-col { flex-direction: column; }
-.flex-1 { flex: 1 1 0%; } /* Added % for clarity, 0 is fine too */
+.flex-1 { flex: 1 1 0%; } 
 
 /* Custom Scrollbar (Webkit only) */
 ::-webkit-scrollbar {
   width: 8px;
-  height: 8px; /* For horizontal scrollbars too */
+  height: 8px; 
   background: var(--color-bg-main);
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e0; /* Slightly darker than original for better visibility */
+  background: #cbd5e0; 
   border-radius: 5px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a0aec0; /* Darker on hover */
+  background: #a0aec0; 
 }
-
 
 /* ======== ICONOS/IMÁGENES ======== */
 img, svg {
   vertical-align: middle;
   max-width: 100%;
-  height: auto; /* Maintain aspect ratio for images */
+  height: auto; 
 }
-/* === MEJORA VISUAL MODAL SOLO PARA .modal-container === */
+
+/* ======== Estilos específicos para modales (como los tenías) ======== */
 .modal-container *,
 .modal-container input,
 .modal-container button {
@@ -405,7 +459,7 @@ img, svg {
   border: none !important;
 }
 .modal-container .shadow-2xl, .modal-container .shadow-xl {
-  box-shadow: 0 20px 50px 0 #1dd1a1 !important;
+  box-shadow: 0 20px 50px 0 #1dd1a166 !important; /* Ajustada la opacidad del color */
 }
 .modal-container .bg-green-50 { background: #eafff5!important; }
 .modal-container .border-green-100 { border-color: #bdfbe5!important; }

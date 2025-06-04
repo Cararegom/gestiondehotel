@@ -7,6 +7,7 @@ let currentHotelId = null;
 let rolesDisponiblesCache = [];
 let permisosDisponiblesCache = [];
 let moduleListeners = [];
+let activePlanDetails = null;
 const EDGE_FUNC_PERMISOS = "https://iikpqpdoslyduecibaij.supabase.co/functions/v1/actualizar_permisos_usuario";
 
 // ----------- Helpers para UI y feedback -----------
@@ -307,22 +308,21 @@ export function unmount(container) {
 
 // ----------- Mount principal -----------
 
-export async function mount(container, sbInstance, user) {
-  unmount(container); 
+export async function mount(container, sbInstance, user, hotelId, planDetails) { // Parámetros actualizados
+  console.log(">>> usuarios.js mount - Iniciando montaje...");
+  unmount(container); // Limpia listeners y estado anterior
+
   currentContainerEl = container;
   currentSupabaseInstance = sbInstance;
   currentModuleUser = user;
-  if (user?.user_metadata?.hotel_id) {
-    currentHotelId = user.user_metadata.hotel_id;
-  } else if (user?.id) {
-    const { data: perfil } = await currentSupabaseInstance
-      .from('usuarios')
-      .select('hotel_id')
-      .eq('id', user.id)
-      .single();
-    currentHotelId = perfil?.hotel_id;
-  }
+  currentHotelId = hotelId; // Usar el hotelId pasado directamente desde main.js
+  activePlanDetails = planDetails; // Guardar los detalles del plan activo
 
+  // Log para verificar que los datos llegan correctamente
+  console.log("[Usuarios/mount] Hotel ID recibido:", currentHotelId);
+  console.log("[Usuarios/mount] Detalles del plan recibidos:", activePlanDetails);
+
+  // Contenido HTML del módulo (como lo tenías)
   currentContainerEl.innerHTML = `
     <div class="card usuarios-module shadow-lg rounded-lg">
       <div class="card-header bg-gray-100 p-4 border-b">
@@ -383,6 +383,7 @@ export async function mount(container, sbInstance, user) {
       </div>
     </div>`;
 
+  // Selección de elementos del DOM (como ya los tenías)
   const formUsuarioEl = currentContainerEl.querySelector('#form-crear-editar-usuario');
   const tablaBodyEl = currentContainerEl.querySelector('#tabla-usuarios-body');
   const btnCancelarEl = currentContainerEl.querySelector('#btn-cancelar-edicion-usuario');
@@ -391,169 +392,74 @@ export async function mount(container, sbInstance, user) {
   const formTitleEl = currentContainerEl.querySelector('#form-usuario-titulo');
   const passwordGroupEl = currentContainerEl.querySelector('#password-group');
 
+  // Verificar si currentHotelId es válido antes de continuar
   if (!currentHotelId) {
     showUsuariosFeedback(feedbackGlobalEl, 'Error crítico: Hotel ID no disponible. Módulo deshabilitado.', 'error-indicator', 0);
-    formUsuarioEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
-    return;
+    if(formUsuarioEl) formUsuarioEl.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
+    return; // Detener el montaje si no hay hotelId
   }
 
+  // Cargar datos iniciales
   await cargarRolesDisponibles(selectRolesEl, currentSupabaseInstance);
-  await cargarPermisosDisponibles();
+  await cargarPermisosDisponibles(); // Asegúrate que esta función use currentSupabaseInstance si es necesario
   await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
   resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
 
-  // --------- Submit crear/editar usuario ---------
-  const EDGE_FUNC_CREAR_COLABORADOR = "https://iikpqpdoslyduecibaij.supabase.co/functions/v1/crear_colaborador";
-
-  const formSubmitHandler = async (event) => {
-    console.log('>>> formSubmitHandler llamado');
-    event.preventDefault();
-    clearUsuariosFeedback(feedbackGlobalEl);
-
-    const formData = new FormData(formUsuarioEl);
-    const rolesSeleccionadosIds = Array.from(selectRolesEl.selectedOptions)
-      .map(option => option.value)
-      .filter(Boolean);
-
-    const idEdit = formData.get('usuarioIdEdit');
-    const nombre = formData.get('nombre')?.trim();
-    const correo = formData.get('correo')?.trim().toLowerCase();
-    const password = formData.get('password');
-    const activo = formUsuarioEl.elements.activo.checked;
-
-    if (!nombre || !correo || rolesSeleccionadosIds.length === 0) {
-      showUsuariosFeedback(feedbackGlobalEl, 'Nombre, correo y al menos un rol son obligatorios.', 'error-indicator');
-      return;
-    }
-    if (!idEdit && (!password || password.length < 8)) {
-      showUsuariosFeedback(feedbackGlobalEl, 'Para nuevos usuarios, la contraseña es obligatoria (mínimo 8 caracteres).', 'error-indicator');
-      return;
-    }
-    if (!currentHotelId) {
-      showUsuariosFeedback(feedbackGlobalEl, 'Error interno: Hotel ID no está definido antes de guardar.', 'error-indicator');
-      return;
-    }
-
-    try {
-      if (idEdit) {
-        // Lógica para editar usuario
-        const updates = { nombre, activo, updated_at: new Date().toISOString() };
-        const { error: updateError } = await currentSupabaseInstance
-          .from('usuarios').update(updates).eq('id', idEdit).eq('hotel_id', currentHotelId);
-        if (updateError) throw updateError;
-        
-        const { error: deleteRolesError } = await currentSupabaseInstance.from('usuarios_roles').delete().eq('usuario_id', idEdit);
-        if (deleteRolesError) throw deleteRolesError;
-
-        if (rolesSeleccionadosIds.length > 0) {
-          const rolesToInsert = rolesSeleccionadosIds.map(rolId => ({ usuario_id: idEdit, rol_id: rolId, hotel_id: currentHotelId }));
-          const { error: insertRolesError } = await currentSupabaseInstance.from('usuarios_roles').insert(rolesToInsert);
-          if (insertRolesError) throw insertRolesError;
-        }
-        showUsuariosFeedback(feedbackGlobalEl, 'Usuario actualizado exitosamente.', 'success-indicator');
-      } else {
-        // --- NUEVO: Llamada a la Edge Function para crear usuario ---
-        showUsuariosFeedback(feedbackGlobalEl, 'Creando usuario...', 'info-indicator', 0);
-
-        console.log('Enviando datos a Edge Function:', {
-          nombre,
-          correo,
-          password: '***', // No loguear passwords
-          activo,
-          hotel_id: currentHotelId,
-          roles: rolesSeleccionadosIds
-        });
-        
-        const session = await currentSupabaseInstance.auth.getSession();
-
-        const resp = await fetch(EDGE_FUNC_CREAR_COLABORADOR, {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${session.data.session.access_token}`
-          },
-          body: JSON.stringify({
-            nombre,
-            correo,
-            password,
-            activo,
-            hotel_id: currentHotelId,
-            roles: rolesSeleccionadosIds
-          })
-        });
-
-        const data = await resp.json();
-        console.log('Respuesta de la Edge Function:', data);
-
-        if (!resp.ok) throw new Error(data.error || 'No se pudo crear el usuario');
-        
-        showUsuariosFeedback(feedbackGlobalEl, 'Usuario creado exitosamente.', 'success-indicator');
-      }
-
-      resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
-      await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
-
-    } catch (err) {
-      showUsuariosFeedback(feedbackGlobalEl, `Error al guardar usuario: ${err.message}`, 'error-indicator', 0);
-    }
-  };
-
-  // ==================================================================
-  // BLOQUE CORREGIDO: Asignar el event listener al formulario
-  // ==================================================================
-  const submitHandler = (event) => formSubmitHandler(event);
+  // Asignar event listener para el formulario (el handler 'formSubmitHandler' usará 'activePlanDetails')
+  // Asegúrate que formSubmitHandler esté definido en este archivo y accesible
+  const submitHandler = (event) => formSubmitHandler(event, formUsuarioEl, selectRolesEl, feedbackGlobalEl, formTitleEl, passwordGroupEl, btnCancelarEl, tablaBodyEl);
   formUsuarioEl.addEventListener('submit', submitHandler);
   moduleListeners.push({
     element: formUsuarioEl,
     type: 'submit',
     handler: submitHandler
   });
-  // ==================================================================
 
-
-  // --------- Acciones tabla usuarios ---------
-
+  // Asignar otros listeners (para la tabla, botón cancelar, etc., como ya los tenías)
   const tableClickHandler = async (event) => {
+    // ... tu lógica existente para tableClickHandler ...
     const button = event.target.closest('button[data-accion]');
     if (!button) return;
     const usuarioId = button.dataset.id;
     const accion = button.dataset.accion;
-    const userEmail = button.dataset.correo;
+    const userEmail = button.dataset.correo; // Asegúrate de tener estos data-attributes en tus botones
+    const userName = button.dataset.nombre;
+
     clearUsuariosFeedback(feedbackGlobalEl);
 
     if (accion === 'editar') {
-      try {
-        const { data: usuarioToEdit, error } = await currentSupabaseInstance
-          .from('usuarios')
-          .select('*, usuarios_roles(roles(id, nombre))')
-          .eq('id', usuarioId)
-          .eq('hotel_id', currentHotelId)
-          .single();
-        
-        if (error) throw error;
-        
-        if (usuarioToEdit) {
-          formUsuarioEl.elements.usuarioIdEdit.value = usuarioToEdit.id;
-          formTitleEl.textContent = 'Editar Usuario';
-          passwordGroupEl.style.display = 'none'; // Ocultar contraseña al editar
-          formUsuarioEl.elements.nombre.value = usuarioToEdit.nombre || '';
-          formUsuarioEl.elements.correo.value = usuarioToEdit.correo || '';
-          formUsuarioEl.elements.correo.disabled = true;
-          const selectRolesEl = formUsuarioEl.elements.roles;
-          const rolesAsignadosIds = usuarioToEdit.usuarios_roles.map(ur => ur.roles?.id?.toString()).filter(Boolean);
-          Array.from(selectRolesEl.options).forEach(option => {
-            option.selected = rolesAsignadosIds.includes(option.value);
-          });
-          formUsuarioEl.elements.activo.checked = usuarioToEdit.activo;
-          formUsuarioEl.querySelector('#btn-guardar-usuario').textContent = 'Actualizar Usuario';
-          btnCancelarEl.style.display = 'inline-block';
-          formUsuarioEl.elements.nombre.focus();
-        } else {
-          showUsuariosFeedback(feedbackGlobalEl, 'Usuario no encontrado para editar.', 'error-indicator');
+        try {
+            const { data: usuarioToEdit, error } = await currentSupabaseInstance
+                .from('usuarios')
+                .select('*, usuarios_roles(roles(id, nombre))') // Asegúrate que tu tabla/vista permita esto
+                .eq('id', usuarioId)
+                .eq('hotel_id', currentHotelId)
+                .single();
+            
+            if (error) throw error;
+            
+            if (usuarioToEdit) {
+                formUsuarioEl.elements.usuarioIdEdit.value = usuarioToEdit.id;
+                if(formTitleEl) formTitleEl.textContent = 'Editar Usuario';
+                if(passwordGroupEl) passwordGroupEl.style.display = 'none'; 
+                formUsuarioEl.elements.nombre.value = usuarioToEdit.nombre || '';
+                formUsuarioEl.elements.correo.value = usuarioToEdit.correo || '';
+                formUsuarioEl.elements.correo.disabled = true; // Deshabilitar correo al editar
+                
+                const rolesAsignadosIds = usuarioToEdit.usuarios_roles.map(ur => ur.roles?.id?.toString()).filter(Boolean);
+                Array.from(selectRolesEl.options).forEach(option => {
+                    option.selected = rolesAsignadosIds.includes(option.value);
+                });
+                formUsuarioEl.elements.activo.checked = usuarioToEdit.activo;
+                formUsuarioEl.querySelector('#btn-guardar-usuario').textContent = 'Actualizar Usuario';
+                if(btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
+                formUsuarioEl.elements.nombre.focus();
+            } else {
+                showUsuariosFeedback(feedbackGlobalEl, 'Usuario no encontrado para editar.', 'error-indicator');
+            }
+        } catch (err) {
+            showUsuariosFeedback(feedbackGlobalEl, `Error al cargar datos para editar: ${err.message}`, 'error-indicator', 0);
         }
-      } catch (err) {
-        showUsuariosFeedback(feedbackGlobalEl, `Error al cargar datos para editar: ${err.message}`, 'error-indicator', 0);
-      }
     } else if (accion === 'toggle-activo') {
       const estadoActual = button.dataset.estadoActual === 'true';
       try {
@@ -583,16 +489,16 @@ export async function mount(container, sbInstance, user) {
         }
       }
     } else if (accion === 'permisos') {
-      const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo };
-      await abrirModalPermisos(usuario);
+        const usuario = { id: usuarioId, nombre: userName, correo: userEmail };
+        await abrirModalPermisos(usuario); // Esta función usa `currentSupabaseInstance` y otras variables globales del módulo
     }
   };
-
   tablaBodyEl.addEventListener('click', tableClickHandler);
   moduleListeners.push({ element: tablaBodyEl, type: 'click', handler: tableClickHandler });
 
-  btnCancelarEl.addEventListener('click', () => {
-    resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
-  });
-  moduleListeners.push({ element: btnCancelarEl, type: 'click', handler: () => resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl) });
+  const cancelHandler = () => resetearFormularioUsuario(formUsuarioEl, formTitleEl, passwordGroupEl, btnCancelarEl, selectRolesEl);
+  btnCancelarEl.addEventListener('click', cancelHandler);
+  moduleListeners.push({ element: btnCancelarEl, type: 'click', handler: cancelHandler });
+
+  console.log("[Usuarios/mount] Montaje completado.");
 }

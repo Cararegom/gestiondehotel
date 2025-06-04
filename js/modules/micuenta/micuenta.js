@@ -61,9 +61,10 @@ export async function mount(container, supabase, user, hotelId) {
   const { data: referidos = [] } = await supabase
     .from('referidos').select('*').eq('referidor_id', hotelId).order('fecha_registro', { ascending: false }) || {};
 
-    const pagosSafe = Array.isArray(pagos) ? pagos : [];
-const cambiosPlanSafe = Array.isArray(cambiosPlan) ? cambiosPlan : [];
-const referidosSafe = Array.isArray(referidos) ? referidos : [];
+  const pagosSafe = Array.isArray(pagos) ? pagos : [];
+  const cambiosPlanSafe = Array.isArray(cambiosPlan) ? cambiosPlan : [];
+  const referidosSafe = Array.isArray(referidos) ? referidos : [];
+
   // --- VERIFICACIÓN DE PERMISOS (solo creador o superadmin puede acceder) ---
   const esSuperAdmin = (
     userProfile.rol === 'admin' || userProfile.rol === 'superadmin' ||
@@ -94,11 +95,16 @@ const referidosSafe = Array.isArray(referidos) ? referidos : [];
   const diasConsumidos = Math.ceil((hoy - fechaInicio) / (1000 * 60 * 60 * 24));
   let diasRestantes = Math.max(0, diasCiclo - diasConsumidos);
 
-  // Lógica de gracia (debes mejorar la detección según tu backend real)
+  // ----- GRACIA LIMITADA A 2 DÍAS -----
+  const DIAS_GRACIA = 2;
   let enGracia = false;
-  if (hotel.estado_suscripcion === 'vencido' && hotel.dias_gracia) {
-    diasRestantes = hotel.dias_gracia;
+  const fechaFinMasGracia = new Date(fechaFin);
+  fechaFinMasGracia.setDate(fechaFin.getDate() + DIAS_GRACIA);
+
+  if (hotel.estado_suscripcion === 'vencido' && hoy <= fechaFinMasGracia) {
     enGracia = true;
+    diasRestantes = Math.ceil((fechaFinMasGracia - hoy) / (1000 * 60 * 60 * 24));
+    if (diasRestantes < 0) diasRestantes = 0;
   }
 
   // Generar link de referido único
@@ -158,7 +164,11 @@ const referidosSafe = Array.isArray(referidos) ? referidos : [];
                 </div>
                 <div class="text-gray-600 text-sm mb-2">${plan.descripcion || ''}</div>
                 <div class="text-xl font-bold text-green-600 mb-2">$${plan.precio_mensual?.toLocaleString('es-CO')} <span class="text-sm text-gray-400 font-normal">/mes</span></div>
-                <ul class="list-disc pl-4 text-gray-500 text-xs mb-3">${(plan.funcionalidades || []).map(f => `<li>${f}</li>`).join('')}</ul>
+                <ul class="list-disc pl-4 text-gray-500 text-xs mb-3">${
+                  Array.isArray(plan.funcionalidades?.descripcion_features)
+                    ? plan.funcionalidades.descripcion_features.map(f => `<li>${f}</li>`).join('')
+                    : ''
+                }</ul>
               </div>
               <button class="btn btn-success w-full mt-2 ${plan.id === planActivo?.id ? 'opacity-40 cursor-not-allowed' : ''}" data-plan-id="${plan.id}" ${plan.id === planActivo?.id ? 'disabled' : ''}>
                 ${plan.id === planActivo?.id ? 'Tu plan actual' : 'Elegir este plan'}
@@ -256,8 +266,8 @@ const referidosSafe = Array.isArray(referidos) ? referidos : [];
           </table>
         </div>
       </div>
-      <div class="flex justify-end text-xs text-gray-400 pt-3">
-        <span>Último acceso: ${new Date(userProfile.actualizado_en || userProfile.creado_en).toLocaleString('es-CO')}</span>
+      <div class="flex flex-col items-center justify-center text-xs text-gray-400 pt-8 pb-2">
+        Gestión de Hotel es un producto de Grupo Empresarial Areiza Gomez
       </div>
     </div>
     <!-- Modales y snackbar igual que antes... -->
@@ -299,7 +309,6 @@ const referidosSafe = Array.isArray(referidos) ? referidos : [];
     </div>
   `;
 
-
   // --- Copiar enlace de referido
   container.querySelector('#btnCopyRefLink')?.addEventListener('click', () => {
     const input = container.querySelector('#refLinkInput');
@@ -308,15 +317,29 @@ const referidosSafe = Array.isArray(referidos) ? referidos : [];
     showSnackbar(container, '¡Enlace copiado!', 'success');
   });
 
-  // --- Renovar plan actual (pago)
-  container.querySelector('#btnRenovarPlan')?.addEventListener('click', () => {
+  // --- Renovar plan actual (pago) con alerta
+  container.querySelector('#btnRenovarPlan')?.addEventListener('click', async () => {
     if (!planActivo) return;
     const ref = `renew-${hotel.id}-${planActivo.id}-${Date.now()}`;
+    if (typeof Swal !== 'undefined') {
+      const { isConfirmed } = await Swal.fire({
+        icon: 'info',
+        title: 'Serás redirigido a la pasarela de pago',
+        html: `<b>El pago será a nombre de<br>Grupo Empresarial Areiza Gomez</b><br><span class="text-gray-500">propietario del sistema hotelero Gestión de Hotel.</span><br><br>¿Deseas continuar?`,
+        confirmButtonText: 'Sí, continuar',
+        cancelButtonText: 'Cancelar',
+        showCancelButton: true,
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#c026d3',
+        focusConfirm: false
+      });
+      if (!isConfirmed) return;
+    }
     window.open(`https://checkout.wompi.co/p/?public-key=${WOMPI_PUBLIC_KEY}&currency=COP&amount-in-cents=${planActivo.precio_mensual*100}&reference=${ref}&customer-email=${user.email}`, '_blank');
     showSnackbar(container, 'Redirigiendo a Wompi para renovar...', 'success');
   });
 
-  // --- Upgrade de plan (prorrateo)
+  // --- Upgrade de plan (prorrateo) con alerta
   let upgradePlanSelected = null;
   container.querySelectorAll('button[data-plan-id]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -325,19 +348,45 @@ const referidosSafe = Array.isArray(referidos) ? referidos : [];
       upgradePlanSelected = plans.find(p => p.id == planId);
       const precioActual = planActivo?.precio_mensual || 0;
       const precioNuevo = upgradePlanSelected?.precio_mensual || 0;
-      const credito = (diasRestantes / diasCiclo) * precioActual;
-      const costoNuevo = (diasRestantes / diasCiclo) * precioNuevo;
-      const montoPagar = Math.max(0, Math.round(costoNuevo - credito));
+
+      let montoPagar = 0;
+      let credito = 0, costoNuevo = 0;
+      if (diasRestantes > 0 && hotel.estado_suscripcion === "activo") {
+        credito = (diasRestantes / diasCiclo) * precioActual;
+        costoNuevo = (diasRestantes / diasCiclo) * precioNuevo;
+        montoPagar = Math.max(0, Math.round(costoNuevo - credito));
+      } else {
+        montoPagar = precioNuevo;
+      }
+
       container.querySelector('#modalUpgrade').classList.remove('hidden');
       container.querySelector('#modalPlanName').innerHTML = `Plan <b>${upgradePlanSelected.nombre}</b> (${diasRestantes} días restantes)`;
-      container.querySelector('#prorrateoDetalle').innerHTML = `
-        <div>Crédito días restantes plan actual: <b>$${credito.toLocaleString('es-CO')}</b></div>
-        <div>Costo días restantes nuevo plan: <b>$${costoNuevo.toLocaleString('es-CO')}</b></div>
-        <div class="mt-2 text-lg font-bold text-green-700">Total a pagar: $${montoPagar.toLocaleString('es-CO')}</div>
-      `;
-      container.querySelector('#confirmUpgrade').onclick = () => {
+      container.querySelector('#prorrateoDetalle').innerHTML =
+        (diasRestantes > 0 && hotel.estado_suscripcion === "activo")
+          ? `
+            <div>Crédito días restantes plan actual: <b>$${credito.toLocaleString('es-CO')}</b></div>
+            <div>Costo días restantes nuevo plan: <b>$${costoNuevo.toLocaleString('es-CO')}</b></div>
+            <div class="mt-2 text-lg font-bold text-green-700">Total a pagar: $${montoPagar.toLocaleString('es-CO')}</div>
+          `
+          : `<div class="mt-2 text-lg font-bold text-green-700">Total a pagar: $${montoPagar.toLocaleString('es-CO')}</div>`;
+
+      container.querySelector('#confirmUpgrade').onclick = async () => {
         if (!upgradePlanSelected) return;
         const ref = `upgrade-${hotel.id}-${upgradePlanSelected.id}-${Date.now()}`;
+        if (typeof Swal !== 'undefined') {
+          const { isConfirmed } = await Swal.fire({
+            icon: 'info',
+            title: 'Serás redirigido a la pasarela de pago',
+            html: `<b>El pago será a nombre de<br>Grupo Empresarial Areiza Gomez</b><br><span class="text-gray-500">propietario del sistema hotelero Gestión de Hotel.</span><br><br>¿Deseas continuar?`,
+            confirmButtonText: 'Sí, continuar',
+            cancelButtonText: 'Cancelar',
+            showCancelButton: true,
+            confirmButtonColor: '#16a34a',
+            cancelButtonColor: '#c026d3',
+            focusConfirm: false
+          });
+          if (!isConfirmed) return;
+        }
         window.open(`https://checkout.wompi.co/p/?public-key=${WOMPI_PUBLIC_KEY}&currency=COP&amount-in-cents=${montoPagar*100}&reference=${ref}&customer-email=${user.email}`, '_blank');
         showSnackbar(container, 'Redirigiendo a Wompi para completar el pago...', 'success');
         container.querySelector('#modalUpgrade').classList.add('hidden');

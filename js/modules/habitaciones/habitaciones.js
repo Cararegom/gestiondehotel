@@ -16,6 +16,7 @@ let currentModuleUser = null;
 let currentSupabaseInstance = null;
 let todosLosTiemposEstanciaCache = [];
 let currentContainerEl = null;
+let activePlanDetails = null;
 
 // Horarios por defecto, se intentarán cargar desde la configuración del hotel
 let hotelCheckinTimeConfig = "15:00";
@@ -437,10 +438,67 @@ function resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEl, btnGuardarE
   formEl.elements.nombre.focus();
 }
 
+// js/modules/habitaciones/habitaciones.js
+
+// ... (otras funciones) ...
+
 async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaContainerEl, feedbackEl, btnGuardarEl, btnCancelarEl, formTitleEl) {
     event.preventDefault();
     if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
+    
     const formData = new FormData(formEl);
+    const editId = formData.get('habitacionIdEdit'); // Para saber si es creación o edición
+
+    // --- INICIO DE VALIDACIÓN DE LÍMITE DE HABITACIONES (SOLO AL CREAR) ---
+    if (!editId) { // Solo aplicar el chequeo de límite si estamos creando una nueva habitación
+        if (!activePlanDetails || !activePlanDetails.funcionalidades) {
+            console.error("handleHabitacionSubmit: No se pueden verificar los límites del plan: activePlanDetails no está cargado o no tiene 'funcionalidades'.");
+            showHabitacionesFeedback(feedbackEl, "Error: No se pudo verificar la información de tu plan para el límite de habitaciones. Intenta recargar.", "error", 0);
+            return; // Detener si no tenemos info del plan
+        }
+
+        const limiteHabitacionesDelPlan = activePlanDetails.funcionalidades.limite_habitaciones;
+        const nombreDelPlanActual = activePlanDetails.nombre;
+
+        // Solo validar si limiteHabitacionesDelPlan es un número (y no null/undefined para ilimitado)
+        if (typeof limiteHabitacionesDelPlan === 'number') {
+            try {
+                setFormLoadingState(formEl, true, btnGuardarEl, btnGuardarEl.textContent, 'Verificando plan...');
+                const { count: numeroActualHabitaciones, error: countError } = await currentSupabaseInstance
+                    .from('habitaciones')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('hotel_id', currentHotelId);
+                    // .eq('activo', true); // Opcional: considerar solo activas
+
+                setFormLoadingState(formEl, false, btnGuardarEl, btnGuardarEl.textContent); // Restaurar estado del botón
+
+                if (countError) {
+                    throw countError;
+                }
+
+                if (numeroActualHabitaciones >= limiteHabitacionesDelPlan) {
+                    console.warn(`Intento de exceder límite de habitaciones. Plan: ${nombreDelPlanActual}, Límite: ${limiteHabitacionesDelPlan}, Actuales: ${numeroActualHabitaciones}`);
+                    showHabitacionesFeedback(
+                        feedbackEl,
+                        `Has alcanzado el límite de ${limiteHabitacionesDelPlan} habitaciones para tu plan '${nombreDelPlanActual}'. Para agregar más, por favor considera mejorar tu plan desde "Mi Cuenta".`,
+                        'error',
+                        0 // No auto-ocultar
+                    );
+                    // También podrías usar Swal.fire aquí si prefieres un modal más grande
+                    return; // Detener el proceso de guardado
+                }
+            } catch (error) {
+                console.error("Error verificando el límite de habitaciones:", error);
+                showHabitacionesFeedback(feedbackEl, "Error al verificar el límite de habitaciones. Por favor, intenta de nuevo.", 'error', 0);
+                setFormLoadingState(formEl, false, btnGuardarEl, btnGuardarEl.textContent); // Asegurarse de restaurar en caso de error
+                return; // Detener por precaución
+            }
+        }
+    }
+    // --- FIN DE VALIDACIÓN DE LÍMITE DE HABITACIONES ---
+
+    // El resto de tu lógica para obtener datos del formulario, construir payload, etc.
+    // ... (como la tenías antes) ...
     const nombreHabitacion = formData.get('nombre')?.trim();
     if (!nombreHabitacion) {
         if (feedbackEl) showHabitacionesFeedback(feedbackEl, 'El nombre de la habitación es obligatorio.', 'error');
@@ -464,7 +522,6 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
       capacidad_base: parseInt(formData.get('capacidad_base')) || 1,
       capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || parseInt(formData.get('capacidad_base')) || 1,
       precio_huesped_adicional: parseFloat(formData.get('precio_huesped_adicional')) || 0,
-      // Ya no se incluyen 'permite_reservas_por_horas' ni 'precio_base_hora'
       estado: formData.get('estado'),
       amenidades: formData.get('amenidades')?.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) || null,
       hotel_id: currentHotelId,
@@ -472,15 +529,15 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
     };
 
     const selectedTiempoIds = Array.from(selectTiemposEl.selectedOptions).map(o => o.value);
-    const editId = formData.get('habitacionIdEdit');
-    const originalButtonText = btnGuardarEl.textContent;
+    const originalButtonText = btnGuardarEl.textContent; // Ya se obtiene arriba para la validación, podemos reusar
     setFormLoadingState(formEl, true, btnGuardarEl, originalButtonText, 'Guardando...');
+    
     try {
-      let savedRoomId = editId;
+      let savedRoomId = editId; // Si editId existe, es una actualización
       let accionBitacora = '';
       let detallesBitacora = {};
 
-      if (editId) {
+      if (editId) { // Actualizar habitación
         const { data, error } = await currentSupabaseInstance.from('habitaciones')
           .update(habitacionPayload).eq('id', editId).eq('hotel_id', currentHotelId)
           .select('id').single();
@@ -489,7 +546,7 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
         if (feedbackEl) showHabitacionesFeedback(feedbackEl, 'Habitación actualizada.', 'success');
         accionBitacora = 'ACTUALIZAR_HABITACION';
         detallesBitacora = { habitacion_id: savedRoomId, nombre: nombreHabitacion };
-      } else {
+      } else { // Crear nueva habitación (ya pasó la validación de límite)
         const { data, error } = await currentSupabaseInstance.from('habitaciones')
           .insert(habitacionPayload).select('id').single();
         if (error) throw error;
@@ -513,21 +570,21 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
       await renderHabitaciones(listaContainerEl, feedbackEl);
     } catch (err) {
       console.error('Error saving room:', err);
-      if (feedbackEl) showHabitacionesFeedback(feedbackEl, `Error al guardar habitación: ${err.message}`, 'error');
+      if (feedbackEl) showHabitacionesFeedback(feedbackEl, `Error al guardar habitación: ${err.message}`, 'error', 0);
     } finally {
       setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
     }
 }
-
 // --- Main Module Mount Function ---
-export async function mount(container, supabaseInst, user) {
+export async function mount(container, supabaseInst, user, hotelId, planDetails) { // <--- AÑADIDO planDetails
   console.log("[Habitaciones/mount] Iniciando montaje...");
   unmount(); 
 
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
-  currentHotelId = null; 
+  currentHotelId = hotelId; // hotelId ya se recibe de main.js
+  activePlanDetails = planDetails; // <--- GUARDA LOS DETALLES DEL PLAN 
 
   let tempHotelId = user?.user_metadata?.hotel_id || user?.app_metadata?.hotel_id;
   if (!tempHotelId && user?.id) {
@@ -847,6 +904,7 @@ export async function mount(container, supabaseInst, user) {
 
   if(formTiempoEstanciaEl && formTiempoEstanciaEl.elements.nombreTiempo) formTiempoEstanciaEl.elements.nombreTiempo.focus();
   console.log("[Habitaciones/mount] Montaje completado.");
+  console.log("[Habitaciones/mount] Detalles del plan recibidos:", activePlanDetails);
 }
 
 export function unmount() {
