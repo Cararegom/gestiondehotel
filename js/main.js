@@ -210,13 +210,66 @@ function updateUserInfo(user) {
     `;
     const logoutButton = userInfoNav.querySelector('#logout-button');
     if (logoutButton) {
-      logoutButton.replaceWith(logoutButton.cloneNode(true)); 
-      userInfoNav.querySelector('#logout-button').addEventListener('click', async () => {
-        showGlobalLoading("Cerrando sesión...");
-        await handleLogout(supabase);
-        hideGlobalLoading();
-      });
+  logoutButton.replaceWith(logoutButton.cloneNode(true)); 
+  userInfoNav.querySelector('#logout-button').addEventListener('click', async () => {
+    showGlobalLoading("Verificando caja...");
+    const user = getCurrentUser();
+    let hotelId = user?.user_metadata?.hotel_id || user?.app_metadata?.hotel_id;
+    if (!hotelId && user?.id) {
+        // Obtén hotelId si no viene en metadata
+        const { data: perfil } = await supabase.from('usuarios').select('hotel_id').eq('id', user.id).single();
+        hotelId = perfil?.hotel_id;
     }
+    // --- CONSULTA EN TURNOS ---
+    let hayCajaAbierta = false;
+    try {
+      const { data: turnosAbiertos, error } = await supabase
+        .from('turnos')
+        .select('id')
+        .eq('usuario_id', user.id)
+        .eq('hotel_id', hotelId)
+        .is('fecha_cierre', null); // SOLO los turnos abiertos
+
+      console.log("[DEBUG] turnosAbiertos:", turnosAbiertos, "Error:", error);
+
+      hayCajaAbierta = turnosAbiertos && turnosAbiertos.length > 0;
+      if (hayCajaAbierta) {
+        console.log("[DEBUG] ¡El usuario tiene caja (turno) abierta!");
+      } else {
+        console.log("[DEBUG] El usuario NO tiene caja abierta.");
+      }
+    } catch (err) {
+      console.error("Error verificando caja abierta:", err);
+      showAppFeedback("No se pudo verificar si tienes caja abierta. Intenta de nuevo.", "error");
+      hideGlobalLoading();
+      return;
+    }
+    // Si hay caja abierta, muestra advertencia
+    if (hayCajaAbierta) {
+  hideGlobalLoading(); // ← Esto OCULTA el overlay ANTES de mostrar el SweetAlert
+  const confirm = await Swal.fire({
+    icon: 'warning',
+    title: '¡Caja abierta!',
+    text: 'Tienes una caja (turno) abierta sin cerrar. Si sales, la caja quedará abierta. ¿Seguro que quieres cerrar sesión?',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, cerrar sesión',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#d33',
+  });
+  if (!confirm.isConfirmed) {
+    // hideGlobalLoading(); // Ya está oculto, no lo repitas
+    return;
+  }
+}
+
+    // Procede con el logout
+    showGlobalLoading("Cerrando sesión...");
+    await handleLogout(supabase);
+    hideGlobalLoading();
+  });
+}
+
+
   } else {
     userInfoNav.innerHTML = '';
   }

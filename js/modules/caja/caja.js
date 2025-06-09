@@ -82,6 +82,8 @@ async function abrirTurno() {
   }
 }
 
+// REEMPLAZA TU FUNCIÓN cerrarTurno CON ESTA
+// REEMPLAZA TU FUNCIÓN cerrarTurno CON ESTA
 async function cerrarTurno() {
   if (!turnoActivo) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay un turno activo para cerrar.');
@@ -89,6 +91,17 @@ async function cerrarTurno() {
   }
   showGlobalLoading("Realizando cierre de turno...");
   try {
+    // 1. OBTENER MÉTODOS DE PAGO
+    const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance
+      .from('metodos_pago')
+      .select('id, nombre')
+      .eq('hotel_id', currentHotelId)
+      .eq('activo', true)
+      .order('nombre', { ascending: true });
+
+    if (metodosError) throw metodosError;
+
+    // 2. OBTENER MOVIMIENTOS
     const { data: movimientos, error: movError } = await currentSupabaseInstance
       .from('caja')
       .select('*, usuarios(nombre), metodos_pago(nombre)')
@@ -96,71 +109,71 @@ async function cerrarTurno() {
       .order('creado_en', { ascending: true });
 
     if (movError) throw movError;
-    if (!movimientos || movimientos.length === 0) {
-      showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos en este turno para generar un reporte.');
-      hideGlobalLoading();
-      return;
-    }
 
-    const montoApertura = parseFloat(movimientos.find(m => m.tipo === 'apertura')?.monto || 0);
-
-    const totalIngresosOperacionales = movimientos
-      .filter(m => m.tipo === 'ingreso') // Solo ingresos operacionales
-      .reduce((acc, m) => acc + Number(m.monto), 0);
-
-    const totalEgresos = movimientos
-      .filter(m => m.tipo === 'egreso')
-      .reduce((acc, m) => acc + Number(m.monto), 0);
-
-    const balanceOperacional = totalIngresosOperacionales - totalEgresos;
-    const balanceFinalEnCaja = montoApertura + balanceOperacional; // Este es el que se guarda
-
-    const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
-    const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Usuario del Sistema';
-
-    const ingresosOperacionalesPorMetodo = {}; // Solo para ingresos de tipo 'ingreso'
-    const egresosPorMetodo = {};
-
+    // 3. INICIALIZAR Y PROCESAR REPORTE DINÁMICO (misma lógica que en el modal)
+    const crearCategoria = () => ({ pagos: {}, ventas: 0, transacciones: 0 });
+    const reporte = {
+      habitaciones: crearCategoria(),
+      cocina:       crearCategoria(),
+      tienda:       crearCategoria(),
+      propinas:     crearCategoria(),
+      gastos:       crearCategoria(),
+      apertura: 0,
+    };
+    
     movimientos.forEach(mv => {
-      const nombreMetodo = mv.metodos_pago?.nombre || 'No especificado';
-      if (mv.tipo === 'ingreso') { // Excluye 'apertura' para este desglose
-        if (!ingresosOperacionalesPorMetodo[nombreMetodo]) {
-          ingresosOperacionalesPorMetodo[nombreMetodo] = 0;
-        }
-        ingresosOperacionalesPorMetodo[nombreMetodo] += Number(mv.monto);
+      const monto = Number(mv.monto);
+      const nombreMetodo = mv.metodos_pago?.nombre || 'Efectivo';
+      const concepto = (mv.concepto || '').toLowerCase();
+      let categoria = null;
+
+      if (mv.tipo === 'apertura') {
+        reporte.apertura += monto;
+        return;
+      }
+      
+      if (mv.tipo === 'ingreso') {
+          if (concepto.includes('habitaci'))      { categoria = reporte.habitaciones; }
+          else if (concepto.includes('cocina'))   { categoria = reporte.cocina; }
+          else if (concepto.includes('tienda'))   { categoria = reporte.tienda; }
+          else if (concepto.includes('propina'))  { categoria = reporte.propinas; }
+          else { categoria = reporte.habitaciones; } 
+          categoria.ventas += 1;
+          categoria.transacciones += 1;
       } else if (mv.tipo === 'egreso') {
-        if (!egresosPorMetodo[nombreMetodo]) {
-          egresosPorMetodo[nombreMetodo] = 0;
-        }
-        egresosPorMetodo[nombreMetodo] += Number(mv.monto);
+          categoria = reporte.gastos;
+          categoria.transacciones += 1;
+      }
+
+      if (categoria) {
+        categoria.pagos[nombreMetodo] = (categoria.pagos[nombreMetodo] || 0) + monto;
       }
     });
 
-    const htmlReporte = generarHTMLReporteCierre(
-      movimientos,
-      montoApertura,
-      totalIngresosOperacionales,
-      totalEgresos,
-      balanceOperacional,         // Balance de las operaciones
-      balanceFinalEnCaja,         // Dinero total esperado en caja
-      usuarioNombre,
-      fechaCierre,
-      ingresosOperacionalesPorMetodo, // Desglose de ingresos operacionales
-      egresosPorMetodo
-    );
+    const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
+    const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
+    const totalGastos = calcularTotalFila(reporte.gastos);
+    const balanceFinalEnCaja = reporte.apertura + totalIngresos - totalGastos;
+    
+    const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
+    const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Sistema';
+
+    // 4. GENERAR Y ENVIAR EL REPORTE POR EMAIL
+    const htmlReporte = generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCierre);
 
     await enviarReporteCierreCaja({
-      asunto: `Cierre de Turno - ${usuarioNombre} - ${fechaCierre}`,
+      asunto: `Cierre de Caja Dinámico - ${usuarioNombre} - ${fechaCierre}`,
       htmlReporte: htmlReporte,
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
 
+    // 5. ACTUALIZAR EL ESTADO DEL TURNO
     const { error: updateError } = await currentSupabaseInstance
       .from('turnos')
       .update({
         estado: 'cerrado',
         fecha_cierre: new Date().toISOString(),
-        balance_final: balanceFinalEnCaja // Se guarda el balance final completo
+        balance_final: balanceFinalEnCaja
       })
       .eq('id', turnoActivo.id);
     if (updateError) throw updateError;
@@ -171,12 +184,12 @@ async function cerrarTurno() {
     await renderizarUI();
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error en el cierre de turno: ${err.message}`);
+    console.error("Error detallado en cerrarTurno:", err);
     await renderizarUI();
   } finally {
     hideGlobalLoading();
   }
 }
-
 // --- LÓGICA DE MOVIMIENTOS Y RENDERIZADO ---
 
 async function loadAndRenderMovements(tBodyEl, summaryEls) {
@@ -451,130 +464,182 @@ async function renderizarUI() {
 
 // --- MODAL DE RESUMEN DE CAJA ANTES DE CORTE (CON IMPRESIÓN ADAPTABLE) ---
 
+// REEMPLAZA TU FUNCIÓN mostrarResumenCorteDeCaja CON ESTA
 async function mostrarResumenCorteDeCaja() {
   showGlobalLoading('Cargando resumen del turno...');
   try {
-    // 1. Traer la configuración del hotel
+    // 1. OBTENER MÉTODOS DE PAGO ACTIVOS DEL HOTEL
+    const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance
+      .from('metodos_pago')
+      .select('id, nombre')
+      .eq('hotel_id', currentHotelId)
+      .eq('activo', true)
+      .order('nombre', { ascending: true });
+
+    if (metodosError || !metodosDePago || metodosDePago.length === 0) {
+      throw new Error("No se encontraron métodos de pago activos para el hotel.");
+    }
+
+    // 2. OBTENER MOVIMIENTOS Y CONFIGURACIÓN DEL HOTEL
     const { data: configHotel } = await currentSupabaseInstance
       .from('configuracion_hotel')
       .select('logo_url, nombre_hotel, direccion_fiscal, nit_rut, razon_social, tipo_impresora, tamano_papel, encabezado_ticket, pie_ticket, mostrar_logo')
       .eq('hotel_id', currentHotelId)
       .maybeSingle();
 
-    // 2. Traer los movimientos del turno actual
-    const { data: movimientos, error } = await currentSupabaseInstance
+    const { data: movimientos, error: movError } = await currentSupabaseInstance
       .from('caja')
       .select('*, usuarios(nombre), metodos_pago(nombre)')
       .eq('turno_id', turnoActivo.id)
       .order('creado_en', { ascending: true });
 
-    if (error || !movimientos || movimientos.length === 0) {
-      showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos en este turno para generar un resumen.');
+    if (movError) throw movError;
+    if (!movimientos || movimientos.length === 0) {
+      showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos para generar un resumen.');
       hideGlobalLoading();
       return;
     }
 
-    // 3. Calcular totales
-    let ingresos = 0, egresos = 0;
-    const ingresosPorMetodo = {};
-    const egresosPorMetodo = {};
+    // 3. INICIALIZAR ESTRUCTURA DE REPORTE DINÁMICA
+    const crearCategoria = () => ({
+        pagos: {}, // Aquí guardaremos los montos por método de pago
+        ventas: 0,
+        transacciones: 0
+    });
 
+    const reporte = {
+      habitaciones: crearCategoria(),
+      cocina:       crearCategoria(),
+      tienda:       crearCategoria(),
+      propinas:     crearCategoria(),
+      gastos:       crearCategoria(),
+      apertura: 0,
+    };
+
+    // 4. PROCESAR MOVIMIENTOS Y CLASIFICARLOS DINÁMICAMENTE
     movimientos.forEach(mv => {
+      const monto = Number(mv.monto);
+      const nombreMetodo = mv.metodos_pago?.nombre || 'Efectivo'; // Un default por si acaso
+      const concepto = (mv.concepto || '').toLowerCase();
+      let categoria = null;
+
+      if (mv.tipo === 'apertura') {
+        reporte.apertura += monto;
+        return;
+      }
+      
       if (mv.tipo === 'ingreso') {
-        ingresos += Number(mv.monto);
-        const nombre = mv.metodos_pago?.nombre || 'N/A';
-        if (!ingresosPorMetodo[nombre]) ingresosPorMetodo[nombre] = 0;
-        ingresosPorMetodo[nombre] += Number(mv.monto);
+          if (concepto.includes('habitaci'))      { categoria = reporte.habitaciones; }
+          else if (concepto.includes('cocina'))   { categoria = reporte.cocina; }
+          else if (concepto.includes('tienda'))   { categoria = reporte.tienda; }
+          else if (concepto.includes('propina'))  { categoria = reporte.propinas; }
+          else { categoria = reporte.habitaciones; } 
+          categoria.ventas += 1;
+          categoria.transacciones += 1;
       } else if (mv.tipo === 'egreso') {
-        egresos += Number(mv.monto);
-        const nombre = mv.metodos_pago?.nombre || 'N/A';
-        if (!egresosPorMetodo[nombre]) egresosPorMetodo[nombre] = 0;
-        egresosPorMetodo[nombre] += Number(mv.monto);
+          categoria = reporte.gastos;
+          categoria.transacciones += 1;
+      }
+
+      // Asignar monto al método de pago correspondiente
+      if (categoria) {
+        categoria.pagos[nombreMetodo] = (categoria.pagos[nombreMetodo] || 0) + monto;
       }
     });
-    const balance = ingresos - egresos;
 
-    // 4. Render HTML del modal normal (pantalla)
+    // 5. CONSTRUIR HTML DEL MODAL CON TABLA DINÁMICA
+    const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
+    
+    // Generar cabeceras de la tabla dinámicamente
+    const thMetodos = metodosDePago.map(m => `<th class="px-3 py-2 text-right">${m.nombre}</th>`).join('');
+
+    // Generar celdas para cada fila dinámicamente
+    const generarCeldasFila = (fila) => metodosDePago.map(m => `<td class="px-3 py-2 text-right">${formatCurrency(fila.pagos[m.nombre] || 0)}</td>`).join('');
+    
+    // Calcular totales por columna (método de pago)
+    const totalesPorMetodo = {};
+    metodosDePago.forEach(metodo => {
+      const nombreMetodo = metodo.nombre;
+      const totalIngreso = (reporte.habitaciones.pagos[nombreMetodo] || 0) +
+                           (reporte.cocina.pagos[nombreMetodo] || 0) +
+                           (reporte.tienda.pagos[nombreMetodo] || 0) +
+                           (reporte.propinas.pagos[nombreMetodo] || 0);
+      const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
+      totalesPorMetodo[nombreMetodo] = { ingreso: totalIngreso, gasto: totalGasto, balance: totalIngreso - totalGasto };
+    });
+
+    // Generar celdas de totales de footer
+    const tdTotalesIngresos = metodosDePago.map(m => `<td class="px-3 py-2 text-right">${formatCurrency(totalesPorMetodo[m.nombre].ingreso)}</td>`).join('');
+    const tdTotalesGastos = metodosDePago.map(m => `<td class="px-3 py-2 text-right text-red-700">(${formatCurrency(totalesPorMetodo[m.nombre].gasto)})</td>`).join('');
+    const tdTotalesBalance = metodosDePago.map(m => `<td class="px-3 py-2 text-right text-blue-800">${formatCurrency(totalesPorMetodo[m.nombre].balance)}</td>`).join('');
+
+    const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
+    const totalGastos = calcularTotalFila(reporte.gastos);
+    const balanceFinal = totalIngresos - totalGastos;
+
     let html = `
-      <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-3xl mx-auto border border-slate-200 relative animate-fade-in-down">
+      <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-fit mx-auto border border-slate-200 relative animate-fade-in-down">
         <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-blue-100 to-green-100 flex items-center gap-2">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" fill="#fff"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2l4 -4" /></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 17.25v-.934a4.5 4.5 0 1 0-9 0v.934" /><path stroke-linecap="round" stroke-linejoin="round" d="M12.915 2.115A2.25 2.25 0 0 1 15 4.155v1.88a2.25 2.25 0 0 1-2.25 2.25h-1.5A2.25 2.25 0 0 1 9 6.035v-1.88A2.25 2.25 0 0 1 11.085 2.115h1.83Z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
           <h2 class="text-2xl font-bold text-slate-800 ml-2">Resumen de Corte de Caja</h2>
         </div>
-        <div class="p-6 md:p-10 space-y-3">
-          <div id="print-corte-caja">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-              <div>
-                <span class="block text-xs text-gray-500">Ingresos Totales</span>
-                <span class="text-2xl font-bold text-green-600">${formatCurrency(ingresos)}</span>
-              </div>
-              <div>
-                <span class="block text-xs text-gray-500">Egresos Totales</span>
-                <span class="text-2xl font-bold text-red-600">${formatCurrency(egresos)}</span>
-              </div>
-              <div>
-                <span class="block text-xs text-gray-500">Balance</span>
-                <span class="text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-700'}">${formatCurrency(balance)}</span>
-              </div>
-            </div>
-            <div class="grid md:grid-cols-2 gap-4 mt-6">
-              <div>
-                <span class="block font-semibold mb-2 text-green-700">Ingresos por Método de Pago</span>
-                <ul class="pl-4 space-y-1">
-                  ${Object.entries(ingresosPorMetodo).map(([metodo, total]) => `
-                    <li class="flex items-center gap-2">
-                      <span class="text-gray-700">${metodo}</span>
-                      <span class="font-semibold text-green-700 ml-auto">${formatCurrency(total)}</span>
-                    </li>
-                  `).join('')}
-                </ul>
-              </div>
-              <div>
-                <span class="block font-semibold mb-2 text-red-700">Egresos por Método de Pago</span>
-                <ul class="pl-4 space-y-1">
-                  ${Object.entries(egresosPorMetodo).length === 0 
-                    ? '<li class="text-gray-400 italic">Sin egresos</li>' 
-                    : Object.entries(egresosPorMetodo).map(([metodo, total]) => `
-                      <li class="flex items-center gap-2">
-                        <span class="text-gray-700">${metodo}</span>
-                        <span class="font-semibold text-red-600 ml-auto">${formatCurrency(total)}</span>
-                      </li>
-                    `).join('')}
-                </ul>
-              </div>
-            </div>
-            <div class="mt-6">
-              <details class="transition-all duration-200">
-                <summary class="cursor-pointer text-blue-700 underline font-semibold hover:text-blue-900 mb-2">📋 Ver detalle de movimientos</summary>
-                <div class="overflow-x-auto overflow-y-auto mt-3 border rounded-xl shadow-sm bg-gray-50"
-                     style="max-height: 340px;">
-                  <table class="min-w-full text-xs md:text-sm">
-                    <thead>
-                      <tr class="bg-slate-100 border-b">
-                        <th class="px-2 py-1 text-left">Fecha</th>
-                        <th class="px-2 py-1 text-left">Tipo</th>
-                        <th class="px-2 py-1 text-right">Monto</th>
-                        <th class="px-2 py-1 text-left">Concepto</th>
-                        <th class="px-2 py-1 text-left">Método</th>
-                        <th class="px-2 py-1 text-left">Usuario</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${movimientos.map(mv => `
-                        <tr class="border-t hover:bg-slate-100">
-                          <td class="px-2 py-1">${formatDateTime(mv.creado_en)}</td>
-                          <td class="px-2 py-1">${mv.tipo}</td>
-                          <td class="px-2 py-1 text-right font-mono ${mv.tipo === 'ingreso' ? 'text-green-700' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
-                          <td class="px-2 py-1">${mv.concepto || ''}</td>
-                          <td class="px-2 py-1">${mv.metodos_pago?.nombre || 'N/A'}</td>
-                          <td class="px-2 py-1">${mv.usuarios?.nombre || 'Sistema'}</td>
-                        </tr>
-                      `).join('')}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </div>
+        <div class="p-4 md:p-6 space-y-3">
+          <div id="print-corte-caja" class="overflow-x-auto">
+            <table class="tabla-estilizada w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="px-3 py-2">Concepto</th>
+                  <th class="px-3 py-2">N° Ventas</th>
+                  <th class="px-3 py-2">Transac.</th>
+                  ${thMetodos}
+                  <th class="px-3 py-2 text-right">Totales</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="px-3 py-2 font-medium">HABITACIONES:</td>
+                  <td class="px-3 py-2 text-center">${reporte.habitaciones.ventas}</td>
+                  <td class="px-3 py-2 text-center">${reporte.habitaciones.transacciones}</td>
+                  ${generarCeldasFila(reporte.habitaciones)}
+                  <td class="px-3 py-2 text-right font-bold bg-gray-50">${formatCurrency(calcularTotalFila(reporte.habitaciones))}</td>
+                </tr>
+                <tr>
+                  <td class="px-3 py-2 font-medium">COCINA:</td>
+                  <td class="px-3 py-2 text-center">${reporte.cocina.ventas}</td>
+                  <td class="px-3 py-2 text-center">${reporte.cocina.transacciones}</td>
+                  ${generarCeldasFila(reporte.cocina)}
+                  <td class="px-3 py-2 text-right font-bold bg-gray-50">${formatCurrency(calcularTotalFila(reporte.cocina))}</td>
+                </tr>
+                <tr>
+                  <td class="px-3 py-2 font-medium">TIENDA:</td>
+                  <td class="px-3 py-2 text-center">${reporte.tienda.ventas}</td>
+                  <td class="px-3 py-2 text-center">${reporte.tienda.transacciones}</td>
+                  ${generarCeldasFila(reporte.tienda)}
+                  <td class="px-3 py-2 text-right font-bold bg-gray-50">${formatCurrency(calcularTotalFila(reporte.tienda))}</td>
+                </tr>
+                <tr class="bg-gray-100 font-bold">
+                  <td class="px-3 py-2">Ingresos Totales:</td>
+                  <td class="px-3 py-2 text-center">${reporte.habitaciones.ventas + reporte.cocina.ventas + reporte.tienda.ventas}</td>
+                  <td class="px-3 py-2 text-center">${reporte.habitaciones.transacciones + reporte.cocina.transacciones + reporte.tienda.transacciones}</td>
+                  ${tdTotalesIngresos}
+                  <td class="px-3 py-2 text-right">${formatCurrency(totalIngresos)}</td>
+                </tr>
+                <tr class="bg-red-50 font-bold">
+                  <td class="px-3 py-2 text-red-700">Gastos Totales:</td>
+                  <td class="px-3 py-2 text-center">-</td>
+                  <td class="px-3 py-2 text-center text-red-700">${reporte.gastos.transacciones}</td>
+                  ${tdTotalesGastos}
+                  <td class="px-3 py-2 text-right text-red-700">(${formatCurrency(totalGastos)})</td>
+                </tr>
+                 <tr class="bg-blue-100 font-extrabold text-base">
+                  <td class="px-3 py-2 text-blue-800">Balance Final:</td>
+                  <td class="px-3 py-2 text-center">-</td>
+                  <td class="px-3 py-2 text-center">${reporte.habitaciones.transacciones + reporte.cocina.transacciones + reporte.tienda.transacciones + reporte.gastos.transacciones}</td>
+                  ${tdTotalesBalance}
+                  <td class="px-3 py-2 text-right text-blue-800">${formatCurrency(balanceFinal)}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
           <div class="flex flex-col md:flex-row justify-end gap-3 mt-6">
             <button id="btn-imprimir-corte-caja" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-blue-100 text-blue-800 font-semibold transition order-2 md:order-1">🖨️ Imprimir</button>
@@ -585,40 +650,25 @@ async function mostrarResumenCorteDeCaja() {
       </div>
     `;
 
-    // Crear el modal y agregarlo al DOM
     let modal = document.createElement('div');
     modal.id = "modal-corte-caja";
-    modal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50";
+    modal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50 p-4";
     modal.innerHTML = html;
     document.body.appendChild(modal);
 
     hideGlobalLoading();
 
-    // --- Listeners ---
-    // Imprimir
-    document.getElementById('btn-imprimir-corte-caja').onclick = () => {
-      imprimirCorteCajaAdaptable(configHotel, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo);
-    };
-
-    // Cancelar
-    document.getElementById('btn-cancelar-corte-caja').onclick = () => {
-      modal.remove();
-    };
-
-    // Confirmar Corte y Enviar
+    document.getElementById('btn-cancelar-corte-caja').onclick = () => modal.remove();
     document.getElementById('btn-confirmar-corte-caja').onclick = async () => {
       modal.remove();
       await cerrarTurno();
     };
-
   } catch (e) {
     hideGlobalLoading();
-    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'Error generando el resumen de corte.');
+    showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error generando el resumen: ${e.message}`);
     console.error('Error en mostrarResumenCorteDeCaja:', e);
   }
-}
-
-// --- IMPRESIÓN ADAPTABLE POR TIPO DE IMPRESORA ---
+}// --- IMPRESIÓN ADAPTABLE POR TIPO DE IMPRESORA ---
 function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo) {
   let tamano = (config?.tamano_papel || '').toLowerCase();
   let tipo = (config?.tipo_impresora || '').toLowerCase();
@@ -847,128 +897,115 @@ async function popularMetodosPagoSelect(selectEl) {
   }
 }
 
-function generarHTMLReporteCierre(
-  movimientos,
-  montoApertura,
-  totalIngresosOperacionales,
-  totalEgresos,
-  balanceOperacional,      // Balance de Ingresos Op. vs Egresos
-  balanceFinalEnCaja,      // Monto Apertura + Balance Op.
-  usuarioNombre,
-  fechaCierre,
-  ingresosOperacionalesPorMetodo, // Ya no incluye "Saldo Apertura"
-  egresosPorMetodo
-) {
+// REEMPLAZA TU FUNCIÓN generarHTMLReporteCierre CON ESTA
+// REEMPLAZA TU FUNCIÓN generarHTMLReporteCierre CON ESTA
+function generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCierre) {
+  // --- LÓGICA DE CÁLCULO Y GENERACIÓN DINÁMICA ---
+  const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
+
+  const totalesPorMetodo = {};
+  metodosDePago.forEach(metodo => {
+    const nombreMetodo = metodo.nombre;
+    const totalIngreso = (reporte.habitaciones.pagos[nombreMetodo] || 0) +
+                         (reporte.cocina.pagos[nombreMetodo] || 0) +
+                         (reporte.tienda.pagos[nombreMetodo] || 0) +
+                         (reporte.propinas.pagos[nombreMetodo] || 0);
+    const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
+    totalesPorMetodo[nombreMetodo] = { ingreso: totalIngreso, gasto: totalGasto, balance: totalIngreso - totalGasto };
+  });
+
+  const totalIngresos = Object.values(totalesPorMetodo).reduce((acc, val) => acc + val.ingreso, 0);
+  const totalGastos = Object.values(totalesPorMetodo).reduce((acc, val) => acc + val.gasto, 0);
+  const balanceFinal = totalIngresos - totalGastos;
+
   const styles = {
-    body: `font-family: Arial, sans-serif; font-size: 14px; color: #333; line-height: 1.6; background-color: #f4f4f4; margin: 0; padding: 20px;`,
-    container: `max-width: 700px; margin: 20px auto; padding: 25px; border: 1px solid #ddd; border-radius: 10px; background-color: #ffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.1);`,
-    header: `color: #2c3e50; font-size: 24px; text-align: center; margin-bottom: 10px; border-bottom: 2px solid #3498db; padding-bottom: 10px;`,
-    subHeader: `font-size: 16px; color: #555; text-align: center; margin-bottom: 25px;`,
-    sectionTitle: `font-size: 18px; color: #3498db; margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 8px;`,
-    table: `width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 13px;`,
-    th: `border: 1px solid #ddd; padding: 10px; text-align: left; background-color: #eaf2f8; color: #333; font-weight: bold;`,
-    td: `border: 1px solid #ddd; padding: 10px; text-align: left;`,
-    summaryTable: `width: auto; margin-left: auto; margin-right: auto; margin-top: 20px; font-size: 14px; min-width: 450px;`,
-    summaryTdLabel: `border: 1px solid #ddd; padding: 10px; text-align: right; font-weight: bold; background-color: #f9f9f9; white-space: nowrap;`,
-    summaryTdValue: `border: 1px solid #ddd; padding: 10px; text-align: right;`,
-    aperturaColor: `color: #8e44ad; font-weight: bold;`,
-    ingresosColor: `color: #27ae60; font-weight: bold;`,
-    egresosColor: `color: #c0392b; font-weight: bold;`,
-    balanceOpColorPos: `color: #16a085; font-weight: bold;`, // Turquesa
-    balanceOpColorNeg: `color: #e67e22; font-weight: bold;`, // Naranja
-    balanceFinalColorPos: `color: #2980b9; font-weight: bold; font-size: 1.1em;`, // Azul
-    balanceFinalColorNeg: `color: #c0392b; font-weight: bold; font-size: 1.1em;`, // Rojo
-    footer: `text-align: center; font-size: 12px; color: #777; margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee;`
+    body: `font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #333; background-color: #f8f9fa; margin: 0; padding: 20px;`,
+    container: `max-width: fit-content; min-width: 800px; margin: 20px auto; padding: 25px; border: 1px solid #dee2e6; border-radius: 8px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.05);`,
+    header: `color: #212529; font-size: 26px; text-align: center; margin-bottom: 10px; border-bottom: 2px solid #007bff; padding-bottom: 10px;`,
+    subHeader: `font-size: 16px; color: #6c757d; text-align: center; margin-bottom: 25px;`,
+    table: `width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px;`,
+    th: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; background-color: #f1f3f5; font-weight: 600;`,
+    td: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: right;`,
+    tdConcepto: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; font-weight: 500;`,
+    tdTotal: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: right; font-weight: bold; background-color: #e9ecef;`,
+    tdTotalConcepto: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; font-weight: bold; background-color: #e9ecef;`,
+    footer: `text-align: center; font-size: 12px; color: #adb5bd; margin-top: 30px; padding-top: 15px; border-top: 1px solid #e9ecef;`
   };
 
-  let desgloseIngresosHtml = '';
-  if (Object.keys(ingresosOperacionalesPorMetodo).length > 0) {
-    for (const metodo in ingresosOperacionalesPorMetodo) {
-      desgloseIngresosHtml += `<tr><td style="${styles.td}">${metodo}</td><td style="${styles.td} text-align:right; ${styles.ingresosColor}">${formatCurrency(ingresosOperacionalesPorMetodo[metodo])}</td></tr>`;
-    }
-  } else {
-    desgloseIngresosHtml = `<tr><td colspan="2" style="${styles.td} text-align:center;">No hubo ingresos operacionales detallados por método.</td></tr>`;
-  }
-
-  let desgloseEgresosHtml = '';
-  if (Object.keys(egresosPorMetodo).length > 0) {
-    for (const metodo in egresosPorMetodo) {
-      desgloseEgresosHtml += `<tr><td style="${styles.td}">${metodo}</td><td style="${styles.td} text-align:right; ${styles.egresosColor}">${formatCurrency(egresosPorMetodo[metodo])}</td></tr>`;
-    }
-  } else {
-    desgloseEgresosHtml = `<tr><td colspan="2" style="${styles.td} text-align:center;">No hubo egresos detallados por método.</td></tr>`;
-  }
-
+  const thMetodos = metodosDePago.map(m => `<th style="${styles.th} text-align:right;">${m.nombre}</th>`).join('');
+  const generarCeldasFila = (fila) => metodosDePago.map(m => `<td style="${styles.td}">${formatCurrency(fila.pagos[m.nombre] || 0)}</td>`).join('');
+  const tdTotalesIngresos = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].ingreso)}</td>`).join('');
+  const tdTotalesGastos = metodosDePago.map(m => `<td style="${styles.tdTotal} color:red;">(${formatCurrency(totalesPorMetodo[m.nombre].gasto)})</td>`).join('');
+  const tdTotalesBalance = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].balance)}</td>`).join('');
+  
   return `
     <body style="${styles.body}">
       <div style="${styles.container}">
-        <h1 style="${styles.header}">Reporte de Cierre de Turno</h1>
-        <p style="${styles.subHeader}"><strong>Realizado por:</strong> ${usuarioNombre}<br>
-        <strong>Fecha de Cierre:</strong> ${fechaCierre}</p>
-
-        <h2 style="${styles.sectionTitle}">Resumen General del Turno</h2>
-        <table style="${styles.table} ${styles.summaryTable}">
-          <tr><td style="${styles.summaryTdLabel}">Monto de Apertura:</td><td style="${styles.summaryTdValue} ${styles.aperturaColor}">${formatCurrency(montoApertura)}</td></tr>
-          <tr><td style="${styles.summaryTdLabel}">Total Ingresos (Operacionales):</td><td style="${styles.summaryTdValue} ${styles.ingresosColor}">${formatCurrency(totalIngresosOperacionales)}</td></tr>
-          <tr><td style="${styles.summaryTdLabel}">Total Egresos (Operacionales):</td><td style="${styles.summaryTdValue} ${styles.egresosColor}">${formatCurrency(totalEgresos)}</td></tr>
-          <tr><td style="${styles.summaryTdLabel}">Balance de Operaciones del Turno:</td><td style="${styles.summaryTdValue} ${balanceOperacional >= 0 ? styles.balanceOpColorPos : styles.balanceOpColorNeg}">${formatCurrency(balanceOperacional)}</td></tr>
-          <tr><td style="${styles.summaryTdLabel}">Efectivo Esperado en Caja al Cierre:</td><td style="${styles.summaryTdValue} ${balanceFinalEnCaja >= 0 ? styles.balanceFinalColorPos : styles.balanceFinalColorNeg}">${formatCurrency(balanceFinalEnCaja)}</td></tr>
-        </table>
-
-        <h2 style="${styles.sectionTitle}">Desglose de Movimientos Operacionales por Método de Pago</h2>
-        <h3 style="font-size: 16px; color: #27ae60; margin-top: 20px; margin-bottom: 10px;">Ingresos Operacionales por Método:</h3>
-        <table style="${styles.table}">
-          <thead><tr><th style="${styles.th}">Método de Pago</th><th style="${styles.th}" style="text-align:right;">Monto Ingresado</th></tr></thead>
-          <tbody>${desgloseIngresosHtml}</tbody>
-        </table>
-
-        <h3 style="font-size: 16px; color: #c0392b; margin-top: 20px; margin-bottom: 10px;">Egresos por Método:</h3>
-        <table style="${styles.table}">
-          <thead><tr><th style="${styles.th}">Método de Pago</th><th style="${styles.th}" style="text-align:right;">Monto Egresado</th></tr></thead>
-          <tbody>${desgloseEgresosHtml}</tbody>
-        </table>
+        <h1 style="${styles.header}">Reporte de Ingresos y Gastos</h1>
+        <p style="${styles.subHeader}">
+          <strong>Realizado por:</strong> ${usuarioNombre}<br>
+          <strong>Fecha de Cierre:</strong> ${fechaCierre}
+        </p>
         
-        <h2 style="${styles.sectionTitle}">Detalle de Todos los Movimientos del Turno (Incl. Apertura)</h2>
         <table style="${styles.table}">
           <thead>
             <tr>
-              <th style="${styles.th}">Fecha</th>
-              <th style="${styles.th}">Tipo</th>
               <th style="${styles.th}">Concepto</th>
-              <th style="${styles.th}">Método Pago</th>
-              <th style="${styles.th}" style="text-align:right;">Monto</th>
+              <th style="${styles.th}">N° Ventas</th>
+              <th style="${styles.th}">Transac.</th>
+              ${thMetodos}
+              <th style="${styles.th} text-align:right;">Totales</th>
             </tr>
           </thead>
           <tbody>
-            ${movimientos.map(mv => {
-              let tipoDisplay = mv.tipo.charAt(0).toUpperCase() + mv.tipo.slice(1);
-              let montoColorStyle = ''; 
-              if (mv.tipo === 'apertura') {
-                montoColorStyle = styles.aperturaColor;
-              } else if (mv.tipo === 'ingreso') {
-                montoColorStyle = styles.ingresosColor;
-              } else if (mv.tipo === 'egreso') {
-                montoColorStyle = styles.egresosColor;
-              }
-              
-              return `
-              <tr>
-                <td style="${styles.td}">${formatDateTime(mv.creado_en)}</td>
-                <td style="${styles.td}">${tipoDisplay}</td>
-                <td style="${styles.td}">${mv.concepto || ''}</td>
-                <td style="${styles.td}">${mv.metodos_pago?.nombre || (mv.tipo === 'apertura' ? 'N/A (Apertura)' : 'N/A')}</td>
-                <td style="${styles.td} text-align:right; ${montoColorStyle}">
-                  ${formatCurrency(mv.monto)}
-                </td>
-              </tr>`;
-            }).join('')}
+            <tr>
+              <td style="${styles.tdConcepto}">HABITACIONES:</td>
+              <td style="${styles.td} text-align:center;">${reporte.habitaciones.ventas}</td>
+              <td style="${styles.td} text-align:center;">${reporte.habitaciones.transacciones}</td>
+              ${generarCeldasFila(reporte.habitaciones)}
+              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalFila(reporte.habitaciones))}</td>
+            </tr>
+            <tr>
+              <td style="${styles.tdConcepto}">COCINA:</td>
+              <td style="${styles.td} text-align:center;">${reporte.cocina.ventas}</td>
+              <td style="${styles.td} text-align:center;">${reporte.cocina.transacciones}</td>
+              ${generarCeldasFila(reporte.cocina)}
+              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalFila(reporte.cocina))}</td>
+            </tr>
+            <tr>
+              <td style="${styles.tdConcepto}">TIENDA:</td>
+              <td style="${styles.td} text-align:center;">${reporte.tienda.ventas}</td>
+              <td style="${styles.td} text-align:center;">${reporte.tienda.transacciones}</td>
+              ${generarCeldasFila(reporte.tienda)}
+              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalFila(reporte.tienda))}</td>
+            </tr>
+            <tr>
+              <td style="${styles.tdTotalConcepto}">Ingresos Totales:</td>
+              <td style="${styles.tdTotal} text-align:center;">${reporte.habitaciones.ventas + reporte.cocina.ventas + reporte.tienda.ventas}</td>
+              <td style="${styles.tdTotal} text-align:center;">${reporte.habitaciones.transacciones + reporte.cocina.transacciones + reporte.tienda.transacciones}</td>
+              ${tdTotalesIngresos}
+              <td style="${styles.tdTotal}">${formatCurrency(totalIngresos)}</td>
+            </tr>
+            <tr>
+              <td style="${styles.tdTotalConcepto}">Gastos Totales:</td>
+              <td style="${styles.tdTotal} text-align:center;">-</td>
+              <td style="${styles.tdTotal} text-align:center;">${reporte.gastos.transacciones}</td>
+              ${tdTotalesGastos}
+              <td style="${styles.tdTotal} color:red;">(${formatCurrency(totalGastos)})</td>
+            </tr>
+             <tr>
+              <td style="${styles.tdTotalConcepto}">Balance Final:</td>
+              <td style="${styles.tdTotal} text-align:center;">-</td>
+              <td style="${styles.tdTotal} text-align:center;">${reporte.habitaciones.transacciones + reporte.cocina.transacciones + reporte.tienda.transacciones + reporte.gastos.transacciones}</td>
+              ${tdTotalesBalance}
+              <td style="${styles.tdTotal} background-color:#007bff; color:white;">${formatCurrency(balanceFinal)}</td>
+            </tr>
           </tbody>
         </table>
         <div style="${styles.footer}">Este es un reporte automático generado por el sistema.</div>
       </div>
     </body>`;
 }
-
 async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
   const { data: config } = await currentSupabaseInstance
     .from('configuracion_hotel')

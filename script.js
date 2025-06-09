@@ -1,3 +1,9 @@
+const params = new URLSearchParams(window.location.search);
+const refId = params.get('ref');
+if (refId) {
+  localStorage.setItem('referido_id', refId);
+}
+
 import { supabase } from '/js/supabaseClient.js'; // Ajusta la ruta si es necesario
 import * as Chart from 'chart.js';
 
@@ -105,7 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         actualizado_en: now,
                         trial_inicio: now,
                         trial_fin: trialEnd.toISOString(),
-                        suscripcion_fin: null
+                        suscripcion_fin: null,
+                        referido_por: localStorage.getItem('referido_id') || null,
                     })
                     .select('id, trial_fin, suscripcion_fin')
                     .single();

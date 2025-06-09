@@ -108,7 +108,8 @@ export async function mount(container, supabase, user, hotelId) {
   }
 
   // Generar link de referido único
-  const refLink = `${window.location.origin}/registro?ref=${hotel.id}`;
+  const refLink = `https://gestiondehotel.com/index.html?ref=${hotel.id}`;
+
 
   container.innerHTML = `
     <div class="max-w-4xl mx-auto py-8 px-2 relative">

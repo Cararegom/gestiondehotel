@@ -7,6 +7,7 @@ let currentHotelId = null;
 let currentModuleUser = null;
 let currentChartInstances = {}; // Use an object to manage multiple chart instances
 let supabaseClient = null; // Assigned in mount
+let hotelConfigGlobal = null;
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { formatCurrency, formatDateTime } from '../../uiUtils.js'; // Assuming these are available globally or adjust path
 
@@ -642,7 +643,7 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
 async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
     const modalId = `modal-detalle-cierre-${turnoId}`;
     let existingModal = document.getElementById(modalId);
-    if (existingModal) existingModal.remove();
+    if (existingModal) existingModal.remove(); // Eliminar modal anterior si existe
 
     const loadingModal = document.createElement('div');
     loadingModal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50";
@@ -653,9 +654,9 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
         // 1. Fetch shift details (including user name)
         const { data: turnoData, error: turnoError } = await supabaseClient
         .from('turnos')
-        .select('id, fecha_cierre, balance_final, fecha_apertura, usuarios(nombre, email)') // MODIFICADO: created_at -> fecha_apertura
+        .select('id, fecha_cierre, balance_final, fecha_apertura, usuarios(nombre, email)')
         .eq('id', turnoId)
-        .eq('hotel_id', currentHotelId)
+        .eq('hotel_id', currentHotelId) // Asegurarse de que el turno pertenezca al hotel actual
         .single();
 
         if (turnoError) throw turnoError;
@@ -664,45 +665,43 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
         // 2. Fetch movements for this specific shift
         const { data: movimientos, error: movError } = await supabaseClient
             .from('caja')
-            .select('*, usuarios(nombre), metodos_pago(nombre)')
+            .select('*, usuarios(nombre), metodos_pago(nombre)') // Seleccionar todo de caja y nombres de usuario/método
             .eq('turno_id', turnoId)
             .order('creado_en', { ascending: true });
 
         if (movError) throw movError;
 
-        // 3. Calculate totals from movements (more reliable than just stored balance_final for detail view)
-        let ingresos = 0, egresos = 0;
-        const ingresosPorMetodo = {};
-        const egresosPorMetodo = {};
+        // 3. Calculate totals from movements
+        let totalIngresosCalc = 0;
+        let totalEgresosCalc = 0;
+        const ingresosPorMetodoDetalles = {};
+        const egresosPorMetodoDetalles = {};
         let montoApertura = 0;
 
         (movimientos || []).forEach(mv => {
-            // The 'apertura' movement is an ingreso, but often listed separately or pre-accounted.
-            // For this detail, we'll sum it with other ingresos unless explicitly asked to separate.
+            const montoNum = Number(mv.monto);
             if (mv.tipo === 'ingreso' || mv.tipo === 'apertura') {
-                ingresos += Number(mv.monto);
-                 if (mv.tipo === 'apertura') montoApertura = Number(mv.monto);
-                const nombreMetodo = mv.metodos_pago?.nombre || (mv.tipo === 'apertura' ? 'Monto Inicial' : 'N/A');
-                if (!ingresosPorMetodo[nombreMetodo]) ingresosPorMetodo[nombreMetodo] = 0;
-                ingresosPorMetodo[nombreMetodo] += Number(mv.monto);
+                totalIngresosCalc += montoNum;
+                if (mv.tipo === 'apertura') {
+                    montoApertura = montoNum; // Asignar el monto de apertura
+                }
+                const nombreMetodo = mv.metodos_pago?.nombre || (mv.tipo === 'apertura' ? 'Monto Inicial Registrado' : 'Otro Ingreso');
+                ingresosPorMetodoDetalles[nombreMetodo] = (ingresosPorMetodoDetalles[nombreMetodo] || 0) + montoNum;
             } else if (mv.tipo === 'egreso') {
-                egresos += Number(mv.monto);
-                const nombreMetodo = mv.metodos_pago?.nombre || 'N/A';
-                if (!egresosPorMetodo[nombreMetodo]) egresosPorMetodo[nombreMetodo] = 0;
-                egresosPorMetodo[nombreMetodo] += Number(mv.monto);
+                totalEgresosCalc += montoNum;
+                const nombreMetodo = mv.metodos_pago?.nombre || 'Otro Egreso';
+                egresosPorMetodoDetalles[nombreMetodo] = (egresosPorMetodoDetalles[nombreMetodo] || 0) + montoNum;
             }
         });
-        // Balance here is calculated from *all* movements in the shift.
-        // The `turnoData.balance_final` is the one calculated at the time of `cerrarTurno` in caja.js
-        // which is (totalIngresos - totalEgresos) where totalIngresos includes the apertura.
-        const balanceCalculado = ingresos - egresos; 
+        // El balanceCalculado aquí es la suma de todos los ingresos (incluida apertura) menos todos los egresos.
+        // Es para verificar contra el balance_final guardado del turno.
+        const balanceCalculadoConMovimientos = totalIngresosCalc - totalEgresosCalc;
         
         const usuarioNombre = turnoData.usuarios?.nombre || turnoData.usuarios?.email || 'Usuario Desconocido';
-    const fechaCierreStr = formatDateLocal(turnoData.fecha_cierre, { dateStyle: 'full', timeStyle: 'short' });
-    const fechaAperturaStr = formatDateLocal(turnoData.fecha_apertura, { dateStyle: 'full', timeStyle: 'short' }); // MODIFICADO: turnoData.created_at -> turnoData.fecha_apertura
+        const fechaCierreStr = formatDateLocal(turnoData.fecha_cierre, { dateStyle: 'full', timeStyle: 'short' });
+        const fechaAperturaStr = formatDateLocal(turnoData.fecha_apertura, { dateStyle: 'full', timeStyle: 'short' });
 
-
-        // 4. Render HTML for the modal (inspired by caja.js's mostrarResumenCorteDeCaja)
+        // 4. Render HTML for the modal
         let html = `
           <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-3xl mx-auto border border-slate-200 relative animate-fade-in-down">
             <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-slate-100 to-gray-100 flex items-center justify-between">
@@ -717,24 +716,26 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
               <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
                 <div>
                   <span class="block text-xs text-gray-500">Ingresos Totales (incl. apertura)</span>
-                  <span class="text-2xl font-bold text-green-600">${formatCurrencyLocal(ingresos)}</span>
+                  <span class="text-2xl font-bold text-green-600">${formatCurrencyLocal(totalIngresosCalc)}</span>
                 </div>
                 <div>
                   <span class="block text-xs text-gray-500">Egresos Totales</span>
-                  <span class="text-2xl font-bold text-red-600">${formatCurrencyLocal(egresos)}</span>
+                  <span class="text-2xl font-bold text-red-600">${formatCurrencyLocal(totalEgresosCalc)}</span>
                 </div>
                 <div>
-                  <span class="block text-xs text-gray-500">Balance del Turno</span>
-                  <span class="text-2xl font-bold ${balanceCalculado < 0 ? 'text-red-600' : 'text-green-700'}">${formatCurrencyLocal(balanceCalculado)}</span>
+                  <span class="block text-xs text-gray-500">Balance Registrado del Turno</span>
+                  <span class="text-2xl font-bold ${turnoData.balance_final < 0 ? 'text-red-600' : 'text-green-700'}">${formatCurrencyLocal(turnoData.balance_final)}</span>
                 </div>
               </div>
-                ${ montoApertura > 0 ? `<p class="text-sm text-center text-gray-500 italic">Monto de apertura: ${formatCurrencyLocal(montoApertura)}</p>` : ''}
+              ${ montoApertura > 0 ? `<p class="text-sm text-center text-gray-500 italic">Monto de apertura registrado: ${formatCurrencyLocal(montoApertura)}</p>` : ''}
+              ${ Math.abs(turnoData.balance_final - balanceCalculadoConMovimientos) > 0.01 ? `<p class="text-sm text-center text-orange-600 italic">Nota: El balance registrado (${formatCurrencyLocal(turnoData.balance_final)}) difiere del calculado con movimientos (${formatCurrencyLocal(balanceCalculadoConMovimientos)}). Puede haber movimientos editados/eliminados después del cierre.</p>` : '' }
+
 
               <div class="grid md:grid-cols-2 gap-4 mt-6">
                 <div>
                   <span class="block font-semibold mb-2 text-green-700">Ingresos por Método de Pago</span>
                   <ul class="pl-4 space-y-1 text-sm">
-                    ${Object.entries(ingresosPorMetodo).map(([metodo, total]) => `
+                    ${Object.entries(ingresosPorMetodoDetalles).map(([metodo, total]) => `
                       <li class="flex items-center gap-2">
                         <span class="text-gray-700">${metodo}</span>
                         <span class="font-semibold text-green-700 ml-auto">${formatCurrencyLocal(total)}</span>
@@ -745,9 +746,9 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
                 <div>
                   <span class="block font-semibold mb-2 text-red-700">Egresos por Método de Pago</span>
                   <ul class="pl-4 space-y-1 text-sm">
-                    ${Object.entries(egresosPorMetodo).length === 0 
+                    ${Object.keys(egresosPorMetodoDetalles).length === 0 
                       ? '<li class="text-gray-400 italic">Sin egresos</li>' 
-                      : Object.entries(egresosPorMetodo).map(([metodo, total]) => `
+                      : Object.entries(egresosPorMetodoDetalles).map(([metodo, total]) => `
                         <li class="flex items-center gap-2">
                           <span class="text-gray-700">${metodo}</span>
                           <span class="font-semibold text-red-600 ml-auto">${formatCurrencyLocal(total)}</span>
@@ -786,26 +787,57 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
                   </div>
               </div>
               <div class="flex justify-end gap-3 mt-6">
-                <button id="btn-cerrar-detalle-modal-action-${turnoId}" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition">Cerrar Vista</button>
+                <button id="btn-imprimir-detalle-cierre-${turnoId}" class="button button-primary py-2 px-4 text-sm">Imprimir Detalle</button>
+                <button id="btn-cerrar-detalle-modal-action-${turnoId}" class="button button-neutral py-2 px-4 text-sm">Cerrar Vista</button>
               </div>
             </div>
           </div>
         `;
         
-        loadingModal.remove(); // Remove loading modal
+        loadingModal.remove();
         const detailModal = document.createElement('div');
         detailModal.id = modalId;
         detailModal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50 p-4 overflow-auto";
         detailModal.innerHTML = html;
         document.body.appendChild(detailModal);
 
-        document.getElementById(`btn-close-detalle-modal-${turnoId}`).onclick = () => detailModal.remove();
-        document.getElementById(`btn-cerrar-detalle-modal-action-${turnoId}`).onclick = () => detailModal.remove();
+        // Asignar listeners a los botones del modal de detalle
+        const btnCloseX = detailModal.querySelector(`#btn-close-detalle-modal-${turnoId}`);
+        if (btnCloseX) btnCloseX.onclick = () => detailModal.remove();
+
+        const btnCerrarAccion = detailModal.querySelector(`#btn-cerrar-detalle-modal-action-${turnoId}`);
+        if (btnCerrarAccion) btnCerrarAccion.onclick = () => detailModal.remove();
+        
+        // ... (dentro de mostrarDetalleCierreCajaModal, después de que `detailModal` se ha añadido al DOM) ...
+
+        // BOTÓN DE IMPRESIÓN
+        const btnImprimir = detailModal.querySelector(`#btn-imprimir-detalle-cierre-${turnoId}`);
+        if (btnImprimir) {
+            btnImprimir.onclick = () => {
+                // Llamada a la función de impresión
+                imprimirDetalleCierreCaja(
+                    turnoData, 
+                    movimientos, 
+                    { totalIngresos: totalIngresosCalc, detalles: ingresosPorMetodoDetalles }, 
+                    { totalEgresos: totalEgresosCalc, detalles: egresosPorMetodoDetalles }, 
+                    montoApertura,
+                    turnoData.balance_final // Usar el balance final registrado del turno para el ticket
+                );
+            };
+        } else {
+            console.warn(`Botón de impresión con ID #btn-imprimir-detalle-cierre-${turnoId} no encontrado en el modal.`);
+        }
+// ...
 
     } catch (err) {
         loadingModal.remove();
         console.error("Error al mostrar detalle de cierre de caja:", err);
-        showReportesFeedback(feedbackElToUse || document.getElementById('reportes-feedback'), `Error al cargar detalle: ${err.message}`, 'error-indicator', 5000);
+        // Usar el feedbackEl del módulo de reportes si está disponible, o un alert de fallback
+        if (feedbackElToUse) {
+            showReportesFeedback(feedbackElToUse, `Error al cargar detalle: ${err.message}`, 'error-indicator', 5000);
+        } else {
+            alert(`Error al cargar detalle del cierre: ${err.message}`);
+        }
     }
 }
 
@@ -896,7 +928,184 @@ async function generarReporteCierresDeCaja(resultsContainerEl, fechaInicioInput,
     }
 }
 
+// js/modules/reportes/reportes.js
+// ... (resto de tus importaciones y variables de módulo como hotelConfigGlobal, formatDateLocal, formatCurrencyLocal) ...
 
+// --- Función de impresión específica para el detalle del cierre de caja ---
+async function imprimirDetalleCierreCaja(turnoData, movimientos, ingresosPorMetodo, egresosPorMetodo, montoApertura, balanceCalculado) {
+    const hotelConfig = hotelConfigGlobal || {}; // Usar config global si está disponible
+    const usuarioNombre = turnoData.usuarios?.nombre || turnoData.usuarios?.email || 'Usuario Desconocido';
+    const fechaCierreStr = formatDateLocal(turnoData.fecha_cierre, { dateStyle: 'full', timeStyle: 'short' });
+    const fechaAperturaStr = formatDateLocal(turnoData.fecha_apertura, { dateStyle: 'full', timeStyle: 'short' });
+
+    // Estilos para la impresión (puedes ajustarlos según el tamaño de papel de tu POS)
+    let estiloTicket = `
+        body { 
+            font-family: 'Arial', sans-serif; 
+            margin: 0; 
+            padding: 10px; 
+            font-size: 10pt; /* Tamaño base para POS de 80mm, reduce para 58mm */
+            color: #000; /* Texto negro para mejor legibilidad en impresión térmica */
+            background-color: #fff; /* Fondo blanco */
+        }
+        .ticket-container { 
+            width: 100%; 
+            /* Para impresoras POS, el ancho se controla por el driver, pero podemos limitar para preview */
+            /* max-width: 72mm; /* Para POS de 80mm (aprox) */
+            /* max-width: 50mm; /* Para POS de 58mm (aprox) */
+            max-width: 280px; /* Un ancho común para preview de POS */
+            margin: auto; 
+        }
+        h3, h4, h5 { 
+            margin: 8px 0 4px 0; 
+            font-weight: bold;
+        }
+        h3 { 
+            font-size: 1.2em; 
+            text-align: center; 
+            margin-bottom: 8px; 
+        }
+        h4 {
+            font-size: 1.05em;
+            margin-top: 12px;
+            border-bottom: 1px dashed #555;
+            padding-bottom: 3px;
+        }
+        p { 
+            margin: 2px 0; 
+            font-size: 0.95em; /* Ligeramente más pequeño para POS */
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            font-size: 0.9em; 
+            margin-top: 8px; 
+            margin-bottom: 8px;
+        }
+        th, td { 
+            border: none; /* Sin bordes para un look más limpio de POS */
+            padding: 2px 1px; /* Padding reducido */
+            text-align: left; 
+            vertical-align: top;
+        }
+        th { 
+            /* background-color: #f0f0f0; */ /* Omitir fondo en th para POS */
+            border-bottom: 1px solid #555; /* Línea separadora para encabezados de tabla */
+        }
+        .text-right { text-align: right; }
+        .text-bold { font-weight: bold; }
+        .total-line p { 
+            border-top: 1px solid #000; 
+            margin-top: 6px; 
+            padding-top: 6px; 
+            font-size: 1.1em; /* Resaltar total */
+            font-weight: bold;
+        }
+        .logo-container { text-align: center; margin-bottom: 8px; }
+        .logo-container img { max-width: 150px; max-height: 40px; object-fit: contain; }
+        .header-info p, .footer-info p { 
+            text-align: center; 
+            font-size: 0.85em; 
+            margin: 1px 0; 
+        }
+        hr.dashed { 
+            border: none; 
+            border-top: 1px dashed #555; 
+            margin: 8px 0; 
+        }
+        .item-list p { display: flex; justify-content: space-between; }
+        .item-list p span:last-child { font-weight: bold; }
+
+        /* Estilos específicos para impresión (ocultar UI, etc.) */
+        @media print {
+            body { margin: 0; padding: 0; /* Resetear márgenes para impresión */ }
+            .no-print { display: none !important; }
+            @page { margin: 5mm; /* Márgenes de la página al imprimir */ }
+        }
+    `;
+
+    let htmlTicket = `
+        <div class="ticket-container">
+            ${(hotelConfig.mostrar_logo !== false && hotelConfig.logo_url) ? `<div class="logo-container"><img src="${hotelConfig.logo_url}" alt="Logo"></div>` : ''}
+            <div class="header-info">
+                <p class="text-bold">${hotelConfig.nombre_hotel || 'Hotel'}</p>
+                ${hotelConfig.direccion_fiscal ? `<p>${hotelConfig.direccion_fiscal}</p>` : ''}
+                ${hotelConfig.nit_rut ? `<p>NIT/RUT: ${hotelConfig.nit_rut}</p>` : ''}
+                ${hotelConfig.telefono_fiscal ? `<p>Tel: ${hotelConfig.telefono_fiscal}</p>` : ''}
+            </div>
+            <hr class="dashed">
+            <h3>Detalle de Cierre de Caja</h3>
+            <p><strong>Usuario:</strong> ${usuarioNombre}</p>
+            <p><strong>Apertura Turno:</strong> ${fechaAperturaStr}</p>
+            <p><strong>Cierre Turno:</strong> ${fechaCierreStr}</p>
+            <p><strong>ID Turno:</strong> ${turnoData.id.slice(0, 12)}...</p>
+            <hr class="dashed">
+            
+            <h4>Resumen del Turno:</h4>
+            <div class="item-list">
+                <p><span>Ingresos Totales (incl. apertura):</span> <span>${formatCurrencyLocal(ingresosPorMetodo.totalIngresos)}</span></p>
+                ${montoApertura > 0 ? `<p><em><span>Monto de Apertura:</span> <span>${formatCurrencyLocal(montoApertura)}</span></em></p>` : ''}
+                <p><span>Egresos Totales:</span> <span>${formatCurrencyLocal(egresosPorMetodo.totalEgresos)}</span></p>
+            </div>
+            <div class="total-line">
+                 <p><span>Balance del Turno:</span> <span>${formatCurrencyLocal(balanceCalculado)}</span></p>
+            </div>
+            <hr class="dashed">
+            
+            <h4>Ingresos por Método de Pago:</h4>
+            <div class="item-list">
+            ${Object.keys(ingresosPorMetodo.detalles).length > 0 
+                ? Object.entries(ingresosPorMetodo.detalles).map(([metodo, total]) => `<p><span>${metodo}:</span> <span>${formatCurrencyLocal(total)}</span></p>`).join('') 
+                : '<p><em>Sin ingresos detallados.</em></p>'}
+            </div>
+            <hr class="dashed">
+
+            <h4>Egresos por Método de Pago:</h4>
+            <div class="item-list">
+            ${Object.keys(egresosPorMetodo.detalles).length > 0 
+                ? Object.entries(egresosPorMetodo.detalles).map(([metodo, total]) => `<p><span>${metodo}:</span> <span>${formatCurrencyLocal(total)}</span></p>`).join('') 
+                : '<p><em>Sin egresos.</em></p>'}
+            </div>
+            <hr class="dashed">
+
+            <h4>Detalle de Movimientos:</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>Concepto</th>
+                        <th class="text-right">Monto</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${(movimientos && movimientos.length > 0) ? movimientos.map(mv => `
+                        <tr>
+                            <td>${formatDateLocal(mv.creado_en, {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</td>
+                            <td>${mv.concepto || (mv.tipo === 'apertura' ? 'Monto Apertura' : 'N/A')} ${mv.metodos_pago?.nombre ? `(${mv.metodos_pago.nombre})` : ''}</td>
+                            <td class="text-right ${mv.tipo === 'ingreso' || mv.tipo === 'apertura' ? '' : 'text-red-600'}">${formatCurrencyLocal(mv.monto)}</td>
+                        </tr>`).join('') 
+                        : '<tr><td colspan="3" style="text-align:center;">No hay movimientos.</td></tr>'
+                    }
+                </tbody>
+            </table>
+            ${hotelConfig.pie_ticket ? `<hr class="dashed"><div class="footer-info"><p>${hotelConfig.pie_ticket}</p></div>` : ''}
+            <div class="footer-info" style="margin-top: 10px;"><p>Reporte generado: ${formatDateLocal(new Date(), {dateStyle:'medium', timeStyle:'short'})}</p></div>
+        </div>
+    `;
+
+    const ventanaImpresion = window.open('', '_blank', 'width=320,height=600,scrollbars=yes,resizable=yes');
+    if (ventanaImpresion) {
+        ventanaImpresion.document.write(`<html><head><title>Detalle Cierre Caja - Turno ${turnoData.id.slice(0,8)}</title><style>${estiloTicket}</style></head><body>${htmlTicket}</body></html>`);
+        ventanaImpresion.document.close();
+        ventanaImpresion.focus();
+        setTimeout(() => {
+            ventanaImpresion.print();
+            // ventanaImpresion.close(); // Descomentar si quieres que se cierre automáticamente después de imprimir
+        }, 500); // Delay para asegurar que el contenido se cargue antes de imprimir
+    } else {
+        alert("No se pudo abrir la ventana de impresión. Revise la configuración de bloqueo de ventanas emergentes de su navegador.");
+    }
+}
 // --- Mount / Unmount ---
 export async function mount(container, sbInstance, user) {
   unmount(container); 
