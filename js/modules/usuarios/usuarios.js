@@ -691,13 +691,18 @@ export async function mount(container, sbInstance, user, hotelId, planDetails) {
             await renderHorarioTurnosSemanal();
         }
     } else if (accion === 'reset-password') {
-        const email = button.dataset.correo;
-        if (confirm(`¿Enviar enlace para resetear contraseña a ${email}?`)) {
-            const { error } = await sbInstance.auth.resetPasswordForEmail(email);
-            if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
-            else showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo enviado a ${email}.`, 'success-indicator');
-        }
-    } else if (accion === 'permisos') {
+    const email = button.dataset.correo;
+    if (confirm(`¿Enviar enlace para resetear contraseña a ${email}?`)) {
+        // AÑADIMOS LA OPCIÓN redirectTo CON LA URL CORRECTA
+        const { error } = await sbInstance.auth.resetPasswordForEmail(email, {
+          redirectTo: 'https://www.gestiondehotel.com/password-reset.html',
+        });
+        if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
+        else showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo enviado a ${email}.`, 'success-indicator');
+    }
+}
+    
+    else if (accion === 'permisos') {
         const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo };
         await abrirModalPermisos(usuario);
     }
