@@ -433,19 +433,26 @@ async function initializeApp() {
   
   showGlobalLoading("Inicializando aplicación...");
 
-  onAuthStateChange(async (event, session) => { // <-- CAMBIO 1: Firma actualizada
-    const appUser = session?.user; // <-- CAMBIO 1.1: Usuario desde la sesión
+  onAuthStateChange(async (event, session) => {
+    const appUser = session?.user; 
     console.log("[Auth] Estado cambiado. Evento:", event, "Usuario actual:", appUser ? appUser.email : "Ninguno");
 
-    // --- CAMBIO 2: Lógica de detección actualizada ---
-    if (event === 'PASSWORD_RECOVERY') {
-        console.log('✅ Evento de recuperación de contraseña detectado. Mostrando formulario.');
-        hideGlobalLoading();
-        mostrarFormularioNuevaContrasena();
-        return; // Detenemos la ejecución para no cargar el resto de la app
-    }
-    // --- FIN DEL CAMBIO ---
+    // --- INICIO DE LA CORRECCIÓN DEFINITIVA ---
+    // Esta lógica revisa la URL para detectar si es un flujo de recuperación de contraseña
+    if (session && session.user && session.user.aud === 'authenticated' && session.expires_in === 3600) {
+        const urlParams = new URLSearchParams(window.location.hash.substring(1)); // Lee los parámetros de la URL
+        const type = urlParams.get('type');
 
+        if (type === 'recovery') {
+            console.log('✅✅✅ Evento de recuperación de contraseña detectado por URL. Mostrando formulario.');
+            hideGlobalLoading();
+            mostrarFormularioNuevaContrasena();
+            return; // ¡Este return es CRÍTICO para detener la carga normal de la app!
+        }
+    }
+    // --- FIN DE LA CORRECCIÓN DEFINITIVA ---
+
+    // El resto de tu código para un inicio de sesión normal se ejecuta si NO es recuperación de contraseña
     if (appUser) {
         let hotelIdToLoad = appUser.user_metadata?.hotel_id || appUser.app_metadata?.hotel_id;
         
