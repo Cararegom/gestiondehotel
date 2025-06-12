@@ -433,16 +433,17 @@ async function initializeApp() {
   
   showGlobalLoading("Inicializando aplicación...");
 
-  onAuthStateChange(async (user, session) => {
-    const appUser = user; 
+  onAuthStateChange(async (event, session) => {
+    const appUser = session?.user; 
     console.log("[Auth] Estado de autenticación cambiado. Usuario actual:", appUser ? appUser.email : "Ninguno");
 
     // --- CORRECCIÓN PARA RECUPERACIÓN DE CONTRASEÑA ---
-    if (session && session.user && session.user.recovery_sent_at) {
-        console.log('¡Detectado evento de recuperación de contraseña!');
-        mostrarFormularioNuevaContrasena();
-        return; // Detenemos la ejecución para no cargar el resto de la app
-    }
+    if (event === 'PASSWORD_RECOVERY') {
+    console.log('✅ Evento de recuperación de contraseña detectado. Mostrando formulario.');
+    hideGlobalLoading(); // Ocultamos el loading para mostrar el form
+    mostrarFormularioNuevaContrasena();
+    return; // Detenemos la ejecución para no cargar el resto de la app
+}
     // --- FIN DE LA CORRECCIÓN ---
 
     if (appUser) {
