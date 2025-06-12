@@ -185,6 +185,202 @@ function validateInitialInputs(formData) {
     }
 }
 
+//-----------calendario------------//
+// Parser para eventos creados desde tu app (si los tuvieras)
+function parseEventoGoogle(evento) {
+  if (!evento.summary || !evento.summary.startsWith('Reserva | Cliente:')) return null;
+  const summaryRegex = /^Reserva \| Cliente:\s*([^|]+)\|\s*Room:\s*([^\|]+)\|\s*Huéspedes:\s*(\d+)/i;
+  const match = evento.summary.match(summaryRegex);
+  if (!match) return null;
+
+  const cliente_nombre = match[1].trim();
+  const habitacion_id = match[2].trim();
+  const cantidad_huespedes = parseInt(match[3]);
+  let telefono = null, cedula = null;
+
+  if (evento.description) {
+    const telMatch = evento.description.match(/Tel[eé]fono:\s*(\d+)/i);
+    if (telMatch) telefono = telMatch[1].trim();
+    const cedulaMatch = evento.description.match(/Cedula:\s*([A-Za-z0-9]+)/i);
+    if (cedulaMatch) cedula = cedulaMatch[1].trim();
+  }
+
+  return {
+    cliente_nombre,
+    cantidad_huespedes,
+    habitacion_id,
+    telefono,
+    cedula,
+    fecha_inicio: evento.start.dateTime || evento.start.date,
+    fecha_fin: evento.end.dateTime || evento.end.date,
+    google_event_id: evento.id,
+    // La propiedad 'descripcion' se elimina antes de insertar
+    descripcion: evento.description || '', 
+    // Corregido para que coincida con la columna de la base de datos
+    origen_reserva: 'google_calendar'
+  };
+}
+
+// Parser para eventos de iCal (Booking, Airbnb, etc.)
+function parseEventoICal(evento, habitaciones) {
+    let habitacionNombre = null;
+    let habitacion_id = null;
+    const roomRegex = /Room\s*:? ?([^\n]+)/i;
+
+    if (evento.summary) {
+        const match = evento.summary.match(roomRegex);
+        if (match) habitacionNombre = match[1].trim();
+    }
+    if (!habitacionNombre && evento.location) {
+        const match = evento.location.match(roomRegex);
+        if (match) habitacionNombre = match[1].trim();
+    }
+    if (habitacionNombre && Array.isArray(habitaciones)) {
+        const habitacionObj = habitaciones.find(h => h.nombre.trim().toLowerCase() === habitacionNombre.toLowerCase());
+        if (habitacionObj) habitacion_id = habitacionObj.id;
+    }
+
+    let cliente_nombre = null, telefono = null, cedula = null, cantidad_huespedes = 1, notas = "";
+    if (evento.description) {
+        const nombreMatch = evento.description.match(/Nombre:\s*([^\n]+)/i);
+        if (nombreMatch) cliente_nombre = nombreMatch[1].trim();
+
+        const telMatch = evento.description.match(/Tel(?:[é|e]fono)?:\s*([^\n]+)/i);
+        if (telMatch) telefono = telMatch[1].trim();
+
+        const cedulaMatch = evento.description.match(/Cedula:\s*([^\n]+)/i);
+        if (cedulaMatch) cedula = cedulaMatch[1].trim();
+
+        const huespedesMatch = evento.description.match(/Huéspedes?:\s*(\d+)/i);
+        if (huespedesMatch) cantidad_huespedes = parseInt(huespedesMatch[1]);
+
+        const notasMatch = evento.description.match(/Notas?:\s*([^\n]+)/i);
+        if (notasMatch) notas = notasMatch[1].trim();
+    }
+
+    if (!cliente_nombre && evento.summary) {
+        cliente_nombre = evento.summary.replace(roomRegex, "").trim();
+    }
+
+    if (!habitacion_id || !cliente_nombre) return null;
+
+    return {
+        cliente_nombre,
+        cantidad_huespedes,
+        habitacion_id,
+        telefono,
+        cedula,
+        fecha_inicio: evento.start.dateTime || evento.start.date,
+        fecha_fin: evento.end.dateTime || evento.end.date,
+        google_event_id: evento.id,
+        notas: notas,
+        // La propiedad 'descripcion' se elimina antes de insertar
+        descripcion: evento.description || '',
+        // Corregido para que coincida con la columna de la base de datos
+        origen_reserva: 'ical_google' 
+    };
+}
+
+
+// Función principal de sincronización
+async function syncReservasConGoogleCalendar(state) {
+  try {
+    if (!state.hotelId) {
+      return;
+    }
+
+    // 1. Obtener datos locales
+    const { data: reservasActuales, error: errorReservas } = await state.supabase
+      .from('reservas')
+      .select('google_event_id')
+      .eq('hotel_id', state.hotelId)
+      .not('google_event_id', 'is', null);
+
+    const { data: habitaciones, error: errorHabitaciones } = await state.supabase
+      .from('habitaciones')
+      .select('id, nombre')
+      .eq('hotel_id', state.hotelId);
+    
+    if (errorReservas || errorHabitaciones) {
+        console.error("[Sync] Error obteniendo datos locales:", { errorReservas, errorHabitaciones });
+        return;
+    }
+    
+    // 2. Invocar la Edge Function
+    const { data: dataEventos, error: errorInvocacion } = await state.supabase.functions.invoke(
+      'calendar-sync-events',
+      { body: { hotelId: state.hotelId } }
+    );
+
+    if (errorInvocacion) {
+      console.error('CRÍTICO: Error al invocar la Edge Function:', errorInvocacion);
+      return;
+    }
+
+    const eventosGoogle = dataEventos.events;
+    if (!Array.isArray(eventosGoogle) || eventosGoogle.length === 0) {
+        return;
+    }
+    
+    let nuevasReservasInsertadas = 0;
+
+    for (const evento of eventosGoogle) {
+      // 3. Parsear el evento
+      let reservaParsed = parseEventoGoogle(evento);
+      if (!reservaParsed) {
+        reservaParsed = parseEventoICal(evento, habitaciones);
+      }
+      
+      if (!reservaParsed) continue;
+
+      // 4. Verificar duplicados
+      const yaExiste = reservasActuales.some(r => r.google_event_id === reservaParsed.google_event_id);
+      
+      if (!yaExiste && evento.status !== "cancelled") {
+        
+        const reservaParaInsertar = {
+          ...reservaParsed,
+          hotel_id: state.hotelId,
+          estado: 'reservada',
+          monto_total: 0,
+          monto_pagado: 0,
+          usuario_id: state.currentUser.id,
+        };
+
+        // Se elimina el campo 'descripcion' si no existe en la tabla de destino
+        if ('descripcion' in reservaParaInsertar) {
+             delete reservaParaInsertar.descripcion;
+        }
+
+        // 5. Insertar en la base de datos
+        const { data: insertData, error: insertError } = await state.supabase
+            .from('reservas')
+            .insert(reservaParaInsertar)
+            .select()
+            .single();
+        
+        if (insertError) {
+          console.error("[Sync] ERROR AL INSERTAR EN SUPABASE:", insertError.message, "--> Objeto que falló:", reservaParaInsertar);
+        } else {
+          console.log("%c[Sync] ¡ÉXITO! Reserva insertada:", "color: green; font-weight: bold;", insertData);
+          nuevasReservasInsertadas++;
+          reservasActuales.push({ google_event_id: insertData.google_event_id });
+        }
+      }
+    }
+
+    // 6. Refrescar la UI si hubo cambios
+    if (nuevasReservasInsertadas > 0) {
+        console.log("[Sync] Refrescando la lista de reservas en la UI...");
+        await renderReservas();
+    }
+
+  } catch (e) {
+    console.error("Error catastrófico en el flujo de syncReservasConGoogleCalendar:", e);
+  }
+}
+
+//------------------fin de reservas google---------------------//
 function calculateFechasEstancia(fechaEntradaStr, tipoCalculo, cantidadNochesStr, tiempoEstanciaId, checkoutHoraConfig) {
     const fechaEntrada = new Date(fechaEntradaStr);
     if (isNaN(fechaEntrada.getTime())) return { errorFechas: "La fecha de entrada no es válida." };
@@ -208,6 +404,8 @@ function calculateFechasEstancia(fechaEntradaStr, tipoCalculo, cantidadNochesStr
     if (fechaSalida <= fechaEntrada) return { errorFechas: "La fecha de salida debe ser posterior a la de llegada." };
     return { fechaEntrada, fechaSalida, tipoDuracionOriginal, cantidadDuracionOriginal, errorFechas: null };
 }
+
+
 
 function esTiempoEstanciaNoches(tiempoEstanciaId) {
     if (!tiempoEstanciaId || !state.tiemposEstanciaDisponibles) return false;
@@ -477,6 +675,37 @@ async function createBooking(payload) {
     if (errInsert) throw new Error(`Error al guardar reserva: ${errInsert.message}`);
 
     const nuevaReservaId = reservaInsertada.id;
+
+    try {
+  // Construir el objeto del evento para Google Calendar (más robusto)
+  const eventDetails = {
+    summary: `Reserva | Cliente: ${reservaInsertada.cliente_nombre} | Room: ${reservaInsertada.habitacion_id} | Huéspedes: ${reservaInsertada.cantidad_huespedes}`,
+    description: `Reserva gestiondehotel.com
+Room: ${reservaInsertada.habitacion_id}
+Teléfono: ${reservaInsertada.telefono || ''}
+Cédula: ${reservaInsertada.cedula || ''}
+ReservaId: ${reservaInsertada.id || ''}
+`,
+    start: reservaInsertada.fecha_inicio,
+    end: reservaInsertada.fecha_fin
+  };
+  // Intenta crear el evento en Google Calendar (si hay integración activa)
+  const { data, error } = await state.supabase.functions.invoke('calendar-create-event', {
+    body: {
+      hotelId: state.hotelId,
+      provider: 'google',
+      eventDetails
+    }
+  });
+  if (error) {
+    console.warn("No se pudo crear evento en Google Calendar:", error.message);
+    // Puedes mostrar un feedback opcional aquí
+  }
+} catch (err) {
+  console.error("Error enviando evento a Google Calendar:", err);
+}
+
+
 
     if (state.configHotel.cobro_al_checkin && reservaInsertada.monto_pagado > 0) {
         const turnoId = turnoService.getActiveTurnId();
@@ -1266,7 +1495,10 @@ async function handleListActions(event) {
     }
 }
 
+// js/modules/reservas/reservas.js
+
 export async function mount(container, supabaseClient, user, hotelId) {
+    // --- Configuración Inicial del Estado ---
     state.supabase = supabaseClient;
     state.currentUser = user;
     state.hotelId = hotelId;
@@ -1281,8 +1513,8 @@ export async function mount(container, supabaseClient, user, hotelId) {
     }
 
     console.log("[Reservas Mount] Iniciando montaje del módulo de Reservas.");
-
-    // HTML ESTRUCTURAL DEL MODULO
+    
+    // PASO 1: Crear la estructura HTML completa del módulo.
     container.innerHTML = `
     <div class="max-w-6xl mx-auto mt-7 px-4">
       <h2 id="form-title" class="text-2xl md:text-3xl font-bold mb-6 text-blue-800">Registrar Nueva Reserva</h2>
@@ -1338,61 +1570,41 @@ export async function mount(container, supabaseClient, user, hotelId) {
       <div id="reserva-feedback" class="mb-6 min-h-[24px]"></div>
       <div id="reservas-list" class="mt-8"></div> 
     </div>
-  `;
+    `;
 
-    // Logs de depuración para la estructura inicial
-    console.log("[Reservas Mount] HTML estructural inyectado en container (primeros 1000 chars):", container.innerHTML.substring(0, 1000));
-    const testReservasListExists = container.querySelector('#reservas-list');
-    console.log("[Reservas Mount] ¿Existe #reservas-list DESPUÉS de container.innerHTML?:", testReservasListExists ? "SÍ" : "NO - ¡PROBLEMA AQUÍ!");
-    if (!testReservasListExists) {
-        console.error("CRÍTICO: El div #reservas-list no se creó a partir del HTML del módulo. Revise la cadena HTML de mount.");
-        // Podrías intentar crearlo dinámicamente como un fallback extremo, pero es mejor arreglar el HTML.
-        // const fallbackList = document.createElement('div');
-        // fallbackList.id = 'reservas-list';
-        // fallbackList.className = 'mt-8';
-        // container.appendChild(fallbackList);
-        // console.log("[Reservas Mount] Se intentó crear #reservas-list como fallback.");
-    }
-
+    // PASO 2: Inicializar las referencias a los elementos de la UI.
     ui.init(container);
-    console.log("[Reservas Mount] ui.reservasListEl DESPUÉS de ui.init():", ui.reservasListEl ? "Referenciado" : "NO Referenciado - ¡PROBLEMA AQUÍ!");
-    if (!ui.reservasListEl) {
-         console.error("CRÍTICO: ui.reservasListEl es null después de ui.init(). El querySelector no encontró #reservas-list.");
-    }
 
+    // PASO 3: Sincronizar y cargar todos los datos iniciales.
+    await syncReservasConGoogleCalendar(state);
+    await loadInitialData(); 
 
-    await loadInitialData(); // Carga configHotel y luego actualiza UI de pago y llama a renderReservas
-
+    // PASO 4: Adjuntar todos los listeners de eventos.
     const tipoPagoSelectEl = document.getElementById('tipo_pago');
     const abonoContainerEl = document.getElementById('abono-container');
     const montoAbonoInputEl = document.getElementById('monto_abono');
     const totalPagoCompletoEl = document.getElementById('total-pago-completo');
-    const metodoPagoSelectEl = document.getElementById('metodo_pago_id');
-
+    
     function actualizarVisibilidadPago() {
-        if (!state.configHotel.cobro_al_checkin) return; // Solo aplica si se cobra al checkin
-        const totalReserva = state.currentBookingTotal;
-        if (!tipoPagoSelectEl) return; // Chequeo adicional
+        if (!state.configHotel.cobro_al_checkin) return;
+        if (!tipoPagoSelectEl) return;
 
         if (tipoPagoSelectEl.value === 'completo') {
             if (abonoContainerEl) abonoContainerEl.style.display = 'none';
             if (montoAbonoInputEl) { montoAbonoInputEl.value = ''; montoAbonoInputEl.required = false; }
             if (totalPagoCompletoEl) totalPagoCompletoEl.style.display = 'block';
-            if (metodoPagoSelectEl) metodoPagoSelectEl.required = totalReserva > 0;
+            if (ui.form.elements.metodo_pago_id) ui.form.elements.metodo_pago_id.required = state.currentBookingTotal > 0;
         } else { // Parcial
             if (abonoContainerEl) abonoContainerEl.style.display = 'block';
             if (montoAbonoInputEl) montoAbonoInputEl.required = (parseFloat(montoAbonoInputEl?.value) || 0) > 0;
             if (totalPagoCompletoEl) totalPagoCompletoEl.style.display = 'none';
-            if (metodoPagoSelectEl) metodoPagoSelectEl.required = (parseFloat(montoAbonoInputEl?.value) || 0) > 0;
+            if (ui.form.elements.metodo_pago_id) ui.form.elements.metodo_pago_id.required = (parseFloat(montoAbonoInputEl?.value) || 0) > 0;
         }
     }
 
     if (tipoPagoSelectEl) tipoPagoSelectEl.addEventListener('change', actualizarVisibilidadPago);
     if (montoAbonoInputEl) {
         montoAbonoInputEl.addEventListener('input', () => {
-            if (tipoPagoSelectEl && tipoPagoSelectEl.value === 'parcial' && metodoPagoSelectEl && state.configHotel.cobro_al_checkin) {
-                metodoPagoSelectEl.required = (parseFloat(montoAbonoInputEl.value) || 0) > 0;
-            }
             actualizarVisibilidadPago();
         });
     }
@@ -1417,10 +1629,7 @@ export async function mount(container, supabaseClient, user, hotelId) {
     if (ui.cancelEditButton) ui.cancelEditButton.onclick = () => resetFormToCreateMode();
     if (ui.reservasListEl) {
         ui.reservasListEl.addEventListener('click', handleListActions);
-    } else {
-        console.warn("[Reservas Mount] ui.reservasListEl no está definido para añadir listener de acciones.");
     }
-
 
     if (ui.tipoCalculoDuracionEl) {
         ui.tipoCalculoDuracionEl.onchange = async () => {
@@ -1433,18 +1642,13 @@ export async function mount(container, supabaseClient, user, hotelId) {
             actualizarVisibilidadPago();
         };
     }
-
-    if (ui.fechaEntradaInput) configureFechaEntrada(ui.fechaEntradaInput);
     
-    if (ui.tipoCalculoDuracionEl) ui.tipoCalculoDuracionEl.dispatchEvent(new Event('change'));
-    if (tipoPagoSelectEl && state.configHotel.cobro_al_checkin) tipoPagoSelectEl.dispatchEvent(new Event('change'));
-
     document.addEventListener('datosActualizados', handleExternalUpdate);
-    resetFormToCreateMode(); // Asegura que el form esté en modo creación al inicio con la config correcta
-
+    
+    // PASO 5: Configurar el estado inicial del formulario.
+    resetFormToCreateMode();
     console.log("[Reservas Mount] Montaje completado y listeners adjuntados.");
-}
-export function unmount(container) {
+}export function unmount(container) {
     console.log("Modulo Reservas desmontado.");
     if (ui.form && typeof handleFormSubmit === 'function') {
         ui.form.removeEventListener('submit', handleFormSubmit);

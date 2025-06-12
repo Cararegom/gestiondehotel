@@ -147,7 +147,6 @@ function renderNavigation(user) {
     } else {
         const existingDynamicLinks = mainNav.querySelectorAll('a.nav-link-dynamic');
         existingDynamicLinks.forEach(link => link.remove());
-        // console.warn("Contenedor #dynamic-nav-links no encontrado en mainNav."); // Opcional: crear si no existe
     }
 
     if (!user) return; 
@@ -171,7 +170,7 @@ function renderNavigation(user) {
         const modulosPermitidos = currentActivePlanDetails.funcionalidades.modulos_permitidos;
         navLinksConfig.forEach(linkConfig => {
             if (linkConfig.moduleKey === 'micuenta' || 
-                modulosPermitidos.includes(linkConfig.moduleKey)) { // "Dashboard", etc. deben estar en modulos_permitidos del plan
+                modulosPermitidos.includes(linkConfig.moduleKey)) { 
                 
                 const a = document.createElement('a');
                 a.href = linkConfig.path;
@@ -210,72 +209,68 @@ function updateUserInfo(user) {
     `;
     const logoutButton = userInfoNav.querySelector('#logout-button');
     if (logoutButton) {
-  logoutButton.replaceWith(logoutButton.cloneNode(true)); 
-  userInfoNav.querySelector('#logout-button').addEventListener('click', async () => {
-    showGlobalLoading("Verificando caja...");
-    const user = getCurrentUser();
-    let hotelId = user?.user_metadata?.hotel_id || user?.app_metadata?.hotel_id;
-    if (!hotelId && user?.id) {
-        // Obtén hotelId si no viene en metadata
-        const { data: perfil } = await supabase.from('usuarios').select('hotel_id').eq('id', user.id).single();
-        hotelId = perfil?.hotel_id;
+      logoutButton.replaceWith(logoutButton.cloneNode(true)); 
+      userInfoNav.querySelector('#logout-button').addEventListener('click', async () => {
+        showGlobalLoading("Verificando caja...");
+        const user = getCurrentUser();
+        let hotelId = user?.user_metadata?.hotel_id || user?.app_metadata?.hotel_id;
+        if (!hotelId && user?.id) {
+            const { data: perfil } = await supabase.from('usuarios').select('hotel_id').eq('id', user.id).single();
+            hotelId = perfil?.hotel_id;
+        }
+        
+        let hayCajaAbierta = false;
+        try {
+          const { data: turnosAbiertos } = await supabase
+            .from('turnos')
+            .select('id')
+            .eq('usuario_id', user.id)
+            .eq('hotel_id', hotelId)
+            .is('fecha_cierre', null);
+
+          hayCajaAbierta = turnosAbiertos && turnosAbiertos.length > 0;
+        } catch (err) {
+          console.error("Error verificando caja abierta:", err);
+          showAppFeedback("No se pudo verificar si tienes caja abierta. Intenta de nuevo.", "error");
+          hideGlobalLoading();
+          return;
+        }
+        
+        if (hayCajaAbierta) {
+            hideGlobalLoading();
+            const confirm = await Swal.fire({
+                icon: 'warning',
+                title: '¡Caja abierta!',
+                text: 'Tienes una caja (turno) abierta sin cerrar. Si sales, la caja quedará abierta. ¿Seguro que quieres cerrar sesión?',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, cerrar sesión',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#d33',
+            });
+            if (!confirm.isConfirmed) {
+                return;
+            }
+        }
+
+        showGlobalLoading("Cerrando sesión...");
+        await handleLogout(supabase);
+        hideGlobalLoading();
+      });
     }
-    // --- CONSULTA EN TURNOS ---
-    let hayCajaAbierta = false;
-    try {
-      const { data: turnosAbiertos, error } = await supabase
-        .from('turnos')
-        .select('id')
-        .eq('usuario_id', user.id)
-        .eq('hotel_id', hotelId)
-        .is('fecha_cierre', null); // SOLO los turnos abiertos
-
-      console.log("[DEBUG] turnosAbiertos:", turnosAbiertos, "Error:", error);
-
-      hayCajaAbierta = turnosAbiertos && turnosAbiertos.length > 0;
-      if (hayCajaAbierta) {
-        console.log("[DEBUG] ¡El usuario tiene caja (turno) abierta!");
-      } else {
-        console.log("[DEBUG] El usuario NO tiene caja abierta.");
-      }
-    } catch (err) {
-      console.error("Error verificando caja abierta:", err);
-      showAppFeedback("No se pudo verificar si tienes caja abierta. Intenta de nuevo.", "error");
-      hideGlobalLoading();
-      return;
-    }
-    // Si hay caja abierta, muestra advertencia
-    if (hayCajaAbierta) {
-  hideGlobalLoading(); // ← Esto OCULTA el overlay ANTES de mostrar el SweetAlert
-  const confirm = await Swal.fire({
-    icon: 'warning',
-    title: '¡Caja abierta!',
-    text: 'Tienes una caja (turno) abierta sin cerrar. Si sales, la caja quedará abierta. ¿Seguro que quieres cerrar sesión?',
-    showCancelButton: true,
-    confirmButtonText: 'Sí, cerrar sesión',
-    cancelButtonText: 'Cancelar',
-    confirmButtonColor: '#d33',
-  });
-  if (!confirm.isConfirmed) {
-    // hideGlobalLoading(); // Ya está oculto, no lo repitas
-    return;
-  }
-}
-
-    // Procede con el logout
-    showGlobalLoading("Cerrando sesión...");
-    await handleLogout(supabase);
-    hideGlobalLoading();
-  });
-}
-
-
   } else {
     userInfoNav.innerHTML = '';
   }
 }
 
 async function router() {
+  // --- FRENO DE SEGURIDAD AÑADIDO ---
+  if (document.getElementById('reset-password-form')) {
+    console.log('[Router] Detenido: El formulario de reseteo de contraseña está activo.');
+    hideGlobalLoading();
+    return;
+  }
+  // --- FIN DEL FRENO DE SEGURIDAD ---
+
   if (routerBusy) {
     console.warn('[Router] Ya estoy montando, ignoro esta llamada.');
     return;
@@ -334,57 +329,32 @@ async function router() {
         hotelIdForModule = perfilUserAppRouter?.hotel_id;
     }
 
-    // RESTRICCIÓN DE ACCESO POR PLAN
     if (userForModule && currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
         if (moduleKeyFromRoute && 
             moduleKeyFromRoute !== 'micuenta' && 
-            // moduleKeyFromRoute !== 'dashboard' && // Dashboard también debe estar en modulos_permitidos
             !currentActivePlanDetails.funcionalidades.modulos_permitidos.includes(moduleKeyFromRoute)) {
             
             console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
-            appContainer.innerHTML = `
-              <div class="p-6 md:p-8 text-center">
-                <h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al Módulo</h2>
-                <p class="text-gray-700 mb-1">La funcionalidad o módulo '<strong>${moduleKeyFromRoute}</strong>' no está incluida en tu plan actual (<strong>${currentActivePlanDetails.nombre}</strong>).</p>
-                <p class="text-gray-600 text-sm">Si necesitas acceder a esta sección, puedes mejorar tu plan.</p>
-                <div class="mt-6">
-                  <a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">
-                    Ir a Mi Cuenta para Ver Planes
-                  </a>
-                </div>
-              </div>`;
+            appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al Módulo</h2><p class="text-gray-700 mb-1">La funcionalidad o módulo '<strong>${moduleKeyFromRoute}</strong>' no está incluida en tu plan actual (<strong>${currentActivePlanDetails.nombre}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta sección, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
             hideGlobalLoading();
             routerBusy = false;
             return;
         }
-    } else if (userForModule && moduleKeyFromRoute !== 'micuenta' && moduleKeyFromRoute !== 'dashboard' && !currentActivePlanDetails) {
-         console.warn("[Router] No se pudieron determinar los permisos del plan. Acceso limitado.");
-         // Potencialmente mostrar error o redirigir si se intenta acceder a un módulo protegido sin datos del plan
     }
     
-    // BLOQUEO POR SUSCRIPCIÓN VENCIDA (Usa variables globales actualizadas)
     if (hotelIdForModule && userForModule && currentActiveHotel) {
         const usuarioId = userForModule.id;
         const esAdminRouter = (currentUserRole === 'admin' || currentUserRole === 'superadmin' || usuarioId === currentActiveHotel.creado_por);
         
-        if (isSubscriptionFueraDeGracia) { // Usa la variable global
+        if (isSubscriptionFueraDeGracia) {
             if (esAdminRouter) {
                 if (baseRoute !== '/micuenta') {
-                    showAppFeedback(
-                        'Tu suscripción ha vencido. Solo puedes acceder a "Mi Cuenta" para renovar tu plan.',
-                        'warning', true, 6000
-                    );
+                    showAppFeedback('Tu suscripción ha vencido. Solo puedes acceder a "Mi Cuenta" para renovar tu plan.', 'warning', true, 6000);
                     window.location.hash = '#/micuenta';
                     return; 
                 }
             } else { 
-                document.body.innerHTML = `
-                    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;padding:20px;background-color:#f3f4f6;">
-                        <h2 style="color:#be123c;font-size:1.8rem;margin-bottom:1rem;">Suscripción Vencida</h2>
-                        <p style="font-size:1.1rem;color:#374151;">La suscripción del hotel ha expirado.<br>
-                        Comunícate con el administrador para renovar el acceso.</p>
-                    </div>
-                `;
+                document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;padding:20px;background-color:#f3f4f6;"><h2 style="color:#be123c;font-size:1.8rem;margin-bottom:1rem;">Suscripción Vencida</h2><p style="font-size:1.1rem;color:#374151;">La suscripción del hotel ha expirado.<br>Comunícate con el administrador para renovar el acceso.</p></div>`;
                 hideGlobalLoading(); 
                 routerBusy = false; 
                 return; 
@@ -403,13 +373,12 @@ async function router() {
           if(appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error: Módulo para "${baseRoute}" inválido.</p>`;
         }
       } else {
-    try {
-      console.log(`[Router] Montando módulo para: ${baseRoute}`);
-      // Asegúrate de que hotelIdForModule y currentActivePlanDetails estén definidos y sean correctos
-      await moduleDefinition.mount(appContainer, supabase, userForModule, hotelIdForModule, currentActivePlanDetails); // <--- AÑADIDO currentActivePlanDetails
-      currentModuleUnmount = moduleDefinition.unmount || null;
-      currentPathLoaded = baseRoute;
-    } catch (error) {
+        try {
+          console.log(`[Router] Montando módulo para: ${baseRoute}`);
+          await moduleDefinition.mount(appContainer, supabase, userForModule, hotelIdForModule, currentActivePlanDetails);
+          currentModuleUnmount = moduleDefinition.unmount || null;
+          currentPathLoaded = baseRoute;
+        } catch (error) {
           if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error al cargar módulo: ${error.message}</p>`;
           currentPathLoaded = null;
         }
@@ -444,9 +413,6 @@ function updateActiveNavLink(currentPath) {
     });
 }
 
-// js/main.js
-// ... (todos tus imports y variables globales como currentActiveHotel, currentUserRole, etc. deben estar definidas antes) ...
-
 async function initializeApp() {
   appContainer = document.getElementById('app-container');
   mainNav = document.getElementById('main-nav'); 
@@ -458,24 +424,30 @@ async function initializeApp() {
       if(document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Faltan elementos base de la aplicación. Revise los IDs #app-container y #main-nav en su HTML.</p>";
       return;
   }
-  // Asegurar que exista el contenedor para los links dinámicos de navegación
+  
   if (mainNav && !mainNav.querySelector('#dynamic-nav-links')) {
       const dynamicLinksDiv = document.createElement('div');
       dynamicLinksDiv.id = 'dynamic-nav-links';
-      // Podrías añadirlo en un lugar específico del mainNav si es necesario, o al final.
       mainNav.appendChild(dynamicLinksDiv); 
   }
   
   showGlobalLoading("Inicializando aplicación...");
 
-  onAuthStateChange(async (user, session) => { // 'user' aquí es el currentUser de authService
+  onAuthStateChange(async (user, session) => {
     const appUser = user; 
     console.log("[Auth] Estado de autenticación cambiado. Usuario actual:", appUser ? appUser.email : "Ninguno");
+
+    // --- CORRECCIÓN PARA RECUPERACIÓN DE CONTRASEÑA ---
+    if (session && session.user && session.user.recovery_sent_at) {
+        console.log('¡Detectado evento de recuperación de contraseña!');
+        mostrarFormularioNuevaContrasena();
+        return; // Detenemos la ejecución para no cargar el resto de la app
+    }
+    // --- FIN DE LA CORRECCIÓN ---
 
     if (appUser) {
         let hotelIdToLoad = appUser.user_metadata?.hotel_id || appUser.app_metadata?.hotel_id;
         
-        // Obtener hotel_id Y rol desde la tabla usuarios
         const { data: perfil, error: perfilError } = await supabase
             .from('usuarios')
             .select('hotel_id, rol')
@@ -484,52 +456,48 @@ async function initializeApp() {
 
         if (perfilError) {
             console.error("onAuthStateChange: Error obteniendo perfil (hotel_id, rol):", perfilError.message);
-            currentUserRole = "Usuario"; // Fallback conservador
+            currentUserRole = "Usuario";
         } else if (perfil) {
-            if (!hotelIdToLoad) hotelIdToLoad = perfil.hotel_id; // Usar hotel_id del perfil si no estaba en metadata
-            currentUserRole = perfil.rol || "Usuario"; // Asignar rol o fallback
+            if (!hotelIdToLoad) hotelIdToLoad = perfil.hotel_id;
+            currentUserRole = perfil.rol || "Usuario";
         } else {
             console.warn("onAuthStateChange: No se encontró perfil de usuario en la tabla 'usuarios'.");
-            currentUserRole = "Usuario"; // Fallback si no hay perfil
+            currentUserRole = "Usuario";
         }
         
-        updateUserInfo(appUser); // Actualizar UI con email y rol ANTES de cargar plan
+        updateUserInfo(appUser);
 
         if (hotelIdToLoad) {
-            await loadHotelAndPlanDetails(hotelIdToLoad, supabase); // Carga currentActiveHotel y currentActivePlanDetails
+            await loadHotelAndPlanDetails(hotelIdToLoad, supabase);
             if (currentActiveHotel) { 
                 isSubscriptionFueraDeGracia = calculateSubscriptionExpiredStatus(currentActiveHotel);
             } else {
-                 // Si currentActiveHotel es null después de loadHotelAndPlanDetails, hubo un error o no se encontró
-                 isSubscriptionFueraDeGracia = false; // Asumir no vencida si no hay datos de hotel
+                 isSubscriptionFueraDeGracia = false;
                  console.warn("onAuthStateChange: currentActiveHotel no se pudo cargar, usando estado de suscripción por defecto.");
             }
         } else {
             console.warn("Usuario autenticado pero sin hotel_id asociado. Usando plan/estado de suscripción por defecto.");
-            currentActiveHotel = null; // Asegurar que esté limpio
-            // Plan por defecto para usuarios sin hotel o con error al cargar hotelId
-            currentActivePlanDetails = { nombre: "UsuarioSinHotel", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['micuenta'] } }; // Solo micuenta
-            isSubscriptionFueraDeGracia = false; // No se puede determinar, asumir no vencida
+            currentActiveHotel = null;
+            currentActivePlanDetails = { nombre: "UsuarioSinHotel", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['micuenta'] } };
+            isSubscriptionFueraDeGracia = false;
         }
         
-        renderNavigation(appUser); // Renderizar navegación DESPUÉS de cargar rol, hotel y plan
+        renderNavigation(appUser);
 
-        if (notificacionesCampanitaContainer && !campanitaInicializada && hotelIdToLoad) { // Solo inicializar si hay hotelId
-            await inicializarCampanitaGlobal(notificacionesCampanitaContainer, supabase, appUser, hotelIdToLoad); // Pasar hotelId
+        if (notificacionesCampanitaContainer && !campanitaInicializada && hotelIdToLoad) {
+            await inicializarCampanitaGlobal(notificacionesCampanitaContainer, supabase, appUser, hotelIdToLoad);
             campanitaInicializada = true;
         }
         
         if (window.location.pathname.endsWith('/login.html')) {
-            // El script de login.html ya debería haber redirigido a #/micuenta o #/dashboard según el estado.
-            // Si por alguna razón llega aquí sin hash, lo mandamos a dashboard.
             let targetHash = window.location.hash || '#/dashboard';
             console.log(`[Auth] Usuario autenticado en login.html, redirigiendo a la app con hash: ${targetHash}`);
             window.location.href = `/app/index.html${targetHash}`;
         } else {
             console.log(`[Auth] Usuario autenticado en la app. Actualizando/Enrutando...`);
-            await router(); // El router usará los datos globales actualizados
+            await router();
         }
-    } else { // No hay usuario (logout o sesión no iniciada)
+    } else {
         currentActiveHotel = null;
         currentActivePlanDetails = null;
         currentUserRole = null;
@@ -549,7 +517,7 @@ async function initializeApp() {
             window.location.href = '/login.html';
         } else {
             console.log("[Auth] Usuario no autenticado. Ya en login.html.");
-            hideGlobalLoading(); // Ocultar si estaba visible
+            hideGlobalLoading();
         }
     }
   });
@@ -559,36 +527,143 @@ async function initializeApp() {
       await router(); 
   });
 
-  // --- LÓGICA DEL MENÚ HAMBURGUESA ---
   const hamburgerButton = document.getElementById('hamburger-button');
   const sidebar = document.getElementById('sidebar');
   const menuOverlay = document.getElementById('menu-overlay'); 
-  // const mainContentArea = document.getElementById('main-content-area'); // Descomentar si usas pointerEvents
 
   if (hamburgerButton && sidebar) {
     hamburgerButton.addEventListener('click', () => {
       const isOpen = sidebar.classList.toggle('open');
-      hamburgerButton.setAttribute('aria-expanded', String(isOpen)); // aria-expanded debe ser string "true" o "false"
+      hamburgerButton.setAttribute('aria-expanded', String(isOpen));
       if (menuOverlay) {
         menuOverlay.classList.toggle('active', isOpen);
       }
-      // if(mainContentArea) mainContentArea.style.pointerEvents = isOpen ? 'none' : 'auto'; 
     });
   }
 
-  if (menuOverlay && sidebar) { // Solo añadir listener si menuOverlay existe
+  if (menuOverlay && sidebar) {
     menuOverlay.addEventListener('click', () => {
       sidebar.classList.remove('open');
       menuOverlay.classList.remove('active');
       if(hamburgerButton) hamburgerButton.setAttribute('aria-expanded', 'false');
-      // if(mainContentArea) mainContentArea.style.pointerEvents = 'auto';
     });
   }
-  // --- FIN LÓGICA MENÚ HAMBURGUESA ---
-
-  // hideGlobalLoading() es llamado dentro del router o en onAuthStateChange si no hay usuario.
-  // No es necesario una llamada explícita aquí, ya que onAuthStateChange se ejecutará.
 }
+
+// ===================================================================
+// ============= FUNCIÓN PARA MOSTRAR FORMULARIO DE RESETEO =============
+// ===================================================================
+
+// ===================================================================
+// ============= FUNCIÓN PARA MOSTRAR FORMULARIO DE RESETEO =============
+// ===================================================================
+
+function mostrarFormularioNuevaContrasena() {
+  const container = document.getElementById('app-container');
+  if (!container) {
+    console.error("El contenedor #app-container no fue encontrado.");
+    document.body.innerHTML = "Error crítico: no se pudo mostrar el formulario de recuperación.";
+    return;
+  }
+
+  // Ocultamos otros elementos de la UI principal para dar espacio al formulario
+  // --- INICIO DE LA CORRECCIÓN ---
+  const sidebar = document.getElementById('sidebar');
+  if (sidebar) {
+    sidebar.style.display = 'none';
+  }
+
+  const mainHeader = document.getElementById('main-header');
+  if (mainHeader) {
+    mainHeader.style.display = 'none';
+  }
+  // --- FIN DE LA CORRECCIÓN ---
+
+  // Inyectamos el HTML del formulario de reseteo.
+  container.innerHTML = `
+    <div class="min-h-screen bg-gray-100 flex flex-col justify-center items-center py-12 px-4">
+      <div class="w-full max-w-md">
+        <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          Establece tu nueva contraseña
+        </h2>
+      </div>
+
+      <div class="mt-8 w-full max-w-md">
+        <div class="bg-white py-8 px-4 shadow-xl sm:rounded-lg sm:px-10">
+          <form id="reset-password-form" class="space-y-6">
+            <div>
+              <label for="password" class="block text-sm font-medium text-gray-700">
+                Nueva Contraseña
+              </label>
+              <div class="mt-1">
+                <input id="password" name="password" type="password" autocomplete="new-password" required class="form-control w-full">
+              </div>
+            </div>
+
+            <div>
+              <label for="password-confirm" class="block text-sm font-medium text-gray-700">
+                Confirmar Nueva Contraseña
+              </label>
+              <div class="mt-1">
+                <input id="password-confirm" name="password-confirm" type="password" autocomplete="new-password" required class="form-control w-full">
+              </div>
+            </div>
+
+            <div>
+              <button type="submit" class="button button-primary w-full">
+                Guardar y Acceder
+              </button>
+            </div>
+          </form>
+          <div id="reset-feedback" class="mt-4 text-center text-sm"></div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Añadimos la lógica para manejar el envío del formulario.
+  const form = document.getElementById('reset-password-form');
+  const feedbackEl = document.getElementById('reset-feedback');
+  const submitButton = form.querySelector('button[type="submit"]');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const newPassword = form.elements.password.value;
+    const confirmPassword = form.elements['password-confirm'].value;
+
+    if (newPassword.length < 8) {
+      feedbackEl.innerHTML = '<p class="text-red-600">La contraseña debe tener al menos 8 caracteres.</p>';
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      feedbackEl.innerHTML = '<p class="text-red-600">Las contraseñas no coinciden.</p>';
+      return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = 'Guardando...';
+    feedbackEl.innerHTML = '';
+
+    // Usamos supabase.auth.updateUser para establecer la nueva contraseña.
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword
+    });
+
+    if (error) {
+      feedbackEl.innerHTML = `<p class="text-red-600">Error: ${error.message}</p>`;
+      submitButton.disabled = false;
+      submitButton.textContent = 'Guardar y Acceder';
+    } else {
+      feedbackEl.innerHTML = '<p class="text-green-600">¡Contraseña actualizada con éxito! Redirigiendo...</p>';
+      
+      await supabase.auth.signOut();
+      setTimeout(() => {
+        window.location.href = '/login.html';
+      }, 2500);
+    }
+  });
+}
+// --- INICIO DE LA APLICACIÓN ---
 document.addEventListener('DOMContentLoaded', () => {
   if (!document.getElementById('app-container')) {
       console.error("Falta #app-container en DOMContentLoaded.");
