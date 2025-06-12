@@ -433,18 +433,18 @@ async function initializeApp() {
   
   showGlobalLoading("Inicializando aplicación...");
 
-  onAuthStateChange(async (event, session) => {
-    const appUser = session?.user; 
-    console.log("[Auth] Estado de autenticación cambiado. Usuario actual:", appUser ? appUser.email : "Ninguno");
+  onAuthStateChange(async (event, session) => { // <-- CAMBIO 1: Firma actualizada
+    const appUser = session?.user; // <-- CAMBIO 1.1: Usuario desde la sesión
+    console.log("[Auth] Estado cambiado. Evento:", event, "Usuario actual:", appUser ? appUser.email : "Ninguno");
 
-    // --- CORRECCIÓN PARA RECUPERACIÓN DE CONTRASEÑA ---
+    // --- CAMBIO 2: Lógica de detección actualizada ---
     if (event === 'PASSWORD_RECOVERY') {
-    console.log('✅ Evento de recuperación de contraseña detectado. Mostrando formulario.');
-    hideGlobalLoading(); // Ocultamos el loading para mostrar el form
-    mostrarFormularioNuevaContrasena();
-    return; // Detenemos la ejecución para no cargar el resto de la app
-}
-    // --- FIN DE LA CORRECCIÓN ---
+        console.log('✅ Evento de recuperación de contraseña detectado. Mostrando formulario.');
+        hideGlobalLoading();
+        mostrarFormularioNuevaContrasena();
+        return; // Detenemos la ejecución para no cargar el resto de la app
+    }
+    // --- FIN DEL CAMBIO ---
 
     if (appUser) {
         let hotelIdToLoad = appUser.user_metadata?.hotel_id || appUser.app_metadata?.hotel_id;
@@ -550,7 +550,6 @@ async function initializeApp() {
     });
   }
 }
-
 // ===================================================================
 // ============= FUNCIÓN PARA MOSTRAR FORMULARIO DE RESETEO =============
 // ===================================================================
