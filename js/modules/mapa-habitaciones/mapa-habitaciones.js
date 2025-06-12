@@ -57,7 +57,60 @@ function cerrarModalGlobal() {
 }
 
 import { fetchTurnoActivo } from '../../services/turnoService.js';
+/**
+ * Busca y devuelve el mejor descuento automático aplicable para una habitación y fecha.
+ * @param {object} supabase - Instancia de Supabase.
+ * @param {string} hotelId - ID del hotel.
+ * @param {string} habitacionId - ID de la habitación que se está reservando.
+ * @param {Date} fechaDeEstancia - La fecha para la cual se quiere verificar el descuento.
+ * @returns {object|null} - El objeto del descuento aplicable o null si no hay ninguno.
+ */
+async function buscarDescuentoAplicable(supabase, hotelId, habitacionId, fechaDeEstancia) {
+    console.log(`[buscarDescuentoAplicable] Buscando descuento para Hab. ${habitacionId.substring(0,8)} en fecha ${fechaDeEstancia.toISOString()}`);
+    
+    const fechaISO = fechaDeEstancia.toISOString();
 
+    const { data, error } = await supabase
+        .from('descuentos')
+        .select('*')
+        .eq('hotel_id', hotelId)
+        .eq('activo', true)
+        .is('codigo', null) // Solo buscar descuentos automáticos (sin código)
+        .lte('fecha_inicio', fechaISO) // La estancia debe ser después del inicio del descuento
+        .gte('fecha_fin', fechaISO);    // Y antes del fin del descuento
+
+    if (error) {
+        console.error("Error buscando descuentos automáticos:", error);
+        return null;
+    }
+
+    if (!data || data.length === 0) {
+        console.log("[buscarDescuentoAplicable] No se encontraron descuentos activos para esta fecha.");
+        return null;
+    }
+
+    // Filtrar por aplicabilidad
+    const descuentosValidos = data.filter(d => {
+        if (d.aplicabilidad === 'todas_las_habitaciones') {
+            return true; // Aplica a todas
+        }
+        if (d.aplicabilidad === 'habitaciones_especificas') {
+            // El ID de la habitación debe estar en la lista de habitaciones aplicables
+            return d.habitaciones_aplicables && d.habitaciones_aplicables.includes(habitacionId);
+        }
+        return false;
+    });
+
+    if (descuentosValidos.length === 0) {
+        console.log("[buscarDescuentoAplicable] Se encontraron descuentos por fecha, pero ninguno aplica a esta habitación específica.");
+        return null;
+    }
+
+    // Lógica para decidir qué descuento aplicar si hay varios (ej. el de mayor valor)
+    // Por ahora, simplemente devolvemos el primero que encontró.
+    console.log("[buscarDescuentoAplicable] Descuento encontrado y aplicable:", descuentosValidos[0]);
+    return descuentosValidos[0];
+}
 
 
 async function imprimirTicketHabitacion({ supabase, hotelId, datosTicket, tipoDocumento }) {
@@ -543,8 +596,34 @@ async function renderRooms(listEl, supabase, currentUser, hotelId) {
         listEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones configuradas para este hotel.</div>`;
         return;
     }
+    
+    // ===================== INICIO DE LA CORRECCIÓN INTELIGENTE =====================
 
-    // ---- ORDEN NUMÉRICO DE HABITACIONES POR NOMBRE ----
+    // 1. Obtenemos todas las reservas futuras del hotel en una sola consulta.
+    const ahora = new Date();
+    const { data: todasLasReservasFuturas, error: errReservas } = await supabase
+        .from('reservas')
+        .select('id, habitacion_id, fecha_inicio, estado')
+        .eq('hotel_id', hotelId)
+        .in('estado', ['reservada', 'confirmada']) // Buscamos tanto reservadas como confirmadas
+        .gte('fecha_inicio', ahora.toISOString());
+
+    if (errReservas) {
+        console.error("Error al obtener reservas futuras, los estados de las habitaciones podrían ser imprecisos:", errReservas);
+    }
+
+    // 2. Creamos un mapa para buscar la reserva más próxima de cada habitación fácilmente.
+    const reservasPorHabitacion = new Map();
+    if (todasLasReservasFuturas) {
+        todasLasReservasFuturas.forEach(res => {
+            const fechaInicioReserva = new Date(res.fecha_inicio);
+            if (!reservasPorHabitacion.has(res.habitacion_id) || fechaInicioReserva < new Date(reservasPorHabitacion.get(res.habitacion_id).fecha_inicio)) {
+                reservasPorHabitacion.set(res.habitacion_id, res);
+            }
+        });
+    }
+
+    // ---- ORDEN NUMÉRICO DE HABITACIONES ----
     habitaciones.sort((a, b) => {
         const getNumber = nombre => {
             const match = nombre.match(/\d+/);
@@ -552,19 +631,40 @@ async function renderRooms(listEl, supabase, currentUser, hotelId) {
         };
         return getNumber(a.nombre) - getNumber(b.nombre);
     });
-
-    // (Opcional) Log para verificar el orden
-    console.log("Habitaciones a renderizar:", habitaciones.map(h => h.nombre));
-
-    // ---- RENDER DE LAS TARJETAS ----
+    
+    // ---- RENDERIZADO DE TARJETAS CON LÓGICA DE ESTADO CORREGIDA ----
     habitaciones.forEach(room => {
+        // 3. Si la habitación está 'libre' o 'reservada', volvemos a verificar su estado real.
+        if (['libre', 'reservada'].includes(room.estado)) {
+            const proximaReserva = reservasPorHabitacion.get(room.id);
+            
+            if (proximaReserva) {
+                const inicioReserva = new Date(proximaReserva.fecha_inicio);
+                const diferenciaMin = (inicioReserva - ahora) / (1000 * 60);
+
+                // Si la reserva es en 120 minutos (2 horas) o menos, su estado DEBE ser 'reservada'.
+                if (diferenciaMin <= 120) {
+                    room.estado = 'reservada';
+                } else {
+                    // Si es para después, su estado DEBE ser 'libre', sin importar lo que diga la DB.
+                    room.estado = 'libre';
+                }
+            } else {
+                // Si la DB dice 'reservada' pero no hay reserva futura, la forzamos a 'libre'.
+                if (room.estado === 'reservada') {
+                    room.estado = 'libre';
+                }
+            }
+        }
+        
+        // 4. Renderizamos la tarjeta con el estado ya corregido y verificado.
         listEl.appendChild(roomCard(room, supabase, currentUser, hotelId, listEl));
         if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
             startCronometro(room, supabase, hotelId, listEl);
         }
     });
+    // ===================== FIN DE LA CORRECCIÓN INTELIGENTE =====================
 }
-
 
 function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
     const card = document.createElement('div');
@@ -1342,33 +1442,58 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => { /
 });
 
   // ====== Alquilar Ahora (con bloqueo por reservas próximas)
-  setupButtonListener('btn-alquilar-directo', async () => {
-    // Verificar si hay una reserva en menos de 2 horas
-    const ahora = new Date();
-    const dosHorasDespues = new Date(ahora.getTime() + 2 * 60 * 60 * 1000);
+setupButtonListener('btn-alquilar-directo', async () => {
+  const ahora = new Date();
 
-    const { data: reservasFuturas, error } = await supabase
-      .from('reservas')
-      .select('id, fecha_inicio')
-      .eq('habitacion_id', room.id)
-      .eq('estado', 'reservada')
-      .gte('fecha_inicio', ahora.toISOString())
-      .lte('fecha_inicio', dosHorasDespues.toISOString());
+  // Obtén la duración del alquiler solicitado (aquí puedes poner el valor por defecto o traerlo de tu selector/modal)
+  let minutosAlquilerSolicitado = 120; // Por defecto 2 horas
+  // Si tienes un selector en el modal, ¡trae aquí el valor real que seleccionó el usuario!
 
-    if (error) {
-      mostrarInfoModalGlobal("Error consultando reservas futuras: " + error.message, "Error");
+  // 1. Buscar TODAS las reservas futuras y activas de la habitación
+  const { data: reservasFuturas, error } = await supabase
+    .from('reservas')
+    .select('id, fecha_inicio, fecha_fin')
+    .eq('habitacion_id', room.id)
+    .in('estado', ['reservada', 'activa'])
+    .gte('fecha_fin', ahora.toISOString())
+    .order('fecha_inicio', { ascending: true });
+
+  if (error) {
+    mostrarInfoModalGlobal("Error consultando reservas futuras: " + error.message, "Error");
+    return;
+  }
+
+  // 2. Validar cruce con cada reserva futura
+  const alquilerDesde = ahora;
+  const alquilerHasta = new Date(alquilerDesde.getTime() + minutosAlquilerSolicitado * 60 * 1000);
+
+  for (const reserva of reservasFuturas || []) {
+const inicioReserva = new Date(new Date(reserva.fecha_inicio).getTime() + new Date().getTimezoneOffset() * 60000);
+    const finReserva = new Date(reserva.fecha_fin);
+    const inicioBloqueo = new Date(inicioReserva.getTime() - 2 * 60 * 60 * 1000);
+
+    // A. Bloqueo: ¿ya estamos dentro del margen de 2 horas antes de la reserva?
+    if (alquilerDesde >= inicioBloqueo && alquilerDesde < finReserva) {
+      mostrarInfoModalGlobal(
+        "No puedes alquilar esta habitación porque está bloqueada por una reserva próxima o en curso.",
+        "Alquiler bloqueado"
+      );
       return;
     }
 
-    if (reservasFuturas && reservasFuturas.length > 0) {
-      mostrarInfoModalGlobal("No puedes alquilar esta habitación porque hay una reserva programada en menos de 2 horas.", "Alquiler bloqueado");
+    // B. ¿El rango de alquiler invade el periodo de bloqueo+reserva?
+    if (alquilerDesde < finReserva && alquilerHasta > inicioBloqueo) {
+      mostrarInfoModalGlobal(
+        "No puedes alquilar esta habitación porque tu horario invade una reserva próxima.",
+        "Alquiler bloqueado"
+      );
       return;
     }
+  }
 
-    
-    // Si no hay reservas próximas, sí permite alquilar
-    showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer);
-  });
+  // Si no hay cruce ni bloqueo, sí permite alquilar
+  showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer);
+});
   
   setupButtonListener('btn-extender-tiempo', () => showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer));
   setupButtonListener('btn-mantenimiento', () => showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer));
@@ -2206,7 +2331,9 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNoche
     let montoImpuesto = 0;
     let precioFinalConImpuestos = precioCalculadoSinImpuestos;
     let precioBaseParaCalculoImpuesto = precioCalculadoSinImpuestos;
+    let descuentoAplicado = null; // Variable para guardar el descuento
 
+    
     const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal);
     const impuestosIncluidos = hotelConfigGlobal?.impuestos_incluidos_en_precios === true;
 

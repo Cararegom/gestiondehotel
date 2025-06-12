@@ -40,7 +40,18 @@ export function clearAppFeedback(feedbackBannerParam) {
 }
 
 // --- FEEDBACK LOCAL PARA COMPONENTES ---
-export function showLoading(element, message = 'Cargando...') {
+
+// ----- INICIO DE LA CORRECCIÓN -----
+function getElement(elementOrId) {
+  if (typeof elementOrId === 'string') {
+    return document.getElementById(elementOrId);
+  }
+  return elementOrId;
+}
+// ----- FIN DE LA CORRECCIÓN -----
+
+export function showLoading(elementOrId, message = 'Cargando...') {
+  const element = getElement(elementOrId); // Corrección aplicada
   if (element) {
     element.textContent = message;
     element.className = 'loading-indicator p-3 my-3 text-sm bg-blue-100 border border-blue-300 text-blue-700 rounded-md visible';
@@ -51,12 +62,14 @@ export function showLoading(element, message = 'Cargando...') {
 
 /**
  * Muestra un modal de error estético (SweetAlert2) y también un mensaje en la página.
- * @param {HTMLElement} element - El div donde se mostrará el mensaje en la página.
+ * @param {HTMLElement|string} elementOrId - El div o el ID del div donde se mostrará el mensaje.
  * @param {string} message - El mensaje de error.
  */
-export function showError(element, message) {
+export function showError(elementOrId, message) {
+  const element = getElement(elementOrId); // Corrección aplicada
+
   // 1. Muestra el modal estético usando la variable global 'Swal'
-  if (typeof Swal !== 'undefined') { // Verificar si Swal está disponible
+  if (typeof Swal !== 'undefined') {
     Swal.fire({
       icon: 'error',
       title: 'Ocurrió un Error',
@@ -66,7 +79,7 @@ export function showError(element, message) {
     });
   } else {
     console.warn("SweetAlert2 (Swal) no está disponible. Mostrando error como alerta nativa.");
-    alert(`Error: ${message}`); // Fallback si Swal no existe
+    alert(`Error: ${message}`);
   }
 
   // 2. Muestra también el mensaje en la página como recordatorio
@@ -80,7 +93,8 @@ export function showError(element, message) {
   }
 }
 
-export function clearFeedback(element) {
+export function clearFeedback(elementOrId) {
+  const element = getElement(elementOrId); // Corrección aplicada
   if (element) {
     element.textContent = '';
     element.style.display = 'none';
@@ -200,8 +214,9 @@ export function hideGlobalLoading() {
   if (overlay) overlay.style.display = 'none';
 }
 
-// --- FEEDBACK DE ÉXITO --- (Modificado para ser más genérico que showAppFeedback)
-export function showSuccess(element, message, autoHide = true, duration = 4000) {
+// --- FEEDBACK DE ÉXITO ---
+export function showSuccess(elementOrId, message, autoHide = true, duration = 4000) {
+  const element = getElement(elementOrId); // Corrección aplicada
   if (element) {
     element.textContent = message;
     element.className = 'feedback-message p-3 my-3 text-sm rounded-md border bg-green-100 border-green-300 text-green-700 visible';
@@ -209,8 +224,6 @@ export function showSuccess(element, message, autoHide = true, duration = 4000) 
     element.setAttribute('aria-live', 'polite');
     if (autoHide) {
       setTimeout(() => {
-        // Verificar si el elemento aún existe y si el mensaje es el mismo antes de limpiar
-        // Esto evita limpiar un mensaje diferente si se llamó a showSuccess/showError rápidamente.
         if (element && element.textContent === message) {
             clearFeedback(element);
         }

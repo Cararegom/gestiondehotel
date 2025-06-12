@@ -677,35 +677,33 @@ async function createBooking(payload) {
     const nuevaReservaId = reservaInsertada.id;
 
     try {
-  // Construir el objeto del evento para Google Calendar (más robusto)
-  const eventDetails = {
-    summary: `Reserva | Cliente: ${reservaInsertada.cliente_nombre} | Room: ${reservaInsertada.habitacion_id} | Huéspedes: ${reservaInsertada.cantidad_huespedes}`,
-    description: `Reserva gestiondehotel.com
+      // Construir el objeto del evento para Google Calendar (más robusto)
+      const eventDetails = {
+        summary: `Reserva | Cliente: ${reservaInsertada.cliente_nombre} | Room: ${reservaInsertada.habitacion_id} | Huéspedes: ${reservaInsertada.cantidad_huespedes}`,
+        description: `Reserva gestiondehotel.com
 Room: ${reservaInsertada.habitacion_id}
 Teléfono: ${reservaInsertada.telefono || ''}
 Cédula: ${reservaInsertada.cedula || ''}
 ReservaId: ${reservaInsertada.id || ''}
 `,
-    start: reservaInsertada.fecha_inicio,
-    end: reservaInsertada.fecha_fin
-  };
-  // Intenta crear el evento en Google Calendar (si hay integración activa)
-  const { data, error } = await state.supabase.functions.invoke('calendar-create-event', {
-    body: {
-      hotelId: state.hotelId,
-      provider: 'google',
-      eventDetails
+        start: reservaInsertada.fecha_inicio,
+        end: reservaInsertada.fecha_fin
+      };
+      // Intenta crear el evento en Google Calendar (si hay integración activa)
+      const { data, error } = await state.supabase.functions.invoke('calendar-create-event', {
+        body: {
+          hotelId: state.hotelId,
+          provider: 'google',
+          eventDetails
+        }
+      });
+      if (error) {
+        console.warn("No se pudo crear evento en Google Calendar:", error.message);
+        // Puedes mostrar un feedback opcional aquí
+      }
+    } catch (err) {
+      console.error("Error enviando evento a Google Calendar:", err);
     }
-  });
-  if (error) {
-    console.warn("No se pudo crear evento en Google Calendar:", error.message);
-    // Puedes mostrar un feedback opcional aquí
-  }
-} catch (err) {
-  console.error("Error enviando evento a Google Calendar:", err);
-}
-
-
 
     if (state.configHotel.cobro_al_checkin && reservaInsertada.monto_pagado > 0) {
         const turnoId = turnoService.getActiveTurnId();
@@ -740,15 +738,32 @@ ReservaId: ${reservaInsertada.id || ''}
         }
     }
 
-    const { error: errHab } = await state.supabase.from('habitaciones')
-      .update({ estado: "reservada" })
-      .eq('id', reservaInsertada.habitacion_id)
-      .eq('estado', 'libre');
-    if (errHab) console.warn("Advertencia: Error al actualizar estado de habitación a reservada:", errHab.message);
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Solo cambiaremos el estado de la habitación a 'reservada' si la reserva es inminente (ej. dentro de 2 horas).
+    const ahora = new Date();
+    const fechaInicioReserva = new Date(reservaInsertada.fecha_inicio);
+    const diferenciaMinutos = (fechaInicioReserva.getTime() - ahora.getTime()) / (1000 * 60);
+
+    // Si la reserva comienza dentro de 120 minutos (2 horas) o menos, actualizamos el estado.
+    if (diferenciaMinutos <= 120) {
+        const { error: errHab } = await state.supabase.from('habitaciones')
+            .update({ estado: "reservada" })
+            .eq('id', reservaInsertada.habitacion_id)
+            .eq('estado', 'libre'); // Importante: solo actualizar si está libre para no sobreescribir otros estados.
+
+        if (errHab) {
+            console.warn("Advertencia: Error al actualizar estado de habitación a 'reservada' para reserva inminente:", errHab.message);
+        } else {
+            console.log(`Habitación ${reservaInsertada.habitacion_id} actualizada a 'reservada' por reserva inminente.`);
+        }
+    } else {
+        // Si la reserva es para más tarde, no hacemos nada y la habitación permanece 'libre'.
+        console.log(`Reserva para ${reservaInsertada.habitacion_id} es para el futuro (${Math.round(diferenciaMinutos)} min). La habitación permanece 'libre'.`);
+    }
+    // --- FIN DE LA CORRECCIÓN ---
 
     return reservaInsertada;
 }
-
 async function updateBooking(payload) {
     const { datosReserva } = payload;
     delete datosReserva.hotel_id;
@@ -1418,8 +1433,11 @@ async function handleListActions(event) {
                 }
                 break;
             case 'confirmar':
-                await handleUpdateEstadoReserva(reservaId, 'confirmada', 'reservada', habitacionId);
-                break;
+            // CORRECCIÓN: Solo se actualiza el estado de la RESERVA a 'confirmada'.
+            // El estado de la HABITACIÓN no se toca (se pasa 'null'),
+            // permitiendo que siga 'libre' hasta que sea inminente.
+            await handleUpdateEstadoReserva(reservaId, 'confirmada', null, habitacionId);
+            break;
             case 'checkin':
                 const puedeCheckin = await puedeHacerCheckIn(reservaId);
                 if (!puedeCheckin && state.configHotel.cobro_al_checkin) {

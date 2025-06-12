@@ -21,6 +21,7 @@ import * as NotificacionesPage from './modules/notificaciones/notificaciones.js'
 import * as Mantenimiento from './modules/mantenimiento/mantenimiento.js';
 import * as Descuentos from './modules/descuentos/descuentos.js';
 import * as Micuenta from './modules/micuenta/micuenta.js';
+import * as Clientes from './modules/clientes/clientes.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -45,6 +46,7 @@ const routes = {
   '/habitaciones': { module: Habitaciones, moduleKey: 'habitaciones' },
   '/mapa-habitaciones': { module: MapaHabitaciones, moduleKey: 'mapa-habitaciones' },
   '/caja': { module: Caja, moduleKey: 'caja' },
+  '/clientes': { module: Clientes, moduleKey: 'clientes' },
   '/servicios': { module: Servicios, moduleKey: 'servicios' },
   '/tienda': { module: Tienda, moduleKey: 'tienda' },
   '/restaurante': { module: Restaurante, moduleKey: 'restaurante' },
@@ -65,6 +67,7 @@ const navLinksConfig = [
     { path: '#/mapa-habitaciones', text: 'Mapa Hotel', icon: '🗺️', moduleKey: 'mapa-habitaciones' },
     { path: '#/habitaciones', text: 'Habitaciones', icon: '🚪', moduleKey: 'habitaciones' },
     { path: '#/caja', text: 'Caja/Turnos', icon: '💰', moduleKey: 'caja' },
+    { path: '#/clientes', text: 'Clientes', icon: '🧑‍💼', moduleKey: 'clientes' },
     { path: '#/servicios', text: 'Servicios', icon: '🛎️', moduleKey: 'servicios' },
     { path: '#/tienda', text: 'Tienda', icon: '🛍️', moduleKey: 'tienda' },
     { path: '#/restaurante', text: 'Restaurante', icon: '🍽️', moduleKey: 'restaurante' },

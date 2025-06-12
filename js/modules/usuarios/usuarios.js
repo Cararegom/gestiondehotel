@@ -449,7 +449,8 @@ async function cargarYRenderizarUsuarios(tbodyEl, supabaseInstance, hotelIdParaC
           <button class="button button-small text-xs ${u.activo ? 'button-warning' : 'button-success'}" data-accion="toggle-activo" data-id="${u.id}" data-estado-actual="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>
           <button class="button button-accent button-small text-xs" data-accion="reset-password" data-id="${u.id}" data-correo="${u.correo}">Reset Pass</button>
           <button class="button button-outline button-small text-xs" style="color:#2563eb;border-color:#2563eb" data-accion="permisos" data-id="${u.id}" data-nombre="${u.nombre || ''}" data-correo="${u.correo}">Permisos</button>
-        </td>`;
+          <button class="button button-danger button-small text-xs" data-accion="eliminar" data-id="${u.id}" data-nombre="${u.nombre || u.correo}" ${u.id === currentModuleUser.id ? 'disabled' : ''}>Eliminar</button>
+          </td>`;
       tbodyEl.appendChild(tr);
     });
   } catch (err) {
@@ -654,7 +655,7 @@ export async function mount(container, sbInstance, user, hotelId, planDetails) {
   btnCancelarEl.addEventListener('click', cancelHandler);
   moduleListeners.push({ element: btnCancelarEl, type: 'click', handler: cancelHandler });
   
-  const tableClickHandler = async (event) => {
+const tableClickHandler = async (event) => {
     const button = event.target.closest('button[data-accion]');
     if (!button) return;
     const usuarioId = button.dataset.id;
@@ -687,26 +688,62 @@ export async function mount(container, sbInstance, user, hotelId, planDetails) {
         if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
         else {
             showUsuariosFeedback(feedbackGlobalEl, `Usuario ${!estadoActual ? 'activado' : 'desactivado'}.`, 'success-indicator');
-            await cargarYRenderizarUsuarios(tablaBodyEl, sbInstance, hotelId);
+            await cargarYRenderizarUsuarios(tablaBodyEl, sbInstance, currentHotelId);
             await renderHorarioTurnosSemanal();
         }
     } else if (accion === 'reset-password') {
-    const email = button.dataset.correo;
-    if (confirm(`¿Enviar enlace para resetear contraseña a ${email}?`)) {
-        // AÑADIMOS LA OPCIÓN redirectTo CON LA URL CORRECTA
-        const { error } = await sbInstance.auth.resetPasswordForEmail(email, {
-          redirectTo: 'https://www.gestiondehotel.com/password-reset.html',
-        });
-        if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
-        else showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo enviado a ${email}.`, 'success-indicator');
-    }
-}
-    
-    else if (accion === 'permisos') {
+        const email = button.dataset.correo;
+        if (confirm(`¿Enviar enlace para resetear contraseña a ${email}?`)) {
+            const { error } = await sbInstance.auth.resetPasswordForEmail(email, {
+              redirectTo: 'https://www.gestiondehotel.com/password-reset.html',
+            });
+            if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
+            else showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo enviado a ${email}.`, 'success-indicator');
+        }
+    } else if (accion === 'permisos') {
         const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo };
         await abrirModalPermisos(usuario);
+    } 
+    // ---- Lógica para Eliminar Usuario ----
+    else if (accion === 'eliminar') {
+        const nombreUsuario = button.dataset.nombre;
+        
+        console.log('Intentando eliminar. ID de usuario:', usuarioId, 'Nombre:', nombreUsuario);
+
+        const confirmacion = await Swal.fire({
+            icon: 'error',
+            title: `¿Estás seguro de eliminar a ${nombreUsuario}?`,
+            html: "¡Esta acción es <strong>totalmente irreversible</strong>! Se borrará el acceso del usuario para siempre.",
+            showCancelButton: true,
+            confirmButtonText: 'Sí, eliminarlo',
+            cancelButtonText: 'No, cancelar',
+            confirmButtonColor: '#d33',
+        });
+
+        if (confirmacion.isConfirmed) {
+            showUsuariosFeedback(feedbackGlobalEl, `Eliminando a ${nombreUsuario}...`, 'info-indicator', 0);
+            try {
+                // Llamamos a la Edge Function que creamos
+                const { error } = await sbInstance.functions.invoke('delete-user', {
+                    body: { user_id: usuarioId },
+                });
+
+                if (error) {
+                    throw new Error(error.message);
+                }
+
+                showUsuariosFeedback(feedbackGlobalEl, `Usuario ${nombreUsuario} eliminado correctamente.`, 'success-indicator');
+                
+                // Volvemos a cargar la lista de usuarios para que el usuario eliminado desaparezca de la tabla
+                await cargarYRenderizarUsuarios(tablaBodyEl, sbInstance, currentHotelId);
+
+            } catch (err) {
+                showUsuariosFeedback(feedbackGlobalEl, `Error al eliminar: ${err.message}`, 'error-indicator');
+            }
+        }
     }
   };
+  
   tablaBodyEl.addEventListener('click', tableClickHandler);
   moduleListeners.push({ element: tablaBodyEl, type: 'click', handler: tableClickHandler });
 }
