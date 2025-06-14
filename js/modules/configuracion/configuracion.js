@@ -48,6 +48,29 @@ export async function mount(container, supabase, user, hotelId) {
             <div><label for="correo_reportes" class="form-label">Correo para Reportes</label><input name="correo_reportes" id="correo_reportes" type="email" class="form-control" placeholder="reportes@hotel.com" /></div>
           </div>
         </fieldset>
+        <fieldset class="border-2 border-orange-200 p-6 rounded-xl shadow-md bg-orange-50/30">
+          <legend class="text-xl font-semibold text-orange-700 px-3 py-1 bg-white border-2 border-orange-200 rounded-lg shadow-sm">
+            <span class="mr-2">🍴</span>Impuestos Específicos del Restaurante
+          </legend>
+          <p class="form-helper-text mb-4">Usa esta sección para impuestos que solo aplican a ventas de restaurante, como el Impoconsumo en Colombia.</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
+            <div>
+              <label for="impuesto_porcentaje_restaurante" class="form-label">Porcentaje Impuesto Restaurante (%)</label>
+              <input name="impuesto_porcentaje_restaurante" id="impuesto_porcentaje_restaurante" type="number" step="0.01" min="0" max="100" class="form-control" placeholder="Ej: 8" />
+            </div>
+            <div>
+              <label for="impuesto_nombre_restaurante" class="form-label">Nombre del Impuesto Restaurante</label>
+              <input name="impuesto_nombre_restaurante" id="impuesto_nombre_restaurante" class="form-control" placeholder="Ej: Impoconsumo" />
+            </div>
+            <div class="md:col-span-2">
+              <label for="impuesto_restaurante_incluido" class="form-label">¿Los precios del menú ya incluyen este impuesto?</label>
+              <select name="impuesto_restaurante_incluido" id="impuesto_restaurante_incluido" class="form-control">
+                <option value="false">No, el impuesto se suma al precio del plato</option>
+                <option value="true">Sí, el impuesto está incluido en el precio del plato</option>
+              </select>
+            </div>
+          </div>
+        </fieldset>
 
         <fieldset class="border-2 border-green-200 p-6 rounded-xl shadow-md bg-green-50/30">
           <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-sm">
@@ -266,6 +289,9 @@ async function cargarConfiguracionHotel() {
     form.telefono_fiscal.value = data.telefono_fiscal || '';
     form.regimen_tributario.value = data.regimen_tributario || '';
     form.correo_reportes.value = data.correo_reportes || data.correos_reportes || '';
+     form.impuesto_porcentaje_restaurante.value = data.impuesto_porcentaje_restaurante !== null ? data.impuesto_porcentaje_restaurante : '';
+    form.impuesto_nombre_restaurante.value = data.impuesto_nombre_restaurante || '';
+    form.impuesto_restaurante_incluido.value = (data.impuesto_restaurante_incluido === true) ? "true" : "false";
 
     // Horarios (leyendo de las nuevas columnas en configuracion_hotel)
     // Usar || 'HH:MM' para asegurar que el input time tenga un valor válido si data.X es null
@@ -415,6 +441,10 @@ async function guardarConfiguracionHotel() {
     porcentaje_impuesto_principal: parseFloat(form.porcentaje_impuesto_principal.value) || 0,
     nombre_impuesto_principal: form.nombre_impuesto_principal.value.trim() || null,
     impuestos_incluidos_en_precios: form.impuestos_incluidos_en_precios.value === "true",
+    impuesto_restaurante_incluido: form.impuesto_restaurante_incluido.value === "true",
+     impuesto_nombre_restaurante: form.impuesto_nombre_restaurante.value.trim() || null,
+    impuesto_porcentaje_restaurante: parseFloat(form.impuesto_porcentaje_restaurante.value) || 0,
+    impuesto_restaurante_incluido: form.impuesto_restaurante_incluido.value === "true",
     encabezado_ticket_l1: form.encabezado_ticket_l1.value.trim() || null,
     encabezado_ticket_l2: form.encabezado_ticket_l2.value.trim() || null,
     encabezado_ticket_l3: form.encabezado_ticket_l3.value.trim() || null,

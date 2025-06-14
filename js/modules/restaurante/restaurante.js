@@ -11,7 +11,7 @@ let currentTabListeners = [];
 let currentHotelId = null;
 let currentModuleUser = null;
 let currentSupabaseInstance = null;
-
+let configuracionImpuestos = null;
 let platosCache = [];
 let metodosPagoCache = [];
 let ventaItems = []; // Current POS cart/order items
@@ -40,6 +40,8 @@ let descuentoAplicadoRestaurante = null;
 
 // PEGA ESTE NUEVO BLOQUE DE CÓDIGO EN LUGAR DE LAS DOS FUNCIONES QUE BORRASTE
 
+// REEMPLAZA TU FUNCIÓN EXISTENTE CON ESTA
+
 /**
  * Nueva función de búsqueda que encuentra descuentos automáticos Y por código.
  * @param {Array} itemsEnCarrito - Los items actuales en el pedido.
@@ -47,22 +49,16 @@ let descuentoAplicadoRestaurante = null;
  * @returns {Object|null} El mejor descuento aplicable o null.
  */
 async function buscarDescuentosAplicables(itemsEnCarrito, codigoManual = null) {
-    if (itemsEnCarrito.length === 0) return null;
-
-    const categoriasEnCarrito = [...new Set(
-        itemsEnCarrito.map(item => platosCache.find(p => p.id === item.plato_id)?.categoria_id).filter(Boolean)
-    )];
+    if (itemsEnCarrito.length === 0 && !codigoManual) return null;
 
     const ahora = new Date().toISOString();
-console.log("[BUSCANDO DESCUENTO] Carrito:", itemsEnCarrito);
-console.log("[BUSCANDO DESCUENTO] Categorías en carrito:", categoriasEnCarrito);
+
+    // 1. La consulta se simplifica. Ya no intentamos comparar usos_actuales con usos_maximos aquí.
     let query = currentSupabaseInstance.from('descuentos').select('*')
         .eq('hotel_id', currentHotelId)
         .eq('activo', true)
-        .or('fecha_inicio.is.null,fecha_inicio.lte.' + ahora) // Válido si no tiene fecha de inicio o ya empezó
-        .or('fecha_fin.is.null,fecha_fin.gte.' + ahora) // Válido si no tiene fecha de fin o no ha terminado
-        .or('usos_maximos.eq.0,usos_actuales.lt.usos_maximos');
-
+        .or(`fecha_inicio.is.null,fecha_inicio.lte.${ahora}`)
+        .or(`fecha_fin.is.null,fecha_fin.gte.${ahora}`);
 
     const orConditions = [
         'tipo_descuento_general.eq.automatico'
@@ -70,27 +66,46 @@ console.log("[BUSCANDO DESCUENTO] Categorías en carrito:", categoriasEnCarrito)
     if (codigoManual) {
         orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`);
     }
+    // Agregamos el filtro de tipo de descuento
     query = query.or(orConditions.join(','));
 
 
-    const { data: descuentos, error } = await query;
+    const { data: descuentosPotenciales, error } = await query;
 
     if (error) {
+        // Este es el error que estabas viendo. Lo dejamos para depuración.
         console.error("Error buscando descuentos:", error);
         return null;
     }
-    if (!descuentos || descuentos.length === 0) {
+    
+    if (!descuentosPotenciales || descuentosPotenciales.length === 0) {
         return null;
     }
 
-    // Filtra los descuentos para encontrar el mejor aplicable
-    for (const descuento of descuentos) {
-        if (descuento.aplicabilidad === 'reserva_total' || descuento.aplicabilidad === 'categorias_restaurante') {
+    // 2. Filtramos los resultados en JavaScript para la lógica que la BD no pudo hacer.
+    const descuentosValidos = descuentosPotenciales.filter(d => {
+        const usosMaximos = d.usos_maximos || 0;
+        const usosActuales = d.usos_actuales || 0;
+        // El descuento es válido si no tiene límite (0) O si sus usos no han alcanzado el máximo.
+        return usosMaximos === 0 || usosActuales < usosMaximos;
+    });
+
+    if (descuentosValidos.length === 0) {
+        return null;
+    }
+
+    // 3. Lógica para encontrar el mejor descuento aplicable (sin cambios)
+    const categoriasEnCarrito = [...new Set(
+        itemsEnCarrito.map(item => platosCache.find(p => p.id === item.plato_id)?.categoria_id).filter(Boolean)
+    )];
+
+    for (const descuento of descuentosValidos) {
+        if (descuento.aplicabilidad === 'reserva_total' || descuento.aplicabilidad === 'categorias_restaurante' || descuento.aplicabilidad === 'venta_total') {
             if (descuento.aplicabilidad === 'categorias_restaurante') {
                 const hayCoincidencia = descuento.habitaciones_aplicables.some(catId => categoriasEnCarrito.includes(catId));
-                if (hayCoincidencia) return descuento; // Devuelve el primer descuento de categoría que coincida
+                if (hayCoincidencia) return descuento;
             } else {
-                return descuento; // Devuelve el primer descuento de venta total que encuentre
+                return descuento;
             }
         }
     }
@@ -98,17 +113,17 @@ console.log("[BUSCANDO DESCUENTO] Categorías en carrito:", categoriasEnCarrito)
     return null; // No se encontró ningún descuento aplicable
 }
 
-
 /**
  * Nueva función que maneja la lógica de aplicar descuentos, tanto manual como automáticamente.
  * @param {boolean} esBusquedaAutomatica - Si es true, no muestra mensajes de error si no encuentra nada.
  */
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
 async function handleAplicarDescuentoRestaurante(esBusquedaAutomatica = false) {
     const feedbackEl = document.getElementById('feedback-descuento-restaurante');
     const codigoInput = document.getElementById('codigo-descuento-restaurante');
     const codigo = codigoInput.value;
 
-    if (!esBusquedaAutomatica && !codigo) return; // No hacer nada si es un clic manual sin código
+    if (!esBusquedaAutomatica && !codigo) return;
 
     feedbackEl.textContent = 'Buscando...';
     feedbackEl.className = 'text-xs mt-1 text-gray-500';
@@ -124,16 +139,16 @@ async function handleAplicarDescuentoRestaurante(esBusquedaAutomatica = false) {
         }
     } else {
         descuentoAplicadoRestaurante = null;
-        if (!esBusquedaAutomatica) { // Solo mostrar error en búsqueda manual
+        if (!esBusquedaAutomatica) {
             feedbackEl.textContent = 'Código no válido o no aplica a los productos del carrito.';
             feedbackEl.className = 'text-xs mt-1 text-red-600';
         } else {
-            feedbackEl.textContent = ''; // Limpiar si la búsqueda automática no encontró nada
+            feedbackEl.textContent = '';
         }
     }
-    renderVentaItemsUI(document.getElementById('pos-pedido-items-body'));
+    // La llamada ahora es más simple, ya no necesita pasar la configuración
+    await renderVentaItemsUI(document.getElementById('pos-pedido-items-body'));
 }
-
 // =============================================================
 // ===== FIN NUEVO BLOQUE DE LÓGICA DE DESCUENTOS =========
 // =============================================================
@@ -224,55 +239,78 @@ function renderPOSPlatosUI(containerEl, platos, onPlatoClickCallback) {
 
 // --- POS (Point of Sale) Helper Functions ---
 function handleUpdateCantidadVenta(itemIndex, onRenderCallback) {
-    return (event) => {
+    return async (event) => { // <-- Se hace async
         const nuevaCantidad = parseInt(event.target.value);
         if (isNaN(nuevaCantidad)) return;
+        
         if (nuevaCantidad >= 1) {
             if (ventaItems[itemIndex]) ventaItems[itemIndex].cantidad = nuevaCantidad;
         } else {
-            // Si la cantidad es 0 o menos, eliminamos el item del carrito
             if (ventaItems[itemIndex]) ventaItems.splice(itemIndex, 1);
         }
-        onRenderCallback();
+        await onRenderCallback(); // <-- Se usa await
     };
 }
 
 function handleRemoveItemVenta(itemIndex, onRenderCallback) {
-    return () => {
+    return async () => { // <-- Se hace async
         if (ventaItems[itemIndex]) {
             ventaItems.splice(itemIndex, 1);
         }
-        onRenderCallback();
+        await onRenderCallback(); // <-- Se usa await
     };
 }
 
-// --- TABS RENDERING ---
-// REEMPLAZA TODA TU FUNCIÓN renderVentaItemsUI CON ESTA VERSIÓN CORREGIDA
-function renderVentaItemsUI(tbodyEl) {
+
+// REEMPLAZA TU FUNCIÓN renderVentaItemsUI EXISTENTE CON ESTA VERSIÓN COMPLETA
+
+/**
+ * Renderiza los items del carrito de venta, calcula descuentos, impuestos y el total final.
+ * Usa las variables globales del módulo 'descuentoAplicadoRestaurante' y 'configuracionImpuestos'.
+ * @param {HTMLElement} tbodyEl - El elemento tbody de la tabla del pedido.
+ */
+async function renderVentaItemsUI(tbodyEl) {
     if (!tbodyEl) return;
+
+    // --- 1. LÓGICA DE DESCUENTOS ---
+    // Solo busca un descuento automático si no hay uno de CÓDIGO MANUAL ya aplicado.
+    if (!descuentoAplicadoRestaurante || descuentoAplicadoRestaurante.tipo_descuento_general !== 'codigo') {
+        descuentoAplicadoRestaurante = await buscarDescuentosAplicables(ventaItems, null);
+    }
+    
+    const codigoInput = document.getElementById('codigo-descuento-restaurante');
+    if (codigoInput && descuentoAplicadoRestaurante && descuentoAplicadoRestaurante.tipo_descuento_general === 'automatico') {
+        codigoInput.value = ''; // Limpia el input si se aplicó un descuento automático
+    }
+
+    // --- 2. RENDERIZADO DE LA TABLA DE ITEMS ---
     tbodyEl.innerHTML = '';
     let subtotalBruto = 0;
 
-    // Elementos UI
+    // Referencias a todos los elementos de la UI
     const totalDisplayEl = document.getElementById('venta-restaurante-total');
+    const subtotalDisplayEl = document.getElementById('subtotal-resumen-restaurante');
     const descuentoResumenEl = document.getElementById('descuento-resumen-restaurante');
+    const impuestoResumenEl = document.getElementById('impuesto-resumen-restaurante');
     const btnFinalizarVentaEl = document.getElementById('btn-finalizar-venta-restaurante');
-        console.log("[RESTAURANTE] Descuento detectado:", descuentoAplicadoRestaurante);
     const feedbackDescuentoEl = document.getElementById('feedback-descuento-restaurante');
 
+    // Caso: Carrito vacío
     if (ventaItems.length === 0) {
         tbodyEl.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500">Agrega platos al pedido.</td></tr>';
         if(btnFinalizarVentaEl) btnFinalizarVentaEl.disabled = true;
-        if(totalDisplayEl) totalDisplayEl.textContent = formatCurrencyLocal(0);
+        if(subtotalDisplayEl) subtotalDisplayEl.textContent = formatCurrencyLocal(0);
         if(descuentoResumenEl) descuentoResumenEl.style.display = 'none';
+        if(impuestoResumenEl) impuestoResumenEl.style.display = 'none';
+        if(totalDisplayEl) totalDisplayEl.textContent = formatCurrencyLocal(0);
         if(feedbackDescuentoEl) feedbackDescuentoEl.textContent = '';
-        descuentoAplicadoRestaurante = null; // Limpia el descuento si el carrito está vacío
+        descuentoAplicadoRestaurante = null;
         return;
     }
-    
+
     if(btnFinalizarVentaEl) btnFinalizarVentaEl.disabled = false;
 
-    // Renderiza los items del carrito
+    // Renderiza cada item en el carrito
     ventaItems.forEach((item, index) => {
         const subtotalItem = item.cantidad * item.precio_unitario;
         subtotalBruto += subtotalItem;
@@ -281,7 +319,7 @@ function renderVentaItemsUI(tbodyEl) {
         tr.innerHTML = `
             <td class="py-2 px-1 font-medium text-slate-700">${item.nombre_plato}</td>
             <td class="py-2 px-1 text-center">
-                <input type="number" class="form-control-sm item-cantidad w-16 text-center" value="${item.cantidad}" min="0">
+                <input type="number" class="form-control-sm item-cantidad w-16 text-center" value="${item.cantidad}" min="1">
             </td>
             <td class="py-2 px-1 text-right">${formatCurrencyLocal(subtotalItem)}</td>
             <td class="py-2 px-1 text-center">
@@ -290,24 +328,28 @@ function renderVentaItemsUI(tbodyEl) {
         `;
         tbodyEl.appendChild(tr);
 
-        // Eventos para cantidad y eliminar
+        // Añade listeners para actualizar cantidad o remover item
         const cantidadInput = tr.querySelector('.item-cantidad');
         const removeButton = tr.querySelector('.remove-item-btn');
         if (cantidadInput) {
-            cantidadInput.addEventListener('change', handleUpdateCantidadVenta(index, () => renderVentaItemsUI(tbodyEl)));
-            cantidadInput.addEventListener('input', handleUpdateCantidadVenta(index, () => renderVentaItemsUI(tbodyEl)));
+            // Llamada recursiva simplificada
+            const renderCallback = async () => { await renderVentaItemsUI(tbodyEl); };
+            cantidadInput.addEventListener('change', handleUpdateCantidadVenta(index, renderCallback));
+            cantidadInput.addEventListener('input', handleUpdateCantidadVenta(index, renderCallback));
         }
         if (removeButton) {
-            removeButton.addEventListener('click', handleRemoveItemVenta(index, () => renderVentaItemsUI(tbodyEl)));
+            removeButton.addEventListener('click', handleRemoveItemVenta(index, async () => { await renderVentaItemsUI(tbodyEl); }));
         }
     });
 
-    // Cálculo de descuento
+    // --- 3. CÁLCULO DE TOTALES (SUBTOTAL, DESCUENTO, IMPUESTO, TOTAL) ---
+
+    // Calcular Descuento
     let montoDescontado = 0;
     if (descuentoAplicadoRestaurante) {
         let subtotalAfectado = 0;
         const aplicabilidad = descuentoAplicadoRestaurante.aplicabilidad;
-        const itemsAplicables = descuentoAplicadoRestaurante.items_aplicables || [];
+        const itemsAplicables = descuentoAplicadoRestaurante.habitaciones_aplicables || [];
 
         if (aplicabilidad === 'reserva_total' || aplicabilidad === 'venta_total') {
             subtotalAfectado = subtotalBruto;
@@ -323,23 +365,236 @@ function renderVentaItemsUI(tbodyEl) {
             ? parseFloat(descuentoAplicadoRestaurante.valor)
             : subtotalAfectado * (parseFloat(descuentoAplicadoRestaurante.valor) / 100);
         montoDescontado = Math.min(subtotalBruto, montoDescontado);
+    }
+    const subtotalConDescuento = subtotalBruto - montoDescontado;
 
-        if (descuentoResumenEl && montoDescontado > 0) {
-            const valorSpan = descuentoResumenEl.querySelector('#descuento-valor');
-            if(valorSpan) valorSpan.textContent = `-${formatCurrencyLocal(montoDescontado)}`;
-            descuentoResumenEl.style.display = 'flex';
-        } else if (descuentoResumenEl) {
-            descuentoResumenEl.style.display = 'none';
+    // Calcular Impuesto (sobre el subtotal ya descontado)
+    let montoImpuesto = 0;
+    const taxRate = (configuracionImpuestos?.porcentaje || 0) / 100;
+    if (taxRate > 0) {
+        if (configuracionImpuestos.incluido) {
+            const baseImponible = subtotalConDescuento / (1 + taxRate);
+            montoImpuesto = subtotalConDescuento - baseImponible;
+        } else {
+            montoImpuesto = subtotalConDescuento * taxRate;
         }
-    } else {
-        if (descuentoResumenEl) descuentoResumenEl.style.display = 'none';
     }
 
-    const totalFinal = subtotalBruto - montoDescontado;
-    if(totalDisplayEl) totalDisplayEl.textContent = formatCurrencyLocal(totalFinal);
+    // Calcular Total Final
+    const totalFinal = configuracionImpuestos?.incluido ? subtotalConDescuento : subtotalConDescuento + montoImpuesto;
+
+    // --- 4. ACTUALIZACIÓN DE LA INTERFAZ DE TOTALES ---
+    if (subtotalDisplayEl) {
+        subtotalDisplayEl.textContent = formatCurrencyLocal(subtotalBruto);
+    }
+
+    if (descuentoResumenEl) {
+        if (montoDescontado > 0 && descuentoAplicadoRestaurante) {
+            descuentoResumenEl.querySelector('#descuento-valor').textContent = `-${formatCurrencyLocal(montoDescontado)}`;
+            descuentoResumenEl.style.display = 'flex';
+            if (feedbackDescuentoEl) {
+                const tipoPromo = descuentoAplicadoRestaurante.tipo_descuento_general === 'automatico' ? 'Promoción automática' : 'Descuento';
+                feedbackDescuentoEl.textContent = `${tipoPromo} "${descuentoAplicadoRestaurante.nombre}" aplicada.`;
+                feedbackDescuentoEl.className = 'text-xs mt-1 text-green-600';
+            }
+        } else {
+            descuentoResumenEl.style.display = 'none';
+            if (feedbackDescuentoEl && !codigoInput.value) feedbackDescuentoEl.textContent = '';
+        }
+    }
+    
+    if (impuestoResumenEl) {
+        if (montoImpuesto > 0) {
+            impuestoResumenEl.querySelector('#impuesto-nombre').textContent = `${configuracionImpuestos.nombre || 'Impuesto'} (${configuracionImpuestos.porcentaje}%):`;
+            impuestoResumenEl.querySelector('#impuesto-valor').textContent = formatCurrencyLocal(montoImpuesto);
+            impuestoResumenEl.style.display = 'flex';
+        } else {
+            impuestoResumenEl.style.display = 'none';
+        }
+    }
+    
+    if (totalDisplayEl) {
+        totalDisplayEl.textContent = formatCurrencyLocal(totalFinal);
+    }
 }
 
-// --- TABS RENDERING ---
+/**
+ * Guarda en la base de datos una venta de pago inmediato, sus items y los movimientos en caja.
+ * Acepta los montos pre-calculados desde el handler principal para asegurar consistencia.
+ *
+ * @param {object} params - Objeto con todos los datos de la venta.
+ * @param {Array} params.pagos - Array de objetos de pago.
+ * @param {number} params.montoTotalVenta - El monto final y total de la venta.
+ * @param {string|null} params.nombreClienteTemporal - Nombre del cliente (si se proveyó).
+ * @param {object} params.configuracionImpuestos - Objeto con la configuración de impuestos aplicada.
+ * @param {number} params.montoDescontado - Monto total del descuento aplicado.
+ * @param {number} params.montoImpuesto - Monto total de impuestos calculados.
+ */
+async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombreClienteTemporal, configuracionImpuestos, montoDescontado, montoImpuesto }) {
+    const formFinalizarVentaEl = document.getElementById('form-finalizar-venta-restaurante');
+    const btnFinalizarVentaEl = document.getElementById('btn-finalizar-venta-restaurante');
+    const posFeedbackEl = document.getElementById('posVentaFeedback');
+    const posPedidoItemsBodyEl = document.getElementById('pos-pedido-items-body');
+
+    // El estado de "cargando" ya fue activado por la función 'finalizarVentaHandler',
+    // por lo que aquí solo continuamos con las operaciones de base de datos.
+    try {
+        // 1. Insertar la venta principal con todos los detalles calculados.
+        const { data: ventaData, error: ventaError } = await currentSupabaseInstance
+            .from('ventas_restaurante')
+            .insert({
+                hotel_id: currentHotelId,
+                usuario_id: currentModuleUser.id,
+                monto_total: montoTotalVenta,
+                nombre_cliente_temporal: nombreClienteTemporal,
+                descuento_aplicado_id: descuentoAplicadoRestaurante?.id || null,
+                monto_descontado: montoDescontado,
+                estado_pago: 'pagado',
+                monto_impuestos: montoImpuesto,
+                porcentaje_impuestos_aplicado: configuracionImpuestos?.porcentaje || 0,
+                nombre_impuesto_aplicado: configuracionImpuestos?.nombre || null
+            })
+            .select()
+            .single();
+
+        if (ventaError) throw new Error(`Error al registrar la venta: ${ventaError.message}`);
+        const ventaId = ventaData.id;
+
+        // 2. Insertar los items de la venta, vinculados por el ID de la venta recién creada.
+        const itemsParaInsertar = ventaItems.map(item => ({
+            venta_id: ventaId,
+            plato_id: item.plato_id,
+            cantidad: item.cantidad,
+            precio_unitario_venta: item.precio_unitario,
+            subtotal: item.cantidad * item.precio_unitario
+        }));
+        const { error: itemsError } = await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
+        if (itemsError) throw new Error(`Error al registrar los items de la venta: ${itemsError.message}`);
+
+        // 3. Insertar los movimientos de ingreso en la tabla 'caja'.
+        const turnoActual = await turnoService.getTurnoAbierto(currentSupabaseInstance, currentModuleUser.id, currentHotelId);
+        if (!turnoActual) throw new Error("No hay un turno abierto. Por favor, abre un turno para poder registrar ventas.");
+        
+        let conceptoDetallado = "Venta: " + ventaItems.map(item => `${item.cantidad}x ${item.nombre_plato}`).join(', ');
+        if (conceptoDetallado.length > 100) conceptoDetallado = conceptoDetallado.substring(0, 97) + '...';
+
+        const cajaInserts = pagos.map(pago => ({
+            hotel_id: currentHotelId,
+            usuario_id: currentModuleUser.id,
+            turno_id: turnoActual.id,
+            tipo: 'ingreso',
+            monto: pago.monto,
+            metodo_pago_id: pago.metodo_pago_id,
+            concepto: conceptoDetallado,
+            venta_restaurante_id: ventaId
+        }));
+        const { error: cajaError } = await currentSupabaseInstance.from('caja').insert(cajaInserts);
+        if (cajaError) throw new Error(`Error al registrar el pago en caja: ${cajaError.message}`);
+
+        // 4. Registrar la acción en la bitácora para auditoría.
+        await registrarEnBitacora(currentSupabaseInstance, currentHotelId, currentModuleUser.id, 'Restaurante', 'Nueva Venta', { ventaId, monto: montoTotalVenta });
+        
+        // 5. Mostrar feedback de éxito y limpiar la interfaz del TPV.
+        showRestauranteFeedback(posFeedbackEl, `✅ ¡Venta #${ventaId.substring(0, 8)} registrada con éxito!`, 'success-indicator');
+        ventaItems = [];
+        descuentoAplicadoRestaurante = null;
+        await renderVentaItemsUI(posPedidoItemsBodyEl, configuracionImpuestos);
+        formFinalizarVentaEl.reset();
+        document.getElementById('feedback-descuento-restaurante').textContent = '';
+
+    } catch (error) {
+        console.error("Error completo al finalizar venta:", error);
+        showRestauranteFeedback(posFeedbackEl, `Error: ${error.message}`, 'error-indicator', 0);
+    } 
+    // La 'finalización' del estado de carga se maneja en la función que llama a esta (finalizarVentaHandler).
+}
+
+/**
+ * Muestra un modal para registrar un pago mixto (varios métodos de pago).
+ * @param {number} totalAPagar - El monto total que debe ser cubierto.
+ * @param {Array} metodosDisponibles - Array con los métodos de pago activos.
+ * @param {Function} onConfirmCallback - Función que se ejecuta al confirmar, recibe el array de pagos.
+ */
+function mostrarModalPagoMixtoRestaurante(totalAPagar, metodosDisponibles, onConfirmCallback) {
+    let modalEl = document.getElementById('modal-pago-mixto');
+    if (modalEl) modalEl.remove();
+
+    modalEl = document.createElement('div');
+    modalEl.id = 'modal-pago-mixto';
+    modalEl.className = 'modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-[70]';
+    
+    let pagos = [];
+    
+    const render = () => {
+        const totalPagado = pagos.reduce((acc, p) => acc + p.monto, 0);
+        const restante = totalAPagar - totalPagado;
+
+        const pagosHtml = pagos.map((p, index) => {
+            const metodo = metodosDisponibles.find(m => m.id === p.metodo_pago_id);
+            return `<div class="flex justify-between items-center p-2 bg-gray-100 rounded">
+                <span>${metodo?.nombre}: ${formatCurrencyLocal(p.monto)}</span>
+                <button data-index="${index}" class="btn-remove-pago text-red-500 font-bold">&times;</button>
+            </div>`;
+        }).join('');
+
+        modalEl.innerHTML = `
+            <div class="modal-content bg-white p-5 rounded-lg shadow-xl w-full max-w-md">
+                <h4 class="text-xl font-semibold mb-4">Pago Mixto</h4>
+                <div class="mb-4 p-3 bg-blue-50 rounded-lg text-center">
+                    <p class="text-lg">Total a Pagar: <strong class="text-blue-600">${formatCurrencyLocal(totalAPagar)}</strong></p>
+                    <p class="text-md">Restante: <strong class="text-red-600">${formatCurrencyLocal(restante)}</strong></p>
+                </div>
+                <div id="pago-mixto-list" class="space-y-2 mb-4">${pagosHtml}</div>
+                <form id="form-add-pago" class="flex items-end gap-2 mb-4">
+                    <div class="flex-grow">
+                        <label class="form-label text-sm">Método</label>
+                        <select name="metodo_pago_id" class="form-control">
+                            ${metodosDisponibles.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label text-sm">Monto</label>
+                        <input type="number" name="monto" class="form-control w-32" required placeholder="0">
+                    </div>
+                    <button type="submit" class="button button-primary">Añadir</button>
+                </form>
+                <div class="flex justify-end gap-3 pt-4 border-t">
+                    <button id="btn-cancelar-pago-mixto" class="button button-danger">Cancelar</button>
+                    <button id="btn-confirmar-pago-mixto" class="button button-success" ${restante > 0 ? 'disabled' : ''}>Confirmar Pago</button>
+                </div>
+            </div>`;
+
+        // Add event listeners
+        modalEl.querySelector('#form-add-pago').onsubmit = (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const nuevoPago = {
+                metodo_pago_id: formData.get('metodo_pago_id'),
+                monto: parseFloat(formData.get('monto'))
+            };
+            if (nuevoPago.monto > 0) {
+                pagos.push(nuevoPago);
+                render();
+            }
+        };
+
+        modalEl.querySelectorAll('.btn-remove-pago').forEach(btn => {
+            btn.onclick = (e) => {
+                pagos.splice(parseInt(e.currentTarget.dataset.index), 1);
+                render();
+            };
+        });
+
+        modalEl.querySelector('#btn-cancelar-pago-mixto').onclick = () => modalEl.remove();
+        modalEl.querySelector('#btn-confirmar-pago-mixto').onclick = () => {
+            onConfirmCallback(pagos);
+            modalEl.remove();
+        };
+    };
+
+    render();
+    document.body.appendChild(modalEl);
+}
 
 async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
     console.log("RESTAURANTE: Renderizando pestaña de Platos y Recetas...");
@@ -387,9 +642,12 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
                         <input type="hidden" name="id" value="${plato?.id || ''}">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div><label class="form-label required">Nombre</label><input type="text" name="nombre" class="form-control" value="${plato?.nombre || ''}" required></div>
-                            <div><label class="form-label">Categoría</label><input type="text" name="categoria" class="form-control" value="${plato?.categoria || ''}"></div>
-                            <div><label class="form-label required">Precio</label><input type="number" name="precio" step="50" min="0" class="form-control" value="${plato?.precio || ''}" required></div>
+<div>
+  <label class="form-label required">Categoría</label>
+  <select name="categoria_id" id="plato-categoria-select" class="form-control" required></select>
+</div>                            <div><label class="form-label required">Precio</label><input type="number" name="precio" step="50" min="0" class="form-control" value="${plato?.precio || ''}" required></div>
                             <div class="pt-6"><label class="flex items-center"><input type="checkbox" name="activo" class="form-checkbox" ${plato?.activo ?? true ? 'checked' : ''}><span class="ml-2">Activo</span></label></div>
+
                         </div>
                         <div><label class="form-label">Descripción</label><textarea name="descripcion" rows="2" class="form-control">${plato?.descripcion || ''}</textarea></div>
                         <div class="pt-4 border-t">
@@ -417,6 +675,22 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
               </form>
             </div>`;
         modalPlatoEl.style.display = 'flex';
+// Cargar categorías activas
+const categoriaSelectEl = modalPlatoEl.querySelector('#plato-categoria-select');
+const { data: categorias } = await supabaseInstance
+  .from('categorias_producto')
+  .select('id, nombre')
+  .eq('hotel_id', hotelId)
+  .eq('activa', true)
+  .order('nombre');
+
+if (categorias?.length) {
+  categoriaSelectEl.innerHTML = categorias.map(cat => 
+    `<option value="${cat.id}" ${plato?.categoria_id === cat.id ? 'selected' : ''}>${cat.nombre}</option>`
+  ).join('');
+} else {
+  categoriaSelectEl.innerHTML = `<option value="">No hay categorías</option>`;
+}
 
         const formPlatoEl = modalPlatoEl.querySelector('#form-plato');
         const modalFeedbackEl = modalPlatoEl.querySelector('#modal-plato-feedback');
@@ -497,15 +771,15 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
                     imagenUrl = urlData.publicUrl;
                 }
 
-                const platoData = {
-                    hotel_id: hotelId,
-                    nombre: formData.get('nombre'),
-                    categoria: formData.get('categoria') || null,
-                    precio: parseFloat(formData.get('precio')),
-                    activo: formData.get('activo') === 'on',
-                    descripcion: formData.get('descripcion') || null,
-                    imagen_url: imagenUrl
-                };
+               const platoData = {
+    hotel_id: hotelId,
+    nombre: formData.get('nombre'),
+    categoria_id: formData.get('categoria_id') || null,
+    precio: parseFloat(formData.get('precio')),
+    activo: formData.get('activo') === 'on',
+    descripcion: formData.get('descripcion') || null,
+    imagen_url: imagenUrl
+};
 
                 let savedPlatoId = platoId;
                 if (platoId) {
@@ -561,7 +835,7 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
                                 <img src="${p.imagen_url || 'https://via.placeholder.com/150'}" alt="${p.nombre}" class="w-12 h-12 rounded-md object-cover bg-gray-200">
                             </td>
                             <td class="p-2 font-medium">${p.nombre}</td>
-                            <td class="p-2">${p.categoria || 'N/A'}</td>
+                            <td class="p-2">${p.categorias_producto?.nombre || 'N/A'}</td>
                             <td class="p-2 text-right">${formatCurrencyLocal(p.precio)}</td>
                             <td class="p-2 text-center"><span class="px-2 py-1 text-xs rounded-full ${p.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${p.activo ? 'Sí' : 'No'}</span></td>
                             <td class="p-2 text-center"><button class="button button-outline button-small btn-editar-plato">Editar</button></td>
@@ -581,8 +855,13 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
     const cargarYRenderizarPlatos = async () => {
         showRestauranteLoading(platosLoadingEl, true);
         try {
-            const { data, error } = await supabaseInstance.from('platos').select('*').eq('hotel_id', hotelId).order('nombre');
-            if (error) throw error;
+    const { data, error } = await supabaseInstance
+    .from('platos')
+    .select('*, categorias_producto(nombre)')
+    .eq('hotel_id', hotelId)
+    .order('nombre');
+    
+    if (error) throw error;
             platosCache = data || [];
             renderTablaPlatos(platosCache);
         } catch (err) {
@@ -680,15 +959,29 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
             </div>
 
             <div class="card-footer p-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
-                <div class="flex justify-between items-baseline mb-4">
-                    <span class="text-lg font-bold text-slate-700 dark:text-slate-200">Total:</span>
-                    <span id="venta-restaurante-total" class="text-3xl font-extrabold text-blue-600 dark:text-blue-500">$0</span>
-                </div>
-                <button type="submit" form="form-finalizar-venta-restaurante" id="btn-finalizar-venta-restaurante" class="button button-success w-full py-3 text-base font-bold flex items-center justify-center gap-2">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                    Registrar Venta
-                </button>
-            </div>
+    <div class="text-sm space-y-1 mb-4">
+        <div class="flex justify-between">
+            <span class="text-slate-500 dark:text-slate-400">Subtotal:</span>
+            <span id="subtotal-resumen-restaurante" class="font-medium text-slate-700 dark:text-slate-200">$0</span>
+        </div>
+        <div id="descuento-resumen-restaurante" class="flex justify-between" style="display: none;">
+            <span class="text-green-600 dark:text-green-500">Descuento:</span>
+            <span id="descuento-valor" class="font-medium text-green-600 dark:text-green-500">-$0</span>
+        </div>
+        <div id="impuesto-resumen-restaurante" class="flex justify-between" style="display: none;">
+            <span id="impuesto-nombre" class="text-slate-500 dark:text-slate-400">Impuesto (0%):</span>
+            <span id="impuesto-valor" class="font-medium text-slate-700 dark:text-slate-200">$0</span>
+        </div>
+    </div>
+    <div class="flex justify-between items-baseline pt-3 border-t">
+        <span class="text-lg font-bold text-slate-700 dark:text-slate-200">Total:</span>
+        <span id="venta-restaurante-total" class="text-3xl font-extrabold text-blue-600 dark:text-blue-500">$0</span>
+    </div>
+    <button type="submit" form="form-finalizar-venta-restaurante" id="btn-finalizar-venta-restaurante" class="button button-success w-full py-3 text-base font-bold flex items-center justify-center gap-2 mt-3">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+        Registrar Venta
+    </button>
+</div>
         </div>
     </div>
     <div id="posVentaFeedback" style="display:none;" class="feedback-message mt-4"></div>
@@ -715,29 +1008,49 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
     }
 
     // --- Cargar datos y renderizar POS ---
-    const restauranteLoadingEl = document.getElementById('restaurante-loading');
-    showRestauranteLoading(restauranteLoadingEl, true, "Cargando POS...");
-    try {
-        const [ { data: platos }, { data: metodos }, { data: habitaciones } ] = await Promise.all([
-            supabaseInstance.from('platos').select('*').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
-            supabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
-            supabaseInstance.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).eq('estado', 'ocupada').order('nombre')
-        ]);
-        platosCache = platos || [];
-        metodosPagoCache = metodos || [];
-        renderPOSPlatosUI(posPlatosRenderAreaEl, platosCache, plato => {
-            const item = ventaItems.find(i => i.plato_id === plato.id);
-            if(item) item.cantidad++; else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
-            renderVentaItemsUI(posPedidoItemsBodyEl);
-        });
-        selectMetodoPagoVentaEl.innerHTML = `<option value="mixto" selected>Pago Mixto</option>` + metodosPagoCache.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
-        selectHabitacionEl.innerHTML = (habitaciones || []).length > 0 ? `<option value="">Seleccione</option>` + habitaciones.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('') : '<option disabled>No hay habitaciones ocupadas</option>';
-        renderVentaItemsUI(posPedidoItemsBodyEl);
-    } catch (e) {
-        showRestauranteFeedback(posFeedbackEl, `Error al cargar POS: ${e.message}`, 'error-indicator', 0);
-    } finally {
-        showRestauranteLoading(restauranteLoadingEl, false);
+    // DESPUÉS (en renderRegistrarVentaTab)
+    // REEMPLAZA ESTE BLOQUE DENTRO DE renderRegistrarVentaTab
+
+const restauranteLoadingEl = document.getElementById('restaurante-loading');
+showRestauranteLoading(restauranteLoadingEl, true, "Cargando POS...");
+
+try {
+    const [ { data: platos }, { data: metodos }, { data: habitaciones }, { data: config } ] = await Promise.all([
+        supabaseInstance.from('platos').select('*, categoria:categoria_id(nombre)').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
+        supabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
+        supabaseInstance.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).eq('estado', 'ocupada').order('nombre'),
+        supabaseInstance.from('configuracion_hotel').select('impuesto_nombre_restaurante, impuesto_porcentaje_restaurante, impuesto_restaurante_incluido').eq('hotel_id', hotelId).single()
+    ]);
+
+    platosCache = platos || [];
+    metodosPagoCache = metodos || [];
+    
+    // Guardamos la configuración en la variable global del módulo
+    if (config) {
+        configuracionImpuestos = {
+            nombre: config.impuesto_nombre_restaurante || 'Impuesto',
+            porcentaje: config.impuesto_porcentaje_restaurante || 0,
+            incluido: config.impuesto_restaurante_incluido || false
+        };
     }
+
+    // Ya no pasamos `configuracionImpuestos` como parámetro
+    renderPOSPlatosUI(posPlatosRenderAreaEl, platosCache, async (plato) => {
+         const item = ventaItems.find(i => i.plato_id === plato.id);
+         if(item) item.cantidad++; else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio, categoria_id: plato.categoria_id });
+         await renderVentaItemsUI(posPedidoItemsBodyEl);
+    });
+
+    selectMetodoPagoVentaEl.innerHTML = `<option value="mixto" selected>Pago Mixto</option>` + metodosPagoCache.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
+    selectHabitacionEl.innerHTML = (habitaciones || []).length > 0 ? `<option value="">Seleccione</option>` + habitaciones.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('') : '<option disabled>No hay habitaciones ocupadas</option>';
+    await renderVentaItemsUI(posPedidoItemsBodyEl);
+
+} catch (e) {
+    showRestauranteFeedback(posFeedbackEl, `Error al cargar POS: ${e.message}`, 'error-indicator', 0);
+} finally {
+    showRestauranteLoading(restauranteLoadingEl, false);
+}
+
 
     filtroPlatosInputEl.oninput = () => {
         const platosFiltrados = platosCache.filter(p => p.nombre.toLowerCase().includes(filtroPlatosInputEl.value.toLowerCase()));
@@ -755,61 +1068,199 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
     selectModoVentaEl.dispatchEvent(new Event('change'));
 
     // --- Handler Finalizar Venta ---
-    const finalizarVentaHandler = async (e) => {
-        e.preventDefault();
-        clearRestauranteFeedback(posFeedbackEl);
-        if (ventaItems.length === 0) { showRestauranteFeedback(posFeedbackEl, "El pedido está vacío.", 'error-indicator'); return; }
+// --- Handler Finalizar Venta ---
+const finalizarVentaHandler = async (e) => {
+    e.preventDefault();
+    const posFeedbackEl = document.getElementById('posVentaFeedback');
+    const formFinalizarVentaEl = document.getElementById('form-finalizar-venta-restaurante');
+    const btnFinalizarVentaEl = document.getElementById('btn-finalizar-venta-restaurante');
 
-        const modo = selectModoVentaEl.value;
-        const totalVenta = ventaItems.reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0);
+    clearRestauranteFeedback(posFeedbackEl);
+    if (ventaItems.length === 0) {
+        showRestauranteFeedback(posFeedbackEl, "El pedido está vacío.", 'error-indicator');
+        return;
+    }
+
+    setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, "Registrar Venta", "Procesando...");
+
+    try {
+        // 1. Obtener la configuración de impuestos MÁS RECIENTE para asegurar precisión.
+        const { data: config, error: configError } = await currentSupabaseInstance
+            .from('configuracion_hotel')
+            .select('impuesto_nombre_restaurante, impuesto_porcentaje_restaurante, impuesto_restaurante_incluido')
+            .eq('hotel_id', currentHotelId)
+            .single();
+
+        if (configError) throw new Error(`Error al obtener configuración de impuestos: ${configError.message}`);
+        
+        const configuracionImpuestos = {
+            nombre: config.impuesto_nombre_restaurante || 'Impuesto',
+            porcentaje: config.impuesto_porcentaje_restaurante || 0,
+            incluido: config.impuesto_restaurante_incluido || false
+        };
+
+        // 2. Recalcular TODOS los montos finales
+        const montoBruto = ventaItems.reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0);
+        
+        // Recalcular descuento
+        let montoDescontado = 0;
+        if (descuentoAplicadoRestaurante) {
+            let subtotalAfectado = 0;
+            const aplicabilidad = descuentoAplicadoRestaurante.aplicabilidad;
+            const itemsAplicables = descuentoAplicadoRestaurante.habitaciones_aplicables || [];
+            if (aplicabilidad === 'reserva_total' || aplicabilidad === 'venta_total') subtotalAfectado = montoBruto;
+            else if (aplicabilidad === 'categorias_restaurante') {
+                ventaItems.forEach(item => {
+                    const platoInfo = platosCache.find(p => p.id === item.plato_id);
+                    if (platoInfo && itemsAplicables.includes(platoInfo.categoria_id)) {
+                        subtotalAfectado += item.cantidad * item.precio_unitario;
+                    }
+                });
+            }
+            montoDescontado = (descuentoAplicadoRestaurante.tipo === 'fijo') ? parseFloat(descuentoAplicadoRestaurante.valor) : subtotalAfectado * (parseFloat(descuentoAplicadoRestaurante.valor) / 100);
+            montoDescontado = Math.min(montoBruto, montoDescontado);
+        }
+        const subtotalConDescuento = montoBruto - montoDescontado;
+
+        // Recalcular impuesto
+        let montoImpuesto = 0;
+        const taxRate = (configuracionImpuestos.porcentaje || 0) / 100;
+        if (taxRate > 0) {
+            montoImpuesto = configuracionImpuestos.incluido
+                ? subtotalConDescuento - (subtotalConDescuento / (1 + taxRate))
+                : subtotalConDescuento * taxRate;
+        }
+        const totalFinal = configuracionImpuestos.incluido ? subtotalConDescuento : subtotalConDescuento + montoImpuesto;
+
+        // 3. Obtener datos del formulario y proceder con la venta
         const cliente = formFinalizarVentaEl.elements.clienteNombre.value.trim() || null;
+        const modo = formFinalizarVentaEl.elements.modoVenta.value;
+        const selectMetodoPagoVentaEl = document.getElementById('venta-restaurante-metodo-pago');
 
         if (modo === "inmediato") {
             const metodoId = selectMetodoPagoVentaEl.value;
+            const payload = {
+                montoTotalVenta: totalFinal,
+                nombreClienteTemporal: cliente,
+                configuracionImpuestos,
+                montoDescontado,
+                montoImpuesto
+            };
             if (metodoId === "mixto") {
-                await mostrarModalPagoMixtoRestaurante(totalVenta, metodosPagoCache, async (pagos) => {
-                    if (pagos) await registrarVentaRestauranteConPagos({ pagos, montoTotalVenta: totalVenta, nombreClienteTemporal: cliente });
+                mostrarModalPagoMixtoRestaurante(totalFinal, metodosPagoCache, (pagos) => {
+                    if (pagos) registrarVentaRestauranteConPagos({ ...payload, pagos });
                 });
             } else {
-                await registrarVentaRestauranteConPagos({ pagos: [{ metodo_pago_id: metodoId, monto: totalVenta }], montoTotalVenta: totalVenta, nombreClienteTemporal: cliente });
+                registrarVentaRestauranteConPagos({ ...payload, pagos: [{ metodo_pago_id: metodoId, monto: totalFinal }] });
             }
         } else { // Cargar a habitación
+            const selectHabitacionEl = document.getElementById('venta-restaurante-habitacion');
             const habitacionId = selectHabitacionEl.value;
-            if (!habitacionId) { showRestauranteFeedback(posFeedbackEl, "Seleccione una habitación.", 'error-indicator'); return; }
+            if (!habitacionId) throw new Error("Seleccione una habitación para cargar el consumo.");
+
+            const { data: reserva, error: errRes } = await currentSupabaseInstance.from('reservas').select('id').eq('habitacion_id', habitacionId).in('estado', ['activa', 'ocupada']).limit(1).single();
+            if (errRes) throw new Error("No hay una reserva activa en la habitación seleccionada.");
+
+            const { data: ventaData, error: errVenta } = await currentSupabaseInstance.from('ventas_restaurante').insert({
+                hotel_id: currentHotelId, usuario_id: currentModuleUser.id, habitacion_id: habitacionId, reserva_id: reserva.id,
+                monto_total: totalFinal, estado_pago: 'pendiente_cargo_habitacion',
+                descuento_aplicado_id: descuentoAplicadoRestaurante?.id || null, monto_descontado: montoDescontado,
+                monto_impuestos: montoImpuesto, porcentaje_impuestos_aplicado: configuracionImpuestos.porcentaje, nombre_impuesto_aplicado: configuracionImpuestos.nombre
+            }).select().single();
+            if (errVenta) throw errVenta;
             
-            setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, "Registrar Venta", "Cargando...");
-            try {
-                const { data: reserva, error: errRes } = await supabaseInstance.from('reservas').select('id').eq('habitacion_id', habitacionId).in('estado', ['activa', 'ocupada']).limit(1).single();
-                if (errRes) throw new Error("No hay reserva activa en la habitación.");
-                const { data: ventaData, error: errVenta } = await supabaseInstance.from('ventas_restaurante').insert({
-                    hotel_id: hotelId, usuario_id: moduleUser.id, habitacion_id: habitacionId,
-                    reserva_id: reserva.id, monto_total: totalVenta,
-                }).select().single();
-                if(errVenta) throw errVenta;
-                
-                const itemsParaInsertar = ventaItems.map(item => ({ 
-                    venta_id: ventaData.id, 
-                    plato_id: item.plato_id, 
-                    cantidad: item.cantidad, 
-                    precio_unitario_venta: item.precio_unitario, 
-                    subtotal: item.precio_unitario * item.cantidad 
-                }));
-                await supabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
-                
-                showRestauranteFeedback(posFeedbackEl, `Consumo cargado a la habitación.`, 'success-indicator');
-                ventaItems = []; renderVentaItemsUI(posPedidoItemsBodyEl); formFinalizarVentaEl.reset();
-            } catch (err) {
-                showRestauranteFeedback(posFeedbackEl, err.message, 'error-indicator');
-            } finally {
-                setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
-            }
+            const itemsParaInsertar = ventaItems.map(item => ({ venta_id: ventaData.id, plato_id: item.plato_id, cantidad: item.cantidad, precio_unitario_venta: item.precio_unitario, subtotal: item.cantidad * item.precio_unitario }));
+            await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
+
+            showRestauranteFeedback(posFeedbackEl, `Consumo cargado a la habitación.`, 'success-indicator');
+            ventaItems = []; descuentoAplicadoRestaurante = null;
+            await renderVentaItemsUI(document.getElementById('pos-pedido-items-body'), configuracionImpuestos);
+            formFinalizarVentaEl.reset();
+            document.getElementById('feedback-descuento-restaurante').textContent = '';
         }
-    };
-    // Agrega el handler UNA SOLA VEZ
-    formFinalizarVentaEl.addEventListener('submit', finalizarVentaHandler);
+    } catch (error) {
+        showRestauranteFeedback(posFeedbackEl, error.message, 'error-indicator', 0);
+    } finally {
+        setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
+    }
+};
+ formFinalizarVentaEl.addEventListener('submit', finalizarVentaHandler);
     currentTabListeners.push({ element: formFinalizarVentaEl, type: 'submit', handler: finalizarVentaHandler });
-}
+
+/**
+ * Procesa y guarda una venta, sus items y los pagos correspondientes en la base de datos.
+ * Acepta los montos pre-calculados para asegurar consistencia.
+ */
+async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombreClienteTemporal, configuracionImpuestos, montoDescontado, montoImpuesto }) {
+    const formFinalizarVentaEl = document.getElementById('form-finalizar-venta-restaurante');
+    const btnFinalizarVentaEl = document.getElementById('btn-finalizar-venta-restaurante');
+    const posFeedbackEl = document.getElementById('posVentaFeedback');
+    const posPedidoItemsBodyEl = document.getElementById('pos-pedido-items-body');
+
+    // El estado de "cargando" ya se activó en el handler, aquí solo continuamos.
+    try {
+        // 1. Insertar la venta principal con los datos de impuestos
+        const { data: ventaData, error: ventaError } = await currentSupabaseInstance
+            .from('ventas_restaurante')
+            .insert({
+                hotel_id: currentHotelId,
+                usuario_id: currentModuleUser.id,
+                monto_total: montoTotalVenta,
+                nombre_cliente_temporal: nombreClienteTemporal,
+                descuento_aplicado_id: descuentoAplicadoRestaurante?.id || null,
+                monto_descontado: montoDescontado,
+                estado_pago: 'pagado',
+                monto_impuestos: montoImpuesto,
+                porcentaje_impuestos_aplicado: configuracionImpuestos?.porcentaje || 0,
+                nombre_impuesto_aplicado: configuracionImpuestos?.nombre || null
+            })
+            .select()
+            .single();
+
+        if (ventaError) throw new Error(`Error al registrar la venta: ${ventaError.message}`);
+        const ventaId = ventaData.id;
+
+        // 2. Insertar los items de la venta
+        const itemsParaInsertar = ventaItems.map(item => ({
+            venta_id: ventaId, plato_id: item.plato_id, cantidad: item.cantidad,
+            precio_unitario_venta: item.precio_unitario, subtotal: item.cantidad * item.precio_unitario
+        }));
+        const { error: itemsError } = await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
+        if (itemsError) throw new Error(`Error al registrar los items: ${itemsError.message}`);
+
+        // 3. Insertar los movimientos en caja por cada pago
+        const turnoActual = await turnoService.getTurnoAbierto(currentSupabaseInstance, currentModuleUser.id, currentHotelId);
+        if (!turnoActual) throw new Error("No hay un turno abierto. Por favor, abre un turno para registrar ventas.");
+        
+        let conceptoDetallado = "Venta: " + ventaItems.map(item => `${item.cantidad}x ${item.nombre_plato}`).join(', ');
+        if (conceptoDetallado.length > 100) conceptoDetallado = conceptoDetallado.substring(0, 97) + '...';
+
+        const cajaInserts = pagos.map(pago => ({
+            hotel_id: currentHotelId, usuario_id: currentModuleUser.id, turno_id: turnoActual.id, tipo: 'ingreso',
+            monto: pago.monto, metodo_pago_id: pago.metodo_pago_id, concepto: conceptoDetallado, venta_restaurante_id: ventaId
+        }));
+        const { error: cajaError } = await currentSupabaseInstance.from('caja').insert(cajaInserts);
+        if (cajaError) throw new Error(`Error al registrar en caja: ${cajaError.message}`);
+
+        // 4. Registrar en bitácora y resetear UI
+        await registrarEnBitacora(currentSupabaseInstance, currentHotelId, currentModuleUser.id, 'Restaurante', 'Nueva Venta', { ventaId, monto: montoTotalVenta });
+        
+        showRestauranteFeedback(posFeedbackEl, `✅ ¡Venta #${ventaId.substring(0, 8)} registrada con éxito!`, 'success-indicator');
+        ventaItems = []; descuentoAplicadoRestaurante = null;
+        await renderVentaItemsUI(posPedidoItemsBodyEl, configuracionImpuestos);
+        formFinalizarVentaEl.reset();
+        document.getElementById('feedback-descuento-restaurante').textContent = '';
+
+    } catch (error) {
+        console.error("Error completo al finalizar venta:", error);
+        showRestauranteFeedback(posFeedbackEl, `Error: ${error.message}`, 'error-indicator', 0);
+    } finally {
+        // El estado de carga se resetea en el handler principal
+    }
+
     
+}
+}    
     
 
 
@@ -997,6 +1448,215 @@ async function renderInventarioTab(tabContentEl, supabaseInstance, hotelId, curr
     await inventarioModule.mount(tabContentEl, supabaseInstance, currentUser, hotelId);
 }
 
+// =============================================================
+// ===== INICIA PESTAÑA CATEGORIAS ============================
+// =============================================================
+
+async function renderCategoriasTab(tabContentEl, supabaseInstance, hotelId) {
+    console.log("RESTAURANTE: Renderizando pestaña de Categorías...");
+    // Limpia listeners de la pestaña anterior para evitar duplicados
+    currentTabListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
+    currentTabListeners = [];
+    
+    // Almacenamiento local para las categorías de esta pestaña
+    let categoriasCache = [];
+
+    // HTML principal de la pestaña
+    tabContentEl.innerHTML = `
+      <div class="p-4">
+        <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-2">
+            <h3 class="text-lg font-semibold">Gestión de Categorías de Platos</h3>
+            <button id="btn-nueva-categoria" class="button button-primary text-sm">
+                <span class="mr-1">🏷️</span> Nueva Categoría
+            </button>
+        </div>
+        <div id="categorias-feedback" class="feedback-message my-2" style="display:none;"></div>
+        <div id="categorias-loading" class="loading-indicator text-center py-3" style="display:none;"></div>
+        <div id="lista-categorias-container" class="overflow-x-auto bg-white shadow rounded-md"></div>
+      </div>
+      <div id="modal-categoria" class="modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50" style="display:none;"></div>
+    `;
+
+    // Referencias a los elementos del DOM
+    const btnNuevaCategoria = tabContentEl.querySelector('#btn-nueva-categoria');
+    const modalCategoriaEl = tabContentEl.querySelector('#modal-categoria');
+    const categoriasLoadingEl = tabContentEl.querySelector('#categorias-loading');
+    const categoriasFeedbackEl = tabContentEl.querySelector('#categorias-feedback');
+    const containerEl = tabContentEl.querySelector('#lista-categorias-container');
+
+    const closeCategoriaModal = () => {
+        if (modalCategoriaEl) modalCategoriaEl.style.display = 'none';
+    };
+
+    // Función para abrir el modal (sea para crear o editar)
+    const openCategoriaModal = (categoria = null) => {
+        const isEditing = categoria !== null;
+        modalCategoriaEl.innerHTML = `
+            <div class="modal-content bg-white p-5 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] flex flex-col">
+                <form id="form-categoria">
+                    <div class="flex justify-between items-center mb-4 pb-3 border-b">
+                        <h4 class="text-xl font-semibold">${isEditing ? 'Editar' : 'Nueva'} Categoría</h4>
+                        <button type="button" class="btn-cerrar-modal-categoria text-gray-400 hover:text-gray-600 text-3xl">&times;</button>
+                    </div>
+                    <div class="space-y-4">
+                        <input type="hidden" name="id" value="${categoria?.id || ''}">
+                        <div>
+                            <label class="form-label required">Nombre</label>
+                            <input type="text" name="nombre" class="form-control" value="${categoria?.nombre || ''}" required>
+                        </div>
+                        <div>
+                            <label class="form-label">Descripción</label>
+                            <textarea name="descripcion" rows="3" class="form-control">${categoria?.descripcion || ''}</textarea>
+                        </div>
+                        <div>
+                            <label class="flex items-center">
+                                <input type="checkbox" name="activa" class="form-checkbox" ${categoria?.activa ?? true ? 'checked' : ''}>
+                                <span class="ml-2">Categoría Activa</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="modal-categoria-feedback" class="feedback-message my-3" style="display:none;"></div>
+                    <div class="flex justify-end gap-3 mt-5 pt-4 border-t">
+                        <button type="button" class="btn-cerrar-modal-categoria button button-danger">Cancelar</button>
+                        <button type="submit" id="btn-guardar-categoria" class="button button-success">
+                            ${isEditing ? 'Guardar Cambios' : 'Crear Categoría'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        `;
+        modalCategoriaEl.style.display = 'flex';
+
+        const formCategoriaEl = modalCategoriaEl.querySelector('#form-categoria');
+        const modalFeedbackEl = modalCategoriaEl.querySelector('#modal-categoria-feedback');
+        const submitButton = modalCategoriaEl.querySelector('#btn-guardar-categoria');
+
+        // Cerrar modal
+        modalCategoriaEl.querySelectorAll('.btn-cerrar-modal-categoria').forEach(btn => btn.onclick = closeCategoriaModal);
+
+        // Enviar formulario
+        formCategoriaEl.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(formCategoriaEl);
+            const id = formData.get('id');
+            
+            const categoriaData = {
+                hotel_id: hotelId,
+                nombre: formData.get('nombre').trim(),
+                descripcion: formData.get('descripcion').trim(),
+                activa: formData.get('activa') === 'on'
+            };
+            
+            if (!categoriaData.nombre) {
+                 showRestauranteFeedback(modalFeedbackEl, 'El nombre es obligatorio.', 'error-indicator', 0);
+                 return;
+            }
+
+            setFormLoadingState(formCategoriaEl, true, submitButton, isEditing ? "Guardar Cambios" : "Crear", "Guardando...");
+            try {
+                let error;
+                if (isEditing) {
+                    ({ error } = await supabaseInstance.from('categorias_producto').update(categoriaData).eq('id', id));
+                } else {
+                    ({ error } = await supabaseInstance.from('categorias_producto').insert(categoriaData));
+                }
+
+                if (error) throw error;
+                
+                showRestauranteFeedback(categoriasFeedbackEl, `¡Categoría ${isEditing ? 'actualizada' : 'creada'} con éxito!`, 'success-indicator');
+                closeCategoriaModal();
+                cargarYRenderizarCategorias(); // Recargar la lista
+
+            } catch (err) {
+                console.error("Error guardando categoría:", err);
+                showRestauranteFeedback(modalFeedbackEl, `Error: ${err.message}`, 'error-indicator', 0);
+            } finally {
+                setFormLoadingState(formCategoriaEl, false, submitButton, isEditing ? "Guardar Cambios" : "Crear Categoría");
+            }
+        };
+    };
+
+    // Función para dibujar la tabla de categorías
+    const renderTablaCategorias = (categorias) => {
+        if (!categorias?.length) {
+            containerEl.innerHTML = '<p class="text-center text-gray-500 py-6">No hay categorías registradas. ¡Crea la primera!</p>';
+            return;
+        }
+
+        containerEl.innerHTML = `
+            <table class="tabla-estilizada w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="p-3 text-left">Nombre</th>
+                        <th class="p-3 text-left">Descripción</th>
+                        <th class="p-3 text-center">Estado</th>
+                        <th class="p-3 text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    ${categorias.map(cat => `
+                        <tr data-id="${cat.id}" class="hover:bg-gray-50">
+                            <td class="p-3 font-medium">${cat.nombre}</td>
+                            <td class="p-3 text-sm text-gray-600">${cat.descripcion || '<em>Sin descripción</em>'}</td>
+                            <td class="p-3 text-center">
+                                <span class="px-2 py-1 text-xs rounded-full ${cat.activa ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                                    ${cat.activa ? 'Activa' : 'Inactiva'}
+                                </span>
+                            </td>
+                            <td class="p-3 text-center">
+                                <button class="button button-outline button-small btn-editar-categoria">Editar</button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+        // Añadir listeners a los botones de editar
+        containerEl.querySelectorAll('.btn-editar-categoria').forEach(btn => {
+            btn.onclick = () => {
+                const id = btn.closest('tr').dataset.id;
+                const categoria = categoriasCache.find(c => c.id === id);
+                if (categoria) {
+                    openCategoriaModal(categoria);
+                }
+            };
+        });
+    };
+
+    // Función principal para cargar y renderizar
+    const cargarYRenderizarCategorias = async () => {
+        showRestauranteLoading(categoriasLoadingEl, true, 'Cargando categorías...');
+        try {
+            const { data, error } = await supabaseInstance
+                .from('categorias_producto')
+                .select('*')
+                .eq('hotel_id', hotelId)
+                .order('nombre', { ascending: true });
+
+            if (error) throw error;
+            
+            categoriasCache = data || [];
+            renderTablaCategorias(categoriasCache);
+
+        } catch (err) {
+            showRestauranteFeedback(categoriasFeedbackEl, `Error: ${err.message}`, 'error-indicator', 0);
+        } finally {
+            showRestauranteLoading(categoriasLoadingEl, false);
+        }
+    };
+
+    // --- Event Listeners Iniciales ---
+    btnNuevaCategoria.addEventListener('click', () => openCategoriaModal(null));
+    currentTabListeners.push({ element: btnNuevaCategoria, type: 'click', handler: () => openCategoriaModal(null) });
+
+    // Carga inicial
+    await cargarYRenderizarCategorias();
+}
+
+// =============================================================
+// ===== FIN PESTAÑA CATEGORIAS ===============================
+// =============================================================
 // --- Main Module Mount & Unmount ---
 export async function mount(container, sbInstance, user) {
     unmount(container);
@@ -1023,6 +1683,7 @@ export async function mount(container, sbInstance, user) {
             <nav class="module-tabs flex flex-wrap gap-1 sm:gap-2">
               <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="registrar-venta">Registrar Venta (POS)</button>
               <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="platos">Menú/Platos</button>
+                <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="categorias">Categorías</button>
               <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="historial-ventas">Historial Ventas</button>
               <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="inventario">Inventario</button>
             </nav>
@@ -1049,36 +1710,40 @@ export async function mount(container, sbInstance, user) {
     const tabButtons = container.querySelectorAll('.module-tabs .tab-button');
 
     const switchTab = async (tabName) => {
-        tabButtons.forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.tab === tabName);
-            btn.classList.toggle('button-primary', btn.dataset.tab === tabName);
-        });
+        tabButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+            btn.classList.toggle('button-primary', btn.dataset.tab === tabName);
+        });
 
-        if (activeSubmodule && activeSubmodule.unmount) {
-            activeSubmodule.unmount();
-            activeSubmodule = null;
-        }
-        
-        showRestauranteLoading(loadingGlobalEl, true, `Cargando pestaña ${tabName}...`);
+        if (activeSubmodule && activeSubmodule.unmount) {
+            activeSubmodule.unmount();
+            activeSubmodule = null;
+        }
+        
+        showRestauranteLoading(loadingGlobalEl, true, `Cargando pestaña ${tabName}...`);
 
-        try {
-            if (tabName === 'platos') {
-                await renderPlatosTab(tabContentEl, currentSupabaseInstance, currentHotelId);
-            } else if (tabName === 'registrar-venta') {
-                await renderRegistrarVentaTab(tabContentEl, currentSupabaseInstance, currentHotelId, currentModuleUser);
-            } else if (tabName === 'historial-ventas') {
-                await renderHistorialVentasTab(tabContentEl, currentSupabaseInstance, currentHotelId);
-            } else if (tabName === 'inventario') {
-                await renderInventarioTab(tabContentEl, currentSupabaseInstance, currentHotelId, currentModuleUser);
-                activeSubmodule = inventarioModule;
-            }
-        } catch (err) {
-            console.error(`Error loading tab ${tabName}:`, err);
-            showRestauranteFeedback(feedbackGlobalEl, `Error al cargar la pestaña: ${err.message}`, 'error-indicator', 0);
-        } finally {
-            showRestauranteLoading(loadingGlobalEl, false);
-        }
-    };
+        try {
+            if (tabName === 'platos') {
+                await renderPlatosTab(tabContentEl, currentSupabaseInstance, currentHotelId);
+            } else if (tabName === 'registrar-venta') {
+                await renderRegistrarVentaTab(tabContentEl, currentSupabaseInstance, currentHotelId, currentModuleUser);
+            } else if (tabName === 'historial-ventas') {
+                await renderHistorialVentasTab(tabContentEl, currentSupabaseInstance, currentHotelId);
+            } else if (tabName === 'inventario') {
+                await renderInventarioTab(tabContentEl, currentSupabaseInstance, currentHotelId, currentModuleUser);
+                activeSubmodule = inventarioModule;
+            // --- INICIO DE LA LÍNEA A AÑADIR ---
+            } else if (tabName === 'categorias') { 
+                await renderCategoriasTab(tabContentEl, currentSupabaseInstance, currentHotelId);
+            // --- FIN DE LA LÍNEA A AÑADIR ---
+            }
+        } catch (err) {
+            console.error(`Error loading tab ${tabName}:`, err);
+            showRestauranteFeedback(feedbackGlobalEl, `Error al cargar la pestaña: ${err.message}`, 'error-indicator', 0);
+        } finally {
+            showRestauranteLoading(loadingGlobalEl, false);
+        }
+    };
 
     tabButtons.forEach(button => {
         const tabName = button.dataset.tab;

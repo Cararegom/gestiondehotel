@@ -4,6 +4,7 @@
 
 // --- Estado global del módulo
 let currentContainerEl = null;
+let descuentoAplicado = null;
 let currentSupabase = null;
 let currentUser = null;
 let currentHotelId = null;
@@ -181,9 +182,24 @@ async function renderPOS() {
           </thead>
           <tbody id="carritoPOS"></tbody>
         </table>
-        <div style="text-align:right;font-size:1.15rem;font-weight:700;margin-bottom:14px;">
-          Total: <span id="totalPOS" style="color:#1d4ed8">$0</span>
-        </div>
+       // REEMPLAZA CON ESTO:
+<div id="resumen-pago-pos">
+    <div style="text-align:right;font-size:1.1rem;font-weight:600;margin-bottom:8px;">
+        Subtotal: <span id="subtotalPOS">$0</span>
+    </div>
+    <div id="lineaDescuentoPOS" style="text-align:right;font-size:1rem;font-weight:600;margin-bottom:8px;color:#22c55e;display:none;">
+        Descuento (<span id="nombreDescuentoPOS"></span>): -<span id="montoDescuentoPOS">$0</span>
+    </div>
+    <div style="text-align:right;font-size:1.3rem;font-weight:700;margin-bottom:14px;border-top:1px solid #eee;padding-top:8px;">
+        Total: <span id="totalPOS" style="color:#1d4ed8">$0</span>
+    </div>
+</div>
+
+<div id="aplicar-descuento-cont" style="display:flex; gap:8px; margin-bottom:14px;">
+    <input id="codigoDescuentoInput" placeholder="Código de descuento" style="flex-grow:1; padding:8px 12px; border-radius:7px; border:1.5px solid #e5e7eb;">
+    <button id="btnAplicarDescuento" style="background:#5a67d8; color:white; border:none; padding: 0 18px; border-radius:7px; font-weight:600; cursor:pointer;">Aplicar</button>
+    <button id="btnRemoverDescuento" style="background:#e53e3e; color:white; border:none; padding: 0 15px; border-radius:7px; font-weight:600; cursor:pointer; display:none;">X</button>
+</div>
         <div style="display:flex;gap:8px;margin-bottom:12px;">
           <select id="modoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;">
             <option value="inmediato">Pago Inmediato</option>
@@ -225,8 +241,119 @@ async function renderPOS() {
   renderHabitacionesPOS();
 
   document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
+document.getElementById('btnAplicarDescuento').onclick = aplicarDescuentoPOS;
+document.getElementById('btnRemoverDescuento').onclick = removerDescuentoPOS;
+}
+// --- INICIA BLOQUE DE LÓGICA DE DESCUENTOS ---
+
+
+/**
+ * Valida si los productos del carrito son elegibles para un descuento específico.
+ * @param {object} discount - El objeto de descuento de la base de datos.
+ * @param {array} cart - El array del carrito (posCarrito).
+ * @returns {number} - El monto base sobre el cual se puede aplicar el descuento.
+ */
+function getDiscountableBase(discount, cart) {
+    const aplicabilidad = discount.aplicabilidad;
+    const itemsAplicables = discount.habitaciones_aplicables || []; // Columna que contiene IDs de productos, categorías, etc.
+
+    if (aplicabilidad === 'reserva_total') { // Lo interpretamos como "Toda la Venta de la Tienda"
+        return cart.reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
+    }
+    
+    if (aplicabilidad === 'productos_tienda') {
+        if (!itemsAplicables.length) return 0;
+        return cart
+            .filter(item => itemsAplicables.includes(item.id))
+            .reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
+    }
+
+    if (aplicabilidad === 'categorias_restaurante') { // Asumimos que es análogo a 'categorias_producto'
+        if (!itemsAplicables.length) return 0;
+        return cart
+            .filter(item => itemsAplicables.includes(item.categoria_id))
+            .reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
+    }
+
+    // Por defecto, si la aplicabilidad no coincide, el descuento no se aplica a nada.
+    return 0;
 }
 
+
+/**
+ * Busca y aplica un descuento basado en un código.
+ */
+async function aplicarDescuentoPOS() {
+    const codigoInput = document.getElementById('codigoDescuentoInput');
+    const codigo = codigoInput.value.trim().toUpperCase();
+    const msgEl = document.getElementById('msgPOS');
+
+    if (!codigo) {
+        msgEl.textContent = 'Por favor, ingresa un código.';
+        return;
+    }
+    
+    msgEl.textContent = 'Buscando descuento...';
+
+    const { data: discount, error } = await currentSupabase
+        .from('descuentos')
+        .select('*')
+        .eq('hotel_id', currentHotelId)
+        .eq('codigo', codigo)
+        .single();
+
+    if (error || !discount) {
+        msgEl.textContent = 'Código de descuento no válido o no encontrado.';
+        descuentoAplicado = null;
+        renderCarritoPOS(); // Re-renderizar para limpiar cualquier descuento anterior
+        return;
+    }
+
+    // --- Validaciones del descuento ---
+    if (!discount.activo) {
+        msgEl.textContent = 'Este código de descuento ya no está activo.';
+        return;
+    }
+    if (discount.usos_maximos > 0 && (discount.usos_actuales || 0) >= discount.usos_maximos) {
+        msgEl.textContent = 'Este código ha alcanzado su límite de usos.';
+        return;
+    }
+    const hoy = new Date();
+    hoy.setHours(0,0,0,0);
+    if (discount.fecha_inicio && new Date(discount.fecha_inicio) > hoy) {
+        msgEl.textContent = 'Este descuento aún no es válido.';
+        return;
+    }
+    if (discount.fecha_fin && new Date(discount.fecha_fin) < hoy) {
+        msgEl.textContent = 'Este descuento ha expirado.';
+        return;
+    }
+
+    // --- Validar si aplica al carrito actual ---
+    const baseDescuento = getDiscountableBase(discount, posCarrito);
+    if (baseDescuento <= 0) {
+        msgEl.textContent = 'El código no aplica a los productos en tu carrito.';
+        return;
+    }
+
+    // ¡Éxito! Aplicamos el descuento
+    descuentoAplicado = discount;
+    msgEl.textContent = `¡Descuento "${discount.nombre}" aplicado!`;
+    renderCarritoPOS(); // Actualizamos el carrito para mostrar el descuento
+}
+
+/**
+ * Remueve el descuento aplicado y recalcula el total.
+ */
+function removerDescuentoPOS() {
+    descuentoAplicado = null;
+    document.getElementById('codigoDescuentoInput').value = '';
+    document.getElementById('msgPOS').textContent = 'Descuento removido.';
+    renderCarritoPOS();
+}
+
+
+// --- FIN BLOQUE DE LÓGICA DE DESCUENTOS ---
 function renderMetodosPagoPOS() {
   const sel = document.getElementById('metodoPOS');
   if (!sel) return;
@@ -317,27 +444,76 @@ function renderProductosPOS() {
 }
 
 function renderCarritoPOS() {
-  const tbody = document.getElementById('carritoPOS');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  let total = 0;
-  posCarrito.forEach(item => {
-    const subtotal = item.cantidad * item.precio_venta;
-    total += subtotal;
-    let tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${item.nombre}</td>
-      <td>
-        <input type="number" min="1" max="${item.stock_actual}" value="${item.cantidad}" style="width:40px;"
-          onchange="updateQtyPOS('${item.id}',this.value)">
-      </td>
-      <td>$${item.precio_venta}</td>
-      <td>$${subtotal}</td>
-      <td><button onclick="removeCartPOS('${item.id}')" style="color:#e11;">X</button></td>
-    `;
-    tbody.appendChild(tr);
-  });
-  document.getElementById('totalPOS').textContent = `$${total}`;
+    const tbody = document.getElementById('carritoPOS');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    
+    // Elementos de la UI
+    const subtotalEl = document.getElementById('subtotalPOS');
+    const totalEl = document.getElementById('totalPOS');
+    const lineaDescuentoEl = document.getElementById('lineaDescuentoPOS');
+    const nombreDescuentoEl = document.getElementById('nombreDescuentoPOS');
+    const montoDescuentoEl = document.getElementById('montoDescuentoPOS');
+    const btnAplicar = document.getElementById('btnAplicarDescuento');
+    const btnRemover = document.getElementById('btnRemoverDescuento');
+    const codigoInput = document.getElementById('codigoDescuentoInput');
+
+    let subtotal = 0;
+    posCarrito.forEach(item => {
+        const itemSubtotal = item.cantidad * item.precio_venta;
+        subtotal += itemSubtotal;
+        let tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${item.nombre}</td>
+            <td>
+                <input type="number" min="1" max="${item.stock_actual}" value="${item.cantidad}" style="width:40px;"
+                onchange="updateQtyPOS('${item.id}',this.value)">
+            </td>
+            <td>${formatCurrency(item.precio_venta)}</td>
+            <td>${formatCurrency(itemSubtotal)}</td>
+            <td><button onclick="removeCartPOS('${item.id}')" style="color:#e11;">X</button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    let montoDescuento = 0;
+    let totalFinal = subtotal;
+
+    if (descuentoAplicado && subtotal > 0) {
+        const baseDescuento = getDiscountableBase(descuentoAplicado, posCarrito);
+        
+        if (baseDescuento > 0) {
+            if (descuentoAplicado.tipo === 'porcentaje') {
+                montoDescuento = baseDescuento * (descuentoAplicado.valor / 100);
+            } else { // 'fijo'
+                montoDescuento = descuentoAplicado.valor;
+            }
+            
+            // El descuento no puede ser mayor que el subtotal sobre el que aplica.
+            montoDescuento = Math.min(montoDescuento, baseDescuento);
+            totalFinal = subtotal - montoDescuento;
+        } else {
+            // Si los productos aplicables fueron removidos, el descuento ya no tiene efecto.
+            descuentoAplicado = null; 
+        }
+    }
+    
+    subtotalEl.textContent = formatCurrency(subtotal);
+    totalEl.textContent = formatCurrency(totalFinal);
+    
+    if (descuentoAplicado && montoDescuento > 0) {
+        lineaDescuentoEl.style.display = 'block';
+        nombreDescuentoEl.textContent = descuentoAplicado.nombre;
+        montoDescuentoEl.textContent = formatCurrency(montoDescuento);
+        btnAplicar.style.display = 'none';
+        btnRemover.style.display = 'block';
+        codigoInput.disabled = true;
+    } else {
+        lineaDescuentoEl.style.display = 'none';
+        btnAplicar.style.display = 'block';
+        btnRemover.style.display = 'none';
+        codigoInput.disabled = false;
+    }
 }
 
 window.updateQtyPOS = function (id, val) {
@@ -512,87 +688,124 @@ async function mostrarModalPagoMixto(total, callback) {
 }
 
 async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo, total }) {
-  const msgPOSEl = document.getElementById('msgPOS');
-  let totalVenta = total ?? posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
-  let reservaId = null;
-  if (habitacion_id) {
-    const { data: reservasActivas } = await currentSupabase
-      .from('reservas')
-      .select('id')
-      .eq('habitacion_id', habitacion_id)
-      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-      .order('fecha_inicio', { ascending: false })
-      .limit(1);
-    if (reservasActivas && reservasActivas.length > 0) {
-      reservaId = reservasActivas[0].id;
-    }
-  }
-  let ventaPayload = {
-    hotel_id: currentHotelId,
-    usuario_id: currentUser.id,
-    habitacion_id: habitacion_id,
-    reserva_id: reservaId,
-    total_venta: totalVenta,
-    fecha: new Date().toISOString(),
-    creado_en: new Date().toISOString(),
-    cliente_temporal,
-    metodo_pago_id: modo === 'inmediato' && pagos.length === 1 ? pagos[0].metodo_pago_id : null
-  };
-  let { data: ventas, error } = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
-  if (error || !ventas?.[0]) throw new Error("Error guardando venta");
-  let ventaId = ventas[0].id;
+    const msgPOSEl = document.getElementById('msgPOS');
+    
+    // --- Cálculo de totales con descuento ---
+    const subtotalVenta = posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
+    let montoDescuento = 0;
+    let totalVentaFinal = subtotalVenta;
 
-  for (let item of posCarrito) {
-    await currentSupabase.from('detalle_ventas_tienda').insert([{
-      venta_id: ventaId,
-      producto_id: item.id,
-      cantidad: item.cantidad,
-      precio_unitario_venta: item.precio_venta,
-      subtotal: item.cantidad * item.precio_venta,
-      hotel_id: currentHotelId,
-      creado_en: new Date().toISOString()
-    }]);
-    await currentSupabase.from('productos_tienda').update({
-      stock_actual: item.stock_actual - item.cantidad
-    }).eq('id', item.id);
-  }
-
-  const turnoId = turnoService.getActiveTurnId();
-  if (modo === 'inmediato') {
-    if (!turnoId) {
-      if (msgPOSEl) showError(msgPOSEl, "No hay un turno de caja activo.");
-      return;
+    if (descuentoAplicado) {
+        const baseDescuento = getDiscountableBase(descuentoAplicado, posCarrito);
+        if (descuentoAplicado.tipo === 'porcentaje') {
+            montoDescuento = baseDescuento * (descuentoAplicado.valor / 100);
+        } else {
+            montoDescuento = descuentoAplicado.valor;
+        }
+        montoDescuento = Math.min(montoDescuento, baseDescuento);
+        totalVentaFinal = subtotalVenta - montoDescuento;
     }
-    const nombresProductos = posCarrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
-    for (let p of pagos) {
-      const movimientoCaja = {
+    // --- Fin del cálculo ---
+
+    let reservaId = null;
+    if (habitacion_id) {
+        // Tu lógica para obtener reservaId no cambia...
+        const { data: reservasActivas } = await currentSupabase
+            .from('reservas')
+            .select('id')
+            .eq('habitacion_id', habitacion_id)
+            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+            .order('fecha_inicio', { ascending: false })
+            .limit(1);
+        if (reservasActivas && reservasActivas.length > 0) {
+            reservaId = reservasActivas[0].id;
+        }
+    }
+
+    let ventaPayload = {
         hotel_id: currentHotelId,
-        tipo: 'ingreso',
-        monto: Number(p.monto),
-        concepto: `Venta: ${nombresProductos}`,
-        fecha_movimiento: new Date().toISOString(),
-        metodo_pago_id: p.metodo_pago_id,
         usuario_id: currentUser.id,
-        venta_tienda_id: ventaId,
-        turno_id: turnoId
-      };
-      const { error: errorCaja } = await currentSupabase.from('caja').insert(movimientoCaja);
-      if (errorCaja) {
-        if (msgPOSEl) showError(msgPOSEl, `Error al registrar pago en caja: ${errorCaja.message}`);
-      }
+        habitacion_id: habitacion_id,
+        reserva_id: reservaId,
+        total_venta: totalVentaFinal, // <-- ¡Importante! Usamos el total con descuento
+        fecha: new Date().toISOString(),
+        creado_en: new Date().toISOString(),
+        cliente_temporal,
+        metodo_pago_id: modo === 'inmediato' && pagos.length === 1 ? pagos[0].metodo_pago_id : null,
+        descuento_id: descuentoAplicado ? descuentoAplicado.id : null, // <-- NUEVO
+        monto_descuento: montoDescuento > 0 ? montoDescuento : null   // <-- NUEVO
+    };
+    
+    let { data: ventas, error } = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
+    if (error || !ventas?.[0]) throw new Error("Error guardando venta: " + error?.message);
+    
+    let ventaId = ventas[0].id;
+
+    // Incrementar el uso del descuento si se aplicó
+    if (descuentoAplicado && montoDescuento > 0) {
+        const { error: updateError } = await currentSupabase.rpc('increment', {
+            table_name: 'descuentos',
+            column_name: 'usos_actuales',
+            row_id: descuentoAplicado.id
+        });
+        if (updateError) console.error("Error al actualizar usos del descuento:", updateError);
     }
-    msgPOSEl.textContent = "¡Venta registrada!";
-  } else {
-    msgPOSEl.textContent = "Consumo cargado a la cuenta de la habitación.";
-  }
 
-  posCarrito = [];
-  renderCarritoPOS();
-  await cargarDatosPOS();
-  renderProductosPOS();
-  setTimeout(() => { msgPOSEl.textContent = ""; }, 1700);
+    // El resto de la función (guardar detalle_ventas, actualizar stock, etc.) no cambia...
+    for (let item of posCarrito) {
+        await currentSupabase.from('detalle_ventas_tienda').insert([{
+            venta_id: ventaId,
+            producto_id: item.id,
+            cantidad: item.cantidad,
+            precio_unitario_venta: item.precio_venta,
+            subtotal: item.cantidad * item.precio_venta,
+            hotel_id: currentHotelId,
+            creado_en: new Date().toISOString()
+        }]);
+        await currentSupabase.rpc('increment', {
+            table_name: 'productos_tienda',
+            column_name: 'stock_actual',
+            row_id: item.id,
+            amount: -item.cantidad // Restamos el stock
+        });
+    }
+
+    // Lógica de caja no cambia...
+    const turnoId = turnoService.getActiveTurnId();
+    if (modo === 'inmediato') {
+        if (!turnoId) {
+            if (msgPOSEl) showError(msgPOSEl, "No hay un turno de caja activo.");
+            return;
+        }
+        const nombresProductos = posCarrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
+        for (let p of pagos) {
+            const movimientoCaja = {
+                hotel_id: currentHotelId,
+                tipo: 'ingreso',
+                monto: Number(p.monto),
+                concepto: `Venta: ${nombresProductos}`,
+                fecha_movimiento: new Date().toISOString(),
+                metodo_pago_id: p.metodo_pago_id,
+                usuario_id: currentUser.id,
+                venta_tienda_id: ventaId,
+                turno_id: turnoId
+            };
+            await currentSupabase.from('caja').insert(movimientoCaja);
+        }
+        msgPOSEl.textContent = "¡Venta registrada!";
+    } else {
+        msgPOSEl.textContent = "Consumo cargado a la cuenta de la habitación.";
+    }
+
+    // --- Limpieza final ---
+    posCarrito = [];
+    descuentoAplicado = null; // <-- Limpiamos el descuento aplicado
+    document.getElementById('codigoDescuentoInput').value = ''; // Limpiamos el input
+    renderCarritoPOS();
+    await cargarDatosPOS();
+    renderProductosPOS();
+    setTimeout(() => { msgPOSEl.textContent = ""; }, 2500);
 }
-
 // ====================  PESTAÑA INVENTARIO  ====================
 let inventarioProductos = [];
 // Reemplaza esta función completa en tu archivo

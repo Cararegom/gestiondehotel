@@ -512,21 +512,25 @@ export async function mount(container, supabaseInstance, currentUser) {
     <option value="categorias_restaurante">Categorías de Restaurante Específicas</option>
 </select>
               </div>
-              <div class="form-group" id="habitaciones-especificas-container" style="display: none;">
-                  <label for="habitaciones_aplicables" class="form-label">Seleccionar Habitaciones *</label>
-                  <select id="habitaciones_aplicables" name="habitaciones_aplicables" class="form-control" multiple size="4"></select>
-              </div>
+              <div class="form-group items-container" id="items-habitaciones_especificas-container" style="display: none;">
+    <label for="habitaciones_aplicables" class="form-label">Seleccionar Habitaciones Aplicables*</label>
+    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
+    <select id="habitaciones_aplicables" name="habitaciones_aplicables" class="form-control" multiple size="4"></select>
+</div>
             </div>
 <div class="form-group items-container" id="items-servicios_adicionales-container" style="display: none;">
     <label for="items_servicios_adicionales" class="form-label">Seleccionar Servicios Aplicables*</label>
+    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
     <select id="items_servicios_adicionales" class="form-control" multiple size="5"></select>
 </div>
 <div class="form-group items-container" id="items-productos_tienda-container" style="display: none;">
     <label for="items_productos_tienda" class="form-label">Seleccionar Productos Aplicables*</label>
+    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
     <select id="items_productos_tienda" class="form-control" multiple size="5"></select>
 </div>
 <div class="form-group items-container" id="items-categorias_restaurante-container" style="display: none;">
     <label for="items_categorias_restaurante" class="form-label">Seleccionar Categorías de Restaurante*</label>
+    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
     <select id="items_categorias_restaurante" class="form-control" multiple size="5"></select>
 </div>
 
@@ -642,11 +646,13 @@ const formSubmitHandler = async (event) => {
 
     if (tipoGeneral === 'codigo') {
         payload.codigo = formData.get('codigo')?.trim().toUpperCase();
+        payload.aplicabilidad = formData.get('aplicabilidad'); // <-- AÑADE ESTA LÍNEA
         if (!payload.codigo) { 
             showError(feedbackEl, 'El código es obligatorio para este tipo de promoción.');
             setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
             return; 
         }
+  
     } else if (tipoGeneral === 'cliente_especifico') {
         payload.cliente_id = formData.get('cliente_id');
         if (!payload.cliente_id) { 

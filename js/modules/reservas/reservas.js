@@ -16,6 +16,7 @@ import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/
 const state = {
     isEditMode: false,
     editingReservaId: null,
+    descuentoAplicado: null,
     tiemposEstanciaDisponibles: [],
     currentUser: null,
     hotelId: null,
@@ -100,22 +101,42 @@ const ui = {
         else alert(`${title}\n\n${message}`);
     },
 
-    updateTotalDisplay() {
-        if (!this.totalReservaDisplay) return;
-        this.totalReservaDisplay.textContent = formatCurrency(state.currentBookingTotal, state.configHotel?.moneda_local_simbolo || '$', state.configHotel?.moneda_codigo_iso_info || 'COP', parseInt(state.configHotel?.moneda_decimales_info || 0));
-        let impuestoMsg = "";
-        if (state.configHotel.porcentaje_impuesto_principal > 0 && state.configHotel.nombre_impuesto_principal) {
-            impuestoMsg = state.configHotel.impuestos_incluidos_en_precios
-                ? `(Incluye ${state.configHotel.nombre_impuesto_principal})`
-                : `(+ ${state.configHotel.porcentaje_impuesto_principal}% ${state.configHotel.nombre_impuesto_principal})`;
-        }
-        this.totalReservaDisplay.innerHTML += ` <small class="text-gray-500 text-xs ml-1">${impuestoMsg}</small>`;
+   // REEMPLAZA ESTA FUNCIÓN EN EL OBJETO ui
+updateTotalDisplay(montoDescontado = 0) {
+    if (!this.totalReservaDisplay) return;
 
-        const valorTotalPagoEl = document.getElementById('valor-total-pago');
-        if (valorTotalPagoEl) {
-            valorTotalPagoEl.textContent = formatCurrency(state.currentBookingTotal, state.configHotel?.moneda_local_simbolo || '$', state.configHotel?.moneda_codigo_iso_info || 'COP', parseInt(state.configHotel?.moneda_decimales_info || 0));
+    // Actualiza el total principal
+    this.totalReservaDisplay.textContent = formatCurrency(state.currentBookingTotal, state.configHotel?.moneda_local_simbolo || '$', state.configHotel?.moneda_codigo_iso_info || 'COP', parseInt(state.configHotel?.moneda_decimales_info || 0));
+
+    // Muestra u oculta el resumen del descuento
+    const descuentoResumenEl = document.getElementById('descuento-resumen-reserva');
+    if (descuentoResumenEl) {
+        if (state.descuentoAplicado && montoDescontado > 0) {
+            descuentoResumenEl.innerHTML = `
+                <span class="font-semibold">${state.descuentoAplicado.nombre}:</span>
+                <span class="font-bold">-${formatCurrency(montoDescontado, state.configHotel?.moneda_local_simbolo || '$')}</span>
+            `;
+            descuentoResumenEl.style.display = 'block';
+        } else {
+            descuentoResumenEl.style.display = 'none';
         }
-    },
+    }
+
+    // Muestra la información de impuestos
+    let impuestoMsg = "";
+    if (state.configHotel.porcentaje_impuesto_principal > 0 && state.configHotel.nombre_impuesto_principal) {
+        impuestoMsg = state.configHotel.impuestos_incluidos_en_precios
+            ? `(Incluye ${state.configHotel.nombre_impuesto_principal})`
+            : `(+ ${state.configHotel.porcentaje_impuesto_principal}% ${state.configHotel.nombre_impuesto_principal})`;
+    }
+    this.totalReservaDisplay.innerHTML += ` <small class="text-gray-500 text-xs ml-1">${impuestoMsg}</small>`;
+
+    // Actualiza el total en el modal de pago
+    const valorTotalPagoEl = document.getElementById('valor-total-pago');
+    if (valorTotalPagoEl) {
+        valorTotalPagoEl.textContent = formatCurrency(state.currentBookingTotal, state.configHotel?.moneda_local_simbolo || '$', state.configHotel?.moneda_codigo_iso_info || 'COP', parseInt(state.configHotel?.moneda_decimales_info || 0));
+    }
+},
 
     togglePaymentFieldsVisibility(visible) {
         if (this.fieldsetPago) {
@@ -463,6 +484,8 @@ function esTiempoEstanciaNoches(tiempoEstanciaId) {
     return tiempo && tiempo.minutos >= (22 * 60) && tiempo.minutos <= (26 * 60);
 }
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
 function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, tiempoId) {
     let montoEstanciaBaseBruto = 0;
     if (!habitacionInfo) return { errorMonto: "Información de habitación no disponible." };
@@ -495,29 +518,41 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
         montoPorHuespedesAdicionales = extraHuespedes * (habitacionInfo.precio_huesped_adicional || 0) * factorDuracionParaAdicional;
     }
 
-    const totalAntesDeImpuestos = montoEstanciaBaseBruto + montoPorHuespedesAdicionales;
+    const totalAntesDeDescuento = montoEstanciaBaseBruto + montoPorHuespedesAdicionales;
+
+    // Lógica para aplicar el descuento
+    let montoDescontado = 0;
+    if (state.descuentoAplicado) {
+        if (state.descuentoAplicado.tipo === 'fijo') {
+            montoDescontado = parseFloat(state.descuentoAplicado.valor);
+        } else if (state.descuentoAplicado.tipo === 'porcentaje') {
+            montoDescontado = totalAntesDeDescuento * (parseFloat(state.descuentoAplicado.valor) / 100);
+        }
+    }
+    montoDescontado = Math.min(totalAntesDeDescuento, montoDescontado);
+    const totalConDescuento = totalAntesDeDescuento - montoDescontado;
+
+    // Lógica para calcular el impuesto sobre el monto ya descontado
     let montoImpuestoCalculado = 0;
-    let baseImponibleFinal = totalAntesDeImpuestos;
+    let baseImponibleFinal = totalConDescuento;
 
     if (state.configHotel.impuestos_incluidos_en_precios && state.configHotel.porcentaje_impuesto_principal > 0) {
-        baseImponibleFinal = totalAntesDeImpuestos / (1 + (state.configHotel.porcentaje_impuesto_principal / 100));
-        montoImpuestoCalculado = totalAntesDeImpuestos - baseImponibleFinal;
+        baseImponibleFinal = totalConDescuento / (1 + (state.configHotel.porcentaje_impuesto_principal / 100));
+        montoImpuestoCalculado = totalConDescuento - baseImponibleFinal;
     } else if (state.configHotel.porcentaje_impuesto_principal > 0) {
-        baseImponibleFinal = totalAntesDeImpuestos;
         montoImpuestoCalculado = baseImponibleFinal * (state.configHotel.porcentaje_impuesto_principal / 100);
     }
 
     return {
         montoEstanciaBase: Math.round(montoEstanciaBaseBruto),
         montoPorHuespedesAdicionales: Math.round(montoPorHuespedesAdicionales),
+        montoDescontado: Math.round(montoDescontado),
         montoImpuesto: Math.round(montoImpuestoCalculado),
         baseSinImpuestos: Math.round(baseImponibleFinal),
         errorMonto: null
     };
 }
-
-// En tu archivo reservas.js, REEMPLAZA esta función completa:
-
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
 async function validateAndCalculateBooking(formData) {
     const [habitacionResult] = await Promise.all([
         state.supabase.from('habitaciones')
@@ -541,20 +576,18 @@ async function validateAndCalculateBooking(formData) {
     if (errCruce) throw new Error(`Error validando disponibilidad: ${errCruce.message}.`);
     if (hayCruce === true) throw new Error("Conflicto: La habitación no está disponible para el período seleccionado.");
 
-    const { montoEstanciaBase, montoPorHuespedesAdicionales, montoImpuesto, baseSinImpuestos, errorMonto } = calculateMontos(
+    const { montoEstanciaBase, montoPorHuespedesAdicionales, montoDescontado, montoImpuesto, baseSinImpuestos, errorMonto } = calculateMontos(
         habitacionInfo, parseInt(formData.cantidad_huespedes), tipoDuracionOriginal, cantidadDuracionOriginal, formData.tiempo_estancia_id
     );
     if (errorMonto) throw new Error(errorMonto);
 
     state.currentBookingTotal = baseSinImpuestos + montoImpuesto;
-    if (ui && typeof ui.updateTotalDisplay === 'function') { ui.updateTotalDisplay(); }
+    if (ui && typeof ui.updateTotalDisplay === 'function') { 
+        ui.updateTotalDisplay(montoDescontado);
+    }
 
     const datosReserva = {
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Se añade la línea que faltaba para pasar el ID del cliente
         cliente_id: formData.cliente_id,
-        // --- FIN DE LA CORRECCIÓN ---
-        
         cliente_nombre: formData.cliente_nombre.trim(),
         cedula: formData.cedula.trim() || null,
         telefono: formData.telefono.trim() || null,
@@ -573,7 +606,8 @@ async function validateAndCalculateBooking(formData) {
         porcentaje_impuestos_aplicado: state.configHotel.porcentaje_impuesto_principal,
         nombre_impuesto_aplicado: state.configHotel.nombre_impuesto_principal,
         monto_total: state.currentBookingTotal,
-        // La propiedad monto_pagado se elimina de aquí y se calcula en createBooking
+        descuento_aplicado_id: state.descuentoAplicado?.id || null,
+        monto_descontado: montoDescontado,
         notas: formData.notas.trim() || null,
         origen_reserva: 'directa',
         id_temporal_o_final: state.isEditMode ? state.editingReservaId : `TEMP-${Date.now()}`
@@ -586,26 +620,43 @@ async function validateAndCalculateBooking(formData) {
     };
     
     return { datosReserva, datosPago };
-}async function recalcularYActualizarTotalUI() {
+}
+
+
+
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
+async function recalcularYActualizarTotalUI() {
     try {
         const formData = gatherFormData();
+
+        // --- INICIO DE LA LÓGICA DE DESCUENTO AUTOMÁTICO ---
+        // Solo buscamos descuentos automáticos si no hay uno manual ya aplicado
+        if (!state.descuentoAplicado || state.descuentoAplicado.tipo_descuento_general !== 'codigo') {
+            // Pasamos 'null' para que la función solo busque automáticos
+            state.descuentoAplicado = await buscarDescuentoParaReserva(formData, null);
+        }
+        // --- FIN DE LA LÓGICA DE DESCUENTO AUTOMÁTICO ---
+
         if (formData.habitacion_id && formData.fecha_entrada &&
             ((formData.tipo_calculo_duracion === 'noches_manual' && formData.cantidad_noches) ||
-                (formData.tipo_calculo_duracion === 'tiempo_predefinido' && formData.tiempo_estancia_id)) &&
+             (formData.tipo_calculo_duracion === 'tiempo_predefinido' && formData.tiempo_estancia_id)) &&
             formData.cantidad_huespedes
         ) {
             await validateAndCalculateBooking(formData);
         } else {
             state.currentBookingTotal = 0;
-            if (ui && typeof ui.updateTotalDisplay === 'function') { ui.updateTotalDisplay(); }
+            if (ui && typeof ui.updateTotalDisplay === 'function') { 
+                ui.updateTotalDisplay(); 
+            }
         }
     } catch (calcError) {
         state.currentBookingTotal = 0;
-        if (ui && typeof ui.updateTotalDisplay === 'function') { ui.updateTotalDisplay(); }
+        if (ui && typeof ui.updateTotalDisplay === 'function') { 
+            ui.updateTotalDisplay(); 
+        }
         console.warn("[Reservas] Advertencia al recalcular total para UI:", calcError.message);
     }
 }
-
 
 async function cargarHabitaciones() {
     if (!ui.habitacionIdSelect) return;
@@ -699,6 +750,103 @@ async function cargarTiemposEstancia() {
     });
 }
 
+
+// PEGA ESTAS DOS NUEVAS FUNCIONES EN reservas.js
+
+/**
+ * Busca un descuento aplicable para la reserva actual, por código o automático.
+ * @param {object} formData - Los datos actuales del formulario de reserva.
+ * @param {string|null} codigoManual - El código introducido por el usuario.
+ * @returns {Promise<object|null>} El objeto del descuento si es aplicable, o null.
+ */
+// PEGA ESTAS DOS NUEVAS FUNCIONES EN reservas.js
+
+/**
+ * Busca un descuento aplicable para la reserva actual, por código o automático.
+ * @param {object} formData - Los datos actuales del formulario de reserva.
+ * @param {string|null} codigoManual - El código introducido por el usuario.
+ * @returns {Promise<object|null>} El objeto del descuento si es aplicable, o null.
+ */
+
+// PEGA ESTA FUNCIÓN FALTANTE EN TU ARCHIVO reservas.js
+
+/**
+ * Busca un descuento aplicable para la reserva actual, por código o automático.
+ * @param {object} formData - Los datos actuales del formulario de reserva.
+ * @param {string|null} codigoManual - El código introducido por el usuario.
+ * @returns {Promise<object|null>} El objeto del descuento si es aplicable, o null.
+ */
+async function buscarDescuentoParaReserva(formData, codigoManual = null) {
+    if (!formData.habitacion_id && !codigoManual) return null;
+
+    const ahora = new Date().toISOString();
+    let query = state.supabase.from('descuentos').select('*')
+        .eq('hotel_id', state.hotelId)
+        .eq('activo', true)
+        .or(`fecha_inicio.is.null,fecha_inicio.lte.${ahora}`)
+        .or(`fecha_fin.is.null,fecha_fin.gte.${ahora}`);
+
+    const orConditions = ['tipo_descuento_general.eq.automatico'];
+    if (codigoManual) {
+        orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`);
+    }
+    query = query.or(orConditions.join(','));
+
+    const { data: descuentosPotenciales, error } = await query;
+    if (error) {
+        console.error("Error buscando descuentos de reserva:", error);
+        return null;
+    }
+
+    const descuentosValidos = descuentosPotenciales.filter(d => (d.usos_maximos || 0) === 0 || (d.usos_actuales || 0) < d.usos_maximos);
+
+    // Itera para encontrar el primer descuento válido para la reserva
+    for (const descuento of descuentosValidos) {
+        const aplicabilidad = descuento.aplicabilidad;
+        // Si el descuento es para 'reserva_total', es válido inmediatamente.
+        if (aplicabilidad === 'reserva_total') {
+            return descuento;
+        }
+        // Si es para habitaciones específicas, verifica si la habitación actual está en la lista.
+        if (aplicabilidad === 'habitaciones_especificas' && formData.habitacion_id) {
+            if (descuento.habitaciones_aplicables?.includes(formData.habitacion_id)) {
+                return descuento;
+            }
+        }
+    }
+    return null; // No se encontró ningún descuento aplicable
+}
+
+
+async function handleAplicarDescuentoReserva() {
+    const feedbackEl = document.getElementById('feedback-descuento-reserva');
+    const codigoInput = document.getElementById('codigo-descuento-reserva');
+    const codigo = codigoInput.value.trim();
+
+    clearFeedback(feedbackEl);
+    if (!codigo) {
+        state.descuentoAplicado = null;
+        await recalcularYActualizarTotalUI(); // Recalcula sin descuento
+        return;
+    }
+
+    feedbackEl.textContent = 'Buscando...';
+    try {
+        const formData = gatherFormData();
+        state.descuentoAplicado = await buscarDescuentoParaReserva(formData, codigo);
+        
+        if (state.descuentoAplicado) {
+            showSuccess(feedbackEl, `¡Descuento "${state.descuentoAplicado.nombre}" aplicado!`);
+        } else {
+            showError(feedbackEl, 'El código no es válido o no aplica a esta reserva.');
+        }
+        await recalcularYActualizarTotalUI();
+
+    } catch (err) {
+        showError(feedbackEl, `Error: ${err.message}`);
+    }
+}
+
 async function loadInitialData() {
     if (!ui.habitacionIdSelect || !ui.form?.elements.metodo_pago_id || !ui.tiempoEstanciaIdSelect) {
         console.error("[Reservas] Elementos de UI para carga inicial no encontrados.");
@@ -748,14 +896,12 @@ async function loadInitialData() {
 }
 
 
-// En tu archivo reservas.js, reemplaza esta función completa:
-
 async function createBooking(payload) {
     const { datosReserva, datosPago } = payload;
     let reservaParaInsertar = { ...datosReserva };
     delete reservaParaInsertar.id_temporal_o_final;
     
-    // --- LÓGICA DE CLIENTE (sin cambios, ya es correcta) ---
+    // Lógica para crear un cliente nuevo si no se seleccionó uno existente
     if (!reservaParaInsertar.cliente_id) {
         const { data: nuevoCliente, error: errCliente } = await state.supabase
             .from('clientes')
@@ -772,9 +918,7 @@ async function createBooking(payload) {
         reservaParaInsertar.cliente_id = nuevoCliente.id;
     }
 
-    // --- INICIO DE LA CORRECCIÓN: LÓGICA DE PAGO ---
-
-    // 1. Determinar el monto a pagar ahora mismo
+    // Lógica para determinar el monto pagado
     if (!state.configHotel.cobro_al_checkin) {
         reservaParaInsertar.monto_pagado = 0;
     } else {
@@ -783,23 +927,34 @@ async function createBooking(payload) {
         reservaParaInsertar.monto_pagado = (tipoPago === 'completo') ? state.currentBookingTotal : montoAbono;
     }
 
-    // 2. Insertar la reserva principal en la tabla 'reservas'
+    // Insertar la reserva principal
     const { data: reservaInsertada, error: errInsert } = await state.supabase
         .from('reservas').insert(reservaParaInsertar).select().single();
 
     if (errInsert) throw new Error(`Error al guardar la reserva principal: ${errInsert.message}`);
 
+    // --- INICIO DE LA LÓGICA AÑADIDA ---
+    // Si la reserva se creó con un descuento, llamamos a la función de la BD para incrementar su uso.
+    if (reservaInsertada.descuento_aplicado_id) {
+        const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
+            p_descuento_id: reservaInsertada.descuento_aplicado_id
+        });
+        if (rpcError) {
+            // No detenemos el flujo, pero sí registramos el error para futura depuración.
+            console.error("Advertencia: No se pudo incrementar el uso del descuento.", rpcError);
+        }
+    }
+    // --- FIN DE LA LÓGICA AÑADIDA ---
+
     const nuevaReservaId = reservaInsertada.id;
     const montoPagadoAhora = reservaInsertada.monto_pagado;
 
-    // 3. Si hubo un pago (completo o parcial), registrarlo en 'pagos_reserva' y 'caja'
+    // Lógica para registrar pagos y movimientos en caja
     if (montoPagadoAhora > 0) {
-        // Asegurar que haya un método de pago
         if (!datosPago.metodo_pago_id) {
             throw new Error("Se requiere un método de pago para registrar el abono o pago completo.");
         }
 
-        // Registrar el detalle del pago
         const { data: pagoData, error: errPagosReserva } = await state.supabase
             .from('pagos_reserva')
             .insert({
@@ -817,14 +972,12 @@ async function createBooking(payload) {
         if (errPagosReserva) {
             console.error("Error crítico: La reserva se creó pero el pago no pudo ser registrado en 'pagos_reserva'.", errPagosReserva);
             showError(ui.feedbackDiv, "Advertencia: Reserva creada, pero hubo un error registrando el detalle del pago.");
-            // En un escenario real, aquí se podría intentar revertir la reserva o marcarla para revisión.
         }
-
-        // Registrar el ingreso en caja, si hay un turno activo
-        const turnoId = turnoService.getActiveTurnId();
+        
+        const turnoId = await turnoService.getActiveTurnId(); // Asumiendo que esta función existe
         if (!turnoId) {
             showError(ui.feedbackDiv, "Advertencia: ¡Pago no registrado en caja! No hay un turno activo.");
-        } else if (pagoData) { // Solo si el registro en pagos_reserva fue exitoso
+        } else if (pagoData) {
             const { error: errCaja } = await state.supabase.from('caja').insert({
                 hotel_id: state.hotelId,
                 tipo: 'ingreso',
@@ -835,7 +988,7 @@ async function createBooking(payload) {
                 usuario_id: state.currentUser.id,
                 turno_id: turnoId,
                 reserva_id: nuevaReservaId,
-                pago_reserva_id: pagoData.id // Vincular con el registro de pago
+                pago_reserva_id: pagoData.id
             });
 
             if (errCaja) {
@@ -845,9 +998,7 @@ async function createBooking(payload) {
         }
     }
     
-    // --- FIN DE LA CORRECCIÓN ---
-
-    // Lógica para el calendario y estado de habitación (sin cambios)
+    // Lógica para actualizar estado de la habitación
     const ahora = new Date();
     const fechaInicioReserva = new Date(reservaInsertada.fecha_inicio);
     if ((fechaInicioReserva.getTime() - ahora.getTime()) / (1000 * 60) <= 120) {
@@ -859,7 +1010,6 @@ async function createBooking(payload) {
 
     return reservaInsertada;
 }
-
 
 async function updateBooking(payload) {
     const { datosReserva } = payload;
@@ -882,6 +1032,23 @@ async function updateBooking(payload) {
         .single();
 
     if (error) throw new Error(`Error actualizando reserva: ${error.message}`);
+    
+    // --- INICIO DE LA LÓGICA AÑADIDA ---
+    // Si la reserva actualizada tiene un descuento, incrementamos su uso.
+    // Esto es importante si el descuento se añadió durante la edición.
+    if (updatedReserva.descuento_aplicado_id) {
+        // NOTA: Esta lógica asume que el descuento no se puede cambiar una vez aplicado,
+        // solo se puede añadir. Si se pudiera cambiar, necesitaríamos una lógica más compleja
+        // para decrementar el uso del descuento anterior.
+        const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
+            p_descuento_id: updatedReserva.descuento_aplicado_id
+        });
+        if (rpcError) {
+            console.error("Advertencia: No se pudo incrementar el uso del descuento al actualizar la reserva.", rpcError);
+        }
+    }
+    // --- FIN DE LA LÓGICA AÑADIDA ---
+
     return updatedReserva;
 }
 
@@ -1408,6 +1575,7 @@ function configureFechaEntrada(fechaEntradaInput) {
     fechaEntradaInput.min = `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
 function resetFormToCreateMode() {
     if (ui.form) {
         ui.form.reset();
@@ -1437,9 +1605,20 @@ function resetFormToCreateMode() {
     state.isEditMode = false;
     state.editingReservaId = null;
     state.currentBookingTotal = 0;
+    state.descuentoAplicado = null;
+
+    // Limpiar UI de descuento
+    const codigoInput = document.getElementById('codigo-descuento-reserva');
+    if (codigoInput) codigoInput.value = '';
+    const feedbackEl = document.getElementById('feedback-descuento-reserva');
+    if (feedbackEl) clearFeedback(feedbackEl);
+    const resumenEl = document.getElementById('descuento-resumen-reserva');
+    if (resumenEl) resumenEl.style.display = 'none';
+
     ui.updateTotalDisplay();
     actualizarVisibilidadPago();
 }
+
 
 function getBorderColorForEstado(e) {
     const c = {
@@ -1692,7 +1871,9 @@ export async function mount(container, supabaseClient, user, hotelId) {
     console.log("[Reservas Mount] Iniciando montaje...");
 
     // --- 2. RENDERIZAR LA ESTRUCTURA HTML PRINCIPAL (CORREGIDA SIN DUPLICADOS) ---
-    container.innerHTML = `
+    // REEMPLAZA el contenido de container.innerHTML en tu función mount CON ESTE BLOQUE COMPLETO
+
+container.innerHTML = `
     <div class="max-w-7xl mx-auto mt-10 px-4">
         <h2 id="form-title" class="text-3xl font-extrabold text-blue-800 mb-8 text-center drop-shadow-md">Registrar Nueva Reserva</h2>
 
@@ -1768,7 +1949,22 @@ export async function mount(container, supabaseClient, user, hotelId) {
                     </div>
                 </div>
             </fieldset>
-
+            
+            <fieldset class="border border-slate-200 p-6 rounded-xl">
+                <legend class="text-lg font-bold text-slate-700 px-2">Descuento</legend>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 items-center">
+                    <div>
+                        <label for="codigo-descuento-reserva" class="font-semibold text-sm text-gray-700">Código de Descuento (opcional)</label>
+                        <div class="flex items-center gap-2 mt-1">
+                            <input type="text" id="codigo-descuento-reserva" class="form-control flex-grow" placeholder="PROMO2025">
+                            <button type="button" id="btn-aplicar-descuento-reserva" class="button button-info">Aplicar</button>
+                        </div>
+                        <div id="feedback-descuento-reserva" class="text-xs mt-1 h-4"></div>
+                    </div>
+                    <div id="descuento-resumen-reserva" class="text-sm text-green-600 bg-green-50 p-3 rounded-md border border-green-200" style="display: none;">
+                        </div>
+                </div>
+            </fieldset>
             <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
                 <p class="text-sm text-blue-700">Total Estimado de la Reserva:</p>
                 <p id="total-reserva-calculado-display" class="text-3xl font-extrabold text-blue-600">$0</p>
@@ -1823,7 +2019,7 @@ export async function mount(container, supabaseClient, user, hotelId) {
     </div>
     
     <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4" style="display:none;"></div>
-    `;
+`;
 
     // --- 3. INICIALIZAR REFERENCIAS A LA UI ---
     ui.init(container);
@@ -1878,13 +2074,17 @@ export async function mount(container, supabaseClient, user, hotelId) {
     
     // Listeners que afectan el cálculo del total y la UI
     const setupEventListeners = () => {
+        const btnAplicarDescuento = ui.container.querySelector('#btn-aplicar-descuento-reserva');
+    if (btnAplicarDescuento) {
+        btnAplicarDescuento.addEventListener('click', handleAplicarDescuentoReserva);
+    }
         const inputsToRecalculate = [
             ui.habitacionIdSelect, ui.cantidadNochesInput, ui.tiempoEstanciaIdSelect, 
             ui.form.elements.cantidad_huespedes, ui.fechaEntradaInput
         ];
         inputsToRecalculate.forEach(el => {
-            if (el) el.addEventListener((el.tagName === 'SELECT' ? 'change' : 'input'), recalcularYActualizarTotalUI);
-        });
+    if (el) el.addEventListener((el.tagName === 'SELECT' ? 'change' : 'input'), async () => await recalcularYActualizarTotalUI());
+});
 
         if (ui.tipoCalculoDuracionEl) {
             ui.tipoCalculoDuracionEl.addEventListener('change', () => {

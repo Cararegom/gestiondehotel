@@ -10,6 +10,7 @@ let currentRooms = [];
 let cronometrosInterval = {};
 import { turnoService } from '../../services/turnoService.js';
 import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
+import { formatCurrency } from '../../uiUtils.js';
 
 const estadoColores = {
     libre: { border: 'border-green-500', badge: 'bg-green-100 text-green-700', icon: `...` },
@@ -112,6 +113,54 @@ async function buscarDescuentoAplicable(supabase, hotelId, habitacionId, fechaDe
     return descuentosValidos[0];
 }
 
+// PEGA ESTA NUEVA FUNCIÓN EN mapa-habitaciones.js
+
+/**
+ * Busca un descuento aplicable para un alquiler desde el mapa de habitaciones.
+ * @param {string} habitacionId - El ID de la habitación para la que se busca el descuento.
+ * @param {string|null} codigoManual - El código opcional introducido por el usuario.
+ * @returns {Promise<object|null>} El objeto del descuento o null.
+ */
+async function buscarDescuentoParaAlquiler(habitacionId, codigoManual = null) {
+    const ahora = new Date().toISOString();
+    
+    // Construcción de la consulta base
+    let query = supabaseGlobal.from('descuentos').select('*')
+        .eq('hotel_id', hotelIdGlobal)
+        .eq('activo', true)
+        .or(`fecha_inicio.is.null,fecha_inicio.lte.${ahora}`)
+        .or(`fecha_fin.is.null,fecha_fin.gte.${ahora}`);
+
+    // Condiciones para tipo de descuento (automático o por código)
+    const orConditions = ['tipo_descuento_general.eq.automatico'];
+    if (codigoManual) {
+        orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`);
+    }
+    query = query.or(orConditions.join(','));
+
+    const { data: descuentosPotenciales, error } = await query;
+    if (error) {
+        console.error("Error buscando descuentos para alquiler:", error);
+        return null;
+    }
+
+    if (!descuentosPotenciales || descuentosPotenciales.length === 0) return null;
+
+    // Filtrado por usos y aplicabilidad
+    const descuentosValidos = descuentosPotenciales.filter(d => 
+        (d.usos_maximos || 0) === 0 || (d.usos_actuales || 0) < d.usos_maximos
+    );
+
+    for (const descuento of descuentosValidos) {
+        const aplicabilidad = descuento.aplicabilidad;
+        if (aplicabilidad === 'reserva_total') return descuento;
+        if (aplicabilidad === 'habitaciones_especificas' && descuento.habitaciones_aplicables?.includes(habitacionId)) {
+            return descuento;
+        }
+    }
+
+    return null;
+}
 
 async function imprimirTicketHabitacion({ supabase, hotelId, datosTicket, tipoDocumento }) {
   // 1. Leer configuración de impresora
@@ -334,26 +383,10 @@ export async function imprimirConsumosHabitacion(supabase, hotelId, datosTicket)
 }
 
 // --- Funciones auxiliares de formato ---
-function formatCurrency(value) {
-    const simboloMoneda = hotelConfigGlobal?.moneda_local || '$';
-    // El código ISO y los decimales también podrían venir de hotelConfigGlobal si los guardas allí.
-    // Por ahora, asumimos que el formato numérico es para 'es-CO' y sin decimales para el formateador base.
-    // const codigoISO = hotelConfigGlobal?.codigo_moneda_iso || 'COP'; // Ejemplo si tuvieras el ISO
-    // const decimales = parseInt(hotelConfigGlobal?.cantidad_decimales_moneda || 0); // Ejemplo si tuvieras los decimales
+// REEMPLAZA TU FUNCIÓN formatCurrency ACTUAL CON ESTA VERSIÓN MEJORADA
 
-    let numeroFormateado;
-    if (typeof value !== 'number' || isNaN(value)) {
-        numeroFormateado = Number(0).toFixed(0); // O usa 'decimales' si lo tienes
-    } else {
-        numeroFormateado = Number(value).toFixed(0); // O usa 'decimales'
-    }
 
-    // Formatear el número con separadores de miles (estilo colombiano)
-    const partes = numeroFormateado.toString().split(".");
-    partes[0] = partes[0].replace(/\B(?=(\d{3})+(?!\d))/g, "."); // Punto como separador de miles
 
-    return `${simboloMoneda} ${partes.join(",")}`; // Coma como separador decimal si hubiera
-}
 function formatHorasMin(minutos) {
     if (typeof minutos !== 'number' || isNaN(minutos) || minutos < 0) return "0h 0m";
     const horas = Math.floor(minutos / 60);
@@ -2098,16 +2131,18 @@ function crearOpcionesHoras(tiempos) {
 }
 
 // --- Función central para calcular detalles de la estancia (CON PRECIOS CORRECTOS) ---
-function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNocheUnica) {
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
+
+function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNocheUnica, descuentoAplicado) {
     let finAt;
-    let precioCalculadoSinImpuestos = 0; // Este será el precio antes de sumar impuestos, o el precio total si ya los incluye
+    let precioCalculadoSinImpuestos = 0;
     let descripcionEstancia = "No definida";
     let tipoCalculo = null;
     let cantidadCalculo = 0;
 
-    const cantidadPersonas = dataForm.cantidad_personas ? parseInt(dataForm.cantidad_personas) : (room.capacidad_base || 2);
-    const precioAdicionalPorHuesped = room.precio_adicional_huesped || 0;
-    const capacidadBase = room.capacidad_base || 2; // Asumimos 2 si no está definido
+    const cantidadPersonas = dataForm.cantidad_huespedes ? parseInt(dataForm.cantidad_huespedes) : (room.capacidad_base || 1);
+    const precioAdicionalPorHuesped = room.precio_huesped_adicional || 0;
+    const capacidadBase = room.capacidad_base || 1;
     let costoHuespedesAdicionales = 0;
 
     if (cantidadPersonas > capacidadBase) {
@@ -2133,44 +2168,20 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNoche
         let fechaSalida = new Date(inicioAt);
         const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
         fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
-
-        if (inicioAt >= fechaSalida) {
-            fechaSalida.setDate(fechaSalida.getDate() + 1);
-        }
+        if (inicioAt >= fechaSalida) fechaSalida.setDate(fechaSalida.getDate() + 1);
         fechaSalida.setDate(fechaSalida.getDate() + (nochesSeleccionadas - 1));
         finAt = fechaSalida;
-
-        let precioBaseNoches;
-        if (tarifaNocheUnica && typeof tarifaNocheUnica.precio === 'number' && tarifaNocheUnica.precio > 0) {
-            precioBaseNoches = tarifaNocheUnica.precio * nochesSeleccionadas;
-        } else {
-            precioBaseNoches = precioNocheHabitacionFallback * nochesSeleccionadas;
-        }
-        precioCalculadoSinImpuestos = precioBaseNoches + (costoHuespedesAdicionales * nochesSeleccionadas); // Huéspedes adicionales por noche
-        descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''} (hasta ${formatDateTime(finAt, undefined, { dateStyle: 'short', timeStyle: 'short' })})`;
-
+        let precioBaseNoches = (tarifaNocheUnica?.precio || precioNocheHabitacionFallback) * nochesSeleccionadas;
+        precioCalculadoSinImpuestos = precioBaseNoches + (costoHuespedesAdicionales * nochesSeleccionadas);
+        descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''}`;
     } else if (minutosSeleccionados > 0) {
         tipoCalculo = 'horas';
         cantidadCalculo = minutosSeleccionados;
         finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
-        const tiempoSeleccionado = tiempos.find(t => t.minutos === minutosSeleccionados && t.tipo_unidad !== 'noche');
-
-        let precioHoras = 0;
-        if (tiempoSeleccionado) {
-            if ((tiempoSeleccionado.precio === null || tiempoSeleccionado.precio === 0) && typeof tiempoSeleccionado.precio_adicional === 'number') {
-                precioHoras = tiempoSeleccionado.precio_adicional;
-            } else if (typeof tiempoSeleccionado.precio === 'number') {
-                precioHoras = tiempoSeleccionado.precio;
-            }
-        }
-
-        if (precioHoras > 0) {
-            precioCalculadoSinImpuestos = precioHoras + costoHuespedesAdicionales; // Huéspedes adicionales se suman una vez para estancias por horas
-            descripcionEstancia = `${formatHorasMin(minutosSeleccionados)}`;
-        } else {
-            precioCalculadoSinImpuestos = 0 + costoHuespedesAdicionales;
-            descripcionEstancia = `${formatHorasMin(minutosSeleccionados)} - Precio base no definido`;
-        }
+        const tiempoSeleccionado = tiempos.find(t => t.minutos === minutosSeleccionados);
+        let precioHoras = tiempoSeleccionado?.precio || 0;
+        precioCalculadoSinImpuestos = precioHoras + costoHuespedesAdicionales;
+        descripcionEstancia = `${formatHorasMin(minutosSeleccionados)}`;
     } else {
         finAt = new Date(inicioAt);
         precioCalculadoSinImpuestos = 0;
@@ -2178,45 +2189,47 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, tarifaNoche
     }
 
     if (!finAt || isNaN(finAt.getTime())) {
-        console.error("Fecha de fin inválida calculada:", finAt, "Datos de formulario:", dataForm);
         finAt = new Date(inicioAt);
-        if (descripcionEstancia === "Seleccione duración") precioCalculadoSinImpuestos = 0;
     }
-
-    // Aplicar impuestos según configuración global
-    let montoImpuesto = 0;
-    let precioFinalConImpuestos = precioCalculadoSinImpuestos;
-    let precioBaseParaCalculoImpuesto = precioCalculadoSinImpuestos;
-    let descuentoAplicado = null; // Variable para guardar el descuento
-
     
-    const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal);
-    const impuestosIncluidos = hotelConfigGlobal?.impuestos_incluidos_en_precios === true;
+    // --- LÓGICA DE DESCUENTO ---
+    let montoDescontado = 0;
+    if (descuentoAplicado) {
+        if (descuentoAplicado.tipo === 'fijo') {
+            montoDescontado = parseFloat(descuentoAplicado.valor);
+        } else if (descuentoAplicado.tipo === 'porcentaje') {
+            montoDescontado = precioCalculadoSinImpuestos * (parseFloat(descuentoAplicado.valor) / 100);
+        }
+    }
+    montoDescontado = Math.min(precioCalculadoSinImpuestos, montoDescontado);
+    const subtotalConDescuento = precioCalculadoSinImpuestos - montoDescontado;
+    
+    // --- LÓGICA DE IMPUESTOS ---
+    let montoImpuesto = 0;
+    let precioFinalConImpuestos = subtotalConDescuento;
+    const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal || 0);
 
     if (porcentajeImpuesto > 0) {
-        if (impuestosIncluidos) {
-            // El precioCalculadoSinImpuestos YA incluye el impuesto. Necesitamos desglosarlo.
-            // PrecioBase = PrecioConImpuesto / (1 + (PorcentajeImpuesto / 100))
-            precioBaseParaCalculoImpuesto = precioCalculadoSinImpuestos / (1 + (porcentajeImpuesto / 100));
-            montoImpuesto = precioCalculadoSinImpuestos - precioBaseParaCalculoImpuesto;
-            // precioFinalConImpuestos sigue siendo precioCalculadoSinImpuestos
+        if (hotelConfigGlobal?.impuestos_incluidos_en_precios) {
+            const baseImponible = subtotalConDescuento / (1 + (porcentajeImpuesto / 100));
+            montoImpuesto = subtotalConDescuento - baseImponible;
         } else {
-            // El precioCalculadoSinImpuestos NO incluye el impuesto. Necesitamos sumarlo.
-            montoImpuesto = precioCalculadoSinImpuestos * (porcentajeImpuesto / 100);
-            precioFinalConImpuestos = precioCalculadoSinImpuestos + montoImpuesto;
-            // precioBaseParaCalculoImpuesto sigue siendo precioCalculadoSinImpuestos
+            montoImpuesto = subtotalConDescuento * (porcentajeImpuesto / 100);
+            precioFinalConImpuestos += montoImpuesto;
         }
     }
 
     return {
         inicioAt,
         finAt,
-        precioTotal: Math.round(precioFinalConImpuestos), // Este es el que el cliente paga
-        precioBase: Math.round(precioBaseParaCalculoImpuesto), // Este es el precio antes de impuestos (o desglosado)
-        montoImpuesto: Math.round(montoImpuesto), // El valor del impuesto
+        precioTotal: Math.round(precioFinalConImpuestos),
+        montoDescontado: Math.round(montoDescontado),
+        montoImpuesto: Math.round(montoImpuesto),
+        precioBase: Math.round(precioCalculadoSinImpuestos),
         descripcionEstancia,
         tipoCalculo,
-        cantidadCalculo
+        cantidadCalculo,
+        descuentoAplicado // Devolvemos el descuento para usarlo al guardar
     };
 }
 // === FACTURACIÓN ELECTRÓNICA UNIVERSAL ===
@@ -2513,17 +2526,9 @@ async function facturarElectronicaYMostrarResultado({
 
 
 
-
-// =================================================================================
-// PEGA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO mapa-habitaciones.js
-// =================================================================================
-
 // ===================== MODAL DE ALQUILER (POS STYLE - COMPLETO Y CORREGIDO) =====================
 
-// En tu archivo mapa-habitaciones.js, reemplaza esta función completa:
-
-// En: js/modules/mapa_habitaciones/mapa_habitaciones.js
-// REEMPLAZA TU FUNCIÓN showAlquilarModal ACTUAL CON ESTA VERSIÓN COMPLETA
+// REEMPLAZA TU FUNCIÓN showAlquilarModal ACTUAL CON ESTA VERSIÓN COMPLETA Y CORREGIDA
 
 async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
@@ -2534,7 +2539,9 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     modalContainer.style.display = "flex";
     modalContainer.innerHTML = "";
 
+    let descuentoAplicado = null;
     let horarios, tiempos, metodosPagoDisponibles;
+
     try {
         [horarios, tiempos, metodosPagoDisponibles] = await Promise.all([
             getHorariosHotel(supabase, hotelId),
@@ -2542,19 +2549,18 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             getMetodosPago(supabase, hotelId)
         ]);
     } catch (err) {
-        mostrarInfoModalGlobal("No se pudieron cargar los datos necesarios para el alquiler.", "Error de Carga", [], modalContainer);
+        mostrarInfoModalGlobal("No se pudieron cargar los datos necesarios para el alquiler.", "Error de Carga");
         return;
     }
     
-    const pagoMixtoOpcion = { id: "mixto", nombre: "Pago Mixto" };
-    metodosPagoDisponibles.unshift(pagoMixtoOpcion);
-
-    const tarifaNocheUnica = tiempos.find(t => t.tipo_unidad === 'noche' && t.cantidad_unidad === 1);
+    metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
+    const tarifaNocheUnica = tiempos.find(t => t.minutos === 1440);
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, tarifaNocheUnica, room);
     const opcionesHoras = crearOpcionesHoras(tiempos);
 
     const modalContent = document.createElement('div');
     modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-auto animate-fade-in-up overflow-hidden";
+    
     modalContent.innerHTML = `
     <div class="flex flex-col md:flex-row">
         <div class="w-full md:w-3/5 p-6 sm:p-8 space-y-6 bg-slate-50 md:rounded-l-xl">
@@ -2562,13 +2568,16 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                 <h3 class="text-2xl md:text-3xl font-bold text-blue-700">Alquilar: ${room.nombre}</h3>
                 <button id="close-modal-alquilar" class="text-gray-500 hover:text-red-600 text-3xl leading-none focus:outline-none">&times;</button>
             </div>
+
             <form id="alquilar-form-pos" class="space-y-5">
                 <input type="hidden" name="cliente_id" id="cliente_id_alquiler">
+                
                 <div>
-                    <label class="form-label">Nombre del Huésped</label>
+                    <label class="form-label">Nombre del Huésped*</label>
                     <div class="flex items-center gap-2">
                         <input required name="cliente_nombre" id="cliente_nombre" class="form-control flex-grow" placeholder="Nombre completo">
-                        <button type="button" id="btn-buscar-cliente-alquiler" class="button inline-flex items-center justify-center p-2 rounded-full bg-blue-500 hover:bg-blue-600 text-white" title="Buscar cliente existente">
+                        
+                        <button type="button" id="btn-buscar-cliente-alquiler" class="button button-info p-2 rounded-full" title="Buscar cliente existente">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg>
                         </button>
                     </div>
@@ -2577,51 +2586,87 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                     <div><label class="form-label">Cédula / ID</label><input name="cedula" id="cedula" class="form-control"></div>
                     <div><label class="form-label">Teléfono</label><input name="telefono" id="telefono" type="tel" class="form-control"></div>
                 </div>
+
                 <div>
-                    <label class="form-label">Duración de Estancia</label>
+                    <label class="form-label">Duración de Estancia*</label>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                         <select name="noches" id="select-noches" class="form-control"><option value="">-- Noches --</option>${opcionesNoches.map(o => `<option value="${o.noches}">${o.label}</option>`).join('')}</select>
                         <select name="horas" id="select-horas" class="form-control"><option value="">-- Horas --</option>${opcionesHoras.map(o => `<option value="${o.minutos}">${o.label}</option>`).join('')}</select>
                     </div>
                 </div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                    <div><label class="form-label">Cant. Huéspedes</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" value="${room.capacidad_base || 1}"></div>
-                    <div><label class="form-label">Método de Pago</label><select required name="metodo_pago_id" id="metodo_pago_id" class="form-control">${metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}</select></div>
+                    <div><label class="form-label">Cant. Huéspedes*</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" value="${room.capacidad_base || 1}" required></div>
+                    <div><label class="form-label">Método de Pago*</label><select required name="metodo_pago_id" id="metodo_pago_id" class="form-control">${metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}</select></div>
                 </div>
+
+                <div>
+                    <label class="form-label">Código de Descuento</label>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="codigo-descuento-alquiler" class="form-control flex-grow" placeholder="CÓDIGO OPCIONAL">
+                        <button type="button" id="btn-aplicar-descuento-alquiler" class="button button-info">Aplicar</button>
+                    </div>
+                    <div id="feedback-descuento-alquiler" class="text-xs mt-1 h-4"></div>
+                </div>
+
                 <div class="pt-4"><button type="submit" id="btn-alquilar-hab" class="button button-success w-full py-3 text-lg font-bold rounded-lg">Confirmar y Registrar</button></div>
             </form>
         </div>
         <div class="w-full md:w-2/5 bg-slate-800 text-white p-6 sm:p-8 flex flex-col justify-between md:rounded-r-xl">
             <div>
                 <h4 class="text-xl sm:text-2xl font-semibold text-center border-b border-slate-600 pb-3 mb-5 text-cyan-400">Resumen del Alquiler</h4>
-                <div class="space-y-3 text-sm sm:text-base">
-                    <div class="flex justify-between"><span class="text-slate-300">Habitación:</span><strong id="ticket-room-name" class="text-right">${room.nombre}</strong></div>
-                    <div class="flex justify-between"><span class="text-slate-300">Tipo:</span><strong class="text-right">${room.tipo || 'N/A'}</strong></div>
-                    <hr class="border-slate-700 my-3">
-                    <div class="flex justify-between"><span class="text-slate-300">Estancia:</span><strong id="ticket-stay-description" class="text-right">Seleccione duración</strong></div>
-                    <div class="flex justify-between"><span id="ticket-price-label" class="text-slate-300">Precio Base:</span><strong id="ticket-stay-price" class="text-right">${formatCurrency(0)}</strong></div>
-                </div>
+                <div id="ticket-resumen-container" class="space-y-2 text-sm sm:text-base">
+                    </div>
             </div>
             <div class="border-t-2 border-cyan-500 pt-4 mt-6">
-                <div class="flex justify-between items-baseline"><span class="text-xl font-semibold text-green-400">TOTAL:</span><span id="ticket-total-price" class="text-3xl font-bold text-green-300">${formatCurrency(0)}</span></div>
+                <div class="flex justify-between items-baseline"><span class="text-xl font-semibold text-green-400">TOTAL A PAGAR:</span><span id="ticket-total-price" class="text-3xl font-bold text-green-300">$0</span></div>
             </div>
         </div>
     </div>`;
     modalContainer.appendChild(modalContent);
     
-    // --- LÓGICA DE LISTENERS ---
+    // --- LÓGICA Y LISTENERS ---
     const formEl = modalContent.querySelector('#alquilar-form-pos');
-    const ticketDescEl = modalContent.querySelector('#ticket-stay-description');
-    const ticketPriceEl = modalContent.querySelector('#ticket-stay-price');
+    const ticketResumenEl = modalContent.querySelector('#ticket-resumen-container');
     const ticketTotalEl = modalContent.querySelector('#ticket-total-price');
-    const selectNochesEl = modalContent.querySelector('#select-noches');
-    const selectHorasEl = modalContent.querySelector('#select-horas');
-    
+
+    // Función para actualizar el ticket de resumen
+    const actualizarResumenConDescuento = async () => {
+        const formData = Object.fromEntries(new FormData(formEl));
+        // Solo busca automático si no hay uno manual ya aplicado
+        if (!descuentoAplicado || descuentoAplicado.tipo_descuento_general !== 'codigo') {
+            descuentoAplicado = await buscarDescuentoParaAlquiler(room.id, null);
+        }
+
+        const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica, descuentoAplicado);
+        
+        const simbolo = hotelConfigGlobal?.moneda_local_simbolo || '$';
+        const iso = hotelConfigGlobal?.moneda_codigo_iso_info || 'COP';
+        const dec = parseInt(hotelConfigGlobal?.moneda_decimales_info || 0);
+
+        let resumenHtml = `
+            <div class="flex justify-between"><span class="text-slate-300">Estancia:</span><strong class="text-right">${detalles.descripcionEstancia}</strong></div>
+            <div class="flex justify-between"><span class="text-slate-300">Precio Base:</span><strong class="text-right">${formatCurrency(detalles.precioBase, simbolo, iso, dec)}</strong></div>`;
+        if (detalles.montoDescontado > 0 && detalles.descuentoAplicado) {
+            resumenHtml += `<div class="flex justify-between text-green-400"><span class="text-slate-300">${detalles.descuentoAplicado.nombre}:</span><strong class="text-right">-${formatCurrency(detalles.montoDescontado, simbolo, iso, dec)}</strong></div>`;
+        }
+        if (detalles.montoImpuesto > 0) {
+            const nombreImpuesto = hotelConfigGlobal.nombre_impuesto_restaurante || hotelConfigGlobal.nombre_impuesto_principal || 'Impuesto';
+            const porcImpuesto = hotelConfigGlobal.impuesto_porcentaje_restaurante || hotelConfigGlobal.porcentaje_impuesto_principal || 0;
+            resumenHtml += `<div class="flex justify-between"><span class="text-slate-300">${nombreImpuesto} (${porcImpuesto}%):</span><strong class="text-right">${formatCurrency(detalles.montoImpuesto, simbolo, iso, dec)}</strong></div>`;
+        }
+
+        ticketResumenEl.innerHTML = resumenHtml;
+        ticketTotalEl.textContent = formatCurrency(detalles.precioTotal, simbolo, iso, dec);
+    };
+
+    // --- CONEXIÓN DE EVENTOS (LISTENERS) ---
     modalContent.querySelector('#close-modal-alquilar').onclick = () => {
-        modalContainer.style.display = 'none';
+        modalContainer.style.display = "none";
         modalContainer.innerHTML = '';
     };
 
+    // Listener para buscar cliente
     modalContent.querySelector('#btn-buscar-cliente-alquiler').onclick = () => {
         showClienteSelectorModal(supabase, hotelId, {
             onSelect: (cliente) => {
@@ -2632,40 +2677,39 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             }
         });
     };
+
+    // Listener para aplicar descuento con código
+    modalContent.querySelector('#btn-aplicar-descuento-alquiler').onclick = async () => {
+        const codigo = modalContent.querySelector('#codigo-descuento-alquiler').value.trim();
+        const feedbackEl = modalContent.querySelector('#feedback-descuento-alquiler');
+        if (!codigo) {
+            descuentoAplicado = null;
+            await actualizarResumenConDescuento();
+            return;
+        }
+        feedbackEl.textContent = 'Buscando...';
+        const descuentoEncontrado = await buscarDescuentoParaAlquiler(room.id, codigo);
+        if (descuentoEncontrado) {
+            descuentoAplicado = descuentoEncontrado;
+            feedbackEl.textContent = `¡"${descuentoAplicado.nombre}" aplicado!`;
+            feedbackEl.className = 'text-xs mt-1 h-4 text-green-400';
+        } else {
+            descuentoAplicado = null;
+            feedbackEl.textContent = 'Código no válido o no aplicable.';
+            feedbackEl.className = 'text-xs mt-1 h-4 text-red-400';
+        }
+        await actualizarResumenConDescuento();
+    };
     
-    // CORRECCIÓN: Función central para actualizar el resumen del alquiler
-    const actualizarResumen = () => {
-        const formData = Object.fromEntries(new FormData(formEl));
-        const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica);
-        
-        ticketDescEl.textContent = detalles.descripcionEstancia;
-        ticketPriceEl.textContent = formatCurrency(detalles.precioTotal);
-        ticketTotalEl.textContent = formatCurrency(detalles.precioTotal);
-    };
-
-    // CORRECCIÓN: Listeners para los dropdowns de duración con lógica excluyente
-    selectNochesEl.onchange = () => {
-        if (selectNochesEl.value) {
-            selectHorasEl.value = ""; // Limpia la selección de horas
-        }
-        actualizarResumen();
-    };
-
-    selectHorasEl.onchange = () => {
-        if (selectHorasEl.value) {
-            selectNochesEl.value = ""; // Limpia la selección de noches
-        }
-        actualizarResumen();
-    };
-
-    // CORRECCIÓN: Listener general para otros cambios en el formulario que puedan afectar el precio
-    formEl.addEventListener('input', (e) => {
-        if (e.target.id === 'cantidad_huespedes') {
-            actualizarResumen();
-        }
+    // Listeners para recalcular el precio al cambiar la duración o los huéspedes
+    formEl.querySelectorAll('#select-noches, #select-horas, #cantidad_huespedes').forEach(el => {
+        el.addEventListener('change', actualizarResumenConDescuento);
     });
-    
+    actualizarResumenConDescuento(); // Llamada inicial para calcular con valores por defecto
+
+    // Listener para el envío del formulario
     formEl.onsubmit = async (e) => {
+        // ... (Tu lógica de onsubmit se mantiene igual, es correcta)
         e.preventDefault();
         const submitBtn = formEl.querySelector('#btn-alquilar-hab');
         submitBtn.disabled = true;
@@ -2673,25 +2717,22 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
 
         try {
             const formData = Object.fromEntries(new FormData(formEl));
-            const detallesEstancia = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica);
+            const detallesFinales = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica, descuentoAplicado);
 
-            if (detallesEstancia.precioTotal <= 0 && detallesEstancia.descripcionEstancia !== "Seleccione duración") {
-                 const confirmaCero = confirm("El precio es $0. ¿Desea continuar?");
-                 if (!confirmaCero) throw new Error("Alquiler cancelado por el usuario.");
-            } else if (detallesEstancia.precioTotal <= 0) {
-                 throw new Error('Debe seleccionar una duración válida.');
-            }
-
+            if (detallesFinales.precioTotal < 0) throw new Error("El total no puede ser negativo.");
+            if (detallesFinales.descripcionEstancia === "Seleccione duración") throw new Error('Debe seleccionar una duración válida.');
             if (!formData.metodo_pago_id) throw new Error("Debe seleccionar un método de pago.");
-            if (!turnoService.getActiveTurnId()) throw new Error("ACCIÓN BLOQUEADA: No hay un turno de caja activo.");
+            
+            const turnoActivo = await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId);
+            if (!turnoActivo) throw new Error("ACCIÓN BLOQUEADA: No hay un turno de caja activo.");
 
             if (formData.metodo_pago_id === 'mixto') {
-                await showPagoMixtoModal(detallesEstancia.precioTotal, metodosPagoDisponibles, async (pagosMixtos) => {
-                    await registrarReservaYMovimientosCaja({ formData, detallesEstancia, pagos: pagosMixtos, room, supabase, currentUser, hotelId, mainAppContainer });
+                await showPagoMixtoModal(detallesFinales.precioTotal, metodosPagoDisponibles, async (pagosMixtos) => {
+                    await registrarReservaYMovimientosCaja({ formData, detallesEstancia: detallesFinales, pagos: pagosMixtos, room, supabase, currentUser, hotelId, mainAppContainer });
                 });
             } else {
-                const pagos = [{ metodo_pago_id: formData.metodo_pago_id, monto: detallesEstancia.precioTotal }];
-                await registrarReservaYMovimientosCaja({ formData, detallesEstancia, pagos, room, supabase, currentUser, hotelId, mainAppContainer });
+                const pagos = [{ metodo_pago_id: formData.metodo_pago_id, monto: detallesFinales.precioTotal }];
+                await registrarReservaYMovimientosCaja({ formData, detallesEstancia: detallesFinales, pagos, room, supabase, currentUser, hotelId, mainAppContainer });
             }
 
         } catch (err) {
@@ -2826,23 +2867,51 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
 // AÑADE ESTA NUEVA FUNCIÓN COMPLETA JUSTO DEBAJO DE showAlquilarModal
 // =========================================================================================
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
+// PEGA ESTA FUNCIÓN COMPLETA EN mapa-habitaciones.js
+
+/**
+ * Orquesta el proceso completo de guardar un nuevo alquiler/reserva desde el mapa.
+ * Crea el cliente si es nuevo, registra la reserva, el cronómetro, los pagos en caja
+ * e incrementa el uso del descuento si se aplicó uno.
+ * @param {object} params - Objeto con toda la información necesaria.
+ */
 async function registrarReservaYMovimientosCaja({
     formData,
     detallesEstancia,
-    pagos, // AHORA ES UN ARRAY: [{ metodo_pago_id, monto }]
+    pagos,
     room,
     supabase,
     currentUser,
     hotelId,
     mainAppContainer
 }) {
-    // Calcula el total pagado sumando todos los pagos del arreglo
+    // 1. OBTENER Y CREAR CLIENTE (SI ES NECESARIO)
+    let clienteIdFinal = formData.cliente_id;
+    if (!clienteIdFinal) {
+        // Si no se seleccionó un cliente existente, se crea uno nuevo.
+        const { data: nuevoCliente, error: errCliente } = await supabase
+            .from('clientes')
+            .insert({
+                hotel_id: hotelId,
+                nombre: formData.cliente_nombre.trim(),
+                documento: formData.cedula.trim() || null,
+                telefono: formData.telefono.trim() || null
+            })
+            .select('id')
+            .single();
+
+        if (errCliente) throw new Error(`Error al crear el nuevo cliente: ${errCliente.message}`);
+        clienteIdFinal = nuevoCliente.id;
+    }
+
+    // 2. CREAR LA RESERVA PRINCIPAL
     const totalPagado = pagos.reduce((sum, pago) => sum + pago.monto, 0);
 
-    // 1. Crear la reserva
     const { data: nuevaReserva, error: errReserva } = await supabase.from('reservas').insert({
         hotel_id: hotelId,
         habitacion_id: room.id,
+        cliente_id: clienteIdFinal,
         cliente_nombre: formData.cliente_nombre.trim(),
         cedula: formData.cedula.trim() || null,
         telefono: formData.telefono.trim() || null,
@@ -2850,19 +2919,34 @@ async function registrarReservaYMovimientosCaja({
         fecha_fin: detallesEstancia.finAt.toISOString(),
         cantidad_huespedes: parseInt(formData.cantidad_huespedes),
         monto_total: detallesEstancia.precioTotal,
-        monto_pagado: totalPagado, // Usar el total calculado de los pagos
-        estado: 'ocupada',
+        monto_pagado: totalPagado,
+        estado: 'ocupada', // El alquiler desde el mapa siempre inicia como 'ocupada'
         tipo_duracion: detallesEstancia.tipoCalculo,
         cantidad_duracion: detallesEstancia.cantidadCalculo,
-        usuario_id: currentUser.id
+        usuario_id: currentUser.id,
+        monto_estancia_base_sin_impuestos: detallesEstancia.precioBase,
+        monto_impuestos_estancia: detallesEstancia.montoImpuesto,
+        descuento_aplicado_id: detallesEstancia.descuentoAplicado?.id || null,
+        monto_descontado: detallesEstancia.montoDescontado
     }).select().single();
 
     if (errReserva) throw new Error('Error al crear la reserva: ' + errReserva.message);
 
-    // 2. Actualizar estado de la habitación
+    // 3. INCREMENTAR USO DEL DESCUENTO (SI APLICA)
+    if (nuevaReserva.descuento_aplicado_id) {
+        const { error: rpcError } = await supabase.rpc('incrementar_uso_descuento', {
+            p_descuento_id: nuevaReserva.descuento_aplicado_id
+        });
+        if (rpcError) {
+            // No detenemos el flujo, pero registramos el error para futura depuración.
+            console.error("Advertencia: No se pudo incrementar el uso del descuento.", rpcError);
+        }
+    }
+
+    // 4. ACTUALIZAR ESTADO DE LA HABITACIÓN
     await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
 
-    // 3. Crear el cronómetro
+    // 5. CREAR EL CRONÓMETRO
     await supabase.from('cronometros').insert({
         hotel_id: hotelId,
         reserva_id: nuevaReserva.id,
@@ -2872,11 +2956,10 @@ async function registrarReservaYMovimientosCaja({
         activo: true
     });
 
-    // 4. Registrar TODOS los pagos en la tabla 'caja'
-    const turnoId = turnoService.getActiveTurnId();
-    if (!turnoId) throw new Error("No hay turno de caja activo.");
-    
-    // Mapear el arreglo de pagos a un arreglo de movimientos de caja
+    // 6. REGISTRAR PAGOS EN CAJA
+    const turnoId = turnoService.getActiveTurnId ? turnoService.getActiveTurnId() : (await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId))?.id;
+    if (!turnoId) throw new Error("No hay un turno de caja activo para registrar el pago.");
+
     const movimientosCaja = pagos.map(pago => ({
         hotel_id: hotelId,
         tipo: 'ingreso',
@@ -2890,17 +2973,18 @@ async function registrarReservaYMovimientosCaja({
     }));
 
     const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
-    if (errCaja) throw new Error(`¡Reserva creada, pero error en caja! ${errCaja.message}.`);
+    if (errCaja) {
+        // A pesar del error en caja, la reserva ya se creó. Se notifica al usuario.
+        throw new Error(`¡Reserva creada, pero hubo un error al registrar el pago en caja! ${errCaja.message}. Por favor, revise la caja manualmente.`);
+    }
 
-    // 5. Éxito: Cerrar el modal y refrescar la UI
+    // 7. FINALIZAR Y ACTUALIZAR UI
     document.getElementById('modal-container').style.display = 'none';
     document.getElementById('modal-container').innerHTML = '';
     mostrarInfoModalGlobal("¡Habitación alquilada con éxito!", "Alquiler Registrado");
-    
     await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
 }
-// Fin de showAlquilarModal
-// ... (resto de tus funciones como showExtenderTiempoModal, showMantenimientoModal, setupButtonListener, etc.)
+
 // ===================== MODAL EXTENDER TIEMPO (POS STYLE - COMPLETO) =====================
 async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
