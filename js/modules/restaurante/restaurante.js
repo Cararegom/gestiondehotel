@@ -1,6 +1,8 @@
 // js/modules/restaurante/restaurante.js
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { turnoService } from '../../services/turnoService.js';
+import * as inventarioModule from './inventario.js';
+import { getIngredientesList } from './inventario.js';
 
 // --- Module-Scoped Variables ---
 let moduleRootListeners = [];
@@ -14,6 +16,7 @@ let platosCache = [];
 let metodosPagoCache = [];
 let ventaItems = []; // Current POS cart/order items
 let ventasHistorialCache = []; // Cache for sales history
+let activeSubmodule = null; // Para manejar submódulos como inventario
 
 // --- UTILITIES ---
 const formatCurrencyLocal = (value, currency = 'COP') => {
@@ -22,68 +25,152 @@ const formatCurrencyLocal = (value, currency = 'COP') => {
   }
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 };
+
 const formatDateLocal = (dateStr, options = { dateStyle: 'medium', timeStyle: 'short' }) => {
   if (!dateStr) return 'N/A';
   const date = new Date(dateStr);
   return isNaN(date.getTime()) ? 'Fecha Inválida' : date.toLocaleString('es-CO', options);
 };
 
-import { fetchTurnoActivo } from '../../services/turnoService.js';
+// =============================================================
+// ===== INICIA NUEVO BLOQUE DE LÓGICA DE DESCUENTOS =========
+// =============================================================
 
-async function checkTurnoActivo(supabase, hotelId, usuarioId) {
-  const turno = await fetchTurnoActivo(supabase, hotelId, usuarioId);
-  if (!turno) {
-    // Bloquea acciones aquí y muestra mensaje:
-    mostrarInfoModalGlobal(
-      "Acción bloqueada: No hay un turno de caja abierto. Ábrelo desde el módulo de Caja.",
-      "Turno Requerido"
-    );
-    // O muestra un botón para abrir el turno directamente (solo si es seguro).
-    return false;
-  }
-  // Si hay turno, sigue con el flujo normal
-  return true;
+let descuentoAplicadoRestaurante = null;
+
+// PEGA ESTE NUEVO BLOQUE DE CÓDIGO EN LUGAR DE LAS DOS FUNCIONES QUE BORRASTE
+
+/**
+ * Nueva función de búsqueda que encuentra descuentos automáticos Y por código.
+ * @param {Array} itemsEnCarrito - Los items actuales en el pedido.
+ * @param {string|null} codigoManual - El código que el usuario introduce manualmente.
+ * @returns {Object|null} El mejor descuento aplicable o null.
+ */
+async function buscarDescuentosAplicables(itemsEnCarrito, codigoManual = null) {
+    if (itemsEnCarrito.length === 0) return null;
+
+    const categoriasEnCarrito = [...new Set(
+        itemsEnCarrito.map(item => platosCache.find(p => p.id === item.plato_id)?.categoria_id).filter(Boolean)
+    )];
+
+    const ahora = new Date().toISOString();
+console.log("[BUSCANDO DESCUENTO] Carrito:", itemsEnCarrito);
+console.log("[BUSCANDO DESCUENTO] Categorías en carrito:", categoriasEnCarrito);
+    let query = currentSupabaseInstance.from('descuentos').select('*')
+        .eq('hotel_id', currentHotelId)
+        .eq('activo', true)
+        .or('fecha_inicio.is.null,fecha_inicio.lte.' + ahora) // Válido si no tiene fecha de inicio o ya empezó
+        .or('fecha_fin.is.null,fecha_fin.gte.' + ahora) // Válido si no tiene fecha de fin o no ha terminado
+        .or('usos_maximos.eq.0,usos_actuales.lt.usos_maximos');
+
+
+    const orConditions = [
+        'tipo_descuento_general.eq.automatico'
+    ];
+    if (codigoManual) {
+        orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`);
+    }
+    query = query.or(orConditions.join(','));
+
+
+    const { data: descuentos, error } = await query;
+
+    if (error) {
+        console.error("Error buscando descuentos:", error);
+        return null;
+    }
+    if (!descuentos || descuentos.length === 0) {
+        return null;
+    }
+
+    // Filtra los descuentos para encontrar el mejor aplicable
+    for (const descuento of descuentos) {
+        if (descuento.aplicabilidad === 'reserva_total' || descuento.aplicabilidad === 'categorias_restaurante') {
+            if (descuento.aplicabilidad === 'categorias_restaurante') {
+                const hayCoincidencia = descuento.habitaciones_aplicables.some(catId => categoriasEnCarrito.includes(catId));
+                if (hayCoincidencia) return descuento; // Devuelve el primer descuento de categoría que coincida
+            } else {
+                return descuento; // Devuelve el primer descuento de venta total que encuentre
+            }
+        }
+    }
+
+    return null; // No se encontró ningún descuento aplicable
 }
 
-// --- UI Helper Functions (Scoped) ---
+
+/**
+ * Nueva función que maneja la lógica de aplicar descuentos, tanto manual como automáticamente.
+ * @param {boolean} esBusquedaAutomatica - Si es true, no muestra mensajes de error si no encuentra nada.
+ */
+async function handleAplicarDescuentoRestaurante(esBusquedaAutomatica = false) {
+    const feedbackEl = document.getElementById('feedback-descuento-restaurante');
+    const codigoInput = document.getElementById('codigo-descuento-restaurante');
+    const codigo = codigoInput.value;
+
+    if (!esBusquedaAutomatica && !codigo) return; // No hacer nada si es un clic manual sin código
+
+    feedbackEl.textContent = 'Buscando...';
+    feedbackEl.className = 'text-xs mt-1 text-gray-500';
+
+    descuentoAplicadoRestaurante = await buscarDescuentosAplicables(ventaItems, codigo || null);
+
+    if (descuentoAplicadoRestaurante) {
+        const tipoPromo = descuentoAplicadoRestaurante.tipo_descuento_general === 'automatico' ? 'Promoción automática' : 'Descuento';
+        feedbackEl.textContent = `${tipoPromo} "${descuentoAplicadoRestaurante.nombre}" aplicado.`;
+        feedbackEl.className = 'text-xs mt-1 text-green-600';
+        if (descuentoAplicadoRestaurante.codigo) {
+            codigoInput.value = descuentoAplicadoRestaurante.codigo;
+        }
+    } else {
+        descuentoAplicadoRestaurante = null;
+        if (!esBusquedaAutomatica) { // Solo mostrar error en búsqueda manual
+            feedbackEl.textContent = 'Código no válido o no aplica a los productos del carrito.';
+            feedbackEl.className = 'text-xs mt-1 text-red-600';
+        } else {
+            feedbackEl.textContent = ''; // Limpiar si la búsqueda automática no encontró nada
+        }
+    }
+    renderVentaItemsUI(document.getElementById('pos-pedido-items-body'));
+}
+
+// =============================================================
+// ===== FIN NUEVO BLOQUE DE LÓGICA DE DESCUENTOS =========
+// =============================================================
+
+
+
+// --- UI Helper Functions ---
 function showRestauranteFeedback(feedbackEl, message, typeClass = 'success-indicator', duration = 3500) {
-  if (!feedbackEl) return;
-  feedbackEl.textContent = message;
-  let bgColor = 'bg-green-100 border-green-300 text-green-700';
-  if (typeClass === 'error-indicator') bgColor = 'bg-red-100 border-red-300 text-red-700';
-  else if (typeClass === 'info-indicator') bgColor = 'bg-blue-100 border-blue-300 text-blue-700';
-  
-  feedbackEl.className = `feedback-message mt-2 mb-3 p-3 rounded-md border text-sm ${bgColor} visible`;
-  feedbackEl.style.display = 'block';
-  feedbackEl.setAttribute('aria-live', typeClass === 'error-indicator' ? 'assertive' : 'polite');
+    if (!feedbackEl) return;
+    feedbackEl.textContent = message;
+    let bgColor = 'bg-green-100 border-green-300 text-green-700';
+    if (typeClass === 'error-indicator') bgColor = 'bg-red-100 border-red-300 text-red-700';
+    else if (typeClass === 'info-indicator') bgColor = 'bg-blue-100 border-blue-300 text-blue-700';
 
-  if (typeClass === 'error-indicator' && duration === 0) {
-    feedbackEl.setAttribute('tabindex', '-1');
-    // No hacer focus automáticamente en todos los errores, puede ser molesto.
-    // Considerar hacer focus solo si es un error de validación de un campo específico.
-  }
+    feedbackEl.className = `feedback-message mt-2 mb-3 p-3 rounded-md border text-sm ${bgColor} visible`;
+    feedbackEl.style.display = 'block';
 
-  if (duration > 0) {
-    setTimeout(() => clearRestauranteFeedback(feedbackEl), duration);
-  }
+    if (duration > 0) {
+        setTimeout(() => clearRestauranteFeedback(feedbackEl), duration);
+    }
 }
 
 function clearRestauranteFeedback(feedbackEl) {
-  if (!feedbackEl) return;
-  feedbackEl.textContent = '';
-  feedbackEl.className = 'feedback-message mt-2 mb-3';
-  feedbackEl.style.display = 'none';
-  feedbackEl.removeAttribute('tabindex');
+    if (!feedbackEl) return;
+    feedbackEl.textContent = '';
+    feedbackEl.className = 'feedback-message mt-2 mb-3';
+    feedbackEl.style.display = 'none';
 }
 
 function showRestauranteLoading(loadingEl, show, message = "Cargando...") {
-  if (!loadingEl) return;
-  loadingEl.textContent = message;
-  loadingEl.style.display = show ? 'block' : 'none';
-  loadingEl.className = show ? 'loading-indicator p-3 my-3 text-sm bg-gray-100 text-gray-600 rounded-md text-center visible' : 'loading-indicator';
+    if (!loadingEl) return;
+    loadingEl.textContent = message;
+    loadingEl.style.display = show ? 'block' : 'none';
+    loadingEl.className = show ? 'loading-indicator p-3 my-3 text-sm bg-gray-100 text-gray-600 rounded-md text-center visible' : 'loading-indicator';
 }
 
-function setFormLoadingState(formEl, isLoading, submitButtonEl, originalButtonText, loadingText = "Procesando...") {
+function setFormLoadingState(formEl, isLoading, submitButtonEl, originalButtonText = "Guardar", loadingText = "Procesando...") {
     if (!formEl || !submitButtonEl) return;
     const elements = formEl.elements;
     for (let i = 0; i < elements.length; i++) {
@@ -97,367 +184,517 @@ function setFormLoadingState(formEl, isLoading, submitButtonEl, originalButtonTe
         submitButtonEl.classList.remove('opacity-75', 'cursor-not-allowed');
     }
 }
+/**
+ * Dibuja las tarjetas de los platos disponibles en el TPV, ahora con imágenes.
+ */
+function renderPOSPlatosUI(containerEl, platos, onPlatoClickCallback) {
+    containerEl.innerHTML = '';
+    if (!platos?.length) {
+        containerEl.innerHTML = '<p class="p-4 text-center text-gray-500">No hay platos que coincidan.</p>';
+        return;
+    }
+    const grid = document.createElement('div');
+    grid.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3';
 
-  // --- POS (Point of Sale) Helper Functions ---
-  function handleUpdateCantidadVenta(itemIndex, onRenderCallback) {
+    const placeholderImg = 'https://via.placeholder.com/150'; // Imagen por defecto si un plato no tiene foto
+
+    platos.forEach(plato => {
+        const card = document.createElement('div');
+        // Se quita el padding general para que la imagen ocupe todo el ancho.
+        card.className = 'plato-card-pos bg-white rounded-lg shadow border hover:shadow-lg hover:border-indigo-500 transition-all cursor-pointer flex flex-col h-full overflow-hidden';
+        
+        // --- INICIO DE LA MODIFICACIÓN ---
+        card.innerHTML = `
+            <img src="${plato.imagen_url || placeholderImg}" alt="${plato.nombre}" class="w-full h-24 object-cover">
+            <div class="p-2 flex flex-col flex-grow">
+                <h5 class="text-sm font-semibold text-gray-800 truncate flex-grow" title="${plato.nombre}">${plato.nombre}</h5>
+                <p class="text-md font-bold text-indigo-600 mt-1 self-end">${formatCurrencyLocal(plato.precio)}</p>
+            </div>
+        `;
+        // --- FIN DE LA MODIFICACIÓN ---
+
+        card.addEventListener('click', () => onPlatoClickCallback(plato));
+        grid.appendChild(card);
+    });
+    containerEl.appendChild(grid);
+}
+
+// --- POS (Point of Sale) Helper Functions ---
+
+
+// --- POS (Point of Sale) Helper Functions ---
+function handleUpdateCantidadVenta(itemIndex, onRenderCallback) {
     return (event) => {
-      const nuevaCantidad = parseInt(event.target.value);
-      if (isNaN(nuevaCantidad)) return;
-
-      if (nuevaCantidad >= 1) {
-        if (ventaItems[itemIndex]) {
-          ventaItems[itemIndex].cantidad = nuevaCantidad;
+        const nuevaCantidad = parseInt(event.target.value);
+        if (isNaN(nuevaCantidad)) return;
+        if (nuevaCantidad >= 1) {
+            if (ventaItems[itemIndex]) ventaItems[itemIndex].cantidad = nuevaCantidad;
+        } else {
+            // Si la cantidad es 0 o menos, eliminamos el item del carrito
+            if (ventaItems[itemIndex]) ventaItems.splice(itemIndex, 1);
         }
-      } else {
-        if (ventaItems[itemIndex]) {
-          ventaItems.splice(itemIndex, 1);
-        }
-      }
-      onRenderCallback();
+        onRenderCallback();
     };
-  }
+}
 
-  function handleRemoveItemVenta(itemIndex, onRenderCallback) {
+function handleRemoveItemVenta(itemIndex, onRenderCallback) {
     return () => {
-      if (ventaItems[itemIndex]) {
-        ventaItems.splice(itemIndex, 1);
-      }
-      onRenderCallback();
+        if (ventaItems[itemIndex]) {
+            ventaItems.splice(itemIndex, 1);
+        }
+        onRenderCallback();
     };
-  }
+}
 
-  // --- Tab Rendering Functions ---
+// --- TABS RENDERING ---
+// REEMPLAZA TODA TU FUNCIÓN renderVentaItemsUI CON ESTA VERSIÓN CORREGIDA
+function renderVentaItemsUI(tbodyEl) {
+    if (!tbodyEl) return;
+    tbodyEl.innerHTML = '';
+    let subtotalBruto = 0;
 
-  async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
-    currentTabListeners.forEach(({ element, type, handler }) => element.removeEventListener(type, handler));
+    // Elementos UI
+    const totalDisplayEl = document.getElementById('venta-restaurante-total');
+    const descuentoResumenEl = document.getElementById('descuento-resumen-restaurante');
+    const btnFinalizarVentaEl = document.getElementById('btn-finalizar-venta-restaurante');
+        console.log("[RESTAURANTE] Descuento detectado:", descuentoAplicadoRestaurante);
+    const feedbackDescuentoEl = document.getElementById('feedback-descuento-restaurante');
+
+    if (ventaItems.length === 0) {
+        tbodyEl.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500">Agrega platos al pedido.</td></tr>';
+        if(btnFinalizarVentaEl) btnFinalizarVentaEl.disabled = true;
+        if(totalDisplayEl) totalDisplayEl.textContent = formatCurrencyLocal(0);
+        if(descuentoResumenEl) descuentoResumenEl.style.display = 'none';
+        if(feedbackDescuentoEl) feedbackDescuentoEl.textContent = '';
+        descuentoAplicadoRestaurante = null; // Limpia el descuento si el carrito está vacío
+        return;
+    }
+    
+    if(btnFinalizarVentaEl) btnFinalizarVentaEl.disabled = false;
+
+    // Renderiza los items del carrito
+    ventaItems.forEach((item, index) => {
+        const subtotalItem = item.cantidad * item.precio_unitario;
+        subtotalBruto += subtotalItem;
+        const tr = document.createElement('tr');
+        tr.className = "border-b";
+        tr.innerHTML = `
+            <td class="py-2 px-1 font-medium text-slate-700">${item.nombre_plato}</td>
+            <td class="py-2 px-1 text-center">
+                <input type="number" class="form-control-sm item-cantidad w-16 text-center" value="${item.cantidad}" min="0">
+            </td>
+            <td class="py-2 px-1 text-right">${formatCurrencyLocal(subtotalItem)}</td>
+            <td class="py-2 px-1 text-center">
+                <button class="button-danger-outline button-icon-small remove-item-btn" title="Eliminar">&times;</button>
+            </td>
+        `;
+        tbodyEl.appendChild(tr);
+
+        // Eventos para cantidad y eliminar
+        const cantidadInput = tr.querySelector('.item-cantidad');
+        const removeButton = tr.querySelector('.remove-item-btn');
+        if (cantidadInput) {
+            cantidadInput.addEventListener('change', handleUpdateCantidadVenta(index, () => renderVentaItemsUI(tbodyEl)));
+            cantidadInput.addEventListener('input', handleUpdateCantidadVenta(index, () => renderVentaItemsUI(tbodyEl)));
+        }
+        if (removeButton) {
+            removeButton.addEventListener('click', handleRemoveItemVenta(index, () => renderVentaItemsUI(tbodyEl)));
+        }
+    });
+
+    // Cálculo de descuento
+    let montoDescontado = 0;
+    if (descuentoAplicadoRestaurante) {
+        let subtotalAfectado = 0;
+        const aplicabilidad = descuentoAplicadoRestaurante.aplicabilidad;
+        const itemsAplicables = descuentoAplicadoRestaurante.items_aplicables || [];
+
+        if (aplicabilidad === 'reserva_total' || aplicabilidad === 'venta_total') {
+            subtotalAfectado = subtotalBruto;
+        } else if (aplicabilidad === 'categorias_restaurante') {
+            ventaItems.forEach(item => {
+                const platoInfo = platosCache.find(p => p.id === item.plato_id);
+                if (platoInfo && itemsAplicables.includes(platoInfo.categoria_id)) {
+                    subtotalAfectado += item.cantidad * item.precio_unitario;
+                }
+            });
+        }
+        montoDescontado = (descuentoAplicadoRestaurante.tipo === 'fijo')
+            ? parseFloat(descuentoAplicadoRestaurante.valor)
+            : subtotalAfectado * (parseFloat(descuentoAplicadoRestaurante.valor) / 100);
+        montoDescontado = Math.min(subtotalBruto, montoDescontado);
+
+        if (descuentoResumenEl && montoDescontado > 0) {
+            const valorSpan = descuentoResumenEl.querySelector('#descuento-valor');
+            if(valorSpan) valorSpan.textContent = `-${formatCurrencyLocal(montoDescontado)}`;
+            descuentoResumenEl.style.display = 'flex';
+        } else if (descuentoResumenEl) {
+            descuentoResumenEl.style.display = 'none';
+        }
+    } else {
+        if (descuentoResumenEl) descuentoResumenEl.style.display = 'none';
+    }
+
+    const totalFinal = subtotalBruto - montoDescontado;
+    if(totalDisplayEl) totalDisplayEl.textContent = formatCurrencyLocal(totalFinal);
+}
+
+// --- TABS RENDERING ---
+
+async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
+    console.log("RESTAURANTE: Renderizando pestaña de Platos y Recetas...");
+    currentTabListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
     currentTabListeners = [];
 
     tabContentEl.innerHTML = `
       <div class="p-4">
         <div class="flex flex-col sm:flex-row justify-between items-center mb-4 gap-2">
-          <h3 class="text-lg font-semibold">Gestión de Menú/Platos</h3>
-          <button id="btn-nuevo-plato" class="button button-primary text-sm py-1.5 px-3 rounded-md w-full sm:w-auto">
-            <span class="mr-1">🍴</span>Nuevo Plato
-          </button>
+            <h3 class="text-lg font-semibold">Gestión de Menú y Recetas</h3>
+            <button id="btn-nuevo-plato" class="button button-primary text-sm">
+                <span class="mr-1">🍴</span>Nuevo Plato
+            </button>
         </div>
-        <div id="platos-feedback" class="feedback-message" style="display:none;"></div>
-        <div id="platos-loading" class="loading-indicator text-center py-3" style="display:none;">Cargando platos...</div>
+        <div id="platos-feedback" class="feedback-message my-2" style="display:none;"></div>
+        <div id="platos-loading" class="loading-indicator text-center py-3" style="display:none;"></div>
         <div id="lista-platos-container" class="overflow-x-auto bg-white shadow rounded-md"></div>
       </div>
-
-      <div id="modal-plato" class="modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50" style="display:none;">
-        <div class="modal-content bg-white p-5 rounded-lg shadow-xl w-full max-w-lg transform transition-all">
-          <form id="form-plato">
-            <div class="flex justify-between items-center mb-4">
-              <h4 id="modal-plato-titulo" class="text-xl font-semibold">Nuevo Plato</h4>
-              <button type="button" id="btn-cerrar-modal-plato" class="text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
-            </div>
-            <input type="hidden" id="plato-id" name="id">
-            <div class="mb-3">
-              <label for="plato-nombre" class="block text-sm font-medium text-gray-700">Nombre del Plato *</label>
-              <input type="text" id="plato-nombre" name="nombre" class="form-control mt-1" required>
-            </div>
-            <div class="mb-3">
-              <label for="plato-descripcion" class="block text-sm font-medium text-gray-700">Descripción (Opcional)</label>
-              <textarea id="plato-descripcion" name="descripcion" rows="2" class="form-control mt-1"></textarea>
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
-              <div>
-                <label for="plato-precio" class="block text-sm font-medium text-gray-700">Precio (COP) *</label>
-                <input type="number" id="plato-precio" name="precio" step="50" min="0" class="form-control mt-1" required placeholder="Ej: 15000">
-              </div>
-              <div>
-                <label for="plato-categoria" class="block text-sm font-medium text-gray-700">Categoría (Opcional)</label>
-                <input type="text" id="plato-categoria" name="categoria" class="form-control mt-1" placeholder="Ej: Bebidas, Entradas">
-              </div>
-            </div>
-            <div class="mb-4">
-              <label for="plato-activo" class="flex items-center cursor-pointer">
-                <input type="checkbox" id="plato-activo" name="activo" class="form-checkbox h-5 w-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500" checked>
-                <span class="ml-2 text-sm text-gray-700">Activo (disponible en POS)</span>
-              </label>
-            </div>
-            <div id="modal-plato-feedback" class="feedback-message my-2" style="display:none;"></div>
-            <div class="flex justify-end gap-3 mt-5 pt-4 border-t">
-              <button type="button" id="btn-cancelar-plato" class="button button-outline text-sm">Cancelar</button>
-              <button type="submit" id="btn-guardar-plato" class="button button-success text-sm">Guardar Plato</button>
-            </div>
-          </form>
-        </div>
-      </div>
+      <div id="modal-plato" class="modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50" style="display:none;"></div>
     `;
 
     const btnNuevoPlato = tabContentEl.querySelector('#btn-nuevo-plato');
     const modalPlatoEl = tabContentEl.querySelector('#modal-plato');
-    const formPlatoEl = tabContentEl.querySelector('#form-plato');
-    const btnCancelarPlato = tabContentEl.querySelector('#btn-cancelar-plato');
-    const btnCerrarModalPlato = tabContentEl.querySelector('#btn-cerrar-modal-plato');
     const platosLoadingEl = tabContentEl.querySelector('#platos-loading');
     const platosFeedbackEl = tabContentEl.querySelector('#platos-feedback');
-    const modalPlatoFeedbackEl = tabContentEl.querySelector('#modal-plato-feedback');
-    const modalPlatoTituloEl = tabContentEl.querySelector('#modal-plato-titulo');
-
-    // --- LOG DE DIAGNÓSTICO ---
-    console.log("¿Elemento del formulario encontrado?:", formPlatoEl);
-
-    const openPlatoModal = (plato = null) => {
-      formPlatoEl.reset();
-      clearRestauranteFeedback(modalPlatoFeedbackEl);
-      if (plato) {
-        modalPlatoTituloEl.textContent = 'Editar Plato';
-        formPlatoEl.elements['id'].value = plato.id;
-        formPlatoEl.elements['nombre'].value = plato.nombre;
-        formPlatoEl.elements['descripcion'].value = plato.descripcion || '';
-        formPlatoEl.elements['precio'].value = plato.precio;
-        formPlatoEl.elements['categoria'].value = plato.categoria || '';
-        formPlatoEl.elements['activo'].checked = plato.activo;
-      } else {
-        modalPlatoTituloEl.textContent = 'Nuevo Plato';
-        formPlatoEl.elements['activo'].checked = true;
-      }
-      modalPlatoEl.style.display = 'flex';
-      setTimeout(() => formPlatoEl.elements['nombre'].focus(), 50);
-    };
+    let ingredientesDisponibles = [];
 
     const closePlatoModal = () => {
-      modalPlatoEl.style.display = 'none';
+        if (modalPlatoEl) modalPlatoEl.style.display = 'none';
     };
 
-    const nuevoPlatoHandler = () => openPlatoModal();
-    btnNuevoPlato.addEventListener('click', nuevoPlatoHandler);
-    currentTabListeners.push({ element: btnNuevoPlato, type: 'click', handler: nuevoPlatoHandler });
+    const openPlatoModal = async (plato = null) => {
+        let recetaActual = [];
+        const placeholderImg = 'https://via.placeholder.com/150'; // Puedes cambiar esto por una URL a una imagen por defecto
 
-    btnCancelarPlato.addEventListener('click', closePlatoModal);
-    currentTabListeners.push({ element: btnCancelarPlato, type: 'click', handler: closePlatoModal });
-    btnCerrarModalPlato.addEventListener('click', closePlatoModal);
-    currentTabListeners.push({ element: btnCerrarModalPlato, type: 'click', handler: closePlatoModal });
-    
-    const modalBackdropHandler = (e) => { if (e.target === modalPlatoEl) closePlatoModal(); };
-    modalPlatoEl.addEventListener('click', modalBackdropHandler);
-    currentTabListeners.push({ element: modalPlatoEl, type: 'click', handler: modalBackdropHandler });
+        modalPlatoEl.innerHTML = `
+            <div class="modal-content bg-white p-5 rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+              <form id="form-plato" class="flex flex-col flex-grow">
+                <div class="flex justify-between items-center mb-4 pb-3 border-b">
+                  <h4 class="text-xl font-semibold">${plato ? 'Editar' : 'Nuevo'} Plato</h4>
+                  <button type="button" class="btn-cerrar-modal-plato text-gray-400 hover:text-gray-600 text-3xl">&times;</button>
+                </div>
+                <div class="flex-grow overflow-y-auto pr-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="md:col-span-2 space-y-4">
+                        <input type="hidden" name="id" value="${plato?.id || ''}">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div><label class="form-label required">Nombre</label><input type="text" name="nombre" class="form-control" value="${plato?.nombre || ''}" required></div>
+                            <div><label class="form-label">Categoría</label><input type="text" name="categoria" class="form-control" value="${plato?.categoria || ''}"></div>
+                            <div><label class="form-label required">Precio</label><input type="number" name="precio" step="50" min="0" class="form-control" value="${plato?.precio || ''}" required></div>
+                            <div class="pt-6"><label class="flex items-center"><input type="checkbox" name="activo" class="form-checkbox" ${plato?.activo ?? true ? 'checked' : ''}><span class="ml-2">Activo</span></label></div>
+                        </div>
+                        <div><label class="form-label">Descripción</label><textarea name="descripcion" rows="2" class="form-control">${plato?.descripcion || ''}</textarea></div>
+                        <div class="pt-4 border-t">
+                           <h5 class="text-md font-semibold mb-2">Receta del Plato</h5>
+                           <div id="receta-items-list" class="space-y-2 mb-3 p-2 bg-gray-50 rounded-md border min-h-[40px]"></div>
+                           <div class="flex items-end gap-2 p-2 bg-gray-100 rounded-b-md">
+                              <div class="flex-grow"><label class="text-xs">Ingrediente</label><select id="select-ingrediente-receta" class="form-control form-control-sm"></select></div>
+                              <div><label id="label-cantidad-receta" class="text-xs">Cantidad</label><input type="number" id="cantidad-ingrediente-receta" step="any" class="form-control form-control-sm w-24" placeholder="Cant."></div>
+                              <button type="button" id="btn-add-ingrediente-receta" class="button button-primary button-small">Añadir</button>
+                           </div>
+                        </div>
+                    </div>
+                    <div class="md:col-span-1 space-y-2">
+                        <label class="form-label">Foto del Plato</label>
+                        <img id="plato-imagen-preview" src="${plato?.imagen_url || placeholderImg}" alt="Vista previa" class="w-full h-48 object-cover rounded-md bg-gray-200">
+                        <input type="file" name="imagen" id="plato-imagen-input" class="form-control text-sm" accept="image/png, image/jpeg, image/webp">
+                        <p class="text-xs text-gray-500">Sube una imagen para el plato (opcional).</p>
+                    </div>
+                </div>
+                <div id="modal-plato-feedback" class="feedback-message my-2" style="display:none;"></div>
+                <div class="flex justify-end gap-3 mt-5 pt-4 border-t">
+                  <button type="button" class="btn-cerrar-modal-plato button button-danger">Cancelar</button>
+                  <button type="submit" id="btn-guardar-plato" class="button button-success">Guardar Cambios</button>
+                </div>
+              </form>
+            </div>`;
+        modalPlatoEl.style.display = 'flex';
 
-    async function cargarYRenderizarPlatos() {
-      showRestauranteLoading(platosLoadingEl, true);
-      clearRestauranteFeedback(platosFeedbackEl);
-      try {
-        const { data, error } = await supabaseInstance.from('platos')
-          .select('*')
-          .eq('hotel_id', hotelId)
-          .order('categoria', { ascending: true, nullsFirst: false })
-          .order('nombre', { ascending: true });
-        if (error) throw error;
-        platosCache = data || [];
-        renderTablaPlatos(platosCache);
-      } catch (err) {
-        console.error("Error cargando platos:", err);
-        showRestauranteFeedback(platosFeedbackEl, `Error al cargar platos: ${err.message}`, 'error-indicator', 0);
-      } finally {
-        showRestauranteLoading(platosLoadingEl, false);
-      }
-    }
-
-    function renderTablaPlatos(platos) {
-      const container = tabContentEl.querySelector('#lista-platos-container');
-      if (platos.length === 0) {
-        container.innerHTML = '<p class="text-center text-gray-500 py-6">No hay platos registrados. ¡Agrega el primero!</p>';
-        return;
-      }
-      const table = document.createElement('table');
-      table.className = 'tabla-estilizada w-full';
-      table.innerHTML = `
-        <thead class="bg-gray-50">
-          <tr>
-            <th class="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-            <th class="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categoría</th>
-            <th class="px-4 py-2.5 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Precio</th>
-            <th class="px-4 py-2.5 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Activo</th>
-            <th class="px-4 py-2.5 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-          </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-          ${platos.map(p => `
-            <tr data-id="${p.id}" class="hover:bg-gray-50">
-              <td data-label="Nombre" class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${p.nombre}</td>
-              <td data-label="Categoría" class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${p.categoria || 'N/A'}</td>
-              <td data-label="Precio" class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatCurrencyLocal(p.precio)}</td>
-              <td data-label="Activo" class="px-4 py-3 whitespace-nowrap text-center text-sm">
-                ${p.activo ? '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">Sí</span>' : '<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-red-100 text-red-800">No</span>'}
-              </td>
-              <td data-label="Acciones" class="px-4 py-3 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                <button class="button button-outline button-icon-small btn-editar-plato p-1 rounded hover:bg-gray-100" title="Editar ${p.nombre}"><span class="text-base">✏️</span></button>
-                <button class="button button-danger-outline button-icon-small btn-eliminar-plato p-1 rounded hover:bg-red-50" title="Eliminar ${p.nombre}"><span class="text-base">🗑️</span></button>
-              </td>
-            </tr>
-          `).join('')}
-        </tbody>
-      `;
-      container.innerHTML = '';
-      container.appendChild(table);
-
-      table.querySelectorAll('.btn-editar-plato').forEach(btn => {
-          const platoId = btn.closest('tr').dataset.id;
-          const plato = platosCache.find(p => p.id === platoId);
-          const handler = () => openPlatoModal(plato);
-          btn.addEventListener('click', handler);
-          currentTabListeners.push({ element: btn, type: 'click', handler });
-      });
-      table.querySelectorAll('.btn-eliminar-plato').forEach(btn => {
-          const platoId = btn.closest('tr').dataset.id;
-          const platoNombre = platosCache.find(p=>p.id === platoId)?.nombre || 'este plato';
-          const handler = async () => {
-              if (confirm(`¿Estás seguro de que quieres eliminar el plato "${platoNombre}"? Esta acción no se puede deshacer.`)) {
-                  showRestauranteLoading(platosLoadingEl, true, "Eliminando plato...");
-                  try {
-                      const { error } = await supabaseInstance.from('platos').delete().match({ id: platoId, hotel_id: hotelId });
-                      if (error) throw error;
-                      showRestauranteFeedback(platosFeedbackEl, 'Plato eliminado correctamente.', 'success-indicator');
-                      await registrarEnBitacora(supabaseInstance, hotelId, currentModuleUser.id, 'ELIMINAR_PLATO_RESTAURANTE', { platoId: platoId, nombre: platoNombre });
-                      cargarYRenderizarPlatos();
-                  } catch (err) {
-                      console.error("Error eliminando plato:", err);
-                      showRestauranteFeedback(platosFeedbackEl, `Error al eliminar plato: ${err.message}`, 'error-indicator', 0);
-                  } finally {
-                      showRestauranteLoading(platosLoadingEl, false);
-                  }
-              }
-          };
-          btn.addEventListener('click', handler);
-          currentTabListeners.push({ element: btn, type: 'click', handler });
-      });
-    }
-
-    const formPlatoSubmitHandler = async (e) => {
-      // --- LOG DE DIAGNÓSTICO ---
-      console.log("¡Manejador de submit EJECUTADO!");
-      e.preventDefault();
-
-      clearRestauranteFeedback(modalPlatoFeedbackEl);
-      const btnGuardar = formPlatoEl.querySelector('#btn-guardar-plato');
-      const originalText = btnGuardar.textContent;
-
-      const formData = new FormData(formPlatoEl);
-      const platoData = {
-        hotel_id: hotelId,
-        nombre: formData.get('nombre')?.trim(),
-        descripcion: formData.get('descripcion')?.trim() || null,
-        precio: parseFloat((formData.get('precio') || '').replace(/,/g, '').trim()),
-        categoria: formData.get('categoria')?.trim() || null,
-        activo: formPlatoEl.elements['activo'].checked,
-        actualizado_en: new Date().toISOString()
-      };
-      const platoId = formData.get('id');
-
-      setFormLoadingState(formPlatoEl, true, btnGuardar, originalText, 'Guardando...');
-
-      if (!platoData.nombre || isNaN(platoData.precio) || platoData.precio <= 0) {
-        showRestauranteFeedback(modalPlatoFeedbackEl, 'Nombre y precio válido (>0) son requeridos.', 'error-indicator', 0);
-        setFormLoadingState(formPlatoEl, false, btnGuardar, originalText);
-        return;
-      }
-
-      try {
-        let result;
-        let bitacoraAccion;
-        if (platoId) {
-          result = await supabaseInstance.from('platos').update(platoData).match({ id: platoId, hotel_id: hotelId }).select();
-          bitacoraAccion = 'EDITAR_PLATO_RESTAURANTE';
-        } else {
-          result = await supabaseInstance.from('platos').insert({...platoData, creado_en: new Date().toISOString()}).select();
-          bitacoraAccion = 'NUEVO_PLATO_RESTAURANTE';
-        }
-        const { data, error } = result;
-        if (error) throw error;
-        if (!data || data.length === 0) throw new Error("No se pudo guardar el plato o no se devolvieron datos.");
+        const formPlatoEl = modalPlatoEl.querySelector('#form-plato');
+        const modalFeedbackEl = modalPlatoEl.querySelector('#modal-plato-feedback');
         
-        await registrarEnBitacora(supabaseInstance, hotelId, currentModuleUser.id, bitacoraAccion, { platoId: data[0].id, nombre: data[0].nombre });
-        showRestauranteFeedback(platosFeedbackEl, `Plato ${platoId ? 'actualizado' : 'creado'} correctamente.`, 'success-indicator');
-        closePlatoModal();
-        cargarYRenderizarPlatos();
-      } catch (err) {
-        console.error("Error guardando plato:", err);
-        showRestauranteFeedback(modalPlatoFeedbackEl, `Error al guardar: ${err.message}`, 'error-indicator', 0);
-      } finally {
-        setFormLoadingState(formPlatoEl, false, btnGuardar, originalText);
-      }
+        const selectIngredienteEl = modalPlatoEl.querySelector('#select-ingrediente-receta');
+        const cantidadInputEl = modalPlatoEl.querySelector('#cantidad-ingrediente-receta');
+        const btnAddIngrediente = modalPlatoEl.querySelector('#btn-add-ingrediente-receta');
+        const recetaItemsListEl = modalPlatoEl.querySelector('#receta-items-list');
+
+        const imagenInput = modalPlatoEl.querySelector('#plato-imagen-input');
+        const imagenPreview = modalPlatoEl.querySelector('#plato-imagen-preview');
+
+        imagenInput.onchange = () => {
+            const file = imagenInput.files[0];
+            if (file) {
+                imagenPreview.src = URL.createObjectURL(file);
+            }
+        };
+
+        const renderRecetaUI = () => {
+            recetaItemsListEl.innerHTML = '';
+            if (recetaActual.length === 0) {
+                recetaItemsListEl.innerHTML = '<p class="text-xs text-center text-gray-500 py-2">Añade ingredientes.</p>';
+                return;
+            }
+            recetaActual.forEach((item, index) => {
+                const info = ingredientesDisponibles.find(i => i.id === item.ingrediente_id);
+                const itemEl = document.createElement('div');
+                itemEl.className = 'flex justify-between items-center bg-white p-2 rounded border text-sm';
+                itemEl.innerHTML = `<span>${info?.nombre}</span><div class="flex items-center gap-2"><span class="font-semibold">${item.cantidad} ${info?.unidad_medida}</span><button type="button" data-index="${index}" class="btn-remove-receta-item text-red-500">&times;</button></div>`;
+                recetaItemsListEl.appendChild(itemEl);
+            });
+            recetaItemsListEl.querySelectorAll('.btn-remove-receta-item').forEach(btn => {
+                btn.onclick = (e) => {
+                    recetaActual.splice(parseInt(e.currentTarget.dataset.index), 1);
+                    renderRecetaUI();
+                };
+            });
+        };
+
+        ingredientesDisponibles = await getIngredientesList(supabaseInstance, hotelId);
+        selectIngredienteEl.innerHTML = '<option value="">Seleccionar...</option>' + ingredientesDisponibles.map(ing => `<option value="${ing.id}" data-unidad="${ing.unidad_medida}">${ing.nombre}</option>`).join('');
+        
+        if (plato?.id) {
+            const { data } = await supabaseInstance.from('platos_recetas').select('*').eq('plato_id', plato.id);
+            recetaActual = data?.map(item => ({ ingrediente_id: item.ingrediente_id, cantidad: item.cantidad })) || [];
+        }
+        renderRecetaUI();
+
+        btnAddIngrediente.onclick = () => {
+            const id = selectIngredienteEl.value;
+            const cant = parseFloat(cantidadInputEl.value);
+            if (!id || isNaN(cant) || cant <= 0 || recetaActual.some(i => i.ingrediente_id === id)) return;
+            recetaActual.push({ ingrediente_id: id, cantidad: cant });
+            renderRecetaUI();
+            selectIngredienteEl.value = '';
+            cantidadInputEl.value = '';
+        };
+        
+        modalPlatoEl.querySelectorAll('.btn-cerrar-modal-plato').forEach(btn => btn.onclick = closePlatoModal);
+        
+        formPlatoEl.onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(formPlatoEl);
+            const platoId = formData.get('id');
+            const submitButton = formPlatoEl.querySelector('#btn-guardar-plato');
+            
+            setFormLoadingState(formPlatoEl, true, submitButton, "Guardar Cambios", "Guardando...");
+            try {
+                let imagenUrl = plato?.imagen_url || null;
+                const imagenFile = formData.get('imagen');
+
+                if (imagenFile && imagenFile.size > 0) {
+                    const filePath = `public/${hotelId}/plato_${Date.now()}_${imagenFile.name.replace(/\s/g, '_')}`;
+                    const { error: uploadError } = await supabaseInstance.storage.from('platos-imagenes').upload(filePath, imagenFile);
+                    if (uploadError) throw uploadError;
+                    const { data: urlData } = supabaseInstance.storage.from('platos-imagenes').getPublicUrl(filePath);
+                    imagenUrl = urlData.publicUrl;
+                }
+
+                const platoData = {
+                    hotel_id: hotelId,
+                    nombre: formData.get('nombre'),
+                    categoria: formData.get('categoria') || null,
+                    precio: parseFloat(formData.get('precio')),
+                    activo: formData.get('activo') === 'on',
+                    descripcion: formData.get('descripcion') || null,
+                    imagen_url: imagenUrl
+                };
+
+                let savedPlatoId = platoId;
+                if (platoId) {
+                    const { error } = await supabaseInstance.from('platos').update(platoData).eq('id', platoId);
+                    if (error) throw error;
+                } else {
+                    const { data, error } = await supabaseInstance.from('platos').insert(platoData).select('id').single();
+                    if (error) throw error;
+                    savedPlatoId = data.id;
+                }
+
+                await supabaseInstance.from('platos_recetas').delete().eq('plato_id', savedPlatoId);
+                if (recetaActual.length > 0) {
+                    const recetaData = recetaActual.map(item => ({ plato_id: savedPlatoId, hotel_id: hotelId, ...item }));
+                    const { error } = await supabaseInstance.from('platos_recetas').insert(recetaData);
+                    if (error) throw error;
+                }
+                
+                showRestauranteFeedback(platosFeedbackEl, '¡Plato guardado!', 'success-indicator');
+                closePlatoModal();
+                cargarYRenderizarPlatos();
+
+            } catch (err) {
+                showRestauranteFeedback(modalFeedbackEl, err.message, 'error-indicator', 0);
+            } finally {
+                setFormLoadingState(formPlatoEl, false, submitButton, "Guardar Cambios");
+            }
+        };
     };
 
-    // Se adjunta el listener aquí
-    formPlatoEl.addEventListener('submit', formPlatoSubmitHandler);
-    currentTabListeners.push({ element: formPlatoEl, type: 'submit', handler: formPlatoSubmitHandler });
+    const renderTablaPlatos = (platos) => {
+        const container = tabContentEl.querySelector('#lista-platos-container');
+        if (!platos?.length) {
+            container.innerHTML = '<p class="text-center text-gray-500 py-6">No hay platos registrados.</p>';
+            return;
+        }
+        container.innerHTML = `
+            <table class="tabla-estilizada w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="p-2 text-left">Imagen</th>
+                        <th class="p-2 text-left">Nombre</th>
+                        <th class="p-2 text-left">Categoría</th>
+                        <th class="p-2 text-right">Precio</th>
+                        <th class="p-2 text-center">Activo</th>
+                        <th class="p-2 text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    ${platos.map(p => `
+                        <tr data-id="${p.id}" class="hover:bg-gray-50">
+                            <td class="p-2">
+                                <img src="${p.imagen_url || 'https://via.placeholder.com/150'}" alt="${p.nombre}" class="w-12 h-12 rounded-md object-cover bg-gray-200">
+                            </td>
+                            <td class="p-2 font-medium">${p.nombre}</td>
+                            <td class="p-2">${p.categoria || 'N/A'}</td>
+                            <td class="p-2 text-right">${formatCurrencyLocal(p.precio)}</td>
+                            <td class="p-2 text-center"><span class="px-2 py-1 text-xs rounded-full ${p.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${p.activo ? 'Sí' : 'No'}</span></td>
+                            <td class="p-2 text-center"><button class="button button-outline button-small btn-editar-plato">Editar</button></td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>`;
 
+        container.querySelectorAll('.btn-editar-plato').forEach(btn => {
+            btn.onclick = () => {
+                const plato = platosCache.find(p => p.id === btn.closest('tr').dataset.id);
+                openPlatoModal(plato);
+            };
+        });
+    };
+
+    const cargarYRenderizarPlatos = async () => {
+        showRestauranteLoading(platosLoadingEl, true);
+        try {
+            const { data, error } = await supabaseInstance.from('platos').select('*').eq('hotel_id', hotelId).order('nombre');
+            if (error) throw error;
+            platosCache = data || [];
+            renderTablaPlatos(platosCache);
+        } catch (err) {
+            showRestauranteFeedback(platosFeedbackEl, `Error: ${err.message}`, 'error-indicator', 0);
+        } finally {
+            showRestauranteLoading(platosLoadingEl, false);
+        }
+    };
+
+    btnNuevoPlato.addEventListener('click', () => openPlatoModal(null));
     await cargarYRenderizarPlatos();
-  }
+}
 
-  async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, moduleUser) {
-    // Limpia listeners previos
-    currentTabListeners.forEach(({ element, type, handler }) => element.removeEventListener(type, handler));
+
+
+async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, moduleUser) {
+    currentTabListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
     currentTabListeners = [];
     ventaItems = [];
 
     tabContentEl.innerHTML = `
-      <section id="pos-restaurante" class="p-1 md:p-0">
-        <div class="pos-layout grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="md:col-span-2 pos-platos-grid bg-gray-50 p-3 rounded-lg shadow max-h-[calc(100vh-250px)] md:max-h-[calc(100vh-200px)] overflow-y-auto">
-            <div class="flex flex-col sm:flex-row justify-between items-center mb-3 gap-2">
-              <h4 class="text-md font-semibold text-gray-700">Platos Disponibles</h4>
-              <input type="text" id="pos-filtro-platos" class="form-control form-control-sm py-1.5 px-2 text-xs w-full sm:w-1/2 md:w-1/3 rounded-md border-gray-300" placeholder="Buscar plato...">
-            </div>
-            <div id="pos-platos-disponibles-render-area" class="min-h-[100px]">
-            </div>
-          </div>
-          <div id="pos-pedido-actual" class="md:col-span-1 pos-pedido-card card bg-white rounded-lg shadow flex flex-col max-h-[calc(100vh-200px)]">
-            <div class="card-header bg-gray-100 p-3 border-b"><h5 class="mb-0 text-md font-semibold text-gray-700">Pedido Actual</h5></div>
-            <div class="card-body p-2 flex-grow overflow-y-auto">
-              <div class="table-container">
-                <table class="tabla-estilizada tabla-small w-full text-xs">
-                  <thead class="bg-gray-50 sticky top-0 z-10">
-                    <tr>
-                      <th class="px-2 py-1.5 text-left">Plato</th>
-                      <th class="px-2 py-1.5 text-left">P.U.</th>
-                      <th class="px-1 py-1.5 text-center w-16">Cant.</th>
-                      <th class="px-2 py-1.5 text-left">Subt.</th>
-                      <th class="px-1 py-1.5"></th>
-                    </tr>
-                  </thead>
-                  <tbody id="pos-pedido-items-body" class="divide-y divide-gray-200"></tbody>
-                </table>
-              </div>
-            </div>
-            <div class="card-footer p-3 border-t mt-auto">
-              <h4 class="mb-2 text-lg font-bold text-right">Total: <span id="venta-restaurante-total" class="text-indigo-600">$0</span></h4>
-              <form id="form-finalizar-venta-restaurante" class="space-y-3">
-                <div class="form-group">
-                  <label for="venta-restaurante-modo" class="block text-xs font-medium text-gray-600">Modo de Venta *</label>
-                  <select id="venta-restaurante-modo" name="modoVenta" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs" required>
-                    <option value="inmediato">Pago Inmediato</option>
-                    <option value="habitacion">Cargar a Habitación</option>
-                  </select>
-                </div>
-                <div class="form-group" id="grupo-metodo-pago-restaurante">
-                  <label for="venta-restaurante-metodo-pago" class="block text-xs font-medium text-gray-600">Método de Pago *</label>
-                  <select id="venta-restaurante-metodo-pago" name="metodoPagoId" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs">
-                    <option value="">Cargando...</option>
-                  </select>
-                </div>
-                <div class="form-group" id="grupo-habitacion-restaurante" style="display:none;">
-                  <label for="venta-restaurante-habitacion" class="block text-xs font-medium text-gray-600">Habitación a cargar *</label>
-                  <select id="venta-restaurante-habitacion" name="habitacionId" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs">
-                    <option value="">Cargando...</option>
-                  </select>
-                </div>
-                <div class="form-group" id="grupo-cliente-restaurante">
-                  <label for="venta-restaurante-cliente" class="block text-xs font-medium text-gray-600">Cliente (Opcional)</label>
-                  <input type="text" id="venta-restaurante-cliente" name="clienteNombre" class="form-control form-control-sm mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-xs" placeholder="Nombre o # Habitación">
-                </div>
-                <button type="submit" id="btn-finalizar-venta-restaurante" class="button button-success button-block w-full py-2 px-4 rounded-md text-sm">Registrar Venta</button>
-              </form>
-            </div>
-          </div>
-        </div>
-        <div id="posVentaFeedback" role="status" aria-live="polite" style="display:none;" class="feedback-message mt-3"></div>
-      </section>`;
+      <section id="pos-restaurante" class="p-4 sm:p-6 lg:p-8 bg-slate-100 dark:bg-slate-900">
 
-    // ELEMENTOS
+    <div class="pos-layout grid grid-cols-1 lg:grid-cols-5 gap-6 lg:items-start">
+
+        <div class="lg:col-span-3 pos-platos-grid bg-white dark:bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 flex flex-col h-[calc(100vh-150px)]">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-4 pb-4 border-b border-slate-200 dark:border-slate-700">
+                <h4 class="text-xl font-bold text-slate-800 dark:text-slate-100 mb-2 sm:mb-0">Platos Disponibles</h4>
+                <div class="relative w-full sm:w-64">
+                    <span class="absolute inset-y-0 left-0 flex items-center pl-3">
+                        <svg class="w-5 h-5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    </span>
+                    <input type="text" id="pos-filtro-platos" class="form-control w-full pl-10 pr-4 py-2 text-sm border-slate-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Buscar plato...">
+                </div>
+            </div>
+            <div id="pos-platos-disponibles-render-area" class="flex-grow overflow-y-auto pr-2 -mr-2"></div>
+        </div>
+
+        <div class="lg:col-span-2 pos-pedido-card bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 flex flex-col h-fit max-h-[calc(100vh-150px)]">
+            
+            <div class="card-header p-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 flex-shrink-0">
+                <svg class="w-6 h-6 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
+                <h5 class="font-bold text-xl text-slate-800 dark:text-slate-100">Pedido Actual</h5>
+            </div>
+            
+            <div class="flex-grow overflow-y-auto p-4 space-y-6">
+                
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr>
+                            <th class="p-2 text-left font-medium text-slate-500 dark:text-slate-400">Plato</th>
+                            <th class="p-2 text-center font-medium text-slate-500 dark:text-slate-400 w-16">Cant.</th>
+                            <th class="p-2 text-right font-medium text-slate-500 dark:text-slate-400">Subtotal</th>
+                            <th class="w-8"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="pos-pedido-items-body" class="divide-y divide-slate-200 dark:divide-slate-700">
+                        </tbody>
+                </table>
+                
+                <form id="form-finalizar-venta-restaurante" class="space-y-4">
+                    <div>
+                        <label for="codigo-descuento-restaurante" class="form-label text-xs mb-1">Código de Descuento</label>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="codigo-descuento-restaurante" class="form-control form-control-sm flex-grow" placeholder="CÓDIGO...">
+                            <button type="button" id="btn-aplicar-descuento-restaurante" class="button button-info button-small">Aplicar</button>
+                        </div>
+                        <div id="feedback-descuento-restaurante" class="text-xs mt-1 h-4"></div>
+                        <div id="descuento-resumen-restaurante" class="flex justify-between text-sm font-semibold text-green-600 dark:text-green-500 mt-2" style="display: none;">
+                            <span>Descuento Aplicado:</span>
+                            <span id="descuento-valor">-$0.00</span>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="venta-restaurante-modo" class="form-label text-sm font-medium text-slate-700 dark:text-slate-300">Modo de Venta</label>
+                        <select id="venta-restaurante-modo" name="modoVenta" class="form-control mt-1" required>
+                            <option value="inmediato">Pago Inmediato</option>
+                            <option value="habitacion">Cargar a Habitación</option>
+                        </select>
+                    </div>
+                    <div id="grupo-metodo-pago-restaurante">
+                        <label for="venta-restaurante-metodo-pago" class="form-label text-sm font-medium text-slate-700 dark:text-slate-300">Método de Pago</label>
+                        <select id="venta-restaurante-metodo-pago" name="metodoPagoId" class="form-control mt-1"></select>
+                    </div>
+                    <div id="grupo-habitacion-restaurante" style="display:none;">
+                        <label for="venta-restaurante-habitacion" class="form-label text-sm font-medium text-slate-700 dark:text-slate-300">Habitación</label>
+                        <select id="venta-restaurante-habitacion" name="habitacionId" class="form-control mt-1"></select>
+                    </div>
+                    <div>
+                        <label for="venta-restaurante-cliente" class="form-label text-sm font-medium text-slate-700 dark:text-slate-300">Cliente (Opcional)</label>
+                        <input type="text" id="venta-restaurante-cliente" name="clienteNombre" class="form-control mt-1" placeholder="Nombre o # Hab.">
+                    </div>
+                </form>
+            </div>
+
+            <div class="card-footer p-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
+                <div class="flex justify-between items-baseline mb-4">
+                    <span class="text-lg font-bold text-slate-700 dark:text-slate-200">Total:</span>
+                    <span id="venta-restaurante-total" class="text-3xl font-extrabold text-blue-600 dark:text-blue-500">$0</span>
+                </div>
+                <button type="submit" form="form-finalizar-venta-restaurante" id="btn-finalizar-venta-restaurante" class="button button-success w-full py-3 text-base font-bold flex items-center justify-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    Registrar Venta
+                </button>
+            </div>
+        </div>
+    </div>
+    <div id="posVentaFeedback" style="display:none;" class="feedback-message mt-4"></div>
+</section>`;
+
+    // --- Obtener referencias de UI ---
     const posPlatosRenderAreaEl = tabContentEl.querySelector('#pos-platos-disponibles-render-area');
     const posPedidoItemsBodyEl = tabContentEl.querySelector('#pos-pedido-items-body');
     const formFinalizarVentaEl = tabContentEl.querySelector('#form-finalizar-venta-restaurante');
@@ -466,486 +703,117 @@ function setFormLoadingState(formEl, isLoading, submitButtonEl, originalButtonTe
     const selectHabitacionEl = tabContentEl.querySelector('#venta-restaurante-habitacion');
     const grupoMetodoPagoEl = tabContentEl.querySelector('#grupo-metodo-pago-restaurante');
     const grupoHabitacionEl = tabContentEl.querySelector('#grupo-habitacion-restaurante');
-    const grupoClienteEl = tabContentEl.querySelector('#grupo-cliente-restaurante');
     const btnFinalizarVentaEl = tabContentEl.querySelector('#btn-finalizar-venta-restaurante');
     const posFeedbackEl = tabContentEl.querySelector('#posVentaFeedback');
     const filtroPlatosInputEl = tabContentEl.querySelector('#pos-filtro-platos');
-    const restauranteLoadingEl = document.getElementById('restaurante-loading');
+    const btnAplicarDescuento = tabContentEl.querySelector('#btn-aplicar-descuento-restaurante');
 
-    let habitacionesOcupadas = [];
-
-    showRestauranteLoading(restauranteLoadingEl, true, "Cargando datos del POS...");
-
-    try {
-      const [
-        { data: platos, error: errPlatos },
-        { data: metodos, error: errMetodos },
-        { data: habitaciones, error: errHab }
-      ] = await Promise.all([
-        supabaseInstance.from('platos').select('*').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
-        supabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
-        supabaseInstance.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).eq('estado', 'ocupada').order('nombre')
-      ]);
-      if (errPlatos) throw errPlatos;
-      if (errMetodos) throw errMetodos;
-      if (errHab) throw errHab;
-
-      platosCache = platos || [];
-      metodosPagoCache = metodos || [];
-      habitacionesOcupadas = habitaciones || [];
-
-      // Render platos
-      renderPOSPlatosUI(posPlatosRenderAreaEl, platosCache, (plato) => {
-        const existingItem = ventaItems.find(item => item.plato_id === plato.id);
-        if (existingItem) {
-          existingItem.cantidad++;
-        } else {
-          ventaItems.push({
-            plato_id: plato.id,
-            nombre_plato: plato.nombre,
-            cantidad: 1,
-            precio_unitario: plato.precio
-          });
-        }
-        renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
-      });
-
-      // Render métodos de pago (con Pago Mixto siempre primero y seleccionado)
-selectMetodoPagoVentaEl.innerHTML =
-  `<option value="mixto" selected>Pago Mixto (varios métodos)</option>` +
-  (metodosPagoCache.length > 0
-    ? metodosPagoCache.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')
-    : '<option value="" disabled>No hay métodos de pago activos</option>');
-
-      // Render habitaciones ocupadas
-      selectHabitacionEl.innerHTML = habitacionesOcupadas.length > 0
-        ? `<option value="">-- Seleccione habitación --</option>` + habitacionesOcupadas.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('')
-        : '<option value="" disabled>No hay habitaciones ocupadas</option>';
-
-      renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
-
-    } catch (e) {
-      console.error("Error crítico al cargar el POS:", e);
-      showRestauranteFeedback(posFeedbackEl, `Error crítico al cargar el POS: ${e.message}`, 'error-indicator', 0);
-    } finally {
-      showRestauranteLoading(restauranteLoadingEl, false);
+    // --- Listeners Descuento ---
+    if (btnAplicarDescuento) {
+        btnAplicarDescuento.addEventListener('click', handleAplicarDescuentoRestaurante);
+        currentTabListeners.push({ element: btnAplicarDescuento, type: 'click', handler: handleAplicarDescuentoRestaurante });
     }
 
-    // Filtro de platos
-    const filtroHandler = () => {
-      const termino = filtroPlatosInputEl.value.toLowerCase();
-      const platosFiltrados = platosCache.filter(plato =>
-        plato.nombre.toLowerCase().includes(termino) ||
-        (plato.categoria && plato.categoria.toLowerCase().includes(termino))
-      );
-      renderPOSPlatosUI(posPlatosRenderAreaEl, platosFiltrados, (plato) => {
-        const existingItem = ventaItems.find(item => item.plato_id === plato.id);
-        if (existingItem) existingItem.cantidad++;
-        else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
-        renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
-      });
-    };
-    filtroPlatosInputEl.addEventListener('input', filtroHandler);
-    currentTabListeners.push({ element: filtroPlatosInputEl, type: 'input', handler: filtroHandler });
+    // --- Cargar datos y renderizar POS ---
+    const restauranteLoadingEl = document.getElementById('restaurante-loading');
+    showRestauranteLoading(restauranteLoadingEl, true, "Cargando POS...");
+    try {
+        const [ { data: platos }, { data: metodos }, { data: habitaciones } ] = await Promise.all([
+            supabaseInstance.from('platos').select('*').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
+            supabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
+            supabaseInstance.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).eq('estado', 'ocupada').order('nombre')
+        ]);
+        platosCache = platos || [];
+        metodosPagoCache = metodos || [];
+        renderPOSPlatosUI(posPlatosRenderAreaEl, platosCache, plato => {
+            const item = ventaItems.find(i => i.plato_id === plato.id);
+            if(item) item.cantidad++; else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
+            renderVentaItemsUI(posPedidoItemsBodyEl);
+        });
+        selectMetodoPagoVentaEl.innerHTML = `<option value="mixto" selected>Pago Mixto</option>` + metodosPagoCache.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
+        selectHabitacionEl.innerHTML = (habitaciones || []).length > 0 ? `<option value="">Seleccione</option>` + habitaciones.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('') : '<option disabled>No hay habitaciones ocupadas</option>';
+        renderVentaItemsUI(posPedidoItemsBodyEl);
+    } catch (e) {
+        showRestauranteFeedback(posFeedbackEl, `Error al cargar POS: ${e.message}`, 'error-indicator', 0);
+    } finally {
+        showRestauranteLoading(restauranteLoadingEl, false);
+    }
 
-    // Lógica para mostrar/ocultar campos según modo de venta
-    selectModoVentaEl.addEventListener('change', function () {
-      const modo = selectModoVentaEl.value;
-      if (modo === "inmediato") {
-        grupoMetodoPagoEl.style.display = "";
-        grupoHabitacionEl.style.display = "none";
-        grupoClienteEl.style.display = "";
-      } else if (modo === "habitacion") {
-        grupoMetodoPagoEl.style.display = "none";
-        grupoHabitacionEl.style.display = "";
-        grupoClienteEl.style.display = "none";
-      }
-    });
-    // Disparar cambio inicial para estado correcto de inputs
+    filtroPlatosInputEl.oninput = () => {
+        const platosFiltrados = platosCache.filter(p => p.nombre.toLowerCase().includes(filtroPlatosInputEl.value.toLowerCase()));
+        renderPOSPlatosUI(posPlatosRenderAreaEl, platosFiltrados, plato => {
+            const item = ventaItems.find(i => i.plato_id === plato.id);
+            if(item) item.cantidad++; else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
+            renderVentaItemsUI(posPedidoItemsBodyEl);
+        });
+    };
+
+    selectModoVentaEl.onchange = () => {
+        grupoMetodoPagoEl.style.display = selectModoVentaEl.value === "inmediato" ? "" : "none";
+        grupoHabitacionEl.style.display = selectModoVentaEl.value === "habitacion" ? "" : "none";
+    };
     selectModoVentaEl.dispatchEvent(new Event('change'));
 
-    function renderVentaItemsUI(tbodyEl, feedbackElementForItems) {
-      tbodyEl.innerHTML = '';
-      let calculatedTotal = 0;
-
-      if (ventaItems.length === 0) {
-        tbodyEl.innerHTML = '<tr><td colspan="5" class="text-center p-3 text-gray-500 text-xs">Agrega platos al pedido.</td></tr>';
-        tabContentEl.querySelector('#venta-restaurante-total').textContent = formatCurrencyLocal(0);
-        btnFinalizarVentaEl.disabled = true;
-        return;
-      }
-      btnFinalizarVentaEl.disabled = false;
-
-      ventaItems.forEach((item, index) => {
-        const tr = document.createElement('tr');
-        tr.className = "border-b border-gray-200 hover:bg-gray-50";
-        const itemSubtotal = item.cantidad * item.precio_unitario;
-        calculatedTotal += itemSubtotal;
-        tr.innerHTML = `
-          <td class="px-2 py-1.5 text-xs font-medium text-gray-700">${item.nombre_plato}</td>
-          <td class="px-2 py-1.5 text-xs">${formatCurrencyLocal(item.precio_unitario)}</td>
-          <td class="px-1 py-1.5 text-center">
-            <input type="number" class="form-control form-control-sm item-cantidad w-14 text-center text-xs p-1 border rounded-md" value="${item.cantidad}" min="0">
-          </td>
-          <td class="px-2 py-1.5 text-xs font-semibold">${formatCurrencyLocal(itemSubtotal)}</td>
-          <td class="px-1 py-1.5 text-center">
-            <button class="button button-danger-outline button-icon-small remove-item-btn p-1 rounded-md text-xs hover:bg-red-50" title="Eliminar ${item.nombre_plato}"><span class="text-base">🗑️</span></button>
-          </td>
-        `;
-        tbodyEl.appendChild(tr);
-
-        const cantidadInput = tr.querySelector('.item-cantidad');
-        const removeItemBtn = tr.querySelector('.remove-item-btn');
-
-        const updateQtyHandler = handleUpdateCantidadVenta(index, () => renderVentaItemsUI(tbodyEl, feedbackElementForItems));
-        cantidadInput.addEventListener('change', updateQtyHandler);
-        cantidadInput.addEventListener('input', updateQtyHandler);
-        currentTabListeners.push({ element: cantidadInput, type: 'change', handler: updateQtyHandler });
-        currentTabListeners.push({ element: cantidadInput, type: 'input', handler: updateQtyHandler });
-
-        const removeItemHandler = handleRemoveItemVenta(index, () => renderVentaItemsUI(tbodyEl, feedbackElementForItems));
-        removeItemBtn.addEventListener('click', removeItemHandler);
-        currentTabListeners.push({ element: removeItemBtn, type: 'click', handler: removeItemHandler });
-      });
-      tabContentEl.querySelector('#venta-restaurante-total').textContent = formatCurrencyLocal(calculatedTotal);
-    }
-
-    // --- UTILIDAD MODAL PAGO MIXTO PARA RESTAURANTE ---
-async function mostrarModalPagoMixtoRestaurante(total, metodosPago, callback) {
-  let pagos = [{ metodo_pago_id: '', monto: '' }];
-  const body = document.body;
-  const modal = document.createElement('div');
-  modal.id = 'modal-pagos-mixtos-rest';
-  modal.style = `
-    position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:99999;
-    background:rgba(30,41,59,0.45);display:flex;align-items:center;justify-content:center;`;
-  modal.innerHTML = `
-    <div style="background:#fff;max-width:430px;width:95vw;padding:38px 28px 22px 28px;border-radius:20px;box-shadow:0 2px 32px #2563eb44;">
-      <h3 style="font-size:1.22rem;font-weight:700;color:#2563eb;margin-bottom:15px;text-align:center;">Métodos de Pago Mixtos</h3>
-      <div style="font-size:15px;color:#64748b;margin-bottom:8px;">Total de la venta: <b style="color:#0ea5e9;font-size:18px;">$${total}</b></div>
-      <form id="formPagosMixtosRest">
-        <div id="pagosMixtosRestCampos"></div>
-        <div style="margin:13px 0;">
-          <button type="button" id="agregarPagoRest" style="background:#e0e7ff;color:#2563eb;border:none;border-radius:7px;padding:7px 18px;font-weight:600;font-size:1em;cursor:pointer;">+ Agregar Pago</button>
-        </div>
-        <div style="font-size:15px;margin-bottom:8px;color:#f43f5e;" id="msgPagosMixtosRest"></div>
-        <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
-          <button type="submit" style="background:linear-gradient(90deg,#22c55e,#2563eb);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #22c55e22;cursor:pointer;">Registrar Pagos</button>
-          <button type="button" id="cancelarPagoRest" style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #64748b15;cursor:pointer;">Cancelar</button>
-        </div>
-      </form>
-    </div>
-  `;
-  body.appendChild(modal);
-
-  function renderPagosCampos() {
-    const campos = modal.querySelector('#pagosMixtosRestCampos');
-    campos.innerHTML = '';
-    pagos.forEach((pago, idx) => {
-      campos.innerHTML += `
-        <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
-          <select required style="padding:7px 12px;border-radius:7px;border:1.5px solid #cbd5e1;flex:2;" data-idx="${idx}">
-            <option value="">Método de pago...</option>
-            ${metodosPago.filter(m => m.id !== "mixto").map(m => `<option value="${m.id}" ${pago.metodo_pago_id === m.id ? 'selected' : ''}>${m.nombre}</option>`).join('')}
-          </select>
-          <input type="number" required min="1" style="flex:1.5;padding:7px 11px;border-radius:7px;border:1.5px solid #cbd5e1;" placeholder="Monto" value="${pago.monto}" data-idx="${idx}" />
-          ${pagos.length > 1 ? `<button type="button" data-remove="${idx}" style="background:#fee2e2;color:#f43f5e;border:none;border-radius:5px;padding:3px 10px;font-size:1em;cursor:pointer;">✖</button>` : ''}
-        </div>
-      `;
-    });
-    campos.querySelectorAll('button[data-remove]').forEach(btn => {
-      btn.onclick = () => {
-        const idx = parseInt(btn.getAttribute('data-remove'));
-        pagos.splice(idx, 1);
-        renderPagosCampos();
-      };
-    });
-    campos.querySelectorAll('select[data-idx]').forEach(sel => {
-      sel.onchange = (e) => {
-        pagos[parseInt(sel.getAttribute('data-idx'))].metodo_pago_id = sel.value;
-      };
-    });
-    campos.querySelectorAll('input[type="number"][data-idx]').forEach(inp => {
-      inp.oninput = (e) => {
-        pagos[parseInt(inp.getAttribute('data-idx'))].monto = inp.value;
-      };
-    });
-  }
-  renderPagosCampos();
-
-  modal.querySelector('#agregarPagoRest').onclick = () => {
-    pagos.push({ metodo_pago_id: '', monto: '' });
-    renderPagosCampos();
-  };
-  modal.querySelector('#cancelarPagoRest').onclick = () => {
-    body.removeChild(modal);
-    callback(null);
-  };
-  modal.querySelector('#formPagosMixtosRest').onsubmit = (e) => {
-    e.preventDefault();
-    const suma = pagos.reduce((s, p) => s + Number(p.monto || 0), 0);
-    if (suma !== total) {
-      modal.querySelector('#msgPagosMixtosRest').textContent = `La suma de los pagos ($${suma}) debe ser igual al total de la venta ($${total}).`;
-      return;
-    }
-    for (let p of pagos) {
-      if (!p.metodo_pago_id) {
-        modal.querySelector('#msgPagosMixtosRest').textContent = `Falta seleccionar método de pago.`;
-        return;
-      }
-    }
-    body.removeChild(modal);
-    callback(pagos);
-  };
-}
-// --- REGISTRAR VENTA RESTAURANTE CON PAGOS (UNO O VARIOS) ---
-async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombreClienteTemporal }) {
-  setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, "Registrar Venta", "Cargando...");
-  try {
-    // 1. Registrar la venta principal
-    const now = new Date().toISOString();
-    const { data: ventas, error: ventaError } = await supabaseInstance
-      .from('ventas_restaurante')
-      .insert([{
-        hotel_id: hotelId,
-        usuario_id: moduleUser.id,
-        monto_total: montoTotalVenta,
-        fecha_venta: now,
-        creado_en: now,
-        fecha: now,
-        nombre_cliente_temporal: nombreClienteTemporal,
-        metodo_pago_id: pagos.length === 1 ? pagos[0].metodo_pago_id : null
-      }])
-      .select();
-    if (ventaError || !ventas?.[0]) throw new Error("Error guardando venta.");
-    const ventaId = ventas[0].id;
-
-    // 2. Detalle de la venta
-    for (let item of ventaItems) {
-      await supabaseInstance.from('ventas_restaurante_items').insert([{
-        venta_id: ventaId,
-        plato_id: item.plato_id,
-        cantidad: item.cantidad,
-        precio_unitario_venta: item.precio_unitario,
-        subtotal: item.cantidad * item.precio_unitario,
-        creado_en: now
-      }]);
-    }
-
-    // 3. REGISTRA MOVIMIENTOS EN CAJA (uno por cada método de pago)
-    const turnoId = turnoService.getActiveTurnId();
-    if (!turnoId) {
-      showRestauranteFeedback(posFeedbackEl, "No hay turno de caja activo. No se puede registrar la venta.", 'error-indicator');
-      return;
-    }
-    const nombresPlatos = ventaItems.map(i => `${i.nombre_plato} x${i.cantidad}`).join(', ');
-    for (let pago of pagos) {
-      const movimientoCaja = {
-        hotel_id: hotelId,
-        tipo: 'ingreso',
-        monto: Number(pago.monto),
-        concepto: `Venta Restaurante: ${nombresPlatos}`,
-        fecha_movimiento: now,
-        metodo_pago_id: pago.metodo_pago_id,
-        usuario_id: moduleUser.id,
-        venta_restaurante_id: ventaId,
-        turno_id: turnoId
-      };
-      await supabaseInstance.from('caja').insert(movimientoCaja);
-    }
-
-    showRestauranteFeedback(posFeedbackEl, `Venta registrada exitosamente.`, 'success-indicator', 5000);
-    await registrarEnBitacora(supabaseInstance, hotelId, moduleUser.id, 'NUEVA_VENTA_RESTAURANTE_POS', { ventaId, monto: montoTotalVenta, cliente: nombreClienteTemporal });
-
-    ventaItems = [];
-    renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
-    formFinalizarVentaEl.reset();
-    filtroPlatosInputEl.value = "";
-    selectMetodoPagoVentaEl.value = "mixto"; // Deja Pago Mixto por defecto
-
-  } catch (err) {
-    showRestauranteFeedback(posFeedbackEl, `Error al registrar la venta: ${err.message}`, 'error-indicator');
-  } finally {
-    setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
-  }
-}
-
-    // SUBMIT DE LA VENTA
+    // --- Handler Finalizar Venta ---
     const finalizarVentaHandler = async (e) => {
-  e.preventDefault();
-  if (posFeedbackEl) clearRestauranteFeedback(posFeedbackEl);
+        e.preventDefault();
+        clearRestauranteFeedback(posFeedbackEl);
+        if (ventaItems.length === 0) { showRestauranteFeedback(posFeedbackEl, "El pedido está vacío.", 'error-indicator'); return; }
 
-  if (ventaItems.length === 0) {
-    showRestauranteFeedback(posFeedbackEl, "El pedido está vacío. Agregue platos para continuar.", 'error-indicator');
-    return;
-  }
+        const modo = selectModoVentaEl.value;
+        const totalVenta = ventaItems.reduce((acc, item) => acc + item.cantidad * item.precio_unitario, 0);
+        const cliente = formFinalizarVentaEl.elements.clienteNombre.value.trim() || null;
 
-  const modo = selectModoVentaEl.value;
-  const montoTotalVenta = ventaItems.reduce((sum, item) => sum + item.cantidad * item.precio_unitario, 0);
-  const nombreClienteTemporal = formFinalizarVentaEl.elements.clienteNombre.value.trim() || null;
-
-  // 1. --- Obtener métodos de pago activos y preparar el combo con Pago Mixto predeterminado ---
-  let metodosPago = [];
-  try {
-    const { data: metodos } = await supabaseInstance
-      .from('metodos_pago')
-      .select('id, nombre')
-      .eq('hotel_id', hotelId)
-      .eq('activo', true);
-    metodosPago = [{ id: "mixto", nombre: "Pago Mixto (varios métodos)" }, ...(metodos || [])];
-  } catch (err) {
-    showRestauranteFeedback(posFeedbackEl, "No se pudieron cargar los métodos de pago.", 'error-indicator');
-    return;
-  }
-
-  // Pago inmediato
-  if (modo === "inmediato") {
-    let metodoPagoId = selectMetodoPagoVentaEl.value;
-    if (!metodoPagoId) metodoPagoId = "mixto"; // Por defecto, Pago Mixto
-
-    if (metodoPagoId === "mixto") {
-      await mostrarModalPagoMixtoRestaurante(montoTotalVenta, metodosPago, async (pagos) => {
-        if (!pagos) return;
-        await registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombreClienteTemporal });
-      });
-      return;
-    } else {
-      await registrarVentaRestauranteConPagos({
-        pagos: [{ metodo_pago_id: metodoPagoId, monto: montoTotalVenta }],
-        montoTotalVenta,
-        nombreClienteTemporal
-      });
-    }
-    return;
-  }
-
-  // Cargar a habitación (flujo igual a antes)
-  if (modo === "habitacion") {
-    const habitacionId = selectHabitacionEl.value;
-    if (!habitacionId) {
-      showRestauranteFeedback(posFeedbackEl, "Seleccione una habitación a la que cargar el consumo.", 'error-indicator');
-      selectHabitacionEl.focus();
-      return;
-    }
-
-    setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, "Registrar Venta", "Cargando...");
-
-    // Buscar reserva activa en esa habitación
-    let reservaId = null;
-    try {
-      const { data: reservas } = await supabaseInstance
-        .from('reservas')
-        .select('id')
-        .eq('habitacion_id', habitacionId)
-        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-        .order('fecha_inicio', { ascending: false })
-        .limit(1);
-
-      if (reservas && reservas.length > 0) {
-        reservaId = reservas[0].id;
-      }
-    } catch (err) {
-      showRestauranteFeedback(posFeedbackEl, "Error buscando la reserva activa de la habitación.", 'error-indicator');
-      setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
-      return;
-    }
-
-    if (!reservaId) {
-      showRestauranteFeedback(posFeedbackEl, "No se encontró una reserva activa para esa habitación.", 'error-indicator');
-      setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
-      return;
-    }
-
-    // Registra la venta en la tabla ventas_restaurante y asóciala a la reserva
-    const platosParaInsert = ventaItems.map(item => ({
-      venta_id: null,
-      plato_id: item.plato_id,
-      cantidad: item.cantidad,
-      precio_unitario: item.precio_unitario,
-      subtotal: item.cantidad * item.precio_unitario,
-      hotel_id: hotelId,
-      creado_en: new Date().toISOString()
-    }));
-
-    try {
-      const now = new Date().toISOString();
-      const { data: ventas, error: ventaError } = await supabaseInstance
-        .from('ventas_restaurante')
-        .insert([{
-          hotel_id: hotelId,
-          usuario_id: moduleUser.id,
-          habitacion_id: habitacionId,
-          reserva_id: reservaId,
-          monto_total: montoTotalVenta,
-          fecha_venta: now,
-          creado_en: now,
-          fecha: now
-        }])
-        .select();
-      if (ventaError || !ventas?.[0]) throw new Error("Error guardando venta.");
-      const ventaId = ventas[0].id;
-
-      for (let item of ventaItems) {
-        await supabaseInstance.from('ventas_restaurante_items').insert([{
-          venta_id: ventaId,
-          plato_id: item.plato_id,
-          cantidad: item.cantidad,
-          precio_unitario_venta: item.precio_unitario,
-          subtotal: item.cantidad * item.precio_unitario,
-          creado_en: now
-        }]);
-      }
-
-      showRestauranteFeedback(posFeedbackEl, `Consumo cargado exitosamente a la habitación.`, 'success-indicator', 3500);
-      await registrarEnBitacora(supabaseInstance, hotelId, moduleUser.id, 'CONSUMO_HABITACION_RESTAURANTE', { ventaId, reservaId, habitacionId, monto: montoTotalVenta });
-
-      ventaItems = [];
-      renderVentaItemsUI(posPedidoItemsBodyEl, posFeedbackEl);
-      formFinalizarVentaEl.reset();
-      filtroPlatosInputEl.value = "";
-    } catch (err) {
-      showRestauranteFeedback(posFeedbackEl, `Error al cargar el consumo a la habitación: ${err.message}`, 'error-indicator');
-    } finally {
-      setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
-    }
-  }
-};
-
-
+        if (modo === "inmediato") {
+            const metodoId = selectMetodoPagoVentaEl.value;
+            if (metodoId === "mixto") {
+                await mostrarModalPagoMixtoRestaurante(totalVenta, metodosPagoCache, async (pagos) => {
+                    if (pagos) await registrarVentaRestauranteConPagos({ pagos, montoTotalVenta: totalVenta, nombreClienteTemporal: cliente });
+                });
+            } else {
+                await registrarVentaRestauranteConPagos({ pagos: [{ metodo_pago_id: metodoId, monto: totalVenta }], montoTotalVenta: totalVenta, nombreClienteTemporal: cliente });
+            }
+        } else { // Cargar a habitación
+            const habitacionId = selectHabitacionEl.value;
+            if (!habitacionId) { showRestauranteFeedback(posFeedbackEl, "Seleccione una habitación.", 'error-indicator'); return; }
+            
+            setFormLoadingState(formFinalizarVentaEl, true, btnFinalizarVentaEl, "Registrar Venta", "Cargando...");
+            try {
+                const { data: reserva, error: errRes } = await supabaseInstance.from('reservas').select('id').eq('habitacion_id', habitacionId).in('estado', ['activa', 'ocupada']).limit(1).single();
+                if (errRes) throw new Error("No hay reserva activa en la habitación.");
+                const { data: ventaData, error: errVenta } = await supabaseInstance.from('ventas_restaurante').insert({
+                    hotel_id: hotelId, usuario_id: moduleUser.id, habitacion_id: habitacionId,
+                    reserva_id: reserva.id, monto_total: totalVenta,
+                }).select().single();
+                if(errVenta) throw errVenta;
+                
+                const itemsParaInsertar = ventaItems.map(item => ({ 
+                    venta_id: ventaData.id, 
+                    plato_id: item.plato_id, 
+                    cantidad: item.cantidad, 
+                    precio_unitario_venta: item.precio_unitario, 
+                    subtotal: item.precio_unitario * item.cantidad 
+                }));
+                await supabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
+                
+                showRestauranteFeedback(posFeedbackEl, `Consumo cargado a la habitación.`, 'success-indicator');
+                ventaItems = []; renderVentaItemsUI(posPedidoItemsBodyEl); formFinalizarVentaEl.reset();
+            } catch (err) {
+                showRestauranteFeedback(posFeedbackEl, err.message, 'error-indicator');
+            } finally {
+                setFormLoadingState(formFinalizarVentaEl, false, btnFinalizarVentaEl, "Registrar Venta");
+            }
+        }
+    };
+    // Agrega el handler UNA SOLA VEZ
     formFinalizarVentaEl.addEventListener('submit', finalizarVentaHandler);
     currentTabListeners.push({ element: formFinalizarVentaEl, type: 'submit', handler: finalizarVentaHandler });
-  }
-
-  function renderPOSPlatosUI(containerEl, platos, onPlatoClickCallback) {
-      containerEl.innerHTML = '';
-      if (!platos || platos.length === 0) {
-          containerEl.innerHTML = '<p class="text-center text-gray-500 p-4">No hay platos activos que coincidan con la búsqueda.</p>';
-          return;
-      }
-      const grid = document.createElement('div');
-      grid.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-4 gap-3';
-
-      platos.forEach(plato => {
-          const card = document.createElement('div');
-          card.className = 'plato-card-pos bg-white p-2.5 rounded-lg shadow border border-gray-200 hover:shadow-lg hover:border-indigo-500 transition-all cursor-pointer flex flex-col justify-between h-full';
-          card.innerHTML = `
-              <div>
-                  <h5 class="text-sm font-semibold text-gray-800 truncate" title="${plato.nombre}">${plato.nombre}</h5>
-                  <p class="text-xs text-gray-500 mb-1">${plato.categoria || 'General'}</p>
-              </div>
-              <p class="text-md font-bold text-indigo-600 mt-1.5 self-end">${formatCurrencyLocal(plato.precio)}</p>
-          `;
-          const clickHandler = () => onPlatoClickCallback(plato);
-          card.addEventListener('click', clickHandler);
-          // No es necesario agregar estos listeners a currentTabListeners si se limpian con containerEl.innerHTML = ''
-          // Sin embargo, si los elementos de plato fueran más complejos y tuvieran listeners internos, sí sería necesario.
-          grid.appendChild(card);
-      });
-      containerEl.appendChild(grid);
-  }
+}
+    
+    
 
 
-  async function renderHistorialVentasTab(tabContentEl, supabaseInstance, hotelId) {
+async function renderHistorialVentasTab(tabContentEl, supabaseInstance, hotelId) {
     currentTabListeners.forEach(({ element, type, handler }) => element.removeEventListener(type, handler));
     currentTabListeners = [];
 
@@ -1064,7 +932,6 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     btnFiltrar.addEventListener('click', filtrarHistorialHandler);
     currentTabListeners.push({ element: btnFiltrar, type: 'click', handler: filtrarHistorialHandler});
 
-    // Carga inicial sin filtros de fecha (o con un rango por defecto)
     const hoy = new Date();
     const primerDiaMes = new Date(hoy.getFullYear(), hoy.getMonth(), 1).toISOString().split('T')[0];
     fechaInicioInput.value = primerDiaMes;
@@ -1072,14 +939,13 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     cargarYRenderizarHistorial(fechaInicioInput.value, fechaFinInput.value);
   }
 
-  function mostrarDetallesVentaModal(venta) {
-      // Reutilizar o crear un nuevo modal para detalles
+function mostrarDetallesVentaModal(venta) {
       let modalDetallesEl = document.getElementById('modal-detalles-venta-restaurante');
       if (!modalDetallesEl) {
           modalDetallesEl = document.createElement('div');
           modalDetallesEl.id = 'modal-detalles-venta-restaurante';
-          modalDetallesEl.className = 'modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-[60]'; // Higher z-index
-          document.body.appendChild(modalDetallesEl); // Append to body to ensure it's on top
+          modalDetallesEl.className = 'modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-[60]';
+          document.body.appendChild(modalDetallesEl);
       }
 
       const itemsHtml = venta.ventas_restaurante_items.map(item => `
@@ -1121,34 +987,18 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
           </div>
       `;
       modalDetallesEl.style.display = 'flex';
-
-      const cerrarModalHandler = () => {
-          modalDetallesEl.style.display = 'none';
-          // Considerar remover el modal del DOM si se crea dinámicamente cada vez
-          // modalDetallesEl.remove();
-      };
       
-      modalDetallesEl.querySelectorAll('.btn-cerrar-detalles-modal').forEach(btn => {
-          btn.addEventListener('click', cerrarModalHandler);
-          // No añadir a currentTabListeners si el modal es global y se limpia de otra forma
-      });
-      modalDetallesEl.addEventListener('click', (e) => {
-          if (e.target === modalDetallesEl) cerrarModalHandler();
-      });
-  }
+      const cerrarModalHandler = () => { modalDetallesEl.style.display = 'none'; };
+      modalDetallesEl.querySelectorAll('.btn-cerrar-detalles-modal').forEach(btn => btn.addEventListener('click', cerrarModalHandler));
+      modalDetallesEl.addEventListener('click', (e) => { if (e.target === modalDetallesEl) cerrarModalHandler(); });
+}
 
+async function renderInventarioTab(tabContentEl, supabaseInstance, hotelId, currentUser) {
+    await inventarioModule.mount(tabContentEl, supabaseInstance, currentUser, hotelId);
+}
 
-  async function renderIngredientesTab(tabContentEl, supabaseInstance, hotelId) {
-    tabContentEl.innerHTML = `<div class="p-4">
-      <h3 class="text-lg font-semibold mb-2">Gestión de Ingredientes e Inventario</h3>
-      <p class="text-gray-600">Aquí podrás gestionar el stock de tus ingredientes.</p>
-      <p class="mt-4 p-3 bg-yellow-100 text-yellow-700 rounded-md">Funcionalidad pendiente de implementación.</p>
-    </div>`;
-  }
-
-
-  // --- Main Module Mount Function ---
-  export async function mount(container, sbInstance, user) {
+// --- Main Module Mount & Unmount ---
+export async function mount(container, sbInstance, user) {
     unmount(container);
 
     currentSupabaseInstance = sbInstance;
@@ -1156,13 +1006,13 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
 
     currentHotelId = currentModuleUser?.user_metadata?.hotel_id;
     if (!currentHotelId && currentModuleUser?.id) {
-      try {
-        const { data: perfil, error: perfilError } = await currentSupabaseInstance.from('usuarios').select('hotel_id').eq('id', currentModuleUser.id).single();
-        if (perfilError && perfilError.code !== 'PGRST116') throw perfilError;
-        currentHotelId = perfil?.hotel_id;
-      } catch (err) {
-          console.error("Restaurante Module: Error fetching hotel_id from profile:", err);
-      }
+        try {
+            const { data: perfil, error: perfilError } = await currentSupabaseInstance.from('usuarios').select('hotel_id').eq('id', currentModuleUser.id).single();
+            if (perfilError && perfilError.code !== 'PGRST116') throw perfilError;
+            currentHotelId = perfil?.hotel_id;
+        } catch (err) {
+            console.error("Restaurante Module: Error fetching hotel_id from profile:", err);
+        }
     }
     
     container.innerHTML = `
@@ -1174,7 +1024,7 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
               <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="registrar-venta">Registrar Venta (POS)</button>
               <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="platos">Menú/Platos</button>
               <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="historial-ventas">Historial Ventas</button>
-              <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="ingredientes">Inventario</button>
+              <button class="tab-button button button-outline text-xs sm:text-sm py-1.5 px-2.5 rounded-md" data-tab="inventario">Inventario</button>
             </nav>
           </div>
         </div>
@@ -1190,81 +1040,61 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     const loadingGlobalEl = container.querySelector('#restaurante-loading');
 
     if (!currentHotelId) {
-      showRestauranteFeedback(feedbackGlobalEl, 'Error crítico: No se pudo determinar el hotel. Módulo de restaurante deshabilitado.', 'error-indicator', 0);
-      container.querySelectorAll('button, input, select, textarea').forEach(el => el.disabled = true);
-      return;
+        showRestauranteFeedback(feedbackGlobalEl, 'Error crítico: No se pudo determinar el hotel. Módulo de restaurante deshabilitado.', 'error-indicator', 0);
+        container.querySelectorAll('button, input, select, textarea').forEach(el => el.disabled = true);
+        return;
     }
 
     const tabContentEl = container.querySelector('#restaurante-tab-content');
     const tabButtons = container.querySelectorAll('.module-tabs .tab-button');
 
     const switchTab = async (tabName) => {
-      tabButtons.forEach(btn => {
-          btn.classList.remove('active', 'button-primary', 'bg-indigo-600', 'text-white', 'border-indigo-600');
-          btn.classList.add('button-outline', 'text-gray-700', 'hover:bg-gray-100');
-      });
-      const activeBtn = container.querySelector(`.module-tabs .tab-button[data-tab="${tabName}"]`);
-      if (activeBtn) {
-          activeBtn.classList.add('active', 'button-primary', 'bg-indigo-600', 'text-white', 'border-indigo-600');
-          activeBtn.classList.remove('button-outline', 'text-gray-700', 'hover:bg-gray-100');
-      }
-      
-      if (feedbackGlobalEl) clearRestauranteFeedback(feedbackGlobalEl);
-      showRestauranteLoading(loadingGlobalEl, true, `Cargando pestaña ${tabName}...`);
+        tabButtons.forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.tab === tabName);
+            btn.classList.toggle('button-primary', btn.dataset.tab === tabName);
+        });
 
-      currentTabListeners.forEach(({ element, type, handler }) => {
-        if (element && typeof element.removeEventListener === 'function') {
-          element.removeEventListener(type, handler);
+        if (activeSubmodule && activeSubmodule.unmount) {
+            activeSubmodule.unmount();
+            activeSubmodule = null;
         }
-      });
-      currentTabListeners = [];
+        
+        showRestauranteLoading(loadingGlobalEl, true, `Cargando pestaña ${tabName}...`);
 
-      try {
-        if (tabName === 'platos') {
-          await renderPlatosTab(tabContentEl, currentSupabaseInstance, currentHotelId);
-        } else if (tabName === 'registrar-venta') {
-          await renderRegistrarVentaTab(tabContentEl, currentSupabaseInstance, currentHotelId, currentModuleUser);
-        } else if (tabName === 'historial-ventas') {
-          await renderHistorialVentasTab(tabContentEl, currentSupabaseInstance, currentHotelId);
-        } else if (tabName === 'ingredientes') {
-          await renderIngredientesTab(tabContentEl, currentSupabaseInstance, currentHotelId);
-        } else {
-          tabContentEl.innerHTML = `<p class="p-4 text-center text-gray-500">Pestaña "${tabName}" no implementada aún.</p>`;
+        try {
+            if (tabName === 'platos') {
+                await renderPlatosTab(tabContentEl, currentSupabaseInstance, currentHotelId);
+            } else if (tabName === 'registrar-venta') {
+                await renderRegistrarVentaTab(tabContentEl, currentSupabaseInstance, currentHotelId, currentModuleUser);
+            } else if (tabName === 'historial-ventas') {
+                await renderHistorialVentasTab(tabContentEl, currentSupabaseInstance, currentHotelId);
+            } else if (tabName === 'inventario') {
+                await renderInventarioTab(tabContentEl, currentSupabaseInstance, currentHotelId, currentModuleUser);
+                activeSubmodule = inventarioModule;
+            }
+        } catch (err) {
+            console.error(`Error loading tab ${tabName}:`, err);
+            showRestauranteFeedback(feedbackGlobalEl, `Error al cargar la pestaña: ${err.message}`, 'error-indicator', 0);
+        } finally {
+            showRestauranteLoading(loadingGlobalEl, false);
         }
-      } catch (err) {
-        console.error(`Error loading tab ${tabName}:`, err);
-        showRestauranteFeedback(feedbackGlobalEl, `Error al cargar la pestaña ${tabName}: ${err.message}`, 'error-indicator', 0);
-        tabContentEl.innerHTML = `<div class="p-4 text-center text-red-500">Error al cargar contenido de la pestaña. Revise la consola para más detalles.</div>`;
-      } finally {
-        showRestauranteLoading(loadingGlobalEl, false);
-      }
     };
 
     tabButtons.forEach(button => {
-      const tabName = button.dataset.tab;
-      const tabButtonHandler = () => switchTab(tabName);
-      button.addEventListener('click', tabButtonHandler);
-      moduleRootListeners.push({ element: button, type: 'click', handler: tabButtonHandler });
+        const tabName = button.dataset.tab;
+        const tabButtonHandler = () => switchTab(tabName);
+        button.addEventListener('click', tabButtonHandler);
+        moduleRootListeners.push({ element: button, type: 'click', handler: tabButtonHandler });
     });
 
     switchTab('registrar-venta');
-  }
+}
 
-  export function unmount(container) {
-    moduleRootListeners.forEach(({ element, type, handler }) => {
-      if (element && typeof element.removeEventListener === 'function') {
-        element.removeEventListener(type, handler);
-      }
-    });
+export function unmount(container) {
+    moduleRootListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
     moduleRootListeners = [];
-
-    currentTabListeners.forEach(({ element, type, handler }) => {
-      if (element && typeof element.removeEventListener === 'function') {
-        element.removeEventListener(type, handler);
-      }
-    });
+    currentTabListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
     currentTabListeners = [];
-
     platosCache = [];
     metodosPagoCache = [];
     ventaItems = [];
@@ -1272,19 +1102,11 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     currentHotelId = null;
     currentModuleUser = null;
     currentSupabaseInstance = null;
-
-    // Limpiar modales globales si existen y fueron añadidos al body
+    if (activeSubmodule && activeSubmodule.unmount) {
+        activeSubmodule.unmount();
+        activeSubmodule = null;
+    }
     const modalDetallesVenta = document.getElementById('modal-detalles-venta-restaurante');
     if (modalDetallesVenta) modalDetallesVenta.remove();
-
-
-    if (container && typeof container.innerHTML === 'string') {
-      const feedbackEl = container.querySelector('#restaurante-feedback');
-      if (feedbackEl) clearRestauranteFeedback(feedbackEl);
-      const loadingEl = container.querySelector('#restaurante-loading');
-      if (loadingEl) showRestauranteLoading(loadingEl, false);
-      // container.innerHTML = ''; // Evitar limpiar si se va a reutilizar el contenedor principal
-    }
     console.log('Restaurante module unmounted.');
-  }
-
+}

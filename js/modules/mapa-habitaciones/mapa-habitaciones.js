@@ -9,7 +9,7 @@ let hotelConfigGlobal = null;
 let currentRooms = [];
 let cronometrosInterval = {};
 import { turnoService } from '../../services/turnoService.js';
-
+import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
 
 const estadoColores = {
     libre: { border: 'border-green-500', badge: 'bg-green-100 text-green-700', icon: `...` },
@@ -556,9 +556,11 @@ export async function mount(container, supabase, currentUser, hotelId) {
             </h2>
         </div>
         <div id="room-map-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 px-4 md:px-0"></div>
+        
         <div id="modal-container" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto" style="display:none;"></div>
+        
+        <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4" style="display:none;"></div>
     `;
-
     // Selecciona el contenedor de habitaciones después de inyectar el HTML
     const roomsListEl = container.querySelector("#room-map-list");
     if (!roomsListEl) {
@@ -572,11 +574,18 @@ export async function mount(container, supabase, currentUser, hotelId) {
 
 
 async function renderRooms(listEl, supabase, currentUser, hotelId) {
-    // Este listEl YA es el div donde se pintan las tarjetas de habitaciones
     if (!listEl) {
-        console.error("renderRooms: listEl es null o indefinido. Verifica que se esté pasando correctamente desde mount.");
+        console.error("renderRooms: listEl es null o indefinido.");
         return;
     }
+
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Limpiamos TODOS los intervalos de cronómetros existentes antes de volver a renderizar.
+    // Esto evita que se acumulen y causen duplicados o llamadas excesivas.
+    Object.values(cronometrosInterval).forEach(clearInterval);
+    // Reiniciamos el objeto que los almacena.
+    cronometrosInterval = {};
+    // --- FIN DE LA CORRECCIÓN ---
 
     const { data: habitaciones, error } = await supabase
         .from('habitaciones')
@@ -590,38 +599,15 @@ async function renderRooms(listEl, supabase, currentUser, hotelId) {
     }
 
     currentRooms = habitaciones;
-    listEl.innerHTML = '';
+    listEl.innerHTML = ''; // Limpiamos el HTML para evitar duplicados visuales
 
     if (!habitaciones || habitaciones.length === 0) {
-        listEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones configuradas para este hotel.</div>`;
+        listEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones configuradas.</div>`;
         return;
     }
     
-    // ===================== INICIO DE LA CORRECCIÓN INTELIGENTE =====================
-
-    // 1. Obtenemos todas las reservas futuras del hotel en una sola consulta.
-    const ahora = new Date();
-    const { data: todasLasReservasFuturas, error: errReservas } = await supabase
-        .from('reservas')
-        .select('id, habitacion_id, fecha_inicio, estado')
-        .eq('hotel_id', hotelId)
-        .in('estado', ['reservada', 'confirmada']) // Buscamos tanto reservadas como confirmadas
-        .gte('fecha_inicio', ahora.toISOString());
-
-    if (errReservas) {
-        console.error("Error al obtener reservas futuras, los estados de las habitaciones podrían ser imprecisos:", errReservas);
-    }
-
-    // 2. Creamos un mapa para buscar la reserva más próxima de cada habitación fácilmente.
-    const reservasPorHabitacion = new Map();
-    if (todasLasReservasFuturas) {
-        todasLasReservasFuturas.forEach(res => {
-            const fechaInicioReserva = new Date(res.fecha_inicio);
-            if (!reservasPorHabitacion.has(res.habitacion_id) || fechaInicioReserva < new Date(reservasPorHabitacion.get(res.habitacion_id).fecha_inicio)) {
-                reservasPorHabitacion.set(res.habitacion_id, res);
-            }
-        });
-    }
+    // ... (el resto de tu lógica de ordenamiento y renderizado de habitaciones sigue igual) ...
+    //
 
     // ---- ORDEN NUMÉRICO DE HABITACIONES ----
     habitaciones.sort((a, b) => {
@@ -632,40 +618,15 @@ async function renderRooms(listEl, supabase, currentUser, hotelId) {
         return getNumber(a.nombre) - getNumber(b.nombre);
     });
     
-    // ---- RENDERIZADO DE TARJETAS CON LÓGICA DE ESTADO CORREGIDA ----
+    // ---- RENDERIZADO DE TARJETAS ----
     habitaciones.forEach(room => {
-        // 3. Si la habitación está 'libre' o 'reservada', volvemos a verificar su estado real.
-        if (['libre', 'reservada'].includes(room.estado)) {
-            const proximaReserva = reservasPorHabitacion.get(room.id);
-            
-            if (proximaReserva) {
-                const inicioReserva = new Date(proximaReserva.fecha_inicio);
-                const diferenciaMin = (inicioReserva - ahora) / (1000 * 60);
-
-                // Si la reserva es en 120 minutos (2 horas) o menos, su estado DEBE ser 'reservada'.
-                if (diferenciaMin <= 120) {
-                    room.estado = 'reservada';
-                } else {
-                    // Si es para después, su estado DEBE ser 'libre', sin importar lo que diga la DB.
-                    room.estado = 'libre';
-                }
-            } else {
-                // Si la DB dice 'reservada' pero no hay reserva futura, la forzamos a 'libre'.
-                if (room.estado === 'reservada') {
-                    room.estado = 'libre';
-                }
-            }
-        }
-        
-        // 4. Renderizamos la tarjeta con el estado ya corregido y verificado.
         listEl.appendChild(roomCard(room, supabase, currentUser, hotelId, listEl));
         if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
+            // Esta llamada ahora es segura porque hemos limpiado los intervalos viejos
             startCronometro(room, supabase, hotelId, listEl);
         }
     });
-    // ===================== FIN DE LA CORRECCIÓN INTELIGENTE =====================
 }
-
 function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
     const card = document.createElement('div');
 
@@ -1142,6 +1103,11 @@ function showEnhancedServiciosModal(roomDisplayInfo, availableServices, activeRe
 // Dentro de showHabitacionOpcionesModal, después de crear modalContent:
 
 // Listener para 'btn-servicios-adicionales' CON CORRECCIONES
+setupButtonListener('close-modal-acciones', () => {
+        modalContainer.style.display = 'none';
+        modalContainer.innerHTML = '';
+    });
+
 setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => { // roomContext es 'room'
   // 1. Busca la reserva activa de la habitación
   const { data: reserva, error: errRes } = await supabase
@@ -1714,58 +1680,80 @@ setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' s
  * Consulta todos los cargos pendientes de la reserva/habitación.
  * Bloquea entrega si hay alguna deuda pendiente.
  * Muestra un resumen de los pendientes si los hay.
- * 
+
+/**
+/**
+ * REESCRITA Y CORREGIDA
+ * Consulta el costo total REAL de todos los consumos y lo compara con el monto pagado en la reserva.
+ * Muestra un modal profesional si hay deudas.
  * @param {object} supabase - Instancia de supabase.
  * @param {string} reservaId - UUID de la reserva activa.
  * @param {string} habitacionId - UUID de la habitación.
  * @returns {Promise<boolean>} true si puede entregar, false si no.
  */
 async function validarCargosPendientesAntesDeEntregar(supabase, reservaId, habitacionId) {
-  // 1. Consumos de restaurante
-  const { data: restPend, error: errRest } = await supabase
-    .from('ventas_restaurante')
-    .select('id, monto_total')
-    .eq('reserva_id', reservaId)
-    .eq('estado_pago', 'pendiente');
-  // 2. Consumos de tienda
-  const { data: tiendaPend, error: errTienda } = await supabase
-    .from('ventas_tienda')
-    .select('id, total_venta')
-    .eq('reserva_id', reservaId)
-    .eq('estado_pago', 'pendiente');
-  // 3. Servicios adicionales
-  const { data: servPend, error: errServ } = await supabase
-    .from('servicios_x_reserva')
-    .select('id')
-    .eq('reserva_id', reservaId)
-    .eq('estado_pago', 'pendiente'); // Agrega este campo si lo implementas en la tabla
-  // 4. Estancia/habitación
-  const { data: reserva, error: errRes } = await supabase
-    .from('reservas')
-    .select('monto_total, monto_pagado')
-    .eq('id', reservaId)
-    .single();
-  const debeAlojamiento = reserva && (Number(reserva.monto_pagado) < Number(reserva.monto_total));
-  const debeRestaurante = restPend?.length > 0;
-  const debeTienda = tiendaPend?.length > 0;
-  const debeServicios = servPend?.length > 0;
+    try {
+        // 1. Obtener la reserva principal para saber el monto pagado y la estancia
+        const { data: reserva, error: errRes } = await supabase.from('reservas').select('monto_total, monto_pagado').eq('id', reservaId).single();
+        if (errRes) throw new Error(`No se pudo obtener la reserva principal: ${errRes.message}`);
 
-  if (debeRestaurante || debeTienda || debeServicios || debeAlojamiento) {
-    // Mostrar modal con detalle de deuda
-    let mensaje = "⚠️ No se puede entregar la habitación. Pendientes:\n";
-    if (debeAlojamiento) mensaje += `- Estancia/habitación: $${Number(reserva.monto_total) - Number(reserva.monto_pagado)}\n`;
-    if (debeRestaurante) mensaje += `- Consumos de restaurante: $${restPend.reduce((t, r) => t + Number(r.monto_total), 0)}\n`;
-    if (debeTienda) mensaje += `- Consumos de tienda: $${tiendaPend.reduce((t, r) => t + Number(r.total_venta), 0)}\n`;
-    if (debeServicios) mensaje += `- Servicios adicionales (ver detalle)\n`;
-    // Puedes mejorar el modal aquí, por ahora simple:
-    alert(mensaje);
-    return false;
-  }
-  // No hay deudas, se puede entregar
-  return true;
-}
+        // 2. Obtener TODOS los cargos asociados, igual que en "Ver Consumos"
+        const alojamientoCargo = { subtotal: Number(reserva.monto_total) || 0 };
+        
+        // Ventas de Tienda
+        const { data: ventasTienda } = await supabase.from('ventas_tienda').select('id').eq('reserva_id', reservaId);
+        let totalTienda = 0;
+        if (ventasTienda && ventasTienda.length > 0) {
+            const ventaTiendaIds = ventasTienda.map(v => v.id);
+            const { data: detallesTienda } = await supabase.from('detalle_ventas_tienda').select('subtotal').in('venta_id', ventaTiendaIds);
+            if (detallesTienda) {
+                totalTienda = detallesTienda.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+            }
+        }
 
-  // =================== BOTÓN ENTREGAR (igual que antes)
+        // Ventas de Restaurante
+        const { data: ventasRest } = await supabase.from('ventas_restaurante').select('id').eq('reserva_id', reservaId);
+        let totalRestaurante = 0;
+        if (ventasRest && ventasRest.length > 0) {
+            const ventaRestIds = ventasRest.map(v => v.id);
+            const { data: detallesRest } = await supabase.from('ventas_restaurante_items').select('subtotal').in('venta_id', ventaRestIds);
+            if (detallesRest) {
+                totalRestaurante = detallesRest.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
+            }
+        }
+
+        // Servicios Adicionales
+        const { data: servicios } = await supabase.from('servicios_x_reserva').select('precio_cobrado').eq('reserva_id', reservaId);
+        const totalServicios = servicios ? servicios.reduce((sum, item) => sum + (Number(item.precio_cobrado) || 0), 0) : 0;
+
+        // 3. Calcular el total real de la deuda
+        const totalDeTodosLosCargos = alojamientoCargo.subtotal + totalTienda + totalRestaurante + totalServicios;
+        const totalPagado = Number(reserva.monto_pagado) || 0;
+        const saldoPendiente = totalDeTodosLosCargos - totalPagado;
+
+        // 4. Validar y mostrar el modal si es necesario
+        if (saldoPendiente > 0.01) { // Usamos una pequeña tolerancia para evitar errores de redondeo
+            const htmlPendientes = `
+                <div class="text-left">
+                    <p class="mb-3">No se puede finalizar la estancia porque la cuenta tiene un saldo pendiente de:</p>
+                    <div class="text-center text-3xl font-bold text-red-600 my-4">${formatCurrency(saldoPendiente)}</div>
+                    <p class="mt-4 font-semibold">Por favor, cobre el saldo total antes de entregar la habitación.</p>
+                </div>
+            `;
+            
+            mostrarInfoModalGlobal(htmlPendientes, "⚠️ Deuda Pendiente");
+            return false; // No se puede entregar
+        }
+
+        // Si no hay deuda, se puede entregar
+        return true;
+
+    } catch (error) {
+        console.error("Error en validarCargosPendientesAntesDeEntregar:", error);
+        mostrarInfoModalGlobal(`Ocurrió un error al validar las deudas: ${error.message}`, "Error de Validación");
+        return false; // Por seguridad, no permitir la entrega si hay un error
+    }
+}  // =================== BOTÓN ENTREGAR (igual que antes)
 setupButtonListener('btn-entregar', async () => {
   let reservaActiva = null;
   for (const estado of ['activa', 'ocupada', 'tiempo agotado']) {
@@ -1828,333 +1816,201 @@ const formatDateTime = d => new Date(d).toLocaleString('es-CO');
 // mostrarInfoModalGlobal, formatCurrency, formatDateTime, imprimirTicketHabitacion, facturarElectronicaYMostrarResultado, turnoService
 
 setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
-  const modalContainerConsumos = document.getElementById('modal-container');
-  if (!modalContainerConsumos) {
-    console.error("El contenedor del modal principal 'modal-container' no se encontró.");
-    // Considera mostrar un error al usuario aquí, ya que el modal no se puede abrir.
-    // Por ejemplo, usando tu función mostrarInfoModalGlobal si está diseñada para funcionar sin un contenedor de modal preexistente.
-    // O un simple alert:
-    // alert("Error crítico: No se puede mostrar la ventana de consumos. Contenedor no encontrado.");
-    return;
-  }
-
-  // 1. Buscar la reserva activa
-  const { data: reserva, error: errRes } = await supabaseGlobal
-    .from('reservas')
-    .select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id') //Añadido cedula, habitacion_id
-    .eq('habitacion_id', roomContext.id)
-    .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-    .order('fecha_inicio', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (errRes || !reserva) {
-    mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos", [], modalContainerConsumos);
-    return;
-  }
-  // Es buena idea tener el nombre de la habitación desde roomContext si 'reserva' no lo trae directamente
-  reserva.habitacion_nombre = roomContext.nombre;
-
-
-  // --- Consumo habitación (Estancia Original) ---
-  const alojamientoCargo = {
-    tipo: "Habitación",
-    nombre: "Estancia Principal",
-    cantidad: 1,
-    subtotal: Number(reserva.monto_total) || 0, // Costo de la estancia SIN extensiones
-    id: "hab", // Identificador especial
-    estado_pago: "pendiente", // Se recalculará
-    fecha: reserva.fecha_inicio // Para ordenamiento
-  };
-
-  // --- Consumos de tienda ---
-  const { data: ventasTienda, error: errorTienda } = await supabaseGlobal
-    .from('ventas_tienda')
-    .select('id, total_venta, estado_pago, creado_en')
-    .eq('reserva_id', reserva.id);
-
-  if (errorTienda) {
-      console.error("Error al obtener ventas de tienda:", errorTienda);
-      // Considera mostrar un mensaje parcial o manejar el error
-  }
-
-  let cargosTienda = [];
-  if (ventasTienda && ventasTienda.length) {
-    cargosTienda = ventasTienda.map(v => ({
-      tipo: "Tienda",
-      nombre: `Venta Tienda #${v.id.slice(0, 6)}`,
-      id: `vt_${v.id}`,
-      cantidad: 1,
-      subtotal: Number(v.total_venta) || 0,
-      estado_pago: v.estado_pago || "pendiente",
-      fecha: v.creado_en
-    }));
-  }
-
-  // --- Consumos de restaurante ---
-  const { data: ventasRest, error: errorRest } = await supabaseGlobal
-    .from('ventas_restaurante')
-    .select('id, monto_total, estado_pago, creado_en')
-    .eq('reserva_id', reserva.id);
-
-  if (errorRest) {
-      console.error("Error al obtener ventas de restaurante:", errorRest);
-  }
-
-  let cargosRest = [];
-  if (ventasRest && ventasRest.length) {
-    cargosRest = ventasRest.map(v => ({
-      tipo: "Restaurante",
-      nombre: `Venta Rest. #${v.id.slice(0, 6)}`,
-      id: `vr_${v.id}`,
-      cantidad: 1,
-      subtotal: Number(v.monto_total) || 0,
-      estado_pago: v.estado_pago || "pendiente",
-      fecha: v.creado_en
-    }));
-  }
-
-  // --- Servicios Adicionales Y Extensiones ---
-  const { data: serviciosYExtensiones, error: errorServiciosExt } = await supabaseGlobal
-    .from('servicios_x_reserva')
-    .select('id, servicio_id, cantidad, nota, estado_pago, creado_en, precio_cobrado, pago_reserva_id, descripcion_manual') // ASEGÚRATE QUE ESTAS COLUMNAS EXISTAN
-    .eq('reserva_id', reserva.id);
-
-  if (errorServiciosExt) {
-      console.error("Error al obtener servicios y extensiones:", errorServiciosExt);
-      mostrarInfoModalGlobal(`Error al obtener detalle de servicios/extensiones: ${errorServiciosExt.message}. Algunos cargos podrían no mostrarse.`, "Error de Datos", [], modalContainerConsumos);
-      // No retornamos, para intentar mostrar el resto.
-  }
-
-  let cargosServiciosYExtensiones = [];
-  let nombresServicios = {};
-
-  if (serviciosYExtensiones && serviciosYExtensiones.length) {
-    const servicioIds = [...new Set(serviciosYExtensiones.map(s => s.servicio_id).filter(Boolean))];
-    if (servicioIds.length > 0) {
-      const { data: infoServicios } = await supabaseGlobal
-        .from('servicios_adicionales')
-        .select('id, nombre')
-        .in('id', servicioIds);
-      if (infoServicios) {
-        infoServicios.forEach(s => { nombresServicios[s.id] = s.nombre; });
-      }
+    const modalContainerConsumos = document.getElementById('modal-container');
+    if (!modalContainerConsumos) {
+        console.error("El contenedor del modal principal 'modal-container' no se encontró.");
+        return;
     }
 
-    cargosServiciosYExtensiones = serviciosYExtensiones.map(s => {
-      let nombreItem = '';
-      let tipoItem = "Servicios";
+    // 1. OBTENCIÓN DE DATOS (CON LÓGICA DETALLADA)
+    const { data: reserva, error: errRes } = await supabaseGlobal.from('reservas').select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id, metodo_pago_id').eq('habitacion_id', roomContext.id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).order('fecha_inicio', { ascending: false }).limit(1).single();
+    if (errRes || !reserva) {
+        mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos", [], modalContainerConsumos);
+        return;
+    }
+    reserva.habitacion_nombre = roomContext.nombre;
 
-      if (s.descripcion_manual) { // Prioridad a descripción manual para extensiones
-        nombreItem = s.descripcion_manual;
-        if (s.descripcion_manual.toLowerCase().includes('extensi')) {
-          tipoItem = "Extensión";
+    const alojamientoCargo = { tipo: "Habitación", nombre: "Estancia Principal", cantidad: 1, subtotal: Number(reserva.monto_total) || 0, id: "hab", estado_pago: "pendiente", fecha: reserva.fecha_inicio };
+
+    let cargosTienda = [];
+    const { data: ventasTiendaDB } = await supabaseGlobal.from('ventas_tienda').select('id, creado_en').eq('reserva_id', reserva.id);
+    if (ventasTiendaDB && ventasTiendaDB.length > 0) {
+        const ventaTiendaIds = ventasTiendaDB.map(v => v.id);
+        const { data: detallesTienda, error: errDetallesT } = await supabaseGlobal.from('detalle_ventas_tienda').select('*, producto_id').in('venta_id', ventaTiendaIds);
+        if (errDetallesT) { console.error("Error obteniendo detalles de tienda:", errDetallesT); }
+        else if (detallesTienda && detallesTienda.length > 0) {
+            const productoIds = [...new Set(detallesTienda.map(d => d.producto_id))];
+            const { data: productos } = await supabaseGlobal.from('productos_tienda').select('id, nombre').in('id', productoIds);
+            const productosMap = new Map(productos?.map(p => [p.id, p.nombre]));
+            cargosTienda = detallesTienda.map(item => {
+                const ventaPadre = ventasTiendaDB.find(v => v.id === item.venta_id);
+                return { tipo: "Tienda", nombre: productosMap.get(item.producto_id) || 'Producto', id: `dvt_${item.id}`, cantidad: item.cantidad, subtotal: Number(item.subtotal) || 0, estado_pago: "pendiente", fecha: ventaPadre?.creado_en };
+            });
         }
-      } else if (s.servicio_id && nombresServicios[s.servicio_id]) {
-        nombreItem = nombresServicios[s.servicio_id];
-      } else {
-        nombreItem = `Ítem #${s.id.slice(0,6)}`;
-      }
-
-      return {
-        tipo: tipoItem,
-        nombre: nombreItem,
-        id: `sxr_${s.id}`, // Prefijo para servicios_x_reserva para unicidad
-        cantidad: s.cantidad || 1,
-        subtotal: s.precio_cobrado !== null ? Number(s.precio_cobrado) : 0, // USAR precio_cobrado
-        estado_pago: s.estado_pago || "pendiente",
-        fecha: s.creado_en,
-        nota: s.nota || ""
-      };
-    });
-  }
-
-  let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosRest, ...cargosServiciosYExtensiones]
-    .filter(c => c.id === 'hab' || c.subtotal > 0 || (c.subtotal === 0 && c.id !== 'hab' && c.tipo !== "Habitación" && c.nombre && c.nombre.toLowerCase() !== "seleccione duración"));
-
-
-  const totalPagadoCalculado = Number(reserva.monto_pagado) || 0;
-
-  todosLosCargos.sort((a, b) => {
-    if (a.id === 'hab') return -1;
-    if (b.id === 'hab') return 1;
-    if (a.estado_pago === 'pagado' && b.estado_pago !== 'pagado') return -1;
-    if (a.estado_pago !== 'pagado' && b.estado_pago === 'pagado') return 1;
-    return new Date(a.fecha || 0) - new Date(b.fecha || 0);
-  });
-
-  let saldoAcumuladoParaAplicar = totalPagadoCalculado;
-  todosLosCargos.forEach(cargo => {
-    if (cargo.estado_pago === 'pagado') {
-      // Ya está pagado, no hacer nada con el saldo acumulado aquí si viene de DB
-    } else if (cargo.subtotal <= 0) {
-        cargo.estado_pago = "N/A";
-    } else if (saldoAcumuladoParaAplicar >= cargo.subtotal) {
-      cargo.estado_pago = "pagado";
-      saldoAcumuladoParaAplicar -= cargo.subtotal;
-    } else if (saldoAcumuladoParaAplicar > 0 && saldoAcumuladoParaAplicar < cargo.subtotal) {
-      cargo.estado_pago = "parcial";
-      saldoAcumuladoParaAplicar = 0;
-    } else {
-      cargo.estado_pago = "pendiente";
     }
-  });
 
-  const totalDeTodosLosCargos = todosLosCargos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-  const saldoPendienteFinal = Math.max(0, totalDeTodosLosCargos - totalPagadoCalculado);
+    let cargosRest = [];
+    const { data: ventasRestDB } = await supabaseGlobal.from('ventas_restaurante').select('id, creado_en').eq('reserva_id', reserva.id);
+    if (ventasRestDB && ventasRestDB.length > 0) {
+        const ventaRestIds = ventasRestDB.map(v => v.id);
+        const { data: detallesRest, error: errDetallesR } = await supabaseGlobal.from('ventas_restaurante_items').select('*, plato_id').in('venta_id', ventaRestIds);
+        if (errDetallesR) { console.error("Error obteniendo detalles de restaurante:", errDetallesR); }
+        else if (detallesRest) {
+            const platoIds = [...new Set(detallesRest.map(d => d.plato_id))];
+            const { data: platos } = await supabaseGlobal.from('platos').select('id, nombre').in('id', platoIds);
+            const platosMap = new Map(platos?.map(p => [p.id, p.nombre]));
+            cargosRest = detallesRest.map(item => {
+                const ventaPadre = ventasRestDB.find(v => v.id === item.venta_id);
+                return { tipo: "Restaurante", nombre: platosMap.get(item.plato_id) || 'Plato', id: `dvr_${item.id}`, cantidad: item.cantidad, subtotal: Number(item.subtotal) || 0, estado_pago: "pendiente", fecha: ventaPadre?.creado_en };
+            });
+        }
+    }
 
-  let htmlConsumos = `
+    const { data: serviciosYExtensiones } = await supabaseGlobal.from('servicios_x_reserva').select('id, servicio_id, cantidad, nota, estado_pago, creado_en, precio_cobrado, pago_reserva_id, descripcion_manual').eq('reserva_id', reserva.id);
+    let cargosServiciosYExtensiones = [];
+    if (serviciosYExtensiones && serviciosYExtensiones.length) {
+        const servicioIds = [...new Set(serviciosYExtensiones.map(s => s.servicio_id).filter(Boolean))];
+        let nombresServicios = {};
+        if (servicioIds.length > 0) {
+            const { data: infoServicios } = await supabaseGlobal.from('servicios_adicionales').select('id, nombre').in('id', servicioIds);
+            if (infoServicios) { infoServicios.forEach(s => { nombresServicios[s.id] = s.nombre; }); }
+        }
+        cargosServiciosYExtensiones = serviciosYExtensiones.map(s => {
+            let nombreItem = s.descripcion_manual || (s.servicio_id && nombresServicios[s.servicio_id]) || `Ítem #${s.id.slice(0,6)}`;
+            let tipoItem = "Servicios";
+            if (s.descripcion_manual && s.descripcion_manual.toLowerCase().includes('extensi')) { tipoItem = "Extensión"; }
+            return { tipo: tipoItem, nombre: nombreItem, id: `sxr_${s.id}`, cantidad: s.cantidad || 1, subtotal: s.precio_cobrado !== null ? Number(s.precio_cobrado) : 0, estado_pago: s.estado_pago || "pendiente", fecha: s.creado_en, nota: s.nota || "" };
+        });
+    }
+
+    let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosRest, ...cargosServiciosYExtensiones].filter(c => c.id === 'hab' || c.subtotal > 0 || (c.subtotal === 0 && c.id !== 'hab' && c.tipo !== "Habitación" && c.nombre && c.nombre.toLowerCase() !== "seleccione duración"));
+    const totalPagadoCalculado = Number(reserva.monto_pagado) || 0;
+    todosLosCargos.sort((a, b) => { if (a.id === 'hab') return -1; if (b.id === 'hab') return 1; return new Date(a.fecha || 0) - new Date(b.fecha || 0); });
+    let saldoAcumuladoParaAplicar = totalPagadoCalculado;
+    todosLosCargos.forEach(cargo => { if (cargo.estado_pago === 'pagado') { return; } if (cargo.subtotal <= 0) { cargo.estado_pago = "N/A"; } else if (saldoAcumuladoParaAplicar >= cargo.subtotal) { cargo.estado_pago = "pagado"; saldoAcumuladoParaAplicar -= cargo.subtotal; } else if (saldoAcumuladoParaAplicar > 0 && saldoAcumuladoParaAplicar < cargo.subtotal) { cargo.estado_pago = "parcial"; saldoAcumuladoParaAplicar = 0; } else { cargo.estado_pago = "pendiente"; } });
+    const totalDeTodosLosCargos = todosLosCargos.reduce((sum, c) => sum + Number(c.subtotal), 0);
+    const saldoPendienteFinal = Math.max(0, totalDeTodosLosCargos - totalPagadoCalculado);
+    
+    // 2. RENDERIZAR EL MODAL
+    let htmlConsumos = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:auto;" class="bg-white p-6 rounded-xl">
-      <div class="flex justify-between items-center mb-3">
-          <h3 style="font-size:1.3em;font-weight:bold;color:#1459ae;">🧾 Consumos: Hab. ${roomContext.nombre}</h3>
-          <button id="btn-cerrar-modal-consumos-X" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button>
-      </div>
-      <div style="font-size:0.9em; margin-bottom:10px;">Cliente: <strong>${reserva.cliente_nombre}</strong></div>
-      <div class="max-h-[50vh] overflow-y-auto pr-2 mb-4 border rounded-md">
-          <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
-            <thead class="sticky top-0 bg-slate-100 z-10">
-              <tr style="background:#f1f5f9;">
-                <th style="padding:8px;text-align:left;border-bottom:1px solid #e2e8f0;">Tipo</th>
-                <th style="padding:8px;text-align:left;border-bottom:1px solid #e2e8f0;">Detalle</th>
-                <th style="padding:8px;text-align:center;border-bottom:1px solid #e2e8f0;">Cant.</th>
-                <th style="padding:8px;text-align:right;border-bottom:1px solid #e2e8f0;">Subtotal</th>
-                <th style="padding:8px;text-align:center;border-bottom:1px solid #e2e8f0;">Estado</th>
-              </tr>
-            </thead>
-            <tbody>`;
-  todosLosCargos.forEach(c => {
-    let colorEstado = "#6b7280";
-    if (c.estado_pago === "pagado") colorEstado = "#16a34a";
-    else if (c.estado_pago === "parcial") colorEstado = "#ca8a04";
-    else if (c.estado_pago === "pendiente") colorEstado = "#dc2626";
-    let textoEstado = c.estado_pago ? (c.estado_pago.charAt(0).toUpperCase() + c.estado_pago.slice(1)) : "N/A";
-    if (c.estado_pago === "N/A" && c.subtotal === 0 && c.id !== 'hab') textoEstado = "Gratis";
-
-    htmlConsumos += `
-      <tr style="border-bottom:1px solid #e5e7eb;">
-        <td style="padding:6px;">${c.tipo}</td>
-        <td style="padding:6px;">${c.nombre}${c.nota ? ` <i class="text-xs text-gray-500">(${c.nota})</i>` : ''}</td>
-        <td style="padding:6px;text-align:center;">${c.cantidad}</td>
-        <td style="padding:6px;text-align:right;">${formatCurrency(c.subtotal)}</td>
-        <td style="padding:6px;text-align:center;font-weight:bold;color:${colorEstado};">${textoEstado}</td>
-      </tr>`;
-  });
-  htmlConsumos += `
-            </tbody>
-          </table>
-      </div>
-      <div style="margin-top:14px;font-size:1.1em; text-align:right; padding-right:10px;">
-        <div style="font-weight:bold;color:#1e40af;">Total Cargos: ${formatCurrency(totalDeTodosLosCargos)}</div>
-        <div style="font-weight:bold;color:#059669;">Total Pagado: ${formatCurrency(totalPagadoCalculado)}</div>
-        <div style="font-weight:bold;color:${saldoPendienteFinal > 0 ? '#dc2626' : '#16a34a'};">Saldo Pendiente: ${formatCurrency(saldoPendienteFinal)}</div>
-      </div>
-      <div class="mt-6 flex flex-col sm:flex-row gap-3 justify-end p-1">
-        ${saldoPendienteFinal > 0 ? `<button id="btn-cobrar-pendientes-consumos" class="button button-warning py-2.5 px-5 text-sm">Cobrar Saldo (${formatCurrency(saldoPendienteFinal)})</button>` : `<div class="text-green-600 font-bold text-lg p-2 text-center">¡Todo saldado! ✅</div>`}
-        <button id="btn-imprimir-estado-cuenta-consumos" class="button button-neutral py-2.5 px-5 text-sm">Imprimir Estado</button>
-        <button id="btn-cerrar-modal-consumos" class="button button-danger py-2.5 px-5 text-sm">Cerrar</button>
-      </div>
+        <div class="flex justify-between items-center mb-3"><h3 style="font-size:1.3em;font-weight:bold;color:#1459ae;">🧾 Consumos: Hab. ${roomContext.nombre}</h3><button id="btn-cerrar-modal-consumos-X" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
+        <div style="font-size:0.9em; margin-bottom:10px;">Cliente: <strong>${reserva.cliente_nombre}</strong></div>
+        <div class="max-h-[50vh] overflow-y-auto pr-2 mb-4 border rounded-md">
+            <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
+                <thead class="sticky top-0 bg-slate-100 z-10"><tr style="background:#f1f5f9;"><th style="padding:8px;text-align:left;border-bottom:1px solid #e2e8f0;">Tipo</th><th style="padding:8px;text-align:left;border-bottom:1px solid #e2e8f0;">Detalle</th><th style="padding:8px;text-align:center;border-bottom:1px solid #e2e8f0;">Cant.</th><th style="padding:8px;text-align:right;border-bottom:1px solid #e2e8f0;">Subtotal</th><th style="padding:8px;text-align:center;border-bottom:1px solid #e2e8f0;">Estado</th></tr></thead>
+                <tbody>${todosLosCargos.map(c => `<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px;">${c.tipo}</td><td style="padding:6px;">${c.nombre}${c.nota ? ` <i class="text-xs text-gray-500">(${c.nota})</i>` : ''}</td><td style="padding:6px;text-align:center;">${c.cantidad}</td><td style="padding:6px;text-align:right;">${formatCurrency(c.subtotal)}</td><td style="padding:6px;text-align:center;font-weight:bold;color:${{"pagado":"#16a34a","parcial":"#ca8a04","pendiente":"#dc2626"}[c.estado_pago] || "#6b7280"};">${c.estado_pago ? c.estado_pago.charAt(0).toUpperCase() + c.estado_pago.slice(1) : "N/A"}</td></tr>`).join('')}</tbody>
+            </table>
+        </div>
+        <div style="margin-top:14px;font-size:1.1em; text-align:right; padding-right:10px;">
+            <div style="font-weight:bold;color:#1e40af;">Total Cargos: ${formatCurrency(totalDeTodosLosCargos)}</div>
+            <div style="font-weight:bold;color:#059669;">Total Pagado: ${formatCurrency(totalPagadoCalculado)}</div>
+            <div style="font-weight:bold;color:${saldoPendienteFinal > 0 ? '#dc2626' : '#16a34a'};">Saldo Pendiente: ${formatCurrency(saldoPendienteFinal)}</div>
+        </div>
+        <div class="mt-6 flex flex-col sm:flex-row gap-3 justify-end p-1">
+            ${saldoPendienteFinal > 0 ? `<button id="btn-cobrar-pendientes-consumos" class="button button-warning py-2.5 px-5 text-sm">Cobrar Saldo (${formatCurrency(saldoPendienteFinal)})</button>` : `<div class="text-green-600 font-bold text-lg p-2 text-center">¡Todo saldado! ✅</div>`}
+            ${totalDeTodosLosCargos > 0 ? `<button id="btn-facturar" class="button button-success py-2.5 px-5 text-sm">Facturar</button>` : ''}
+            <button id="btn-cerrar-modal-consumos" class="button button-danger py-2.5 px-5 text-sm">Cerrar</button>
+        </div>
     </div>`;
 
-  modalContainerConsumos.innerHTML = htmlConsumos;
-  modalContainerConsumos.style.display = "flex";
+    modalContainerConsumos.innerHTML = htmlConsumos;
+    modalContainerConsumos.style.display = "flex";
 
-  setTimeout(() => {
-    const modalDialogActual = modalContainerConsumos.querySelector('.bg-white');
-    if (!modalDialogActual) { console.error("No se encontró el dialog interno del modal de consumos."); return; }
-    const cerrarDesdeModal = () => { modalContainerConsumos.style.display = "none"; modalContainerConsumos.innerHTML = ''; };
-    const btnCerrarX = modalDialogActual.querySelector('#btn-cerrar-modal-consumos-X');
-    if (btnCerrarX) btnCerrarX.onclick = cerrarDesdeModal;
-    const btnCerrar = modalDialogActual.querySelector('#btn-cerrar-modal-consumos');
-    if (btnCerrar) btnCerrar.onclick = cerrarDesdeModal;
+    // 3. ASIGNAR LISTENERS (CÓDIGO COMPLETO)
+    setTimeout(() => {
+        const modalDialogActual = modalContainerConsumos.querySelector('.bg-white');
+        if (!modalDialogActual) { return; }
+        
+        const cerrarDesdeModal = () => { modalContainerConsumos.style.display = "none"; modalContainerConsumos.innerHTML = ''; };
+        modalDialogActual.querySelector('#btn-cerrar-modal-consumos-X').onclick = cerrarDesdeModal;
+        modalDialogActual.querySelector('#btn-cerrar-modal-consumos').onclick = cerrarDesdeModal;
 
-    const btnImprimirEstadoConsumos = modalDialogActual.querySelector('#btn-imprimir-estado-cuenta-consumos');
-    if (btnImprimirEstadoConsumos) {
-      btnImprimirEstadoConsumos.onclick = async () => {
-        const consumosParaTicket = todosLosCargos.filter(c => c.id !== 'hab').map(c => ({ nombre: `${c.tipo} - ${c.nombre}`, cantidad: c.cantidad, precio: c.cantidad > 0 ? parseFloat((c.subtotal / c.cantidad).toFixed(2)) : Number(c.subtotal), total: Number(c.subtotal) }));
-        const datosParaTicketCompleto = { habitacion: roomContext.nombre, cliente: reserva.cliente_nombre, fechaIngreso: reserva.fecha_inicio, fechaSalida: reserva.fecha_fin, estanciaPrincipal: Number(alojamientoCargo.subtotal), totalPagado: totalPagadoCalculado, saldoPendiente: saldoPendienteFinal, consumos: consumosParaTicket, totalConsumo: totalDeTodosLosCargos, otrosDatos: `Atendido por: ${currentUserGlobal?.email || 'Sistema'}` };
-        await imprimirTicketHabitacion({ supabase: supabaseGlobal, hotelId: reserva.hotel_id, datosTicket: datosParaTicketCompleto, tipoDocumento: 'Estado de Cuenta Detallado' });
-      };
-    }
+        const btnFacturar = modalDialogActual.querySelector('#btn-facturar');
+        if (btnFacturar) {
+            btnFacturar.onclick = () => {
+                if (saldoPendienteFinal > 0) {
+                    mostrarInfoModalGlobal(`No se puede facturar porque hay un saldo pendiente de <strong>${formatCurrency(saldoPendienteFinal)}</strong>.`, "Saldo Pendiente", [], modalContainerConsumos);
+                    return;
+                }
+                mostrarInfoModalGlobal(
+                    '<p class="text-center text-lg">¿Qué tipo de documento desea generar?</p>',
+                    'Seleccionar Tipo de Factura',
+                    [{
+                        texto: 'Factura POS',
+                        clase: 'button-neutral py-2 px-5',
+                        accion: async () => {
+                            const consumosParaTicket = todosLosCargos.map(c => ({ nombre: c.nombre, cantidad: c.cantidad, precio: c.cantidad > 0 ? (c.subtotal / c.cantidad) : c.subtotal, total: c.subtotal }));
+                            const datosParaTicketCompleto = { habitacion: roomContext.nombre, cliente: reserva.cliente_nombre, fechaIngreso: reserva.fecha_inicio, fechaSalida: reserva.fecha_fin, consumos: consumosParaTicket, totalConsumo: totalDeTodosLosCargos, otrosDatos: `Atendido por: ${currentUserGlobal?.email || 'Sistema'}<br>Total Pagado: ${formatCurrency(totalPagadoCalculado)}` };
+                            await imprimirTicketHabitacion({ supabase: supabaseGlobal, hotelId: reserva.hotel_id, datosTicket: datosParaTicketCompleto, tipoDocumento: 'Factura POS' });
+                        }
+                    }, {
+                        texto: 'Factura Electrónica',
+                        clase: 'button-success py-2 px-5',
+                        noCerrar: true,
+                        accion: async () => {
+                            if (confirm("¿Está seguro de que desea generar la factura electrónica?")) {
+                                await facturarElectronicaYMostrarResultado({ supabase: supabaseGlobal, hotelId: reserva.hotel_id, reserva, consumosTienda: cargosTienda, consumosRest: cargosRest, consumosServicios: cargosServiciosYExtensiones, metodoPagoIdLocal: reserva.metodo_pago_id });
+                            }
+                        }
+                    }],
+                    modalContainerConsumos
+                );
+            };
+        }
 
-    const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
-    if (btnCobrarConsumosPend) {
-      btnCobrarConsumosPend.onclick = async () => {
-        const { data: metodosPagoDB } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', reserva.hotel_id).eq('activo', true);
-        let opcionesPagoHTML = metodosPagoDB?.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('') || '';
-        modalDialogActual.innerHTML = `
-          <div style="font-family:'Segoe UI',Arial,sans-serif; padding:10px;">
-            <div class="flex justify-between items-center mb-4"><h4 style="font-size:1.2em;font-weight:bold;color:#1e3a8a;">💳 Registrar Pago de Saldo</h4><button id="btn-cerrar-cobro-saldo-X-submodal" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
-            <div style="margin-bottom:12px; text-align:center;">Saldo pendiente: <strong style="color:#c2410c; font-size:1.1em;">${formatCurrency(saldoPendienteFinal)}</strong></div>
-            <div class="space-y-3">
-                <div><label for="montoPagoPendienteModal" class="block text-sm font-medium text-gray-700 mb-1">Monto a pagar:</label><input type="number" id="montoPagoPendienteModal" min="0.01" max="${saldoPendienteFinal.toFixed(2)}" value="${saldoPendienteFinal.toFixed(2)}" step="0.01" class="form-control mt-0"></div>
-                <div><label for="pagoMetodoPendModal" class="block text-sm font-medium text-gray-700 mb-1">Método de pago:</label><select id="pagoMetodoPendModal" class="form-control mt-0"> <option value="">-- Seleccione --</option> ${opcionesPagoHTML} </select></div>
-                <div><label for="tipoFacturaModal" class="block text-sm font-medium text-gray-700 mb-1">Documento a generar:</label><select id="tipoFacturaModal" class="form-control mt-0"><option value="pos">Recibo POS / Comprobante</option><option value="electronica">Factura Electrónica (si aplica)</option></select></div>
-            </div>
-            <div class="mt-5 flex flex-col sm:flex-row gap-3 justify-center">
-                <button id="btn-registrar-pago-confirmado-saldo" class="button button-success flex-1 py-2.5 text-base">Registrar Pago</button>
-                <button type="button" id="cancelar-pago-modal-saldo" class="button button-neutral flex-1 py-2.5 text-base">Cancelar</button>
-            </div></div>`;
-        const cerrarSubmodalCobro = () => { modalContainerConsumos.style.display = "none"; modalContainerConsumos.innerHTML = ''; };
-        modalDialogActual.querySelector('#btn-cerrar-cobro-saldo-X-submodal').onclick = cerrarSubmodalCobro;
-        modalDialogActual.querySelector('#cancelar-pago-modal-saldo').onclick = cerrarSubmodalCobro;
-        const btnRegPagoConfirmadoSaldo = modalDialogActual.querySelector('#btn-registrar-pago-confirmado-saldo');
-        if (btnRegPagoConfirmadoSaldo) {
-          btnRegPagoConfirmadoSaldo.onclick = async () => {
-            btnRegPagoConfirmadoSaldo.disabled = true; btnRegPagoConfirmadoSaldo.textContent = 'Procesando...';
-            const montoPagarInput = modalDialogActual.querySelector('#montoPagoPendienteModal');
-            const metodoPagoSelect = modalDialogActual.querySelector('#pagoMetodoPendModal');
-            const tipoFacturaSelect = modalDialogActual.querySelector('#tipoFacturaModal');
-            const montoPagar = Number(montoPagarInput?.value); const metodoPagoId = metodoPagoSelect?.value; const tipoFactura = tipoFacturaSelect?.value;
-            let errorValidacion = null;
-            if (!montoPagar || montoPagar <= 0 || montoPagar > saldoPendienteFinal + 0.001 ) errorValidacion = "Monto inválido.";
-            else if (!metodoPagoId) errorValidacion = "Seleccione un método de pago.";
-            if (errorValidacion) { alert(errorValidacion); btnRegPagoConfirmadoSaldo.disabled = false; btnRegPagoConfirmadoSaldo.textContent = 'Registrar Pago'; return; }
-            try {
-              const { data: pagoData, error: errPago } = await supabaseGlobal.from('pagos_reserva').insert([{ hotel_id: reserva.hotel_id, reserva_id: reserva.id, monto: montoPagar, fecha_pago: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUserGlobal?.id, concepto: `Pago Saldo Hab. ${roomContext.nombre} (Res. ${reserva.id.slice(0,8)})` }]).select().single();
-              if (errPago) throw new Error(`Error registrando el pago: ${errPago.message}`);
-              const turnoIdActual = turnoService.getActiveTurnId();
-              if (!turnoIdActual) throw new Error("No hay un turno de caja activo para registrar este pago.");
-              const { error: errCaja } = await supabaseGlobal.from('caja').insert([{ hotel_id: reserva.hotel_id, tipo: 'ingreso', monto: montoPagar, concepto: `[COBRO SALDO] Hab. ${roomContext.nombre} (Res. ${reserva.id.slice(0,8)})`, fecha_movimiento: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUserGlobal?.id, reserva_id: reserva.id, pago_reserva_id: pagoData.id, turno_id: turnoIdActual }]);
-              if (errCaja) throw new Error(`Pago de saldo registrado (ID: ${pagoData.id}), pero error en caja: ${errCaja.message}. Por favor, revise la caja.`);
-              const nuevoMontoPagadoEnReserva = totalPagadoCalculado + montoPagar;
-              const {error: errUpdateMontoPagado} = await supabaseGlobal.from('reservas').update({ monto_pagado: nuevoMontoPagadoEnReserva }).eq('id', reserva.id);
-              if(errUpdateMontoPagado) console.warn("Advertencia: Monto pagado en reserva no actualizado:", errUpdateMontoPagado.message);
-              if (Math.abs(saldoPendienteFinal - montoPagar) < 0.01) {
-                const updatePromisesItems = [];
-                todosLosCargos.forEach(cargo => {
-                  if (cargo.id !== 'hab' && (cargo.estado_pago === 'pendiente' || cargo.estado_pago === 'parcial') && cargo.subtotal > 0) {
-                    let tableName = '', idOriginal = cargo.id;
-                    if (cargo.tipo === 'Tienda') { tableName = 'ventas_tienda'; idOriginal = idOriginal.replace('vt_','');}
-                    else if (cargo.tipo === 'Restaurante') { tableName = 'ventas_restaurante'; idOriginal = idOriginal.replace('vr_',''); }
-                    else if (cargo.tipo === 'Servicios' || cargo.tipo === 'Extensión') { tableName = 'servicios_x_reserva'; idOriginal = idOriginal.replace('sxr_',''); }
-                    if (tableName && idOriginal) updatePromisesItems.push(supabaseGlobal.from(tableName).update({ estado_pago: 'pagado' }).eq('id', idOriginal));
-                  }
-                });
-                const results = await Promise.allSettled(updatePromisesItems);
-                results.forEach(result => { if (result.status === 'rejected') console.warn("Error actualizando estado de pago de un ítem:", result.reason); });
-              }
-              let botonesExitoFinal = [];
-              if (tipoFactura === 'pos') {
-                botonesExitoFinal.push({ texto: "Imprimir Recibo POS", clase: "button-primary py-2 px-4 text-sm", noCerrar: false, accion: async () => { const datosRecibo = { habitacion: roomContext.nombre, cliente: reserva.cliente_nombre, fechaPago: pagoData.fecha_pago, montoPagado: montoPagar, metodoPagoNombre: metodoPagoSelect.options[metodoPagoSelect.selectedIndex].text, conceptoPago: `Abono/Pago Saldo Hab. ${roomContext.nombre}`, otrosDatos: `ID Trans.: ${pagoData.id.slice(0,8)}<br>Reserva ID: ${reserva.id.slice(0,8)}<br>Atendido por: ${currentUserGlobal?.email || 'Sistema'}` }; await imprimirTicketHabitacion({ supabase: supabaseGlobal, hotelId: reserva.hotel_id, datosTicket: datosRecibo, tipoDocumento: 'Recibo de Pago' }); await renderRooms(mainAppContainer, supabaseGlobal, currentUserGlobal, reserva.hotel_id); } });
-              } else if (tipoFactura === 'electronica') {
-                botonesExitoFinal.push({ texto: "Fact. Electrónica", clase: "button-success py-2 px-4 text-sm", noCerrar: true, accion: async () => { const btnFactElec = modalContainerConsumos.querySelector('.button-success'); if(btnFactElec) {btnFactElec.textContent = "Generando..."; btnFactElec.disabled = true;} await facturarElectronicaYMostrarResultado({ supabase: supabaseGlobal, hotelId: reserva.hotel_id, reserva: { ...reserva, habitacion_nombre: roomContext.nombre, monto_total: totalDeTodosLosCargos }, consumosTienda: cargosTienda, consumosRest: cargosRest, consumosServicios: cargosServiciosYExtensiones, metodoPagoIdLocal: metodoPagoId }); if(btnFactElec) {btnFactElec.textContent = "Fact. Electrónica"; btnFactElec.disabled = false;} } });
-              }
-              botonesExitoFinal.push({ texto: "Finalizar y Recargar Mapa", clase: "button-neutral py-2 px-4 text-sm", noCerrar: false, accion: async () => { await renderRooms(mainAppContainer, supabaseGlobal, currentUserGlobal, reserva.hotel_id); } });
-              modalDialogActual.innerHTML = '';
-              mostrarInfoModalGlobal(`Pago de ${formatCurrency(montoPagar)} registrado con éxito.`, "Pago de Saldo Exitoso", botonesExitoFinal, modalContainerConsumos);
-            } catch (error) {
-              console.error("Error en el proceso de pago de saldo:", error);
-              mostrarInfoModalGlobal(error.message, "Error en Pago de Saldo", [{ texto: "Cerrar", clase:"button-danger py-2 px-4 text-sm", accion: cerrarSubmodalCobro}], modalContainerConsumos);
-            } finally {
-              if(btnRegPagoConfirmadoSaldo) { btnRegPagoConfirmadoSaldo.disabled = false; btnRegPagoConfirmadoSaldo.textContent = 'Registrar Pago'; }
-            }
-          }; // Fin onclick btnRegPagoConfirmadoSaldo
-        } // Fin if (btnRegPagoConfirmadoSaldo)
-      }; // Fin onclick btnCobrarConsumosPend
-    } // Fin if (btnCobrarConsumosPend)
-  }, 100); // Fin setTimeout principal para modal de consumos
-}); // Fin setupButtonListener btn-ver-consumos
-
+        const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
+        if (btnCobrarConsumosPend) {
+            btnCobrarConsumosPend.onclick = async () => {
+                const { data: metodosPagoDB } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', reserva.hotel_id).eq('activo', true);
+                let opcionesPagoHTML = metodosPagoDB?.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('') || '';
+                modalDialogActual.innerHTML = `
+                  <div style="font-family:'Segoe UI',Arial,sans-serif; padding:10px;">
+                    <div class="flex justify-between items-center mb-4"><h4 style="font-size:1.2em;font-weight:bold;color:#1e3a8a;">💳 Registrar Pago de Saldo</h4><button id="btn-cerrar-cobro-saldo-X-submodal" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
+                    <div style="margin-bottom:12px; text-align:center;">Saldo pendiente: <strong style="color:#c2410c; font-size:1.1em;">${formatCurrency(saldoPendienteFinal)}</strong></div>
+                    <div class="space-y-3">
+                        <div><label for="montoPagoPendienteModal" class="block text-sm font-medium text-gray-700 mb-1">Monto a pagar:</label><input type="number" id="montoPagoPendienteModal" min="0.01" max="${saldoPendienteFinal.toFixed(2)}" value="${saldoPendienteFinal.toFixed(2)}" step="0.01" class="form-control mt-0"></div>
+                        <div><label for="pagoMetodoPendModal" class="block text-sm font-medium text-gray-700 mb-1">Método de pago:</label><select id="pagoMetodoPendModal" class="form-control mt-0"> <option value="">-- Seleccione --</option> ${opcionesPagoHTML} </select></div>
+                    </div>
+                    <div class="mt-5 flex flex-col sm:flex-row gap-3 justify-center">
+                        <button id="btn-registrar-pago-confirmado-saldo" class="button button-success flex-1 py-2.5 text-base">Registrar Pago</button>
+                        <button type="button" id="cancelar-pago-modal-saldo" class="button button-neutral flex-1 py-2.5 text-base">Cancelar</button>
+                    </div></div>`;
+                
+                const cerrarSubmodalCobro = () => { setupButtonListener('btn-ver-consumos', btn, roomContext); };
+                modalDialogActual.querySelector('#btn-cerrar-cobro-saldo-X-submodal').onclick = cerrarSubmodalCobro;
+                modalDialogActual.querySelector('#cancelar-pago-modal-saldo').onclick = cerrarSubmodalCobro;
+                
+                const btnRegPagoConfirmadoSaldo = modalDialogActual.querySelector('#btn-registrar-pago-confirmado-saldo');
+                if (btnRegPagoConfirmadoSaldo) {
+                    btnRegPagoConfirmadoSaldo.onclick = async () => {
+                        btnRegPagoConfirmadoSaldo.disabled = true; btnRegPagoConfirmadoSaldo.textContent = 'Procesando...';
+                        const montoPagar = Number(modalDialogActual.querySelector('#montoPagoPendienteModal')?.value);
+                        const metodoPagoId = modalDialogActual.querySelector('#pagoMetodoPendModal')?.value;
+                        if (!montoPagar || montoPagar <= 0 || !metodoPagoId) { alert("Monto y método de pago son requeridos."); btnRegPagoConfirmadoSaldo.disabled = false; btnRegPagoConfirmadoSaldo.textContent = 'Registrar Pago'; return; }
+                        
+                        try {
+                            const { data: pagoData, error: errPago } = await supabaseGlobal.from('pagos_reserva').insert([{ hotel_id: reserva.hotel_id, reserva_id: reserva.id, monto: montoPagar, fecha_pago: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUserGlobal?.id, concepto: `Pago Saldo Hab. ${roomContext.nombre}` }]).select().single();
+                            if (errPago) throw new Error(`Error registrando el pago: ${errPago.message}`);
+                            
+                            const turnoIdActual = turnoService.getActiveTurnId();
+                            if (!turnoIdActual) throw new Error("No hay un turno de caja activo para registrar este pago.");
+                            
+                            await supabaseGlobal.from('caja').insert([{ hotel_id: reserva.hotel_id, tipo: 'ingreso', monto: montoPagar, concepto: `[COBRO SALDO] Hab. ${roomContext.nombre}`, fecha_movimiento: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUserGlobal?.id, reserva_id: reserva.id, pago_reserva_id: pagoData.id, turno_id: turnoIdActual }]);
+                            await supabaseGlobal.from('reservas').update({ monto_pagado: totalPagadoCalculado + montoPagar }).eq('id', reserva.id);
+                            
+                            mostrarInfoModalGlobal(`Pago de ${formatCurrency(montoPagar)} registrado.`, "Pago Exitoso", [{ texto: "Entendido", accion: cerrarSubmodalCobro }], modalContainerConsumos);
+                        } catch (error) {
+                            mostrarInfoModalGlobal(error.message, "Error en Pago de Saldo", [{ texto: "Cerrar", accion: cerrarSubmodalCobro }], modalContainerConsumos);
+                        } finally {
+                           if(btnRegPagoConfirmadoSaldo) { btnRegPagoConfirmadoSaldo.disabled = false; btnRegPagoConfirmadoSaldo.textContent = 'Registrar Pago'; }
+                        }
+                    };
+                }
+            };
+        }
+    }, 100);
+});
 
 // =================== BOTÓN INFO HUÉSPED (igual que antes)
  setupButtonListener('btn-info-huesped', async () => {
@@ -2658,48 +2514,47 @@ async function facturarElectronicaYMostrarResultado({
 
 
 
+// =================================================================================
+// PEGA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO mapa-habitaciones.js
+// =================================================================================
 
 // ===================== MODAL DE ALQUILER (POS STYLE - COMPLETO Y CORREGIDO) =====================
-// js/modules/mapa_habitaciones/mapa_habitaciones.js
-// ... (asegúrate que las variables globales como supabaseGlobal, currentUserGlobal, hotelIdGlobal, hotelConfigGlobal, mainAppContainer están definidas y accesibles)
-// ... (asegúrate que funciones como getHorariosHotel, getTiemposEstancia, getMetodosPago, crearOpcionesNochesConPersonalizada, crearOpcionesHoras, calcularDetallesEstancia, formatCurrency, mostrarInfoModalGlobal, renderRooms, turnoService.getActiveTurnId() estén definidas y accesibles)
+
+// En tu archivo mapa-habitaciones.js, reemplaza esta función completa:
+
+// En: js/modules/mapa_habitaciones/mapa_habitaciones.js
+// REEMPLAZA TU FUNCIÓN showAlquilarModal ACTUAL CON ESTA VERSIÓN COMPLETA
 
 async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
     if (!modalContainer) {
-        console.error("Contenedor de modal principal 'modal-container' no encontrado.");
-        alert("Error crítico: No se puede mostrar el modal de alquiler.");
+        console.error("Contenedor de modal principal no encontrado.");
         return;
     }
     modalContainer.style.display = "flex";
-    modalContainer.innerHTML = ""; // Limpiar contenido anterior
+    modalContainer.innerHTML = "";
 
     let horarios, tiempos, metodosPagoDisponibles;
     try {
-        // Usar las instancias globales o los parámetros. Aquí se usan parámetros.
         [horarios, tiempos, metodosPagoDisponibles] = await Promise.all([
             getHorariosHotel(supabase, hotelId),
             getTiemposEstancia(supabase, hotelId),
             getMetodosPago(supabase, hotelId)
         ]);
     } catch (err) {
-        console.error("Error cargando datos para modal de alquiler:", err);
-        mostrarInfoModalGlobal("No se pudieron cargar los datos necesarios para el alquiler. Intente de nuevo.", "Error de Carga", [], modalContainer);
+        mostrarInfoModalGlobal("No se pudieron cargar los datos necesarios para el alquiler.", "Error de Carga", [], modalContainer);
         return;
     }
-
+    
     const pagoMixtoOpcion = { id: "mixto", nombre: "Pago Mixto" };
-    metodosPagoDisponibles = metodosPagoDisponibles || [];
-    metodosPagoDisponibles = [pagoMixtoOpcion, ...metodosPagoDisponibles.filter(mp => mp.id !== "mixto")];
+    metodosPagoDisponibles.unshift(pagoMixtoOpcion);
 
     const tarifaNocheUnica = tiempos.find(t => t.tipo_unidad === 'noche' && t.cantidad_unidad === 1);
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, tarifaNocheUnica, room);
     const opcionesHoras = crearOpcionesHoras(tiempos);
 
     const modalContent = document.createElement('div');
-    modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-auto animate-fade-in-up overflow-hidden"; // Clase base del modal
-
-    // HTML Mejorado (sin comentarios HTML literales)
+    modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-auto animate-fade-in-up overflow-hidden";
     modalContent.innerHTML = `
     <div class="flex flex-col md:flex-row">
         <div class="w-full md:w-3/5 p-6 sm:p-8 space-y-6 bg-slate-50 md:rounded-l-xl">
@@ -2708,70 +2563,43 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                 <button id="close-modal-alquilar" class="text-gray-500 hover:text-red-600 text-3xl leading-none focus:outline-none">&times;</button>
             </div>
             <form id="alquilar-form-pos" class="space-y-5">
+                <input type="hidden" name="cliente_id" id="cliente_id_alquiler">
                 <div>
-                    <label for="cliente_nombre" class="form-label">Nombre del Huésped</label>
-                    <input required name="cliente_nombre" id="cliente_nombre" class="form-control" maxlength="60" placeholder="Nombre completo">
+                    <label class="form-label">Nombre del Huésped</label>
+                    <div class="flex items-center gap-2">
+                        <input required name="cliente_nombre" id="cliente_nombre" class="form-control flex-grow" placeholder="Nombre completo">
+                        <button type="button" id="btn-buscar-cliente-alquiler" class="button inline-flex items-center justify-center p-2 rounded-full bg-blue-500 hover:bg-blue-600 text-white" title="Buscar cliente existente">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg>
+                        </button>
+                    </div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label for="cedula" class="form-label">Cédula / ID</label>
-                        <input required name="cedula" id="cedula" class="form-control" maxlength="20" placeholder="Número de identificación">
-                    </div>
-                    <div>
-                        <label for="telefono" class="form-label">Teléfono</label>
-                        <input required name="telefono" id="telefono" type="tel" class="form-control" maxlength="20" placeholder="Número de contacto">
-                    </div>
+                    <div><label class="form-label">Cédula / ID</label><input name="cedula" id="cedula" class="form-control"></div>
+                    <div><label class="form-label">Teléfono</label><input name="telefono" id="telefono" type="tel" class="form-control"></div>
                 </div>
                 <div>
                     <label class="form-label">Duración de Estancia</label>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 items-end">
-                        <div class="flex flex-col">
-                            <label for="select-noches" class="text-xs text-gray-600 mb-1">Noches:</label>
-                            <select name="noches" id="select-noches" class="form-control">
-                                <option value="">-- Seleccionar Noches --</option>
-                                ${opcionesNoches.map(o => `<option value="${o.noches}">${o.label}</option>`).join('')}
-                            </select>
-                        </div>
-                        <div class="flex flex-col" id="container-noches-personalizada" style="display:none;">
-                            <label for="input-noches-personalizada" class="text-xs text-gray-600 mb-1">Noches (Personalizado):</label>
-                            <input type="number" min="1" max="365" step="1" placeholder="N°" id="input-noches-personalizada" name="noches_personalizada" class="form-control"/>
-                        </div>
-                        <div class="flex flex-col">
-                            <label for="select-horas" class="text-xs text-gray-600 mb-1">Horas:</label>
-                            <select name="horas" id="select-horas" class="form-control">
-                                <option value="">-- Seleccionar Horas --</option>
-                                ${opcionesHoras.map(o => `<option value="${o.minutos}">${o.label}</option>`).join('')}
-                            </select>
-                        </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+                        <select name="noches" id="select-noches" class="form-control"><option value="">-- Noches --</option>${opcionesNoches.map(o => `<option value="${o.noches}">${o.label}</option>`).join('')}</select>
+                        <select name="horas" id="select-horas" class="form-control"><option value="">-- Horas --</option>${opcionesHoras.map(o => `<option value="${o.minutos}">${o.label}</option>`).join('')}</select>
                     </div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                    <div>
-                        <label for="cantidad_huespedes" class="form-label">Cant. Huéspedes</label>
-                        <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" max="${room.capacidad_maxima || 10}" value="${room.capacidad_base || 1}">
-                    </div>
-                    <div id="metodo-pago-container-alquiler">
-                        <label for="metodo_pago_id" class="form-label">Método de Pago</label>
-                        <select required name="metodo_pago_id" id="metodo_pago_id" class="form-control">
-                            ${metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}
-                        </select>
-                    </div>
+                    <div><label class="form-label">Cant. Huéspedes</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" value="${room.capacidad_base || 1}"></div>
+                    <div><label class="form-label">Método de Pago</label><select required name="metodo_pago_id" id="metodo_pago_id" class="form-control">${metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}</select></div>
                 </div>
-                <div class="pt-4">
-                    <button type="submit" id="btn-alquilar-hab" class="button button-success w-full py-3 text-lg font-bold rounded-lg">Confirmar y Registrar Alquiler</button>
-                </div>
+                <div class="pt-4"><button type="submit" id="btn-alquilar-hab" class="button button-success w-full py-3 text-lg font-bold rounded-lg">Confirmar y Registrar</button></div>
             </form>
         </div>
         <div class="w-full md:w-2/5 bg-slate-800 text-white p-6 sm:p-8 flex flex-col justify-between md:rounded-r-xl">
             <div>
                 <h4 class="text-xl sm:text-2xl font-semibold text-center border-b border-slate-600 pb-3 mb-5 text-cyan-400">Resumen del Alquiler</h4>
                 <div class="space-y-3 text-sm sm:text-base">
-                    <div class="flex justify-between items-center"><span class="text-slate-300">Habitación:</span><strong id="ticket-room-name" class="text-right text-slate-100">${room.nombre}</strong></div>
-                    <div class="flex justify-between items-center"><span class="text-slate-300">Tipo:</span><strong class="text-right text-slate-100">${room.tipo || 'N/A'}</strong></div>
+                    <div class="flex justify-between"><span class="text-slate-300">Habitación:</span><strong id="ticket-room-name" class="text-right">${room.nombre}</strong></div>
+                    <div class="flex justify-between"><span class="text-slate-300">Tipo:</span><strong class="text-right">${room.tipo || 'N/A'}</strong></div>
                     <hr class="border-slate-700 my-3">
-                    <div class="flex justify-between items-center"><span class="text-slate-300">Estancia:</span><strong id="ticket-stay-description" class="text-right text-slate-100">Seleccione duración</strong></div>
-                    <div class="flex justify-between items-center"><span id="ticket-price-label" class="text-slate-300">Precio Base:</span><strong id="ticket-stay-price" class="text-right text-slate-100">${formatCurrency(0)}</strong></div>
-                    <div class="flex justify-between items-center" id="fila-impuesto-resumen" style="display: none;"><span id="ticket-stay-tax-name" class="text-slate-300">Impuesto:</span><strong id="ticket-stay-tax-value" class="text-right text-slate-100">${formatCurrency(0)}</strong></div>
+                    <div class="flex justify-between"><span class="text-slate-300">Estancia:</span><strong id="ticket-stay-description" class="text-right">Seleccione duración</strong></div>
+                    <div class="flex justify-between"><span id="ticket-price-label" class="text-slate-300">Precio Base:</span><strong id="ticket-stay-price" class="text-right">${formatCurrency(0)}</strong></div>
                 </div>
             </div>
             <div class="border-t-2 border-cyan-500 pt-4 mt-6">
@@ -2780,329 +2608,298 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         </div>
     </div>`;
     modalContainer.appendChild(modalContent);
-
-    const metodoPagoContainerEl = modalContent.querySelector('#metodo-pago-container-alquiler');
-    const selectMetodoPagoEl = modalContent.querySelector('#metodo_pago_id');
-
-    if (hotelConfigGlobal && hotelConfigGlobal.cobro_al_checkin === false) {
-        if (metodoPagoContainerEl) metodoPagoContainerEl.style.display = 'none';
-        if (selectMetodoPagoEl) selectMetodoPagoEl.removeAttribute('required');
-    } else {
-        if (metodoPagoContainerEl) metodoPagoContainerEl.style.display = 'block';
-        if (selectMetodoPagoEl) selectMetodoPagoEl.setAttribute('required', 'required');
-    }
-
+    
+    // --- LÓGICA DE LISTENERS ---
     const formEl = modalContent.querySelector('#alquilar-form-pos');
+    const ticketDescEl = modalContent.querySelector('#ticket-stay-description');
+    const ticketPriceEl = modalContent.querySelector('#ticket-stay-price');
+    const ticketTotalEl = modalContent.querySelector('#ticket-total-price');
     const selectNochesEl = modalContent.querySelector('#select-noches');
-    const inputNochesPersonalizadaEl = modalContent.querySelector('#input-noches-personalizada');
-    const containerNochesPersonalizadaEl = modalContent.querySelector('#container-noches-personalizada');
     const selectHorasEl = modalContent.querySelector('#select-horas');
     
-    const ticketDescEl = modalContent.querySelector('#ticket-stay-description');
-    const ticketPriceLabelEl = modalContent.querySelector('#ticket-price-label');
-    const ticketPriceEl = modalContent.querySelector('#ticket-stay-price');
-    const filaImpuestoResumenEl = modalContent.querySelector('#fila-impuesto-resumen');
-    const ticketTaxNameEl = modalContent.querySelector('#ticket-stay-tax-name');
-    const ticketTaxValueEl = modalContent.querySelector('#ticket-stay-tax-value');
-    const ticketTotalEl = modalContent.querySelector('#ticket-total-price');
-
-    function actualizarResumenTicketAlquiler() {
-        if (!formEl) return;
-        const formDataValues = Object.fromEntries(new FormData(formEl));
-        const detalles = calcularDetallesEstancia(formDataValues, room, tiempos, horarios, tarifaNocheUnica);
-
-        if (ticketDescEl) ticketDescEl.textContent = detalles.descripcionEstancia;
-        if (ticketTotalEl) ticketTotalEl.textContent = formatCurrency(detalles.precioTotal);
-
-        if (ticketPriceEl && filaImpuestoResumenEl && ticketTaxNameEl && ticketTaxValueEl && ticketPriceLabelEl && hotelConfigGlobal) {
-            const porcentajeImpuestoConfig = parseFloat(hotelConfigGlobal.porcentaje_impuesto_principal);
-            if (detalles.montoImpuesto > 0 && porcentajeImpuestoConfig > 0) {
-                ticketPriceLabelEl.textContent = "Precio Base:";
-                ticketPriceEl.textContent = formatCurrency(detalles.precioBase);
-                ticketTaxNameEl.textContent = `${hotelConfigGlobal.nombre_impuesto_principal || 'Impuesto'} (${porcentajeImpuestoConfig}%):`;
-                ticketTaxValueEl.textContent = formatCurrency(detalles.montoImpuesto);
-                filaImpuestoResumenEl.style.display = 'flex';
-            } else {
-                ticketPriceLabelEl.textContent = "Precio Estancia:";
-                ticketPriceEl.textContent = formatCurrency(detalles.precioTotal); // Muestra el total si no hay desglose
-                filaImpuestoResumenEl.style.display = 'none';
-            }
-        } else {
-            if(ticketPriceEl && detalles) ticketPriceEl.textContent = formatCurrency(detalles.precioTotal); // Fallback
-            if(filaImpuestoResumenEl) filaImpuestoResumenEl.style.display = 'none';
-        }
-    }
-
-    if (selectNochesEl) selectNochesEl.onchange = () => {
-        if (selectNochesEl.value === "personalizada") {
-            if(containerNochesPersonalizadaEl) containerNochesPersonalizadaEl.style.display = "block";
-            if(inputNochesPersonalizadaEl) { inputNochesPersonalizadaEl.required = true; inputNochesPersonalizadaEl.focus(); }
-        } else {
-            if(containerNochesPersonalizadaEl) containerNochesPersonalizadaEl.style.display = "none";
-            if(inputNochesPersonalizadaEl) { inputNochesPersonalizadaEl.required = false; inputNochesPersonalizadaEl.value = '';}
-        }
-        if (selectNochesEl.value && selectHorasEl) selectHorasEl.value = "";
-        actualizarResumenTicketAlquiler();
-    };
-    if (inputNochesPersonalizadaEl) inputNochesPersonalizadaEl.oninput = actualizarResumenTicketAlquiler;
-    if (selectHorasEl) selectHorasEl.onchange = () => {
-        if (selectHorasEl.value && selectNochesEl) {
-            selectNochesEl.value = "";
-            if(containerNochesPersonalizadaEl) containerNochesPersonalizadaEl.style.display = "none";
-            if(inputNochesPersonalizadaEl) { inputNochesPersonalizadaEl.required = false; inputNochesPersonalizadaEl.value = ''; }
-        }
-        actualizarResumenTicketAlquiler();
-    };
-    actualizarResumenTicketAlquiler();
-
     modalContent.querySelector('#close-modal-alquilar').onclick = () => {
-        modalContainer.style.display = "none"; modalContainer.innerHTML = '';
+        modalContainer.style.display = 'none';
+        modalContainer.innerHTML = '';
     };
 
+    modalContent.querySelector('#btn-buscar-cliente-alquiler').onclick = () => {
+        showClienteSelectorModal(supabase, hotelId, {
+            onSelect: (cliente) => {
+                formEl.querySelector('#cliente_id_alquiler').value = cliente.id;
+                formEl.querySelector('#cliente_nombre').value = cliente.nombre;
+                formEl.querySelector('#cedula').value = cliente.documento || '';
+                formEl.querySelector('#telefono').value = cliente.telefono || '';
+            }
+        });
+    };
+    
+    // CORRECCIÓN: Función central para actualizar el resumen del alquiler
+    const actualizarResumen = () => {
+        const formData = Object.fromEntries(new FormData(formEl));
+        const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica);
+        
+        ticketDescEl.textContent = detalles.descripcionEstancia;
+        ticketPriceEl.textContent = formatCurrency(detalles.precioTotal);
+        ticketTotalEl.textContent = formatCurrency(detalles.precioTotal);
+    };
+
+    // CORRECCIÓN: Listeners para los dropdowns de duración con lógica excluyente
+    selectNochesEl.onchange = () => {
+        if (selectNochesEl.value) {
+            selectHorasEl.value = ""; // Limpia la selección de horas
+        }
+        actualizarResumen();
+    };
+
+    selectHorasEl.onchange = () => {
+        if (selectHorasEl.value) {
+            selectNochesEl.value = ""; // Limpia la selección de noches
+        }
+        actualizarResumen();
+    };
+
+    // CORRECCIÓN: Listener general para otros cambios en el formulario que puedan afectar el precio
+    formEl.addEventListener('input', (e) => {
+        if (e.target.id === 'cantidad_huespedes') {
+            actualizarResumen();
+        }
+    });
+    
     formEl.onsubmit = async (e) => {
         e.preventDefault();
         const submitBtn = formEl.querySelector('#btn-alquilar-hab');
-        if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Registrando..."; }
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Procesando...";
 
         try {
-            const formDataAlquiler = Object.fromEntries(new FormData(formEl));
-            const detallesEstancia = calcularDetallesEstancia(formDataAlquiler, room, tiempos, horarios, tarifaNocheUnica);
+            const formData = Object.fromEntries(new FormData(formEl));
+            const detallesEstancia = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica);
 
-            if (detallesEstancia.precioTotal <= 0 && !detallesEstancia.tipoCalculo) {
-                alert('Debe seleccionar una duración válida para la estancia.');
-                if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
-                return;
+            if (detallesEstancia.precioTotal <= 0 && detallesEstancia.descripcionEstancia !== "Seleccione duración") {
+                 const confirmaCero = confirm("El precio es $0. ¿Desea continuar?");
+                 if (!confirmaCero) throw new Error("Alquiler cancelado por el usuario.");
+            } else if (detallesEstancia.precioTotal <= 0) {
+                 throw new Error('Debe seleccionar una duración válida.');
             }
 
-            const { data: reservasAnteriores } = await supabase.from('reservas')
-                .select('id').eq('habitacion_id', room.id).in('estado', ['activa', 'ocupada']);
-            if (reservasAnteriores && reservasAnteriores.length > 0) {
-                for (const resAnterior of reservasAnteriores) {
-                    await supabase.from('reservas').update({ estado: 'finalizada_auto' }).eq('id', resAnterior.id);
-                    await supabase.from('cronometros').update({ activo: false }).eq('reserva_id', resAnterior.id);
-                }
-            }
-            await supabase.from('cronometros').update({ activo: false })
-                .eq('habitacion_id', room.id).eq('activo', true).is('reserva_id', null);
+            if (!formData.metodo_pago_id) throw new Error("Debe seleccionar un método de pago.");
+            if (!turnoService.getActiveTurnId()) throw new Error("ACCIÓN BLOQUEADA: No hay un turno de caja activo.");
 
-            const metodoPagoSeleccionadoAlquiler = formDataAlquiler.metodo_pago_id;
-
-            // =====================================================================
-            // DEFINICIÓN DE registrarReservaYMovimientosCaja (ANIDADA)
-            // =====================================================================
-            async function registrarReservaYMovimientosCaja({ pagos, isMixto, formDataOriginal }) {
-                const seCobraAlCheckinLocal = hotelConfigGlobal?.cobro_al_checkin === true;
-                let metodoPagoReservaFinal = null;
-                if (seCobraAlCheckinLocal && !isMixto && pagos && pagos.length > 0) {
-                    metodoPagoReservaFinal = pagos[0].metodo_pago_id;
-                }
-
-                const reservaInsertData = {
-                    cliente_nombre: formDataOriginal.cliente_nombre,
-                    cedula: formDataOriginal.cedula,
-                    telefono: formDataOriginal.telefono,
-                    habitacion_id: room.id,
-                    hotel_id: hotelId, // Usar el hotelId del parámetro de showAlquilarModal
-                    fecha_inicio: detallesEstancia.inicioAt.toISOString(),
-                    fecha_fin: detallesEstancia.finAt.toISOString(),
-                    monto_total: detallesEstancia.precioTotal,
-                    estado: "activa",
-                    cantidad_huespedes: Number(formDataOriginal.cantidad_huespedes),
-                    metodo_pago_id: metodoPagoReservaFinal,
-                    monto_pagado: 0 // Inicializar en 0
-                };
-                
-                let totalMontoPagadoInicial = 0;
-                if (seCobraAlCheckinLocal && pagos && pagos.length > 0) {
-                     totalMontoPagadoInicial = pagos.reduce((sum, p) => sum + Number(p.monto), 0);
-                }
-                reservaInsertData.monto_pagado = totalMontoPagadoInicial;
-
-
-                const { data: reservaData, error: errRes } = await supabase.from('reservas')
-                    .insert([reservaInsertData]).select().single();
-                if (errRes) throw new Error("Error creando reserva: " + errRes.message);
-                
-                const reservaIdCreada = reservaData.id;
-
-                if (seCobraAlCheckinLocal && pagos && pagos.length > 0 && detallesEstancia.precioTotal > 0) {
-                    const turnoIdActualLocal = turnoService.getActiveTurnId();
-                    if (!turnoIdActualLocal) {
-                        throw new Error("ACCIÓN BLOQUEADA: No hay turno activo para registrar el pago en caja.");
-                    }
-                    for (const pago of pagos) {
-                        const { data: pagoReservaData, error: errPagoReserva } = await supabase.from('pagos_reserva').insert({
-                            hotel_id: hotelId, reserva_id: reservaIdCreada, monto: Number(pago.monto),
-                            fecha_pago: new Date().toISOString(), metodo_pago_id: pago.metodo_pago_id,
-                            usuario_id: currentUser?.id // Usar currentUser del parámetro de showAlquilarModal
-                        }).select().single();
-                        if (errPagoReserva) console.error("Error registrando en pagos_reserva:", errPagoReserva);
-
-                        if (pagoReservaData) { // Solo registrar en caja si el pago_reserva fue exitoso
-                            const { error: errCaja } = await supabase.from('caja').insert({
-                                hotel_id: hotelId, tipo: 'ingreso', monto: Number(pago.monto),
-                                concepto: `Alquiler INICIAL ${room.nombre} (${detallesEstancia.descripcionEstancia}) - ${formDataOriginal.cliente_nombre || 'Cliente Directo'}`,
-                                fecha_movimiento: detallesEstancia.inicioAt.toISOString(),
-                                usuario_id: currentUser?.id, reserva_id: reservaIdCreada,
-                                metodo_pago_id: pago.metodo_pago_id, turno_id: turnoIdActualLocal,
-                                pago_reserva_id: pagoReservaData.id // Enlazar con el pago_reserva
-                            });
-                            if (errCaja) console.error("Error registrando en caja:", errCaja);
-                        }
-                    }
-                } else if (!seCobraAlCheckinLocal) {
-                    console.log(`Política de cobro es 'Al Salir'. No se registra pago para estancia ${reservaIdCreada} en este momento.`);
-                }
-
-                await supabase.from('cronometros').insert([{
-                    hotel_id: hotelId, reserva_id: reservaIdCreada, habitacion_id: room.id,
-                    fecha_inicio: detallesEstancia.inicioAt.toISOString(),
-                    fecha_fin: detallesEstancia.finAt.toISOString(), activo: true,
-                }]);
-                await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
-
-                modalContainer.style.display = "none"; modalContainer.innerHTML = '';
-                await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
-            }
-            // =====================================================================
-            // FIN DE DEFINICIÓN DE registrarReservaYMovimientosCaja
-            // =====================================================================
-
-            // =====================================================================
-            // DEFINICIÓN DE mostrarModalPagosMixtos (ANIDADA)
-            // =====================================================================
-            function mostrarModalPagosMixtos(totalAPagar, metodosDisponibles, callbackConfirmacion) {
-                const body = document.body;
-                let pagosRegistrados = [{ metodo_pago_id: '', monto: '' }];
-                const modalElemento = document.createElement('div');
-                modalElemento.className = "fixed inset-0 bg-black/50 z-[10000] flex items-center justify-center p-4";
-                modalElemento.style.fontFamily = "'Segoe UI', Arial, sans-serif";
-                
-                modalElemento.innerHTML = `
-                    <div class="bg-white rounded-xl shadow-xl p-6 max-w-md w-full mx-auto animate-fade-in-up">
-                        <h3 class="text-xl font-bold text-blue-700 mb-5 text-center">Registrar Pagos Mixtos</h3>
-                        <div class="mb-3 text-center">Total a cubrir: <strong class="text-blue-600 text-lg">${formatCurrency(totalAPagar)}</strong></div>
-                        <form id="formPagosMixtosInterno" class="space-y-3">
-                            <div id="campos-pagos-mixtos-container" class="space-y-3 mb-3"></div>
-                            <div class="mb-4">
-                                <button type="button" id="btn-agregar-otro-pago" class="text-sm text-blue-600 hover:text-blue-800 font-semibold flex items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd" /></svg>
-                                    Agregar otro método de pago
-                                </button>
-                            </div>
-                            <div id="mensaje-error-pagos-mixtos" class="text-sm text-red-600 mb-4 min-h-[1.2em]"></div>
-                            <div class="flex gap-3 justify-center mt-5">
-                                <button type="submit" class="button button-success py-2.5 px-6 text-base">Registrar Pagos</button>
-                                <button type="button" id="btn-cancelar-pagos-mixtos" class="button button-neutral py-2.5 px-6 text-base">Cancelar</button>
-                            </div>
-                        </form>
-                    </div>`;
-                body.appendChild(modalElemento);
-
-                const camposContainer = modalElemento.querySelector('#campos-pagos-mixtos-container');
-                const mensajeErrorEl = modalElemento.querySelector('#mensaje-error-pagos-mixtos');
-
-                function renderizarCamposDePago() {
-                    camposContainer.innerHTML = '';
-                    pagosRegistrados.forEach((pagoItem, index) => {
-                        const divPago = document.createElement('div');
-                        divPago.className = "pago-mixto-item flex items-center gap-2 bg-slate-50 p-3 rounded-lg border border-slate-200";
-                        divPago.innerHTML = `
-                            <select required name="metodo_pago_id_mixto" data-index="${index}" class="form-control flex-grow" style="min-width: 120px;">
-                                <option value="">-- Método --</option>
-                                ${metodosDisponibles.map(mp => `<option value="${mp.id}" ${pagoItem.metodo_pago_id === mp.id ? 'selected' : ''}>${mp.nombre}</option>`).join('')}
-                            </select>
-                            <input required type="number" name="monto_mixto" data-index="${index}" min="0.01" step="0.01" class="form-control w-32 text-right" placeholder="Monto" value="${pagoItem.monto || ''}">
-                            ${pagosRegistrados.length > 1 ? `<button type="button" data-index="${index}" class="btn-eliminar-pago-mixto text-red-500 hover:text-red-700 font-bold text-xl px-2">&times;</button>` : ''}
-                        `;
-                        camposContainer.appendChild(divPago);
-                    });
-
-                    camposContainer.querySelectorAll('.btn-eliminar-pago-mixto').forEach(btn => {
-                        btn.onclick = (e) => { pagosRegistrados.splice(Number(e.target.dataset.index), 1); renderizarCamposDePago(); };
-                    });
-                    camposContainer.querySelectorAll('select[name="metodo_pago_id_mixto"]').forEach(sel => {
-                        sel.onchange = (e) => pagosRegistrados[Number(e.target.dataset.index)].metodo_pago_id = e.target.value;
-                    });
-                    camposContainer.querySelectorAll('input[name="monto_mixto"]').forEach(inp => {
-                        inp.oninput = (e) => pagosRegistrados[Number(e.target.dataset.index)].monto = e.target.value;
-                    });
-                }
-                renderizarCamposDePago();
-
-                modalElemento.querySelector('#btn-agregar-otro-pago').onclick = () => {
-                    pagosRegistrados.push({ metodo_pago_id: '', monto: '' }); renderizarCamposDePago();
-                };
-                modalElemento.querySelector('#btn-cancelar-pagos-mixtos').onclick = () => {
-                    body.removeChild(modalElemento); callbackConfirmacion(null);
-                };
-                modalElemento.querySelector('#formPagosMixtosInterno').onsubmit = (e) => {
-                    e.preventDefault();
-                    mensajeErrorEl.textContent = '';
-                    const totalPagadoMixto = pagosRegistrados.reduce((sum, p) => sum + Number(p.monto || 0), 0);
-                    if (pagosRegistrados.some(p => !p.metodo_pago_id || !p.monto || Number(p.monto) <= 0)) {
-                        mensajeErrorEl.textContent = "Todos los pagos deben tener método y monto válido (>0)."; return;
-                    }
-                    if (Math.abs(totalPagadoMixto - totalAPagar) > 0.001) {
-                        mensajeErrorEl.textContent = `El total (${formatCurrency(totalPagadoMixto)}) debe sumar ${formatCurrency(totalAPagar)}.`; return;
-                    }
-                    body.removeChild(modalElemento);
-                    callbackConfirmacion(pagosRegistrados.map(p => ({ metodo_pago_id: p.metodo_pago_id, monto: Number(p.monto) })));
-                };
-            }
-            // =====================================================================
-            // FIN DE DEFINICIÓN DE mostrarModalPagosMixtos
-            // =====================================================================
-
-            // --- Lógica de submit principal ---
-            if (metodoPagoSeleccionadoAlquiler === "mixto") {
-                if (hotelConfigGlobal?.cobro_al_checkin === false && detallesEstancia.precioTotal === 0) {
-                    // Si es cobro al checkout y el precio es 0 (ej. solo cortesía sin definir duración aún)
-                    // o si el precio es 0 por alguna razón y es mixto, no tiene sentido el modal mixto.
-                    // Procedemos como si no hubiera pago inmediato.
-                     await registrarReservaYMovimientosCaja({ pagos: [], isMixto: false, formDataOriginal: formDataAlquiler });
-                } else if (hotelConfigGlobal?.cobro_al_checkin === false && detallesEstancia.precioTotal > 0) {
-                    // Si es cobro al checkout pero se seleccionó mixto (y hay un precio total),
-                    // esto es un caso un poco raro. Podríamos optar por no permitir mixto aquí
-                    // o simplemente proceder sin pago inmediato. Por ahora, procedemos sin pago.
-                    console.warn("Pago Mixto seleccionado con política de 'Cobro al Checkout'. No se procesará pago mixto en este momento.");
-                    await registrarReservaYMovimientosCaja({ pagos: [], isMixto: false, formDataOriginal: formDataAlquiler });
-                }
-                 else { // Cobro al checkin y es mixto
-                    mostrarModalPagosMixtos(detallesEstancia.precioTotal, metodosPagoDisponibles.filter(m => m.id !== "mixto"), async (pagosMixtos) => {
-                        if (!pagosMixtos) {
-                            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
-                            return;
-                        }
-                        await registrarReservaYMovimientosCaja({ pagos: pagosMixtos, isMixto: true, formDataOriginal: formDataAlquiler });
-                    });
-                }
-            } else { // Pago único o no se cobra al checkin
-                let pagosParaRegistrar = [];
-                if (hotelConfigGlobal?.cobro_al_checkin === true && detallesEstancia.precioTotal > 0 && metodoPagoSeleccionadoAlquiler) {
-                    pagosParaRegistrar = [{
-                        metodo_pago_id: metodoPagoSeleccionadoAlquiler,
-                        monto: detallesEstancia.precioTotal
-                    }];
-                } else if (hotelConfigGlobal?.cobro_al_checkin === false && metodoPagoContainerEl.style.display !== 'none') {
-                    // Si el método de pago era visible (quizás por un error de lógica anterior o una configuración mixta)
-                    // pero la política es no cobrar, no registramos pago.
-                    console.log("Método de pago visible pero política es no cobrar al checkin. No se procesará pago.");
-                }
-
-                await registrarReservaYMovimientosCaja({
-                    pagos: pagosParaRegistrar,
-                    isMixto: false,
-                    formDataOriginal: formDataAlquiler
+            if (formData.metodo_pago_id === 'mixto') {
+                await showPagoMixtoModal(detallesEstancia.precioTotal, metodosPagoDisponibles, async (pagosMixtos) => {
+                    await registrarReservaYMovimientosCaja({ formData, detallesEstancia, pagos: pagosMixtos, room, supabase, currentUser, hotelId, mainAppContainer });
                 });
+            } else {
+                const pagos = [{ metodo_pago_id: formData.metodo_pago_id, monto: detallesEstancia.precioTotal }];
+                await registrarReservaYMovimientosCaja({ formData, detallesEstancia, pagos, room, supabase, currentUser, hotelId, mainAppContainer });
             }
+
         } catch (err) {
-            if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = "Confirmar y Registrar Alquiler"; }
             console.error("Error en submit de alquiler:", err);
-            mostrarInfoModalGlobal("Error: " + (err.message || "Ocurrió un problema al registrar la reserva."), "Error de Registro", [], modalContainer);
+            mostrarInfoModalGlobal(err.message, "Error de Registro");
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Confirmar y Registrar";
         }
-    }; // Fin de formEl.onsubmit
-} // Fin de showAlquilarModal
+    };
+}
+
+/**
+ * Muestra un modal para dividir el pago en varios métodos.
+ * @param {number} totalAPagar - El monto total que se debe cubrir.
+ * @param {Array} metodosPago - La lista de métodos de pago disponibles.
+ * @param {Function} onConfirm - Callback que se ejecuta con el array de pagos al confirmar.
+ */
+async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
+    const modalContainer = document.getElementById('modal-container-secondary');
+    modalContainer.style.display = 'flex';
+    modalContainer.innerHTML = '';
+
+    const metodosDisponibles = metodosPago.filter(mp => mp.id !== 'mixto');
+    const opcionesMetodosHTML = metodosDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
+
+    const modalContent = document.createElement('div');
+    modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 m-auto animate-fade-in-up";
+    modalContent.innerHTML = `
+        <form id="form-pago-mixto">
+            <h3 class="text-xl font-bold mb-2 text-indigo-700">Pago Mixto</h3>
+            <p class="mb-4 text-gray-600">Divida el total de <strong class="text-2xl">${formatCurrency(totalAPagar)}</strong>.</p>
+            <div id="lista-pagos-mixtos" class="space-y-3 pr-2 max-h-60 overflow-y-auto"></div>
+            <button type="button" id="btn-agregar-pago-mixto" class="button button-neutral w-full mt-4 text-sm py-2">Agregar Otro Método</button>
+            <hr class="my-4">
+            <div class="flex justify-between items-center text-lg font-bold">
+                <span class="text-gray-700">Total Cubierto:</span>
+                <span id="total-cubierto-mixto">${formatCurrency(0)}</span>
+            </div>
+            <div class="flex justify-between items-center text-lg font-bold mt-1">
+                <span class="text-gray-700">Faltante por Pagar:</span>
+                <span id="faltante-pago-mixto" class="text-red-600">${formatCurrency(totalAPagar)}</span>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button type="submit" id="btn-confirmar-pago-mixto" class="button button-success flex-1 py-2.5" disabled>Confirmar Pago</button>
+                <button type="button" id="btn-cancelar-pago-mixto" class="button button-danger flex-1 py-2.5">Cancelar</button>
+            </div>
+        </form>
+    `;
+    modalContainer.appendChild(modalContent);
+
+    const formMixto = modalContent.querySelector('#form-pago-mixto');
+    const listaPagosDiv = modalContent.querySelector('#lista-pagos-mixtos');
+    const btnConfirmar = modalContent.querySelector('#btn-confirmar-pago-mixto');
+    
+    const actualizarTotalesMixtos = () => {
+        let totalCubierto = 0;
+        listaPagosDiv.querySelectorAll('input.monto-pago-mixto').forEach(input => {
+            totalCubierto += Number(input.value) || 0;
+        });
+        const faltante = totalAPagar - totalCubierto;
+        modalContent.querySelector('#total-cubierto-mixto').textContent = formatCurrency(totalCubierto);
+        const faltanteEl = modalContent.querySelector('#faltante-pago-mixto');
+        faltanteEl.textContent = formatCurrency(faltante);
+        
+        if (Math.abs(faltante) < 0.01) {
+            btnConfirmar.disabled = false;
+            faltanteEl.className = 'text-green-600';
+        } else {
+            btnConfirmar.disabled = true;
+            faltanteEl.className = 'text-red-600';
+        }
+    };
+
+    const agregarFilaDePago = () => {
+        const newRow = document.createElement('div');
+        newRow.className = 'pago-mixto-row flex items-center gap-2';
+        newRow.innerHTML = `
+            <select class="form-control flex-grow">${opcionesMetodosHTML}</select>
+            <input type="number" class="form-control w-32 monto-pago-mixto" placeholder="Monto" min="0" step="any">
+            <button type="button" class="btn-remover-pago-mixto text-red-500 hover:text-red-700 text-2xl font-bold">&times;</button>
+        `;
+        listaPagosDiv.appendChild(newRow);
+        newRow.querySelector('.btn-remover-pago-mixto').onclick = () => {
+            newRow.remove();
+            actualizarTotalesMixtos();
+        };
+    };
+
+    modalContent.querySelector('#btn-agregar-pago-mixto').onclick = agregarFilaDePago;
+    listaPagosDiv.addEventListener('input', actualizarTotalesMixtos);
+    agregarFilaDePago(); // Agrega la primera fila al iniciar
+    listaPagosDiv.querySelector('input.monto-pago-mixto').value = totalAPagar; // Pre-llena el total
+    actualizarTotalesMixtos();
+
+    modalContent.querySelector('#btn-cancelar-pago-mixto').onclick = () => {
+        modalContainer.style.display = 'none';
+        modalContainer.innerHTML = '';
+        const btnPrincipal = document.querySelector('#btn-alquilar-hab');
+        if(btnPrincipal) {
+            btnPrincipal.disabled = false;
+            btnPrincipal.textContent = "Confirmar y Registrar";
+        }
+    };
+
+    formMixto.onsubmit = async (e) => {
+        e.preventDefault();
+        btnConfirmar.disabled = true;
+        btnConfirmar.textContent = "Procesando...";
+        
+        const pagosFinales = [];
+        listaPagosDiv.querySelectorAll('.pago-mixto-row').forEach(row => {
+            const metodoId = row.querySelector('select').value;
+            const monto = Number(row.querySelector('input').value);
+            if (metodoId && monto > 0) {
+                pagosFinales.push({ metodo_pago_id: metodoId, monto: monto });
+            }
+        });
+
+        if (pagosFinales.length > 0) {
+            await onConfirm(pagosFinales);
+            modalContainer.style.display = 'none';
+            modalContainer.innerHTML = '';
+        } else {
+            alert("No se ha definido ningún pago válido.");
+            btnConfirmar.disabled = false;
+            btnConfirmar.textContent = "Confirmar Pago";
+        }
+    };
+}
+// =========================================================================================
+// AÑADE ESTA NUEVA FUNCIÓN COMPLETA JUSTO DEBAJO DE showAlquilarModal
+// =========================================================================================
+
+async function registrarReservaYMovimientosCaja({
+    formData,
+    detallesEstancia,
+    pagos, // AHORA ES UN ARRAY: [{ metodo_pago_id, monto }]
+    room,
+    supabase,
+    currentUser,
+    hotelId,
+    mainAppContainer
+}) {
+    // Calcula el total pagado sumando todos los pagos del arreglo
+    const totalPagado = pagos.reduce((sum, pago) => sum + pago.monto, 0);
+
+    // 1. Crear la reserva
+    const { data: nuevaReserva, error: errReserva } = await supabase.from('reservas').insert({
+        hotel_id: hotelId,
+        habitacion_id: room.id,
+        cliente_nombre: formData.cliente_nombre.trim(),
+        cedula: formData.cedula.trim() || null,
+        telefono: formData.telefono.trim() || null,
+        fecha_inicio: detallesEstancia.inicioAt.toISOString(),
+        fecha_fin: detallesEstancia.finAt.toISOString(),
+        cantidad_huespedes: parseInt(formData.cantidad_huespedes),
+        monto_total: detallesEstancia.precioTotal,
+        monto_pagado: totalPagado, // Usar el total calculado de los pagos
+        estado: 'ocupada',
+        tipo_duracion: detallesEstancia.tipoCalculo,
+        cantidad_duracion: detallesEstancia.cantidadCalculo,
+        usuario_id: currentUser.id
+    }).select().single();
+
+    if (errReserva) throw new Error('Error al crear la reserva: ' + errReserva.message);
+
+    // 2. Actualizar estado de la habitación
+    await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
+
+    // 3. Crear el cronómetro
+    await supabase.from('cronometros').insert({
+        hotel_id: hotelId,
+        reserva_id: nuevaReserva.id,
+        habitacion_id: room.id,
+        fecha_inicio: nuevaReserva.fecha_inicio,
+        fecha_fin: nuevaReserva.fecha_fin,
+        activo: true
+    });
+
+    // 4. Registrar TODOS los pagos en la tabla 'caja'
+    const turnoId = turnoService.getActiveTurnId();
+    if (!turnoId) throw new Error("No hay turno de caja activo.");
+    
+    // Mapear el arreglo de pagos a un arreglo de movimientos de caja
+    const movimientosCaja = pagos.map(pago => ({
+        hotel_id: hotelId,
+        tipo: 'ingreso',
+        monto: pago.monto,
+        concepto: `Alquiler Hab. ${room.nombre} (${detallesEstancia.descripcionEstancia})`,
+        fecha_movimiento: new Date().toISOString(),
+        metodo_pago_id: pago.metodo_pago_id,
+        usuario_id: currentUser.id,
+        reserva_id: nuevaReserva.id,
+        turno_id: turnoId,
+    }));
+
+    const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
+    if (errCaja) throw new Error(`¡Reserva creada, pero error en caja! ${errCaja.message}.`);
+
+    // 5. Éxito: Cerrar el modal y refrescar la UI
+    document.getElementById('modal-container').style.display = 'none';
+    document.getElementById('modal-container').innerHTML = '';
+    mostrarInfoModalGlobal("¡Habitación alquilada con éxito!", "Alquiler Registrado");
+    
+    await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+}
+// Fin de showAlquilarModal
 // ... (resto de tus funciones como showExtenderTiempoModal, showMantenimientoModal, setupButtonListener, etc.)
 // ===================== MODAL EXTENDER TIEMPO (POS STYLE - COMPLETO) =====================
 async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
@@ -3228,6 +3025,7 @@ async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mai
             </div>
         `;
         modalContainer.appendChild(modalContent);
+        
 
         const formExtEl = modalContent.querySelector('#extender-form-pos');
         const selectNochesExtEl = modalContent.querySelector('#select-noches-ext');
@@ -3692,102 +3490,84 @@ function mostrarInfoModalGlobal(htmlContent, title = "Información", botones = [
 // ===================== FUNCIONES DE MANTENIMIENTO Y RESERVA FUTURA =====================
 // --- NUEVA FUNCIÓN showMantenimientoModal CON FORMULARIO DE TAREA ---
 
+
+// En tu archivo mapa-habitaciones.js, reemplaza esta función:
+
+// En tu archivo mapa-habitaciones.js, REEMPLAZA esta función completa:
+
+// CÓDIGO CORREGIDO Y OPTIMIZADO en mapa-habitaciones.js
+
+// js/modules/mapa_habitaciones/mapa_habitaciones.js
+
+// ... (asegúrate de que la importación esté al inicio de tu archivo)
 import { showModalTarea } from '../mantenimiento/mantenimiento.js';
 
+// ... (resto de tus funciones del mapa de habitaciones)
+
+// REEMPLAZA TU FUNCIÓN showMantenimientoModal ACTUAL CON ESTA VERSIÓN CORREGIDA
 async function showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
 
-    // 1. Modal de confirmación
+    // 1. Confirmar la acción con el usuario.
     const confirmacion = await new Promise(resolve => {
         mostrarInfoModalGlobal(
-            `¿Desea crear una tarea de mantenimiento para la habitación <strong>${room.nombre}</strong>?<br><br><small>Al confirmar, deberá llenar los detalles de la tarea. Si hay una reserva activa, se cancelará automáticamente.</small>`,
-            "Crear tarea de mantenimiento",
+            `¿Desea crear una tarea de mantenimiento para la habitación <strong>${room.nombre}</strong>?<br><br><small>La habitación se marcará como 'mantenimiento' solo si guarda la tarea.</small>`,
+            "Confirmar Envío a Mantenimiento",
+            [
+                { texto: "Sí, crear tarea", clase: "button-danger", accion: () => resolve(true) },
+                { texto: "Cancelar", clase: "button-neutral", accion: () => resolve(false) }
+            ],
             modalContainer
         );
-        const modalDialog = modalContainer.querySelector('.bg-white');
-        const btnOk = modalDialog.querySelector('#btn-ok-info-modal-global');
-        const btnClose = modalDialog.querySelector('#close-info-modal-global');
-        btnOk.textContent = "Sí, continuar";
-        btnOk.className = "button button-danger py-2 px-4 mr-2";
-        const btnCancel = document.createElement('button');
-        btnCancel.textContent = "Cancelar";
-        btnCancel.className = "button button-neutral py-2 px-4";
-        btnOk.parentElement.appendChild(btnCancel);
-
-        btnOk.onclick = () => { 
-            resolve(true); 
-            modalContainer.style.display = "none"; 
-            modalContainer.innerHTML = ''; 
-        };
-        btnCancel.onclick = () => { 
-            resolve(false); 
-            modalContainer.style.display = "none"; 
-            modalContainer.innerHTML = ''; 
-        };
-        btnClose.onclick = () => { 
-            resolve(false); 
-            modalContainer.style.display = "none"; 
-            modalContainer.innerHTML = ''; 
-        };
     });
 
-    // Si cancela la confirmación, no hace nada más
-    if (!confirmacion) return;
-
+    // Si el usuario cancela la confirmación inicial, no hacemos nada más.
+    if (!confirmacion) {
+        return;
+    }
+    
+    // --- LÓGICA CORREGIDA ---
+    // NO HAY NINGUNA MODIFICACIÓN A LA BASE DE DATOS AQUÍ.
+    // Solo llamamos al modal para que el usuario cree la tarea.
     try {
-        // 2. Cancela reserva activa si existe
-        const { data: reservaActiva, error: errReserva } = await supabase
-            .from('reservas')
-            .select('id')
-            .eq('habitacion_id', room.id)
-            .eq('estado', 'ocupada')
-            .order('fecha_inicio', { ascending: false })
-            .limit(1)
-            .single();
+        const modalTareaContainer = document.createElement('div');
+        modalTareaContainer.id = 'mant-modal-temp-container';
+        modalTareaContainer.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4";
+        document.body.appendChild(modalTareaContainer);
 
-        if (errReserva && errReserva.code !== 'PGRST116') throw errReserva;
-        if (reservaActiva) {
-            await supabase.from('cronometros').update({ activo: false }).eq('reserva_id', reservaActiva.id);
-            await supabase.from('reservas').update({ estado: 'cancelada_mantenimiento' }).eq('id', reservaActiva.id);
-        }
-
-        // 3. Crea el container para el modal de tarea de mantenimiento
-        let fakeContainer = document.createElement('div');
-        fakeContainer.id = 'mant-modal-container-mapahab';
-        fakeContainer.innerHTML = '<div id="mant-modal"></div>';
-        document.body.appendChild(fakeContainer);
-
-        // 4. Abre el formulario bonito de tarea de mantenimiento con datos prellenados
+        // Llamamos a la función del otro módulo para que muestre el formulario.
+        // La lógica de guardar y cambiar estado está DENTRO de showModalTarea.
         await showModalTarea(
-            fakeContainer,
+            modalTareaContainer,
             supabase,
             hotelId,
             currentUser,
-            {
+            { // Objeto 'tarea' pre-llenado
                 habitacion_id: room.id,
                 estado: 'pendiente',
-                titulo: `Mantenimiento de habitación ${room.nombre}`
+                titulo: `Mantenimiento Hab. ${room.nombre}`
             }
         );
-
-        // 5. Espera que el modal de tarea se cierre para refrescar
-        const modal = fakeContainer.querySelector('#mant-modal');
-        const observer = new MutationObserver(() => {
-            if (!modal.innerHTML.trim()) {
-                document.body.removeChild(fakeContainer);
-                renderRooms(mainAppContainer, supabase, currentUser, hotelId);
-                observer.disconnect();
+        
+        // 3. Observer para saber cuándo se cierra el modal de tarea y refrescar el mapa.
+        // Esto es para que, sin importar si se guarda o se cancela, el mapa se actualice al final.
+        const observer = new MutationObserver(async (mutationsList, obs) => {
+            if (!document.body.contains(modalTareaContainer) || !modalTareaContainer.innerHTML.trim()) {
+                if (document.body.contains(modalTareaContainer)) {
+                    document.body.removeChild(modalTareaContainer);
+                }
+                await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+                obs.disconnect();
             }
         });
-        observer.observe(modal, { childList: true });
+
+        observer.observe(document.body, { childList: true, subtree: true });
 
     } catch (error) {
-        console.error("Error creando tarea de mantenimiento desde el mapa:", error);
-        mostrarInfoModalGlobal(`Error al crear la tarea: ${error.message}`, "Error Mantenimiento");
+        console.error("Error al invocar el modal de mantenimiento:", error);
+        mostrarInfoModalGlobal(`Error al iniciar el proceso: ${error.message}`, "Error");
     }
 }
-
-
 async function showReservaFuturaModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
     modalContainer.style.display = "flex";

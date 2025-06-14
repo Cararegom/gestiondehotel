@@ -16,6 +16,7 @@ let productosCache = [];
 import { turnoService } from '../../services/turnoService.js';
 import { showError, showSuccess } from '../../uiUtils.js';
 import { fetchTurnoActivo } from '../../services/turnoService.js';
+import { crearNotificacion } from '../../services/NotificationService.js';
 
 async function checkTurnoActivo(supabase, hotelId, usuarioId) {
   const turno = await fetchTurnoActivo(supabase, hotelId, usuarioId);
@@ -594,264 +595,488 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
 
 // ====================  PESTAÑA INVENTARIO  ====================
 let inventarioProductos = [];
+// Reemplaza esta función completa en tu archivo
 
 async function renderInventario() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
-  <h2 style="font-size:1.35rem;font-weight:700;color:#1d4ed8;display:flex;align-items:center;gap:9px;">
-    <svg width="23" height="23" fill="#1d4ed8"><use href="#icon-box"></use></svg>
-    Inventario de Productos
-  </h2>
-  <button id="btnNuevoProducto" 
-    style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;
-           padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;
-           box-shadow:0 1px 4px #22c55e55;transition:background 0.2s;">
-    + Agregar Producto
-  </button>
-</div>
+      <h2 style="font-size:1.35rem;font-weight:700;color:#1d4ed8;display:flex;align-items:center;gap:9px;">
+        <svg width="23" height="23" fill="#1d4ed8"><use href="#icon-box"></use></svg>
+        Inventario de Productos
+      </h2>
+      <div style="display:flex; gap:10px;">
+        <button id="btnHojaConteo"
+          style="background: #fff; color: #4b5563; border: 1.5px solid #d1d5db;
+                 padding: 9px 22px; border-radius: 6px; font-size: 1em; font-weight: 600;
+                 transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="m14 14-2-2-2 2"></path><path d="m10 18 2 2 2-2"></path></svg>
+          Hoja de Conteo
+        </button>
+        <button id="btnDescargarInventario"
+          style="background: #fff; color: #1d4ed8; border: 1.5px solid #1d4ed8;
+                 padding: 9px 22px; border-radius: 6px; font-size: 1em; font-weight: 600;
+                 transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+          Descargar
+        </button>
+        <button id="btnVerMovimientos"
+          style="background:linear-gradient(90deg,#60a5fa,#3b82f6);color:#fff;
+                 padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">
+          Historial
+        </button>
+        <button id="btnNuevoProducto" 
+          style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;
+                 padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">
+          + Agregar Producto
+        </button>
+      </div>
+    </div>
 
-<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
-  <input id="buscarInventario" placeholder="Buscar por nombre, código, categoría, proveedor..." 
-    style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
-  <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;">
-    <option value="">Todas las Categorías</option>
-  </select>
-</div>
-
-<div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 8px #0001;">
-  <table style="width:100%;font-size:14px;border-collapse:collapse;">
-    <thead>
-      <tr style="background:#f3f4f6;">
-        <th style="padding:12px;">Nombre</th>
-        <th style="padding:12px;">Código</th>
-        <th style="padding:12px;">Categoría</th>
-        <th style="padding:12px;">Proveedor</th>
-        <th style="padding:12px;">Precio Compra</th>
-        <th style="padding:12px;">Precio Venta</th>
-        <th style="padding:12px;">Stock Actual</th>
-        <th style="padding:12px;">Stock Mín</th>
-        <th style="padding:12px;">Stock Máx</th>
-        <th style="padding:12px;">Estado</th>
-        <th style="padding:12px;">Acciones</th>
-      </tr>
-    </thead>
-    <tbody id="invProductos"></tbody>
-  </table>
-</div>
-<div id="modalProductoInv" style="display:none"></div>
+    <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <input id="buscarInventario" placeholder="Buscar por nombre, código, categoría..." style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
+      <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;"><option value="">Todas las Categorías</option></select>
+    </div>
+    <div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 8px #0001;">
+      <table style="width:100%;font-size:14px;border-collapse:collapse;">
+        <thead><tr style="background:#f3f4f6;"><th style="padding:12px;">Nombre</th><th style="padding:12px;">Código</th><th style="padding:12px;">Categoría</th><th style="padding:12px;">Stock Actual</th><th style="padding:12px;">Precio Venta</th><th style="padding:12px;">Estado</th><th style="padding:12px 18px;text-align:center;">Acciones</th></tr></thead>
+        <tbody id="invProductos"></tbody>
+      </table>
+    </div>
+    <div id="modalContainer" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#00000080;display:none;align-items:center;justify-content:center;z-index:1000;"></div>
   `;
-
+  
+  // Asignamos los eventos a los botones
+  document.getElementById('btnHojaConteo').onclick = () => imprimirHojaDeConteo();
+  document.getElementById('btnDescargarInventario').onclick = () => mostrarModalDescarga(); // Llama al nuevo modal
+  document.getElementById('btnNuevoProducto').onclick = () => showModalProducto();
+  document.getElementById('btnVerMovimientos').onclick = () => showModalHistorial();
+  document.getElementById('buscarInventario').oninput = (e) => renderTablaInventario(e.target.value);
+  
   const selectFiltroCat = document.getElementById('filtroCategoriaInv');
-  if (selectFiltroCat) {
-    selectFiltroCat.innerHTML = `
+  selectFiltroCat.onchange = () => renderTablaInventario(document.getElementById('buscarInventario').value);
+  
+  await cargarCategoriasYProveedores();
+  await cargarProductosInventario();
+  
+  selectFiltroCat.innerHTML = `
       <option value="">Todas las categorías</option>
       ${categoriasCache.map(cat => `<option value="${cat.id}">${cat.nombre}</option>`).join('')}
-    `;
-    selectFiltroCat.onchange = function() {
-      filtrarYRenderInventario();
-    }
-  }
+  `;
 
-  document.getElementById('btnNuevoProducto').onclick = ()=>showModalProducto();
-  document.getElementById('buscarInventario').oninput = (e)=>renderTablaInventario(e.target.value);
-
-  await cargarProductosInventario();
-  await cargarCategoriasYProveedores();
   renderTablaInventario('');
 }
 
+
+// Agrega estas TRES nuevas funciones al final de tu módulo
+
+/**
+ * Muestra un modal para que el usuario elija el formato de descarga.
+ */
+function mostrarModalDescarga() {
+  const modalContainer = document.getElementById('modalContainer');
+  modalContainer.style.display = 'flex';
+  modalContainer.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:28px 24px;width:95vw;max-width:450px;text-align:center;">
+      <h2 style="margin-top:0;margin-bottom:20px;color:#1e293b;">Descargar Reporte de Inventario</h2>
+      <p style="margin-top:0;margin-bottom:25px;color:#475569;">Elige el formato en el que deseas descargar el reporte de productos activos.</p>
+      <div style="display:flex;justify-content:center;gap:15px;">
+        <button id="btnDescargarExcel" style="background:#107c41;color:white;border:none;padding:12px 24px;border-radius:8px;font-size:1em;font-weight:600;cursor:pointer;">
+          Descargar Excel (.xlsx)
+        </button>
+        <button id="btnDescargarPDF" style="background:#b91c1c;color:white;border:none;padding:12px 24px;border-radius:8px;font-size:1em;font-weight:600;cursor:pointer;">
+          Descargar PDF (.pdf)
+        </button>
+      </div>
+      <button onclick="window.closeModal()" style="margin-top:25px;background:none;border:none;color:#64748b;cursor:pointer;">Cancelar</button>
+    </div>
+  `;
+
+  document.getElementById('btnDescargarExcel').onclick = descargarExcel;
+  document.getElementById('btnDescargarPDF').onclick = descargarPDF;
+}
+
+/**
+ * Genera y descarga un archivo Excel (.xlsx) con el inventario activo.
+ */
+function descargarExcel() {
+  closeModal();
+  const productosActivos = inventarioProductos.filter(p => p.activo);
+  
+  // Preparamos los datos para la hoja de cálculo
+  const dataParaExcel = productosActivos.map(p => ({
+    'Nombre': p.nombre,
+    'Código': p.codigo_barras || 'N/A',
+    'Categoría': categoriasCache.find(c => c.id === p.categoria_id)?.nombre || 'N/A',
+    'Stock Actual': p.stock_actual,
+    'Precio Compra': p.precio,
+    'Precio Venta': p.precio_venta
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(dataParaExcel);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Inventario");
+
+  // Generamos un nombre de archivo con la fecha actual
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(workbook, `Reporte_Inventario_${fecha}.xlsx`);
+}
+
+/**
+ * Genera y descarga un archivo PDF con el inventario activo.
+ */
+function descargarPDF() {
+  closeModal();
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  const productosActivos = inventarioProductos.filter(p => p.activo);
+  const fecha = new Date().toLocaleString('es-CO');
+
+  // Título del documento
+  doc.setFontSize(18);
+  doc.text("Reporte de Inventario Activo", 14, 22);
+  doc.setFontSize(11);
+  doc.setTextColor(100);
+  doc.text(`Generado el: ${fecha}`, 14, 30);
+
+  // Preparamos los datos para la tabla del PDF
+  const tableColumn = ["Nombre", "Código", "Categoría", "Stock", "Precio Venta"];
+  const tableRows = [];
+
+  productosActivos.forEach(p => {
+    const productoData = [
+      p.nombre,
+      p.codigo_barras || 'N/A',
+      categoriasCache.find(c => c.id === p.categoria_id)?.nombre || 'N/A',
+      p.stock_actual,
+      `$${Number(p.precio_venta || 0).toLocaleString('es-CO')}`
+    ];
+    tableRows.push(productoData);
+  });
+
+  // Creamos la tabla en el PDF
+  doc.autoTable({
+    head: [tableColumn],
+    body: tableRows,
+    startY: 35,
+    theme: 'grid'
+  });
+
+  // Guardamos el archivo
+  const nombreArchivo = `Reporte_Inventario_${new Date().toISOString().slice(0, 10)}.pdf`;
+  doc.save(nombreArchivo);
+}
+// Reemplaza esta función completa en tu archivo
+
+async function imprimirHojaDeConteo() {
+  // 🎯 1. OBTENEMOS EL USUARIO LOGUEADO PRIMERO
+  const { data: { user }, error: userError } = await currentSupabase.auth.getUser();
+  if (userError || !user) {
+    alert("No se pudo identificar al usuario. Por favor, inicia sesión de nuevo.");
+    return;
+  }
+  const nombreUsuarioLogueado = user.user_metadata?.full_name || user.user_metadata?.nombre || user.email;
+
+  // Filtramos para obtener solo los productos activos.
+  const productosAContar = inventarioProductos.filter(p => p.activo);
+  
+  const fechaActual = new Date().toLocaleString('es-CO', {
+    year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+  });
+
+  let contenido = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Hoja de Conteo Físico de Inventario</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; }
+        .header { text-align: center; margin-bottom: 25px; }
+        .header h1 { color: #1d4ed8; margin-bottom: 10px; }
+        .info-conteo { border: 1px solid #ccc; padding: 15px; margin-top: 20px; border-radius: 8px; }
+        .info-conteo p { margin: 8px 0; text-align: left; }
+        .info-conteo span { font-weight: bold; }
+        .linea-firma { border-bottom: 1px solid #555; display: inline-block; min-width: 250px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 25px; }
+        th, td { border: 1px solid #999; padding: 6px; text-align: left; }
+        th { background-color: #eef2ff; }
+        .footer { text-align: right; font-size: 10px; color: #777; margin-top: 20px; }
+        @media print {
+          body { -webkit-print-color-adjust: exact; }
+          .header, .info-conteo { page-break-after: avoid; }
+          table { page-break-inside: auto; }
+          tr { page-break-inside: avoid; page-break-after: auto; }
+          thead { display: table-header-group; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <h1>Hoja de Conteo Físico de Inventario</h1>
+      </div>
+
+      <div class="info-conteo">
+        <p><span>Fecha de Conteo:</span> <span class="linea-firma"></span></p>
+        <p><span>Realizado por (Nombre y Firma):</span> <span class="linea-firma"></span></p>
+        <p><span>Supervisado por (Nombre y Firma):</span> <span class="linea-firma"></span></p>
+      </div>
+      
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 35%;">Nombre del Producto</th>
+            <th style="width: 15%;">Código</th>
+            <th>Stock Teórico (Sistema)</th>
+            <th style="min-width: 100px;">Conteo Físico</th>
+            <th style="min-width: 100px;">Diferencia</th>
+            <th style="min-width: 100px;">Notas</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  productosAContar.forEach(p => {
+    contenido += `
+      <tr>
+        <td>${p.nombre}</td>
+        <td>${p.codigo_barras || '—'}</td>
+        <td style="text-align:center; font-weight: bold;">${p.stock_actual}</td>
+        <td></td>
+        <td></td>
+        <td></td>
+      </tr>
+    `;
+  });
+
+  contenido += `
+        </tbody>
+      </table>
+
+      <div class="footer">
+        <p>Total de productos a contar: ${productosAContar.length}</p>
+        <p>Documento generado por <strong>${nombreUsuarioLogueado}</strong> el ${fechaActual}</p>
+      </div>
+
+    </body>
+    </html>
+  `;
+
+  const ventanaImpresion = window.open('', '_blank');
+  ventanaImpresion.document.write(contenido);
+  ventanaImpresion.document.close();
+  ventanaImpresion.focus();
+  ventanaImpresion.print();
+  ventanaImpresion.close();
+}
 async function cargarProductosInventario() {
-  let {data} = await currentSupabase
+  let { data } = await currentSupabase
     .from('productos_tienda')
     .select('*, categoria_id, proveedor_id')
-    .eq('hotel_id', currentHotelId);
+    .eq('hotel_id', currentHotelId)
+    .order('nombre', { ascending: true });
   inventarioProductos = data || [];
 }
 
 async function cargarCategoriasYProveedores() {
-  let {data: cat} = await currentSupabase
-    .from('categorias_producto')
-    .select('id, nombre')
-    .eq('hotel_id', currentHotelId)
-    .eq('activa', true);
+  let { data: cat } = await currentSupabase.from('categorias_producto').select('id, nombre').eq('hotel_id', currentHotelId).eq('activa', true);
   categoriasCache = cat || [];
-  let {data: prov} = await currentSupabase
-    .from('proveedores')
-    .select('id, nombre')
-    .eq('hotel_id', currentHotelId)
-    .eq('activo', true);
+  let { data: prov } = await currentSupabase.from('proveedores').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true);
   proveedoresCache = prov || [];
 }
 
-function filtrarYRenderInventario() {
-  const categoriaSeleccionada = document.getElementById('filtroCategoriaInv').value;
-  let productos = inventarioProductos;
-  if (categoriaSeleccionada) {
-    productos = productos.filter(p => p.categoria_id === categoriaSeleccionada);
-  }
-  renderTablaInventario(productos);
-}
+// Reemplaza esta función completa en tu archivo
 
 function renderTablaInventario(filtro = '') {
   let tbody = document.getElementById('invProductos');
   if (!tbody) return;
+
+  const categoriaId = document.getElementById('filtroCategoriaInv').value;
   let lista = inventarioProductos;
-  if(filtro && filtro.trim()) {
-    lista = lista.filter(p => (p.nombre||'').toLowerCase().includes(filtro.toLowerCase()));
+
+  if (filtro && filtro.trim()) {
+    const filtroLower = filtro.toLowerCase();
+    lista = lista.filter(p => 
+        (p.nombre || '').toLowerCase().includes(filtroLower) ||
+        (p.codigo_barras || '').toLowerCase().includes(filtroLower)
+    );
   }
+
+  if (categoriaId) {
+      lista = lista.filter(p => p.categoria_id === categoriaId);
+  }
+  
   tbody.innerHTML = '';
   lista.forEach(p => {
-    let categoria = categoriasCache.find(cat => cat.id === p.categoria_id)?.nombre || '—';
-    let proveedor = proveedoresCache.find(pr => pr.id === p.proveedor_id)?.nombre || '—';
+    let categoriaNombre = categoriasCache.find(c => c.id === p.categoria_id)?.nombre || '—';
+    
     let tr = document.createElement('tr');
+    // Si el producto está inactivo, le damos un estilo semitransparente
+    tr.style.opacity = p.activo ? '1' : '0.6';
+    
     tr.innerHTML = `
-      <td style="padding:10px 8px;">${p.nombre}</td>
+      <td style="padding:10px 8px;font-weight:600;">${p.nombre}</td>
       <td style="padding:10px 8px;text-align:center;">${p.codigo_barras || '—'}</td>
-      <td style="padding:10px 8px;text-align:center;">${categoria}</td>
-      <td style="padding:10px 8px;text-align:center;">${proveedor}</td>
-      <td style="padding:10px 8px;text-align:right;">$${p.precio ? Number(p.precio).toLocaleString('es-CO') : 0}</td>
-      <td style="padding:10px 8px;text-align:right;">$${p.precio_venta ? Number(p.precio_venta).toLocaleString('es-CO') : 0}</td>
-      <td style="padding:10px 8px;text-align:center;font-weight:600;color:${p.stock_actual < (p.stock_min || 0) ? '#f43f5e' : '#22c55e'};">
+      <td style="padding:10px 8px;text-align:center;">${categoriaNombre}</td>
+      <td style="padding:10px 8px;text-align:center;font-weight:700;font-size:1.1em;color:${p.stock_actual < (p.stock_minimo || 0) ? '#f43f5e' : '#166534'};">
         ${p.stock_actual || 0}
       </td>
-      <td style="padding:10px 8px;text-align:center;">${p.stock_min || 0}</td>
-      <td style="padding:10px 8px;text-align:center;">${p.stock_max || 0}</td>
+      <td style="padding:10px 8px;text-align:right;">$${p.precio_venta ? Number(p.precio_venta).toLocaleString('es-CO') : 0}</td>
       <td style="padding:10px 8px;text-align:center;">
         <span style="font-weight:bold;color:${p.activo ? '#22c55e' : '#f43f5e'};">
           ${p.activo ? 'Activo' : 'Inactivo'}
         </span>
       </td>
-      <td style="padding:10px 8px;text-align:center;">
-        <button onclick="window.showModalProducto('${p.id}')" 
-          style="background:#e0e7ff;color:#1d4ed8;border:none;border-radius:6px;padding:5px 10px;margin-right:4px;cursor:pointer;" title="Editar">
-          <svg width="16" height="16" fill="#1d4ed8" style="vertical-align:middle;"><use href="#icon-edit"></use></svg>
+      <td style="padding:10px 8px;text-align:center;display:flex;gap:4px;justify-content:center;align-items:center;">
+        <button onclick="window.showModalMovimiento('${p.id}', 'INGRESO')" style="background:#dcfce7;color:#16a34a;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" title="Ingreso de Inventario">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
-        <button onclick="window.toggleActivoProducto('${p.id}',${!p.activo})" 
-          style="background:${p.activo ? '#fee2e2' : '#bbf7d0'};color:${p.activo ? '#f43f5e' : '#16a34a'};border:none;border-radius:6px;padding:5px 10px;cursor:pointer;" title="${p.activo ? 'Desactivar' : 'Activar'}">
-          <svg width="16" height="16" fill="${p.activo ? '#f43f5e' : '#16a34a'}" style="vertical-align:middle;">
-            <use href="#${p.activo ? 'icon-x' : 'icon-check'}"></use>
-          </svg>
+        <button onclick="window.showModalMovimiento('${p.id}', 'SALIDA')" style="background:#fee2e2;color:#ef4444;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" title="Salida de Inventario">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
         </button>
+        <button onclick="window.showModalProducto('${p.id}')" style="background:#e0e7ff;color:#4338ca;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" title="Editar Producto">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+        </button>
+        
+        ${p.activo 
+          ? `<button onclick="window.confirmarEliminarProducto('${p.id}', '${p.nombre}')" style="background:#fecaca;color:#dc2626;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" title="Eliminar Producto">
+               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+             </button>`
+          : `<button onclick="window.reactivarProducto('${p.id}')" style="background:#dcfce7;color:#16a34a;border:none;border-radius:6px;padding:6px 10px;cursor:pointer;" title="Reactivar Producto">
+               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+             </button>`
+        }
       </td>
     `;
     tbody.appendChild(tr);
   });
 }
+// Reemplaza esta función completa en tu archivo
+// Agrega estas nuevas funciones al final de tu módulo de inventario
 
-window.showModalProducto = showModalProducto;
-async function showModalProducto(productoId = null) {
-  let modal = document.getElementById('modalProductoInv');
-  let prod = productoId ? inventarioProductos.find(p=>p.id===productoId) : null;
-  modal.style.display = 'block';
-  modal.innerHTML = `
-  <div style="
-    background:#fff;
-    border-radius:18px;
-    box-shadow:0 8px 40px #1d4ed828;
-    max-width:430px;
-    width:95vw;
-    margin:auto;
-    padding:34px 26px 22px 26px;
-    position:relative;
-    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
-    ">
-    <button onclick="window.closeModalProducto()" 
-      style="
-        position:absolute;right:14px;top:10px;
-        background:none;border:none;font-size:25px;color:#64748b;cursor:pointer;
-        transition:color 0.18s;
-      "
-      onmouseover="this.style.color='#f43f5e'" onmouseout="this.style.color='#64748b'"
-      title="Cerrar">&times;</button>
+/**
+ * Muestra una ventana de confirmación antes de eliminar (inactivar) un producto.
+ */
+window.confirmarEliminarProducto = (productoId, nombreProducto) => {
+  const mensaje = `¿Estás seguro de que quieres eliminar el producto "${nombreProducto}"?\n\nEl producto no se borrará permanentemente, sino que se marcará como 'Inactivo' para conservar su historial. Podrás reactivarlo más tarde si lo necesitas.`;
+  
+  if (confirm(mensaje)) {
+    // Si el usuario hace clic en "Aceptar", llamamos a la función que lo inactiva
+    eliminarProducto(productoId, false);
+  }
+};
 
+/**
+ * Reactiva un producto que estaba inactivo.
+ */
+window.reactivarProducto = (productoId) => {
+  eliminarProducto(productoId, true);
+};
+
+/**
+ * Función interna que actualiza el estado 'activo' del producto en la base de datos.
+ * @param {string} id - El ID del producto a modificar.
+ * @param {boolean} estado - true para activar, false para inactivar.
+ */
+async function eliminarProducto(id, estado) {
+  try {
+    const { error } = await currentSupabase
+      .from('productos_tienda')
+      .update({ activo: estado, actualizado_en: new Date().toISOString() })
+      .eq('id', id);
+
+    if (error) throw error;
+
+    // Recargamos la lista de productos y la volvemos a mostrar
+    await cargarProductosInventario();
+    renderTablaInventario(document.getElementById('buscarInventario').value);
+
+  } catch (error) {
+    alert(`Error al ${estado ? 'reactivar' : 'eliminar'} el producto: ` + error.message);
+  }
+}
+
+
+
+
+
+
+
+window.showModalProducto = async function showModalProducto(productoId = null) {
+  const modalContainer = document.getElementById('modalContainer');
+  const prod = productoId ? inventarioProductos.find(p => p.id === productoId) : null;
+  const esEdicion = productoId ? true : false;
+
+  modalContainer.style.display = 'flex';
+  
+  modalContainer.innerHTML = `
+  <div style="background:#fff;border-radius:18px;box-shadow:0 8px 40px #1d4ed828;max-width:430px;width:95vw;margin:auto;padding:34px 26px 22px 26px;position:relative;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+    <button onclick="window.closeModal()" style="position:absolute;right:14px;top:10px;background:none;border:none;font-size:25px;color:#64748b;cursor:pointer;" title="Cerrar">&times;</button>
     <h2 style="margin-bottom:19px;text-align:center;font-size:1.22rem;font-weight:700;color:#1d4ed8;">
-      ${productoId ? 'Editar' : 'Nuevo'} Producto
+      ${esEdicion ? 'Editar' : 'Nuevo'} Producto
     </h2>
     <form id="formProductoInv" autocomplete="off">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px 16px;">
         <div style="grid-column:1/3;">
-          <label style="font-weight:500;">Nombre</label>
-          <input id="prodNombre" required placeholder="Nombre" value="${prod?.nombre||''}"
-            style="width:100%;padding:8px 11px;margin-top:2px;margin-bottom:3px;border:1.5px solid #cbd5e1;border-radius:6px;font-size:1em;">
+          <label>Nombre</label>
+          <input id="prodNombre" required value="${prod?.nombre||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
         <div>
-          <label style="font-weight:500;">Código de barras</label>
-          <input id="prodCodigo" placeholder="Código de barras" value="${prod?.codigo_barras||''}" 
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
-        </div>
-        <div>
-          <label style="font-weight:500;">Categoría</label>
+          <label>Categoría</label>
           <select id="prodCategoria" required style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
             <option value="">Selecciona...</option>
             ${categoriasCache.map(cat=>`<option value="${cat.id}"${prod?.categoria_id===cat.id?' selected':''}>${cat.nombre}</option>`).join('')}
           </select>
         </div>
         <div>
-          <label style="font-weight:500;">Proveedor</label>
-          <select id="prodProveedor" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
-            <option value="">Selecciona...</option>
-            ${proveedoresCache.map(prov=>`<option value="${prov.id}"${prod?.proveedor_id===prov.id?' selected':''}>${prov.nombre}</option>`).join('')}
-          </select>
+          <label>${esEdicion ? 'Stock actual' : 'Stock inicial'}</label>
+          <input id="prodStock" type="number" min="0" value="${prod?.stock_actual||'0'}" 
+                 ${esEdicion ? 'readonly' : ''} 
+                 style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid ${esEdicion ? '#e2e8f0' : '#cbd5e1'};border-radius:6px;background:${esEdicion ? '#f8fafc' : '#fff'};color:${esEdicion ? '#64748b' : '#000'};cursor:${esEdicion ? 'not-allowed' : 'text'};">
+          ${esEdicion ? `<small style="font-size:11px; color:#94a3b8;">El stock se ajusta con los botones de Ingreso/Salida.</small>` : ''}
         </div>
         <div>
-          <label style="font-weight:500;">Precio compra</label>
-          <input id="prodPrecio" type="number" min="0" step="any" placeholder="Precio compra" value="${prod?.precio||''}"
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <label>Precio compra</label>
+            <input id="prodPrecio" type="number" min="0" step="any" value="${prod?.precio||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
         <div>
-          <label style="font-weight:500;">Precio venta</label>
-          <input id="prodPrecioVenta" type="number" min="0" step="any" placeholder="Precio venta" value="${prod?.precio_venta||''}"
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <label>Precio venta</label>
+            <input id="prodPrecioVenta" type="number" min="0" step="any" value="${prod?.precio_venta||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
         <div>
-          <label style="font-weight:500;">Stock actual</label>
-          <input id="prodStock" type="number" min="0" placeholder="Stock actual" value="${prod?.stock_actual||''}" 
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <label>Stock mínimo</label>
+            <input id="prodStockMin" type="number" min="0" value="${prod?.stock_min||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
         <div>
-          <label style="font-weight:500;">Stock mínimo</label>
-          <input id="prodStockMin" type="number" min="0" placeholder="Stock mínimo" value="${prod?.stock_min||''}" 
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <label>Stock máximo</label>
+            <input id="prodStockMax" type="number" min="0" value="${prod?.stock_max||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
-        <div>
-          <label style="font-weight:500;">Stock máximo</label>
-          <input id="prodStockMax" type="number" min="0" placeholder="Stock máximo" value="${prod?.stock_max||''}" 
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
-        </div>
-        <div style="grid-column:1/3;">
+
+        <div style="grid-column:1/3; margin-top:10px;">
           <label style="font-weight:500;">Imagen (URL)</label>
-          <input id="prodImagenUrl" type="text" placeholder="https://..." value="${prod?.imagen_url||''}" 
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+          <input id="prodImagenUrl" type="text" placeholder="https://ejemplo.com/imagen.jpg" value="${prod?.imagen_url||''}" 
+                 style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
           <div id="previewImagen" style="margin-top:8px;text-align:center;">
             ${prod?.imagen_url ? `<img src="${prod.imagen_url}" alt="Imagen" style="max-width:95px;max-height:80px;border-radius:6px;border:1px solid #eee;background:#f7f7f7;">` : ''}
           </div>
           <label style="font-size:13px;display:block;margin-top:7px;margin-bottom:0;">
-            <span style="color:#64748b;">Subir Imagen:</span>
+            <span style="color:#64748b;">o subir una imagen nueva:</span>
             <input type="file" id="prodImagenArchivo" accept="image/*" style="margin-top:3px;">
           </label>
         </div>
-        <div style="grid-column:1/3;">
-          <label style="font-weight:500;">Descripción</label>
-          <textarea id="prodDescripcion" rows="2" placeholder="Descripción" 
-            style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">${prod?.descripcion||''}</textarea>
-        </div>
+
       </div>
       <div style="margin-top:23px;display:flex;gap:14px;justify-content:center;">
-        <button id="btnGuardarProducto" type="submit"
-          style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #22c55e22;cursor:pointer;">
-          ${productoId ? 'Actualizar' : 'Crear'}
+        <button type="submit" style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;cursor:pointer;">
+          ${esEdicion ? 'Actualizar' : 'Crear'}
         </button>
-        <button type="button" onclick="window.closeModalProducto()"
-          style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #64748b15;cursor:pointer;">
+        <button type="button" onclick="window.closeModal()" style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;cursor:pointer;">
           Cancelar
         </button>
       </div>
     </form>
-  </div>
-`;
+  </div>`;
 
-  // 👇  CAMBIO CLAVE: usar onsubmit para que no recargue página
   const form = document.getElementById('formProductoInv');
   if (form) {
     form.onsubmit = async function(e) {
@@ -860,67 +1085,380 @@ async function showModalProducto(productoId = null) {
     };
   }
 }
+window.showModalHistorial = async (productoId = null) => {
+    const modalContainer = document.getElementById('modalContainer');
+    modalContainer.style.display = 'flex';
+    modalContainer.innerHTML = `<div style="color:#fff;font-size:1.2em;">Cargando historial...</div>`;
 
-window.closeModalProducto = ()=>{document.getElementById('modalProductoInv').style.display='none';};
+    let query = currentSupabase
+        .from('movimientos_inventario')
+        .select('*, producto:productos_tienda(nombre)')
+        .eq('hotel_id', currentHotelId)
+        .order('creado_en', { ascending: false })
+        .limit(100);
 
-async function saveProductoInv(productoId) {
-  let imagenUrl = document.getElementById('prodImagenUrl').value;
-  const archivoInput = document.getElementById('prodImagenArchivo');
-  let archivo = archivoInput && archivoInput.files[0];
-
-  if (archivo) {
-    // Sube la imagen al bucket 'productos'
-    const nombreArchivo = `producto_${Date.now()}_${archivo.name}`;
-    let { error: errorUp } = await currentSupabase
-      .storage
-      .from('productos')
-      .upload(nombreArchivo, archivo, { upsert: true });
-    if (errorUp) {
-      alert("Error subiendo imagen: " + errorUp.message);
-      return;
+    if (productoId) {
+        query = query.eq('producto_id', productoId);
     }
-    let { data: publicUrlData } = currentSupabase
-      .storage
-      .from('productos')
-      .getPublicUrl(nombreArchivo);
-    imagenUrl = publicUrlData.publicUrl;
-  }
+    
+    const { data: movimientos, error } = await query;
 
-  let datos = {
-    hotel_id: currentHotelId,
-    nombre: document.getElementById('prodNombre').value,
-    codigo_barras: document.getElementById('prodCodigo').value,
-    categoria_id: document.getElementById('prodCategoria').value,
-    proveedor_id: document.getElementById('prodProveedor').value,
-    precio: Number(document.getElementById('prodPrecio').value),
-    precio_venta: Number(document.getElementById('prodPrecioVenta').value),
-    stock_actual: Number(document.getElementById('prodStock').value),
-    stock_minimo: Number(document.getElementById('prodStockMin').value),
-    stock_maximo: Number(document.getElementById('prodStockMax').value),
-    imagen_url: imagenUrl,
-    descripcion: document.getElementById('prodDescripcion').value,
-    activo: true,
-    actualizado_en: new Date().toISOString(),
-  };
-  if(productoId) {
-    await currentSupabase.from('productos_tienda').update(datos).eq('id',productoId);
-  } else {
-    datos.creado_en = new Date().toISOString();
-    await currentSupabase.from('productos_tienda').insert([datos]);
-  }
-  closeModalProducto();
-  await cargarProductosInventario();
-  renderTablaInventario('');
-}
+    if (error) {
+        alert("Error al cargar el historial: " + error.message);
+        closeModal();
+        return;
+    }
 
-window.toggleActivoProducto = async (id,act)=>{
-  await currentSupabase.from('productos_tienda').update({activo:act}).eq('id',id);
-  await cargarProductosInventario();
-  renderTablaInventario('');
+    const productoNombre = productoId ? inventarioProductos.find(p=>p.id === productoId)?.nombre : 'Todos los Productos';
+
+    modalContainer.innerHTML = `
+    <div style="background:#fff;border-radius:12px;max-width:800px;width:95vw;max-height:90vh;overflow-y:auto;margin:auto;padding:24px; position:relative;">
+        <button onclick="window.closeModal()" style="position:absolute;right:14px;top:10px;background:none;border:none;font-size:25px;color:#64748b;cursor:pointer; line-height:1;" title="Cerrar">&times;</button>
+        <h2 style="margin-top:0; margin-bottom:20px;color:#1e293b;">Historial de Movimientos</h2>
+        ${productoId ? `<p style="margin-top:-15px;margin-bottom:20px;font-size:1.1rem;font-weight:600;">Producto: ${productoNombre}</p>`: ''}
+        
+        <div style="overflow-x:auto;">
+            <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f1f5f9;text-align:left;">
+                        <th style="padding:10px;">Fecha</th>
+                        ${!productoId ? '<th style="padding:10px;">Producto</th>' : ''}
+                        <th style="padding:10px;">Tipo</th>
+                        <th style="padding:10px;">Cantidad</th>
+                        <th style="padding:10px;">Responsable</th>
+                        <th style="padding:10px;">Razón</th>
+                        <th style="padding:10px;text-align:center;">Stock Ant/Nuevo</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${movimientos.map(mov => `
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                            <td style="padding:8px 10px;">${new Date(mov.creado_en).toLocaleString('es-CO')}</td>
+                            ${!productoId ? `<td style="padding:8px 10px;">${mov.producto?.nombre || 'N/A'}</td>` : ''}
+                            <td style="padding:8px 10px;">
+                                <span style="font-weight:bold;color:${mov.tipo_movimiento === 'INGRESO' ? '#16a34a' : '#ef4444'};">
+                                    ${mov.tipo_movimiento}
+                                </span>
+                            </td>
+                            <td style="padding:8px 10px;font-weight:600;">${mov.cantidad}</td>
+                            <td style="padding:8px 10px;font-weight:500;">${mov.usuario_responsable}</td>
+                            <td style="padding:8px 10px;">${mov.razon}</td>
+                            <td style="padding:8px 10px;text-align:center;">${mov.stock_anterior} &rarr; ${mov.stock_nuevo}</td>
+                        </tr>
+                    `).join('')}
+                    ${movimientos.length === 0 ? `<tr><td colspan="7" style="padding:20px;text-align:center;color:#64748b;">No hay movimientos registrados.</td></tr>` : ''}
+                </tbody>
+            </table>
+        </div>
+    </div>`;
 };
 
+window.showModalMovimiento = async (productoId, tipo) => {
+    const modalContainer = document.getElementById('modalContainer');
+    const prod = inventarioProductos.find(p => p.id === productoId);
+    if (!prod) {
+        alert("Producto no encontrado.");
+        return;
+    }
+
+    const isIngreso = tipo === 'INGRESO';
+
+    modalContainer.innerHTML = `
+    <div style="background:#fff;border-radius:18px;max-width:400px;width:95vw;margin:auto;padding:28px 24px;position:relative;">
+        <button onclick="window.closeModal()" style="position:absolute;right:14px;top:10px;background:none;border:none;font-size:25px;color:#64748b;cursor:pointer;" title="Cerrar">&times;</button>
+        <h2 style="margin-top:0; margin-bottom:15px;text-align:center;font-size:1.2rem;font-weight:700;color:${isIngreso ? '#16a34a' : '#ef4444'};">
+            ${isIngreso ? 'Ingreso a Inventario' : 'Salida de Inventario'}
+        </h2>
+        <p style="text-align:center;margin-top:-5px;margin-bottom:20px;font-size:1.1rem;font-weight:600;">${prod.nombre}</p>
+        <p style="text-align:center;margin-top:-15px;margin-bottom:20px;font-size:0.9rem;">Stock Actual: <strong style="font-size:1.1rem;">${prod.stock_actual}</strong></p>
+        
+        <form id="formMovimiento">
+            <div style="display:flex;flex-direction:column;gap:15px;">
+                <div>
+                    <label style="font-weight:500;">Cantidad</label>
+                    <input id="movCantidad" type="number" min="1" required placeholder="Cantidad a ${isIngreso ? 'agregar' : 'quitar'}" style="width:100%;padding:9px 12px;margin-top:3px;border:1.5px solid #cbd5e1;border-radius:6px;font-size:1.1em;">
+                </div>
+                <div>
+                    <label style="font-weight:500;">Razón o Motivo</label>
+                    <textarea id="movRazon" required placeholder="Ej: Compra a proveedor, devolución, merma..." rows="3" style="width:100%;padding:8px 11px;margin-top:3px;border:1.5px solid #cbd5e1;border-radius:6px;"></textarea>
+                </div>
+            </div>
+            <div style="margin-top:25px;text-align:center;">
+                <button type="submit" style="background:linear-gradient(90deg,${isIngreso ? '#22c55e,#16a34a' : '#f87171,#ef4444'});color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 35px;font-size:1.08em;cursor:pointer;">
+                    Confirmar ${tipo}
+                </button>
+            </div>
+        </form>
+    </div>`;
+    modalContainer.style.display = 'flex';
+
+    document.getElementById('formMovimiento').onsubmit = async (e) => {
+        e.preventDefault();
+        await saveMovimiento(productoId, tipo);
+    };
+};
+
+// Reemplaza esta función completa en tu archivo
+
+async function saveMovimiento(productoId, tipo) {
+    const btn = document.querySelector('#formMovimiento button[type="submit"]');
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+
+    // 🐞 DEBUG: Mensaje de inicio
+    console.log("🐞 DEBUG: Iniciando saveMovimiento...");
+
+    try {
+        const { data: { user } } = await currentSupabase.auth.getUser();
+        if (!user) throw new Error("No se pudo identificar al usuario.");
+
+        const cantidad = parseInt(document.getElementById('movCantidad').value);
+        const razon = document.getElementById('movRazon').value;
+        if (isNaN(cantidad) || cantidad <= 0) throw new Error("La cantidad debe ser un número positivo.");
+
+        const producto = inventarioProductos.find(p => p.id === productoId);
+        const stockAnterior = producto.stock_actual;
+        const stockMinimo = producto.stock_minimo || 0; // Usamos la columna correcta
+        
+        let nuevoStock;
+        if (tipo === 'INGRESO') {
+            nuevoStock = stockAnterior + cantidad;
+        } else {
+            if (cantidad > stockAnterior) throw new Error(`No puedes dar salida a ${cantidad} unidades. Solo hay ${stockAnterior} en stock.`);
+            nuevoStock = stockAnterior - cantidad;
+        }
+
+        // 🐞 DEBUG: Mostramos todos los valores clave
+        console.log(`🐞 DEBUG: Producto: ${producto.nombre}, Tipo Movimiento: ${tipo}`);
+        console.log(`🐞 DEBUG: Stock Anterior: ${stockAnterior}, Stock Mínimo: ${stockMinimo}, Nuevo Stock: ${nuevoStock}`);
+
+        // Actualizamos el inventario y guardamos el movimiento
+        // (El código para guardar en la DB sigue igual...)
+        const movimientoData = { hotel_id: currentHotelId, producto_id: productoId, tipo_movimiento: tipo, cantidad, razon, usuario_responsable: user.user_metadata?.full_name || user.user_metadata?.nombre || user.email, stock_anterior: stockAnterior, stock_nuevo: nuevoStock };
+        const { error: movError } = await currentSupabase.from('movimientos_inventario').insert([movimientoData]);
+        if (movError) throw movError;
+        const { error: prodError } = await currentSupabase.from('productos_tienda').update({ stock_actual: nuevoStock, actualizado_en: new Date().toISOString() }).eq('id', productoId);
+        if (prodError) throw prodError;
+
+        // LÓGICA DE NOTIFICACIÓN DE STOCK BAJO
+        const stockAnteriorEraOk = stockAnterior > stockMinimo;
+        const nuevoStockEsBajo = nuevoStock <= stockMinimo;
+
+        // 🐞 DEBUG: Mostramos el resultado de las condiciones
+        console.log(`🐞 DEBUG: ¿Stock anterior era OK? (${stockAnterior} > ${stockMinimo}) ->`, stockAnteriorEraOk);
+        console.log(`🐞 DEBUG: ¿Nuevo stock es bajo? (${nuevoStock} <= ${stockMinimo}) ->`, nuevoStockEsBajo);
+        console.log(`🐞 DEBUG: ¿Tipo es SALIDA? ->`, tipo === 'SALIDA');
+        console.log(`🐞 DEBUG: ¿Stock mínimo es > 0? ->`, stockMinimo > 0);
+
+        if (tipo === 'SALIDA' && nuevoStockEsBajo && stockAnteriorEraOk && stockMinimo > 0) {
+            console.log("✅ CONDICIÓN CUMPLIDA: Enviando notificación...");
+            const notificacionPayload = { hotelId: currentHotelId, rolDestino: 'admin', tipo: 'stock_bajo', mensaje: `El producto '${producto.nombre}' está en stock bajo (Actual: ${nuevoStock}, Mínimo: ${stockMinimo}).`, entidadTipo: 'producto', entidadId: producto.id, userId: null };
+            
+            // 🐞 DEBUG: Mostramos el payload que se va a enviar
+            console.log("🐞 DEBUG: Payload de la notificación:", notificacionPayload);
+
+            try {
+                await crearNotificacion(currentSupabase, notificacionPayload);
+                console.log("✅ NOTIFICACIÓN CREADA CON ÉXITO");
+            } catch (notifError) {
+                console.error("❌ ERROR AL CREAR NOTIFICACIÓN:", notifError);
+            }
+        } else {
+            console.log("❌ CONDICIÓN NO CUMPLIDA: No se envía notificación.");
+        }
+
+        closeModal();
+        await cargarProductosInventario(); 
+        renderTablaInventario(document.getElementById('buscarInventario').value); 
+
+    } catch (error) {
+        console.error("❌ ERROR GENERAL en saveMovimiento:", error);
+        alert("Error al registrar el movimiento: " + error.message);
+        
+        const activeBtn = document.querySelector('#formMovimiento button[type="submit"]');
+        if(activeBtn) {
+            activeBtn.disabled = false;
+            activeBtn.textContent = `Confirmar ${tipo}`;
+        }
+    }
+}
 
 
+// Reemplaza esta función completa en tu archivo
+
+async function saveProductoInv(productoId) {
+  const btnSubmit = document.querySelector('#formProductoInv button[type="submit"]');
+  const originalText = btnSubmit.textContent;
+  btnSubmit.disabled = true;
+  btnSubmit.textContent = 'Guardando...';
+
+  try {
+    let imagenUrl = document.getElementById('prodImagenUrl').value;
+    const archivoInput = document.getElementById('prodImagenArchivo');
+    const archivo = archivoInput?.files[0];
+
+    if (archivo) {
+      const nombreArchivo = `producto_${Date.now()}_${archivo.name}`;
+      let { error: errorUp } = await currentSupabase.storage.from('productos').upload(nombreArchivo, archivo, { upsert: true });
+      if (errorUp) throw new Error(`Error subiendo imagen: ${errorUp.message}`);
+
+      let { data: publicUrlData } = currentSupabase.storage.from('productos').getPublicUrl(nombreArchivo);
+      imagenUrl = publicUrlData.publicUrl;
+    }
+
+    // --- Si es una ACTUALIZACIÓN de un producto existente ---
+    if (productoId) {
+      let datosUpdate = {
+        hotel_id: currentHotelId,
+        nombre: document.getElementById('prodNombre').value,
+        categoria_id: document.getElementById('prodCategoria').value,
+        precio: Number(document.getElementById('prodPrecio').value) || 0,
+        precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
+        // 🎯 CORRECCIÓN: Nombres de columna corregidos para la ACTUALIZACIÓN
+        stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
+        stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
+        imagen_url: imagenUrl,
+        actualizado_en: new Date().toISOString(),
+      };
+      const { error } = await currentSupabase.from('productos_tienda').update(datosUpdate).eq('id', productoId);
+      if (error) throw error;
+    }
+    // --- Si es la CREACIÓN de un producto nuevo ---
+    else {
+      const stockInicial = Number(document.getElementById('prodStock').value) || 0;
+      let datosInsert = {
+        hotel_id: currentHotelId,
+        nombre: document.getElementById('prodNombre').value,
+        categoria_id: document.getElementById('prodCategoria').value,
+        precio: Number(document.getElementById('prodPrecio').value) || 0,
+        precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
+        stock_actual: stockInicial,
+        stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
+        stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
+        imagen_url: imagenUrl,
+        creado_en: new Date().toISOString(),
+        actualizado_en: new Date().toISOString(),
+        activo: true,
+      };
+      const { data: nuevoProducto, error } = await currentSupabase.from('productos_tienda').insert([datosInsert]).select();
+      if (error) throw error;
+
+      if (stockInicial > 0 && nuevoProducto.length > 0) {
+        const { data: { user } } = await currentSupabase.auth.getUser();
+        const nombreResponsable = user.user_metadata?.full_name || user.user_metadata?.nombre || user.email;
+        const movimientoData = {
+          hotel_id: currentHotelId,
+          producto_id: nuevoProducto[0].id,
+          tipo_movimiento: 'INGRESO',
+          cantidad: stockInicial,
+          razon: 'Stock inicial de creación',
+          usuario_responsable: nombreResponsable,
+          stock_anterior: 0,
+          stock_nuevo: stockInicial
+        };
+        await currentSupabase.from('movimientos_inventario').insert([movimientoData]);
+      }
+    }
+
+    closeModal();
+    await cargarProductosInventario();
+    renderTablaInventario('');
+
+  } catch (error) {
+    console.error("Error guardando el producto:", error);
+    alert("Error al guardar el producto: " + error.message);
+    btnSubmit.disabled = false;
+    btnSubmit.textContent = originalText;
+  }
+}
+
+window.closeModal = () => {
+  const modalContainer = document.getElementById('modalContainer');
+  if (modalContainer) {
+    modalContainer.style.display = 'none';
+    modalContainer.innerHTML = '';
+  }
+};
+// Agrega esta nueva función al final de tu módulo de inventario
+
+function imprimirInventario() {
+  // 1. Filtramos para obtener solo los productos activos.
+  const productosActivos = inventarioProductos.filter(p => p.activo);
+  
+  // 2. Obtenemos la fecha y hora actual para el reporte.
+  const fechaActual = new Date().toLocaleString('es-CO', {
+    year: 'numeric', month: 'long', day: 'numeric', 
+    hour: '2-digit', minute: '2-digit', hour12: true
+  });
+
+  // 3. Creamos el contenido HTML para la nueva ventana de impresión.
+  let contenido = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Reporte de Inventario</title>
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        h1 { color: #1d4ed8; }
+        p { color: #555; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+        th { background-color: #f3f4f6; }
+        tr:nth-child(even) { background-color: #f9f9f9; }
+        @media print {
+          body { -webkit-print-color-adjust: exact; }
+          .no-print { display: none; }
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Reporte de Inventario Activo</h1>
+      <p>Generado el: ${fechaActual}</p>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Nombre del Producto</th>
+            <th>Código</th>
+            <th>Categoría</th>
+            <th>Stock Actual</th>
+            <th>Precio Venta</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+
+  // 4. Llenamos la tabla con los datos de los productos activos.
+  productosActivos.forEach(p => {
+    const categoriaNombre = categoriasCache.find(c => c.id === p.categoria_id)?.nombre || '—';
+    contenido += `
+      <tr>
+        <td>${p.nombre}</td>
+        <td>${p.codigo_barras || '—'}</td>
+        <td>${categoriaNombre}</td>
+        <td style="text-align:center;">${p.stock_actual}</td>
+        <td style="text-align:right;">$${Number(p.precio_venta || 0).toLocaleString('es-CO')}</td>
+      </tr>
+    `;
+  });
+
+  // 5. Cerramos las etiquetas HTML y añadimos un resumen.
+  contenido += `
+        </tbody>
+      </table>
+      <p style="margin-top:20px; font-weight:bold;">Total de productos activos: ${productosActivos.length}</p>
+    </body>
+    </html>
+  `;
+
+  // 6. Abrimos una nueva ventana, escribimos el contenido y activamos la impresión.
+  const ventanaImpresion = window.open('', '_blank');
+  ventanaImpresion.document.write(contenido);
+  ventanaImpresion.document.close(); // Necesario para que la impresión funcione en algunos navegadores
+  ventanaImpresion.focus(); // Necesario para algunos navegadores
+  ventanaImpresion.print();
+  ventanaImpresion.close();
+}
 // ====================  PESTAÑA CATEGORÍAS  ====================
 let categoriasLista = [];
 async function renderCategorias() {

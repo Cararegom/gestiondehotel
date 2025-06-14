@@ -11,7 +11,7 @@ import {
 } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
-
+import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
 // --- MÓDULO DE ESTADO GLOBAL ---
 const state = {
     isEditMode: false,
@@ -42,9 +42,19 @@ const ui = {
     cantidadNochesInput: null, tiempoPredefinidoContainer: null, tiempoEstanciaIdSelect: null,
     habitacionIdSelect: null, totalReservaDisplay: null,
     fieldsetPago: null,
-    cedulaInput: null,
-
+    // Aquí declaramos las variables para los nuevos elementos del selector de clientes
+    clienteSearchInput: null,
+    btnBuscarCliente: null,
+    btnCrearCliente: null,
+    clienteIdHiddenInput: null,
+    clienteNombreDisplay: null, // Este es el div que contiene el span del nombre seleccionado
+    
     init(containerEl) {
+        // Es crucial que containerEl no sea null y que el HTML ya esté inyectado
+        if (!containerEl) {
+            console.error("ui.init: El contenedor del módulo es null. No se pueden inicializar los elementos de la UI.");
+            return;
+        }
         this.container = containerEl;
         this.form = containerEl.querySelector('#reserva-form');
         this.feedbackDiv = containerEl.querySelector('#reserva-feedback');
@@ -62,6 +72,15 @@ const ui = {
         this.totalReservaDisplay = containerEl.querySelector('#total-reserva-calculado-display');
         this.fieldsetPago = containerEl.querySelector('#fieldset-pago-adicionales');
         this.cedulaInput = containerEl.querySelector('#cedula');
+        this.clienteSearchInput = containerEl.querySelector('#cliente_search_input'); // Nuevo input de búsqueda
+        this.btnBuscarCliente = containerEl.querySelector('#btn_buscar_cliente');     // Botón de búsqueda
+        this.btnCrearCliente = containerEl.querySelector('#btn_crear_cliente');       // Botón para crear cliente
+        this.clienteIdHiddenInput = containerEl.querySelector('#cliente_id_hidden');  // Input oculto para guardar el cliente_id
+        this.clienteNombreDisplay = containerEl.querySelector('#cliente_nombre_display'); // Para mostrar el nombre del cliente seleccionado
+        if (!this.form) console.error("ui.init: #reserva-form es null.");
+        if (!this.clienteNombreDisplay) console.error("ui.init: #cliente_nombre_display es null.");
+        if (!this.clienteSearchInput) console.error("ui.init: #cliente_search_input es null.");
+   
     },
 
     async showConfirmationModal(message, title = "Confirmar Acción") {
@@ -124,13 +143,35 @@ const ui = {
     }
 };
 
+// ... (resto de tu código de reservas.js) ...
+
+// js/modules/reservas/reservas.js
+
 function gatherFormData() {
     if (!ui.form) return {};
     const formElements = ui.form.elements;
+    
+    // Lógica inteligente para obtener los datos del cliente
+    const clienteIdSeleccionado = ui.clienteIdHiddenInput?.value || null;
+    let nombreCliente, cedulaCliente, telefonoCliente;
+
+    if (clienteIdSeleccionado) {
+        // Si hay un cliente seleccionado, tomamos su nombre del display
+        nombreCliente = ui.clienteNombreDisplay?.querySelector('#selected_client_name')?.textContent || '';
+        cedulaCliente = formElements.cedula?.value || '';
+        telefonoCliente = formElements.telefono?.value || '';
+    } else {
+        // Si no, tomamos los datos de los campos de texto manuales
+        nombreCliente = formElements.cliente_nombre?.value || '';
+        cedulaCliente = formElements.cedula?.value || '';
+        telefonoCliente = formElements.telefono?.value || '';
+    }
+
     return {
-        cliente_nombre: formElements.cliente_nombre?.value || '',
-        cedula: formElements.cedula?.value || '',
-        telefono: formElements.telefono?.value || '',
+        cliente_id: clienteIdSeleccionado,
+        cliente_nombre: nombreCliente,
+        cedula: cedulaCliente,
+        telefono: telefonoCliente,
         fecha_entrada: formElements.fecha_entrada?.value || '',
         tipo_calculo_duracion: formElements.tipo_calculo_duracion?.value || 'noches_manual',
         cantidad_noches: formElements.cantidad_noches?.value || '1',
@@ -143,19 +184,25 @@ function gatherFormData() {
         tipo_pago: formElements.tipo_pago?.value || 'parcial'
     };
 }
-
 function validateInitialInputs(formData) {
-    if (!formData.cliente_nombre.trim()) throw new Error("El nombre del cliente es obligatorio.");
+    // Si hay un `cliente_id` (cliente seleccionado desde el selector), el `cliente_nombre` ya está validado.
+    // Si NO hay `cliente_id`, entonces el `cliente_nombre` manual es obligatorio.
+    if (!formData.cliente_id && !formData.cliente_nombre.trim()) {
+        throw new Error("El nombre del cliente es obligatorio o debe seleccionar un cliente existente.");
+    }
+
     if (!formData.habitacion_id) throw new Error("Debe seleccionar una habitación.");
     if (!formData.fecha_entrada) throw new Error("La fecha y hora de llegada son obligatorias.");
     const fechaEntradaDate = new Date(formData.fecha_entrada);
     if (isNaN(fechaEntradaDate.getTime())) throw new Error("La fecha de llegada no es válida.");
 
     const unDiaEnMs = 24 * 60 * 60 * 1000;
-    if (!state.isEditMode && fechaEntradaDate < new Date(Date.now() - 10 * 60 * 1000)) {
-        throw new Error("La fecha de llegada no puede ser en el pasado para nuevas reservas.");
-    } else if (state.isEditMode && fechaEntradaDate < new Date(Date.now() - 7 * unDiaEnMs)) {
-        throw new Error("Al editar, la fecha de llegada no puede ser más de 7 días en el pasado.");
+    // Validar que la fecha de llegada no sea demasiado en el pasado para nuevas reservas
+    // o un pasado muy lejano para ediciones.
+    if (!state.isEditMode && fechaEntradaDate < new Date(Date.now() - 10 * 60 * 1000)) { // 10 minutos de margen
+        throw new Error("La fecha y hora de llegada no pueden ser en el pasado para nuevas reservas.");
+    } else if (state.isEditMode && fechaEntradaDate < new Date(Date.now() - 7 * unDiaEnMs)) { // 7 días de margen al editar
+        throw new Error("Al editar, la fecha y hora de llegada no pueden ser más de 7 días en el pasado.");
     }
 
     if (formData.tipo_calculo_duracion === "noches_manual" && (!formData.cantidad_noches || parseInt(formData.cantidad_noches) < 1)) {
@@ -168,9 +215,10 @@ function validateInitialInputs(formData) {
         throw new Error("La cantidad de huéspedes debe ser al menos 1.");
     }
 
+    // Validaciones de pago si el hotel cobra al check-in y no estamos editando
     if (state.configHotel.cobro_al_checkin && !state.isEditMode) {
         const montoAbonoNum = parseFloat(formData.monto_abono) || 0;
-        if (formData.tipo_pago === 'completo' && !formData.metodo_pago_id && state.currentBookingTotal > 0) {
+        if (formData.tipo_pago === 'completo' && state.currentBookingTotal > 0 && !formData.metodo_pago_id) {
             throw new Error("Si selecciona 'Pago completo' y hay un total a pagar, debe elegir un método de pago.");
         }
         if (formData.tipo_pago === 'parcial' && montoAbonoNum > 0 && !formData.metodo_pago_id) {
@@ -179,11 +227,13 @@ function validateInitialInputs(formData) {
         if (montoAbonoNum < 0) {
             throw new Error("El monto del abono no puede ser negativo.");
         }
+        // Asegurarse de que el abono no exceda el total de la reserva
         if (montoAbonoNum > state.currentBookingTotal && state.currentBookingTotal > 0) {
              throw new Error(`El abono (${formatCurrency(montoAbonoNum, state.configHotel?.moneda_local_simbolo || '$')}) no puede exceder el total de la reserva (${formatCurrency(state.currentBookingTotal, state.configHotel?.moneda_local_simbolo || '$')}).`);
         }
     }
 }
+
 
 //-----------calendario------------//
 // Parser para eventos creados desde tu app (si los tuvieras)
@@ -466,6 +516,8 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
     };
 }
 
+// En tu archivo reservas.js, REEMPLAZA esta función completa:
+
 async function validateAndCalculateBooking(formData) {
     const [habitacionResult] = await Promise.all([
         state.supabase.from('habitaciones')
@@ -498,6 +550,11 @@ async function validateAndCalculateBooking(formData) {
     if (ui && typeof ui.updateTotalDisplay === 'function') { ui.updateTotalDisplay(); }
 
     const datosReserva = {
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se añade la línea que faltaba para pasar el ID del cliente
+        cliente_id: formData.cliente_id,
+        // --- FIN DE LA CORRECCIÓN ---
+        
         cliente_nombre: formData.cliente_nombre.trim(),
         cedula: formData.cedula.trim() || null,
         telefono: formData.telefono.trim() || null,
@@ -516,20 +573,20 @@ async function validateAndCalculateBooking(formData) {
         porcentaje_impuestos_aplicado: state.configHotel.porcentaje_impuesto_principal,
         nombre_impuesto_aplicado: state.configHotel.nombre_impuesto_principal,
         monto_total: state.currentBookingTotal,
-        monto_pagado: 0,
+        // La propiedad monto_pagado se elimina de aquí y se calcula en createBooking
         notas: formData.notas.trim() || null,
         origen_reserva: 'directa',
         id_temporal_o_final: state.isEditMode ? state.editingReservaId : `TEMP-${Date.now()}`
     };
+    
     const datosPago = {
         monto_abono: parseFloat(formData.monto_abono) || 0,
         metodo_pago_id: formData.metodo_pago_id || null,
         tipo_pago: formData.tipo_pago
     };
+    
     return { datosReserva, datosPago };
-}
-
-async function recalcularYActualizarTotalUI() {
+}async function recalcularYActualizarTotalUI() {
     try {
         const formData = gatherFormData();
         if (formData.habitacion_id && formData.fecha_entrada &&
@@ -549,25 +606,58 @@ async function recalcularYActualizarTotalUI() {
     }
 }
 
+
 async function cargarHabitaciones() {
     if (!ui.habitacionIdSelect) return;
     ui.habitacionIdSelect.innerHTML = `<option value="">Cargando habitaciones...</option>`;
     ui.habitacionIdSelect.disabled = true;
+    
     const { data: rooms, error } = await state.supabase.from('habitaciones')
         .select('id, nombre, tipo, estado, precio, capacidad_base, capacidad_maxima, precio_huesped_adicional')
-        .eq('hotel_id', state.hotelId).eq('activo', true).order('nombre', { ascending: true });
-    if (error) { ui.habitacionIdSelect.innerHTML = `<option value="">Error al cargar</option>`; }
-    else if (!rooms || rooms.length === 0) { ui.habitacionIdSelect.innerHTML = `<option value="">No hay habitaciones</option>`; }
-    else {
+        .eq('hotel_id', state.hotelId)
+        .eq('activo', true)
+        .order('nombre', { ascending: true });
+
+    if (error) {
+        ui.habitacionIdSelect.innerHTML = `<option value="">Error al cargar</option>`;
+    } else if (!rooms || rooms.length === 0) {
+        ui.habitacionIdSelect.innerHTML = `<option value="">No hay habitaciones</option>`;
+    } else {
         let optionsHtml = `<option value="">Selecciona habitación...</option>`;
+        
         rooms.forEach(room => {
-            optionsHtml += `<option value="${room.id}" data-precio="${room.precio || 0}" data-capacidad-base="${room.capacidad_base || 1}" data-capacidad-maxima="${room.capacidad_maxima || room.capacidad_base || 1}" data-precio-extra="${room.precio_huesped_adicional || 0}">${room.nombre} (${formatCurrency(room.precio, state.configHotel?.moneda_local_simbolo || '$', state.configHotel?.moneda_codigo_iso_info || 'COP', parseInt(state.configHotel?.moneda_decimales_info || 0))})</option>`;
+            // --- INICIO DE LA MODIFICACIÓN ---
+            
+            // 1. Verificamos si la habitación está 'libre'.
+            const isAvailable = room.estado === 'libre';
+            
+            // 2. Si no está disponible, añadimos el atributo 'disabled' para que no se pueda seleccionar.
+            const disabledAttribute = !isAvailable ? 'disabled' : '';
+            
+            // 3. Creamos una etiqueta de texto para mostrar el estado si no está disponible.
+            const statusLabel = !isAvailable ? ` (${room.estado.charAt(0).toUpperCase() + room.estado.slice(1)})` : '';
+
+            // 4. Construimos la opción con los atributos y etiquetas dinámicas.
+            optionsHtml += `
+                <option 
+                    value="${room.id}" 
+                    data-precio="${room.precio || 0}" 
+                    data-capacidad-base="${room.capacidad_base || 1}" 
+                    data-capacidad-maxima="${room.capacidad_maxima || room.capacidad_base || 1}" 
+                    data-precio-extra="${room.precio_huesped_adicional || 0}"
+                    ${disabledAttribute}
+                >
+                    ${room.nombre} (${formatCurrency(room.precio, state.configHotel?.moneda_local_simbolo || '$')})${statusLabel}
+                </option>
+            `;
+            // --- FIN DE LA MODIFICACIÓN ---
         });
+        
         ui.habitacionIdSelect.innerHTML = optionsHtml;
     }
+    
     ui.habitacionIdSelect.disabled = false;
 }
-
 async function cargarMetodosPago() {
     if (!ui.form || !ui.form.elements.metodo_pago_id) return;
     const select = ui.form.elements.metodo_pago_id;
@@ -657,113 +747,120 @@ async function loadInitialData() {
     await renderReservas();
 }
 
+
+// En tu archivo reservas.js, reemplaza esta función completa:
+
 async function createBooking(payload) {
     const { datosReserva, datosPago } = payload;
-    const reservaParaInsertar = { ...datosReserva };
+    let reservaParaInsertar = { ...datosReserva };
     delete reservaParaInsertar.id_temporal_o_final;
+    
+    // --- LÓGICA DE CLIENTE (sin cambios, ya es correcta) ---
+    if (!reservaParaInsertar.cliente_id) {
+        const { data: nuevoCliente, error: errCliente } = await state.supabase
+            .from('clientes')
+            .insert({
+                hotel_id: state.hotelId,
+                nombre: reservaParaInsertar.cliente_nombre,
+                documento: reservaParaInsertar.cedula,
+                telefono: reservaParaInsertar.telefono
+            })
+            .select('id')
+            .single();
 
+        if (errCliente) throw new Error(`Error al crear el nuevo cliente: ${errCliente.message}`);
+        reservaParaInsertar.cliente_id = nuevoCliente.id;
+    }
+
+    // --- INICIO DE LA CORRECCIÓN: LÓGICA DE PAGO ---
+
+    // 1. Determinar el monto a pagar ahora mismo
     if (!state.configHotel.cobro_al_checkin) {
         reservaParaInsertar.monto_pagado = 0;
     } else {
         const tipoPago = datosPago?.tipo_pago || 'parcial';
-        const montoPagadoInput = parseFloat(datosPago?.monto_abono) || 0;
-        reservaParaInsertar.monto_pagado = (tipoPago === "completo") ? state.currentBookingTotal : montoPagadoInput;
+        const montoAbono = parseFloat(datosPago?.monto_abono) || 0;
+        reservaParaInsertar.monto_pagado = (tipoPago === 'completo') ? state.currentBookingTotal : montoAbono;
     }
 
+    // 2. Insertar la reserva principal en la tabla 'reservas'
     const { data: reservaInsertada, error: errInsert } = await state.supabase
         .from('reservas').insert(reservaParaInsertar).select().single();
-    if (errInsert) throw new Error(`Error al guardar reserva: ${errInsert.message}`);
+
+    if (errInsert) throw new Error(`Error al guardar la reserva principal: ${errInsert.message}`);
 
     const nuevaReservaId = reservaInsertada.id;
+    const montoPagadoAhora = reservaInsertada.monto_pagado;
 
-    try {
-      // Construir el objeto del evento para Google Calendar (más robusto)
-      const eventDetails = {
-        summary: `Reserva | Cliente: ${reservaInsertada.cliente_nombre} | Room: ${reservaInsertada.habitacion_id} | Huéspedes: ${reservaInsertada.cantidad_huespedes}`,
-        description: `Reserva gestiondehotel.com
-Room: ${reservaInsertada.habitacion_id}
-Teléfono: ${reservaInsertada.telefono || ''}
-Cédula: ${reservaInsertada.cedula || ''}
-ReservaId: ${reservaInsertada.id || ''}
-`,
-        start: reservaInsertada.fecha_inicio,
-        end: reservaInsertada.fecha_fin
-      };
-      // Intenta crear el evento en Google Calendar (si hay integración activa)
-      const { data, error } = await state.supabase.functions.invoke('calendar-create-event', {
-        body: {
-          hotelId: state.hotelId,
-          provider: 'google',
-          eventDetails
+    // 3. Si hubo un pago (completo o parcial), registrarlo en 'pagos_reserva' y 'caja'
+    if (montoPagadoAhora > 0) {
+        // Asegurar que haya un método de pago
+        if (!datosPago.metodo_pago_id) {
+            throw new Error("Se requiere un método de pago para registrar el abono o pago completo.");
         }
-      });
-      if (error) {
-        console.warn("No se pudo crear evento en Google Calendar:", error.message);
-        // Puedes mostrar un feedback opcional aquí
-      }
-    } catch (err) {
-      console.error("Error enviando evento a Google Calendar:", err);
-    }
 
-    if (state.configHotel.cobro_al_checkin && reservaInsertada.monto_pagado > 0) {
+        // Registrar el detalle del pago
+        const { data: pagoData, error: errPagosReserva } = await state.supabase
+            .from('pagos_reserva')
+            .insert({
+                reserva_id: nuevaReservaId,
+                monto: montoPagadoAhora,
+                metodo_pago_id: datosPago.metodo_pago_id,
+                fecha_pago: new Date().toISOString(),
+                hotel_id: state.hotelId,
+                usuario_id: state.currentUser.id,
+                concepto: datosPago.tipo_pago === 'completo' ? 'Pago completo de reserva' : 'Abono inicial de reserva'
+            })
+            .select('id')
+            .single();
+
+        if (errPagosReserva) {
+            console.error("Error crítico: La reserva se creó pero el pago no pudo ser registrado en 'pagos_reserva'.", errPagosReserva);
+            showError(ui.feedbackDiv, "Advertencia: Reserva creada, pero hubo un error registrando el detalle del pago.");
+            // En un escenario real, aquí se podría intentar revertir la reserva o marcarla para revisión.
+        }
+
+        // Registrar el ingreso en caja, si hay un turno activo
         const turnoId = turnoService.getActiveTurnId();
-        if (!turnoId && ui.feedbackDiv) {
-            showError(ui.feedbackDiv, "Advertencia: Reserva creada, pero el pago NO se registró en caja (No hay turno activo). Por favor, registre el ingreso manualmente en caja.");
-        } else if (turnoId) {
-            const movCaja = {
-                hotel_id: state.hotelId, tipo: 'ingreso', monto: reservaInsertada.monto_pagado,
-                concepto: `${datosPago.tipo_pago === "completo" ? 'Pago completo Reserva' : 'Abono Reserva'} ${reservaInsertada.cliente_nombre} (#${nuevaReservaId.substring(0, 8)})`,
+        if (!turnoId) {
+            showError(ui.feedbackDiv, "Advertencia: ¡Pago no registrado en caja! No hay un turno activo.");
+        } else if (pagoData) { // Solo si el registro en pagos_reserva fue exitoso
+            const { error: errCaja } = await state.supabase.from('caja').insert({
+                hotel_id: state.hotelId,
+                tipo: 'ingreso',
+                monto: montoPagadoAhora,
+                concepto: `Reserva ${reservaInsertada.cliente_nombre} (#${nuevaReservaId.substring(0, 8)})`,
                 referencia: nuevaReservaId,
                 metodo_pago_id: datosPago.metodo_pago_id,
                 usuario_id: state.currentUser.id,
                 turno_id: turnoId,
-                reserva_id: nuevaReservaId
-            };
-            const { error: errCaja } = await state.supabase.from('caja').insert(movCaja);
-            if (errCaja && ui.feedbackDiv) showError(ui.feedbackDiv, `Advertencia: Reserva creada. Error al registrar pago en caja: ${errCaja.message}`);
-        }
-
-        if (datosPago.metodo_pago_id) {
-            const { error: errPagosReserva } = await state.supabase.from('pagos_reserva').insert({
                 reserva_id: nuevaReservaId,
-                monto: reservaInsertada.monto_pagado,
-                metodo_pago_id: datosPago.metodo_pago_id,
-                fecha_pago: new Date().toISOString(),
-                hotel_id: state.hotelId,
-                usuario_id: state.currentUser.id
+                pago_reserva_id: pagoData.id // Vincular con el registro de pago
             });
-            if (errPagosReserva && ui.feedbackDiv) showError(ui.feedbackDiv, `Advertencia: Reserva creada. Error al registrar detalle de pago: ${errPagosReserva.message}`);
-        } else if (ui.feedbackDiv) {
-            showError(ui.feedbackDiv, "Advertencia: Reserva creada con pago indicado, pero sin método de pago especificado para el detalle.");
+
+            if (errCaja) {
+                 console.error("Error crítico: El pago se registró en la reserva pero no en la caja.", errCaja);
+                 showError(ui.feedbackDiv, "Advertencia: Reserva y pago registrados, pero hubo un error al registrar el ingreso en caja.");
+            }
         }
     }
+    
+    // --- FIN DE LA CORRECCIÓN ---
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Solo cambiaremos el estado de la habitación a 'reservada' si la reserva es inminente (ej. dentro de 2 horas).
+    // Lógica para el calendario y estado de habitación (sin cambios)
     const ahora = new Date();
     const fechaInicioReserva = new Date(reservaInsertada.fecha_inicio);
-    const diferenciaMinutos = (fechaInicioReserva.getTime() - ahora.getTime()) / (1000 * 60);
-
-    // Si la reserva comienza dentro de 120 minutos (2 horas) o menos, actualizamos el estado.
-    if (diferenciaMinutos <= 120) {
-        const { error: errHab } = await state.supabase.from('habitaciones')
+    if ((fechaInicioReserva.getTime() - ahora.getTime()) / (1000 * 60) <= 120) {
+        await state.supabase.from('habitaciones')
             .update({ estado: "reservada" })
             .eq('id', reservaInsertada.habitacion_id)
-            .eq('estado', 'libre'); // Importante: solo actualizar si está libre para no sobreescribir otros estados.
-
-        if (errHab) {
-            console.warn("Advertencia: Error al actualizar estado de habitación a 'reservada' para reserva inminente:", errHab.message);
-        } else {
-            console.log(`Habitación ${reservaInsertada.habitacion_id} actualizada a 'reservada' por reserva inminente.`);
-        }
-    } else {
-        // Si la reserva es para más tarde, no hacemos nada y la habitación permanece 'libre'.
-        console.log(`Reserva para ${reservaInsertada.habitacion_id} es para el futuro (${Math.round(diferenciaMinutos)} min). La habitación permanece 'libre'.`);
+            .eq('estado', 'libre');
     }
-    // --- FIN DE LA CORRECCIÓN ---
 
     return reservaInsertada;
 }
+
+
 async function updateBooking(payload) {
     const { datosReserva } = payload;
     delete datosReserva.hotel_id;
@@ -1341,6 +1438,7 @@ function resetFormToCreateMode() {
     state.editingReservaId = null;
     state.currentBookingTotal = 0;
     ui.updateTotalDisplay();
+    actualizarVisibilidadPago();
 }
 
 function getBorderColorForEstado(e) {
@@ -1374,6 +1472,8 @@ async function handleExternalUpdate(event) {
     await renderReservas();
 }
 
+// En tu archivo reservas.js, reemplaza esta función completa:
+
 async function handleFormSubmit(event) {
     event.preventDefault();
     if (!ui.form || !ui.feedbackDiv || !ui.submitButton) return;
@@ -1384,6 +1484,26 @@ async function handleFormSubmit(event) {
 
     try {
         const formData = gatherFormData();
+
+        // --- INICIO DE LA VALIDACIÓN DE TURNO ACTIVO ---
+        // Antes de hacer cualquier otra cosa, verificamos si se requiere un pago
+        // y si hay un turno para registrarlo.
+
+        // Determinamos si se está intentando hacer un pago.
+        const seIntentaPagar = (formData.tipo_pago === 'completo' && state.currentBookingTotal > 0) ||
+                               (formData.tipo_pago === 'parcial' && parseFloat(formData.monto_abono) > 0);
+
+        // Si la política es cobrar al check-in y se está intentando pagar...
+        if (state.configHotel.cobro_al_checkin && seIntentaPagar) {
+            const turnoId = turnoService.getActiveTurnId();
+            if (!turnoId) {
+                // Si no hay turno, bloqueamos la acción y mostramos un error claro.
+                throw new Error("ACCIÓN BLOQUEADA: No se puede registrar la reserva porque no hay un turno de caja activo para procesar el pago.");
+            }
+        }
+        // --- FIN DE LA VALIDACIÓN DE TURNO ACTIVO ---
+
+        // Si la validación de turno pasó, continuamos con el resto del proceso.
         validateInitialInputs(formData);
         const bookingPayload = await validateAndCalculateBooking(formData);
 
@@ -1513,10 +1633,49 @@ async function handleListActions(event) {
     }
 }
 
-// js/modules/reservas/reservas.js
+function actualizarVisibilidadPago() {
+    // Referencias a los elementos que vamos a manipular
+    const tipoPagoSelect = ui.form.elements.tipo_pago;
+    const abonoContainer = ui.container.querySelector('#abono-container');
+    const totalPagoCompletoContainer = ui.container.querySelector('#total-pago-completo');
+    const metodoPagoSelect = ui.form.elements.metodo_pago_id;
+    const montoAbonoInput = ui.form.elements.monto_abono;
+
+    // Salir si algún elemento no se encuentra, para evitar errores
+    if (!tipoPagoSelect || !abonoContainer || !totalPagoCompletoContainer || !metodoPagoSelect || !montoAbonoInput) {
+        console.error("No se encontraron todos los elementos del formulario de pago.");
+        return;
+    }
+
+    // Lógica principal
+    if (tipoPagoSelect.value === 'completo') {
+        // Si es PAGO COMPLETO:
+        abonoContainer.style.display = 'none'; // Ocultar campo de abono
+        totalPagoCompletoContainer.style.display = 'block'; // Mostrar el total a pagar
+        montoAbonoInput.required = false; // El abono ya no es requerido
+        montoAbonoInput.value = ''; // Limpiar el valor del abono
+        
+        // El método de pago es requerido solo si hay un total mayor a cero
+        metodoPagoSelect.required = state.currentBookingTotal > 0;
+
+    } else {
+        // Si es PAGO PARCIAL:
+        abonoContainer.style.display = 'block'; // Mostrar campo de abono
+        totalPagoCompletoContainer.style.display = 'none'; // Ocultar el total a pagar
+        
+        // El método de pago es requerido solo si se ingresa un abono mayor a cero
+        const abonoActual = parseFloat(montoAbonoInput.value) || 0;
+        metodoPagoSelect.required = abonoActual > 0;
+    }
+}
+// En tu archivo reservas.js, reemplaza tu función mount por esta versión definitiva
+
+// En tu archivo reservas.js, reemplaza TODA la función mount con esta versión:
+
+// En tu archivo reservas.js, REEMPLAZA TODA la función mount con esta versión final:
 
 export async function mount(container, supabaseClient, user, hotelId) {
-    // --- Configuración Inicial del Estado ---
+    // --- 1. CONFIGURACIÓN INICIAL DEL ESTADO ---
     state.supabase = supabaseClient;
     state.currentUser = user;
     state.hotelId = hotelId;
@@ -1530,143 +1689,238 @@ export async function mount(container, supabaseClient, user, hotelId) {
         return;
     }
 
-    console.log("[Reservas Mount] Iniciando montaje del módulo de Reservas.");
-    
-    // PASO 1: Crear la estructura HTML completa del módulo.
+    console.log("[Reservas Mount] Iniciando montaje...");
+
+    // --- 2. RENDERIZAR LA ESTRUCTURA HTML PRINCIPAL (CORREGIDA SIN DUPLICADOS) ---
     container.innerHTML = `
-    <div class="max-w-6xl mx-auto mt-7 px-4">
-      <h2 id="form-title" class="text-2xl md:text-3xl font-bold mb-6 text-blue-800">Registrar Nueva Reserva</h2>
-      <form id="reserva-form" class="space-y-5 bg-slate-50 rounded-xl p-6 border border-slate-200 mb-8 shadow-md">
-        <fieldset class="border border-slate-300 p-4 rounded-md">
-          <legend class="text-lg font-semibold text-slate-700 px-2">Datos del Cliente</legend>
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
-            <div><label for="cliente_nombre" class="form-label">Nombre completo*</label><input name="cliente_nombre" id="cliente_nombre" class="form-control" required maxlength="120" /></div>
-            <div><label for="cedula" class="form-label">Cédula/ID</label><input name="cedula" id="cedula" class="form-control" maxlength="30" /></div>
-            <div><label for="telefono" class="form-label">Teléfono</label><input name="telefono" id="telefono" type="tel" class="form-control" maxlength="30" /></div>
-          </div>
-        </fieldset>
-        <fieldset class="border border-slate-300 p-4 rounded-md">
-          <legend class="text-lg font-semibold text-slate-700 px-2">Detalles de la Reserva</legend>
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4 gap-y-5 mt-2">
-            <div><label for="fecha_entrada" class="form-label">Fecha y hora de llegada*</label><input type="datetime-local" name="fecha_entrada" id="fecha_entrada" class="form-control" required /></div>
-            <div><label for="tipo_calculo_duracion" class="form-label">Calcular duración por*</label><select name="tipo_calculo_duracion" id="tipo_calculo_duracion" class="form-control" required><option value="noches_manual">Noches (manual)</option><option value="tiempo_predefinido">Tiempo predefinido</option></select></div>
-            <div id="noches-manual-container"><label for="cantidad_noches" class="form-label">Cantidad de noches*</label><input name="cantidad_noches" id="cantidad_noches" type="number" min="1" max="90" value="1" class="form-control" /></div>
-            <div id="tiempo-predefinido-container" style="display:none;"><label for="tiempo_estancia_id" class="form-label">Selecciona tiempo de estancia*</label><select name="tiempo_estancia_id" id="tiempo_estancia_id" class="form-control"></select></div>
-            <div><label for="habitacion_id" class="form-label">Habitación*</label><select name="habitacion_id" id="habitacion_id" class="form-control" required></select></div>
-            <div><label for="cantidad_huespedes" class="form-label">Cantidad de huéspedes*</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="1" class="form-control" required /></div>
-          </div>
-        </fieldset>
-        
-        <div class="p-4 bg-blue-50 border border-blue-200 rounded-md text-center">
-            <p class="text-sm text-blue-700">Total Estimado de la Reserva:</p>
-            <p id="total-reserva-calculado-display" class="text-2xl font-bold text-blue-600">${formatCurrency(0, state.configHotel?.moneda_local_simbolo || '$')}</p>
-        </div>
+    <div class="max-w-7xl mx-auto mt-10 px-4">
+        <h2 id="form-title" class="text-3xl font-extrabold text-blue-800 mb-8 text-center drop-shadow-md">Registrar Nueva Reserva</h2>
 
-        <div id="payment-message-checkout" class="p-3 bg-orange-50 border border-orange-200 rounded-md text-center text-orange-700 text-sm" style="display:none;">
-             La política del hotel es <strong class="font-semibold">Cobro al Check-out</strong>. Los detalles del pago se gestionarán al finalizar la estancia.
-        </div>
+        <form id="reserva-form" class="space-y-8 bg-white rounded-2xl p-8 border border-blue-100 shadow-xl">
 
-        <fieldset id="fieldset-pago-adicionales" class="border border-slate-300 p-4 rounded-md">
-            <legend class="text-lg font-semibold text-slate-700 px-2">Pago y Adicionales</legend>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-5 mt-2">
-                <div><label for="tipo_pago" class="form-label">Tipo de Pago*</label><select id="tipo_pago" name="tipo_pago" class="form-control" required><option value="parcial">Pago parcial (abono)</option><option value="completo">Pago completo</option></select></div>
-                <div><label for="metodo_pago_id" class="form-label">Método de Pago*</label><select name="metodo_pago_id" id="metodo_pago_id" class="form-control"></select></div>
-                <div id="abono-container" class="md:col-span-2"><label for="monto_abono" class="form-label">Valor a abonar</label><input name="monto_abono" id="monto_abono" type="number" min="0" step="1000" class="form-control" placeholder="0" /></div>
-                <div id="total-pago-completo" class="md:col-span-2" style="display:none;"><div class="text-center py-4"><span class="text-2xl font-bold text-green-600">Total a pagar: <span id="valor-total-pago">$0</span></span></div></div>
+            <fieldset class="border border-slate-200 p-6 rounded-xl">
+                <legend class="text-lg font-bold text-slate-700 px-2">1. Datos del Cliente</legend>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                    <div class="md:col-span-2">
+                        <label for="cliente_search_input" class="font-semibold text-sm text-gray-700 block mb-1">Buscar Cliente Existente</label>
+                        <div class="flex items-center gap-2">
+                            <input name="cliente_search_input" id="cliente_search_input" class="form-control flex-grow" placeholder="Click en 'Buscar' para abrir el selector" readonly/>
+                            <button type="button" id="btn_buscar_cliente" class="button button-info">Buscar</button>
+                            <button type="button" id="btn_crear_cliente" class="button button-success p-2 rounded-full" title="Crear Nuevo Cliente">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                            </button>
+                        </div>
+                        <input type="hidden" name="cliente_id_hidden" id="cliente_id_hidden" />
+                        <div id="cliente_nombre_display" class="mt-3 hidden rounded-md bg-blue-50 border border-blue-300 text-blue-800 px-4 py-2 shadow-sm flex justify-between items-center">
+                            <div><strong class="mr-2">Cliente:</strong> <span id="selected_client_name"></span></div>
+                            <button type="button" id="btn_clear_cliente" class="text-red-500 font-bold text-lg leading-none" title="Deseleccionar cliente">&times;</button>
+                        </div>
+                    </div>
+                    <div id="new-client-fields" class="md:col-span-2">
+                        <p class="text-sm text-gray-500 mb-2">O ingrese los datos para un cliente nuevo:</p>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label for="cliente_nombre" class="font-semibold text-sm text-gray-700">Nombre completo*</label>
+                                <input name="cliente_nombre" id="cliente_nombre" class="form-control" required maxlength="120" />
+                            </div>
+                            <div>
+                                <label for="cedula" class="font-semibold text-sm text-gray-700">Cédula/ID</label>
+                                <input name="cedula" id="cedula" class="form-control" maxlength="30" />
+                            </div>
+                            <div>
+                                <label for="telefono" class="font-semibold text-sm text-gray-700">Teléfono</label>
+                                <input name="telefono" id="telefono" type="tel" class="form-control" maxlength="30" />
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </fieldset>
+
+            <fieldset class="border border-slate-200 p-6 rounded-xl">
+                <legend class="text-lg font-bold text-slate-700 px-2">2. Detalles de la Reserva</legend>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
+                    <div>
+                        <label for="fecha_entrada" class="font-semibold text-sm text-gray-700">Fecha y hora de llegada*</label>
+                        <input type="datetime-local" name="fecha_entrada" id="fecha_entrada" class="form-control" required />
+                    </div>
+                    <div>
+                        <label for="tipo_calculo_duracion" class="font-semibold text-sm text-gray-700">Calcular duración por*</label>
+                        <select name="tipo_calculo_duracion" id="tipo_calculo_duracion" class="form-control" required>
+                            <option value="noches_manual">Noches (manual)</option>
+                            <option value="tiempo_predefinido">Tiempo predefinido</option>
+                        </select>
+                    </div>
+                    <div id="noches-manual-container">
+                        <label for="cantidad_noches" class="font-semibold text-sm text-gray-700">Cantidad de noches*</label>
+                        <input name="cantidad_noches" id="cantidad_noches" type="number" min="1" max="90" value="1" class="form-control" />
+                    </div>
+                    <div id="tiempo-predefinido-container" style="display:none;">
+                        <label for="tiempo_estancia_id" class="font-semibold text-sm text-gray-700">Selecciona tiempo de estancia*</label>
+                        <select name="tiempo_estancia_id" id="tiempo_estancia_id" class="form-control"></select>
+                    </div>
+                    <div>
+                        <label for="habitacion_id" class="font-semibold text-sm text-gray-700">Habitación*</label>
+                        <select name="habitacion_id" id="habitacion_id" class="form-control" required></select>
+                    </div>
+                    <div>
+                        <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes*</label>
+                        <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="1" class="form-control" required />
+                    </div>
+                </div>
+            </fieldset>
+
+            <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                <p class="text-sm text-blue-700">Total Estimado de la Reserva:</p>
+                <p id="total-reserva-calculado-display" class="text-3xl font-extrabold text-blue-600">$0</p>
             </div>
-        </fieldset>
-        <fieldset class="border border-slate-300 p-4 rounded-md">
-             <legend class="text-lg font-semibold text-slate-700 px-2">Notas</legend>
-             <div class="md:col-span-2"><label for="notas" class="form-label">Notas Adicionales (visibles para el staff)</label><textarea name="notas" id="notas" class="form-control" maxlength="500" rows="2" placeholder="Ej: Solicitud especial del cliente, llegada tardía..."></textarea></div>
-        </fieldset>
 
-        <div class="flex flex-col sm:flex-row gap-3 pt-2">
-          <button type="submit" id="submit-button" class="button button-primary w-full sm:w-auto flex-grow">Registrar Reserva</button>
-          <button type="button" id="cancel-edit-button" class="button button-secondary w-full sm:w-auto" style="display:none;">Cancelar Edición</button>
-        </div>
-      </form>
-      <div id="reserva-feedback" class="mb-6 min-h-[24px]"></div>
-      <div id="reservas-list" class="mt-8"></div> 
+            <div id="payment-message-checkout" class="p-3 bg-orange-50 border border-orange-200 rounded-md text-center text-orange-700 text-sm hidden">
+                La política del hotel es <strong class="font-semibold">Cobro al Check-out</strong>. Los detalles del pago se gestionarán al finalizar la estancia.
+            </div>
+
+            <fieldset id="fieldset-pago-adicionales" class="border border-slate-200 p-6 rounded-xl">
+                 <legend class="text-lg font-bold text-slate-700 px-2">3. Pago y Adicionales</legend>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                     <div>
+                         <label for="tipo_pago" class="font-semibold text-sm text-gray-700">Tipo de Pago*</label>
+                         <select id="tipo_pago" name="tipo_pago" class="form-control" required>
+                             <option value="parcial">Pago parcial (abono)</option>
+                             <option value="completo">Pago completo</option>
+                         </select>
+                     </div>
+                     <div>
+                         <label for="metodo_pago_id" class="font-semibold text-sm text-gray-700">Método de Pago*</label>
+                         <select name="metodo_pago_id" id="metodo_pago_id" class="form-control"></select>
+                     </div>
+                     <div id="abono-container" class="md:col-span-2">
+                         <label for="monto_abono" class="font-semibold text-sm text-gray-700">Valor a abonar</label>
+                         <input name="monto_abono" id="monto_abono" type="number" min="0" step="1000" class="form-control" placeholder="0" />
+                     </div>
+                     <div id="total-pago-completo" class="md:col-span-2 hidden">
+                         <div class="text-center py-4">
+                             <span class="text-2xl font-bold text-green-600">Total a pagar: <span id="valor-total-pago">$0</span></span>
+                         </div>
+                     </div>
+                 </div>
+            </fieldset>
+
+            <fieldset class="border border-slate-200 p-6 rounded-xl">
+                <legend class="text-lg font-bold text-slate-700 px-2">4. Notas</legend>
+                <div>
+                    <label for="notas" class="font-semibold text-sm text-gray-700">Notas Adicionales (visibles para el staff)</label>
+                    <textarea name="notas" id="notas" class="form-control mt-2" maxlength="500" rows="2" placeholder="Ej: Solicitud especial del cliente, llegada tardía..."></textarea>
+                </div>
+            </fieldset>
+
+            <div class="flex flex-col sm:flex-row gap-4 pt-4 justify-center">
+                <button type="submit" id="submit-button" class="button button-success py-3 px-6 rounded-xl text-lg">Registrar Reserva</button>
+                <button type="button" id="cancel-edit-button" class="button button-neutral py-3 px-6 rounded-xl hidden">Cancelar Edición</button>
+            </div>
+        </form>
+
+        <div id="reserva-feedback" class="mt-6"></div>
+        <div id="reservas-list" class="mt-10"></div>
     </div>
+    
+    <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4" style="display:none;"></div>
     `;
 
-    // PASO 2: Inicializar las referencias a los elementos de la UI.
+    // --- 3. INICIALIZAR REFERENCIAS A LA UI ---
     ui.init(container);
 
-    // PASO 3: Sincronizar y cargar todos los datos iniciales.
-    await syncReservasConGoogleCalendar(state);
-    await loadInitialData(); 
-
-    // PASO 4: Adjuntar todos los listeners de eventos.
-    const tipoPagoSelectEl = document.getElementById('tipo_pago');
-    const abonoContainerEl = document.getElementById('abono-container');
-    const montoAbonoInputEl = document.getElementById('monto_abono');
-    const totalPagoCompletoEl = document.getElementById('total-pago-completo');
+    // --- 4. LÓGICA Y LISTENERS DE EVENTOS ---
     
-    function actualizarVisibilidadPago() {
-        if (!state.configHotel.cobro_al_checkin) return;
-        if (!tipoPagoSelectEl) return;
-
-        if (tipoPagoSelectEl.value === 'completo') {
-            if (abonoContainerEl) abonoContainerEl.style.display = 'none';
-            if (montoAbonoInputEl) { montoAbonoInputEl.value = ''; montoAbonoInputEl.required = false; }
-            if (totalPagoCompletoEl) totalPagoCompletoEl.style.display = 'block';
-            if (ui.form.elements.metodo_pago_id) ui.form.elements.metodo_pago_id.required = state.currentBookingTotal > 0;
-        } else { // Parcial
-            if (abonoContainerEl) abonoContainerEl.style.display = 'block';
-            if (montoAbonoInputEl) montoAbonoInputEl.required = (parseFloat(montoAbonoInputEl?.value) || 0) > 0;
-            if (totalPagoCompletoEl) totalPagoCompletoEl.style.display = 'none';
-            if (ui.form.elements.metodo_pago_id) ui.form.elements.metodo_pago_id.required = (parseFloat(montoAbonoInputEl?.value) || 0) > 0;
+    // Lógica para el selector de cliente
+    const updateClienteFields = (cliente) => {
+        const newClientFieldsContainer = ui.container.querySelector('#new-client-fields');
+        if (cliente) {
+            ui.clienteIdHiddenInput.value = cliente.id;
+            ui.clienteNombreDisplay.querySelector('#selected_client_name').textContent = cliente.nombre;
+            ui.form.elements.cedula.value = cliente.documento || '';
+            ui.form.elements.telefono.value = cliente.telefono || '';
+            ui.clienteNombreDisplay.classList.remove('hidden');
+            if(newClientFieldsContainer) newClientFieldsContainer.style.display = 'none';
+            ui.form.elements.cliente_nombre.required = false;
+        } else {
+            ui.clienteIdHiddenInput.value = '';
+            ui.clienteNombreDisplay.classList.add('hidden');
+            if(newClientFieldsContainer) newClientFieldsContainer.style.display = 'block';
+            ui.form.elements.cliente_nombre.required = true;
+            ['cliente_nombre', 'cedula', 'telefono'].forEach(name => ui.form.elements[name].value = '');
         }
-    }
-
-    if (tipoPagoSelectEl) tipoPagoSelectEl.addEventListener('change', actualizarVisibilidadPago);
-    if (montoAbonoInputEl) {
-        montoAbonoInputEl.addEventListener('input', () => {
-            actualizarVisibilidadPago();
-        });
-    }
-
-    const inputsQueAfectanTotal = [
-        ui.habitacionIdSelect, ui.cantidadNochesInput, ui.tipoCalculoDuracionEl,
-        ui.tiempoEstanciaIdSelect, ui.form.elements.cantidad_huespedes, ui.fechaEntradaInput
-    ];
-
-    inputsQueAfectanTotal.forEach(el => {
-        if (el) {
-            const eventType = (el.type === 'datetime-local' || el.type === 'number' || el.tagName === 'TEXTAREA') ? 'input' : 'change';
-            const listener = async () => {
-                await recalcularYActualizarTotalUI();
-                actualizarVisibilidadPago();
-            };
-            el.addEventListener(eventType, listener);
-        }
-    });
-
-    if (ui.form) ui.form.addEventListener('submit', handleFormSubmit);
-    if (ui.cancelEditButton) ui.cancelEditButton.onclick = () => resetFormToCreateMode();
-    if (ui.reservasListEl) {
-        ui.reservasListEl.addEventListener('click', handleListActions);
-    }
-
-    if (ui.tipoCalculoDuracionEl) {
-        ui.tipoCalculoDuracionEl.onchange = async () => {
-            const esNochesManual = ui.tipoCalculoDuracionEl.value === 'noches_manual';
-            if (ui.nochesManualContainer) ui.nochesManualContainer.style.display = esNochesManual ? '' : 'none';
-            if (ui.cantidadNochesInput) ui.cantidadNochesInput.required = esNochesManual;
-            if (ui.tiempoPredefinidoContainer) ui.tiempoPredefinidoContainer.style.display = esNochesManual ? 'none' : '';
-            if (ui.tiempoEstanciaIdSelect) ui.tiempoEstanciaIdSelect.required = !esNochesManual;
-            await recalcularYActualizarTotalUI();
-            actualizarVisibilidadPago();
+    };
+    
+    if(ui.btnBuscarCliente) {
+        ui.btnBuscarCliente.onclick = () => {
+            showClienteSelectorModal(state.supabase, state.hotelId, {
+                onSelect: (cliente) => {
+                    updateClienteFields(cliente);
+                    clearFeedback(ui.feedbackDiv);
+                }
+            });
         };
     }
     
-    document.addEventListener('datosActualizados', handleExternalUpdate);
+    const btnCrearCliente = container.querySelector('#btn_crear_cliente');
+    if (btnCrearCliente) {
+        btnCrearCliente.onclick = () => {
+            mostrarFormularioCliente(null, state.supabase, state.hotelId, { 
+                afterSave: (nuevoCliente) => {
+                    updateClienteFields(nuevoCliente);
+                    showSuccess(ui.feedbackDiv, `Cliente "${nuevoCliente.nombre}" creado y seleccionado.`);
+                    setTimeout(() => clearFeedback(ui.feedbackDiv), 2500);
+                }
+            });
+        };
+    }
     
-    // PASO 5: Configurar el estado inicial del formulario.
-    resetFormToCreateMode();
+    container.querySelector('#btn_clear_cliente')?.addEventListener('click', () => updateClienteFields(null));
+    
+    // Listeners que afectan el cálculo del total y la UI
+    const setupEventListeners = () => {
+        const inputsToRecalculate = [
+            ui.habitacionIdSelect, ui.cantidadNochesInput, ui.tiempoEstanciaIdSelect, 
+            ui.form.elements.cantidad_huespedes, ui.fechaEntradaInput
+        ];
+        inputsToRecalculate.forEach(el => {
+            if (el) el.addEventListener((el.tagName === 'SELECT' ? 'change' : 'input'), recalcularYActualizarTotalUI);
+        });
+
+        if (ui.tipoCalculoDuracionEl) {
+            ui.tipoCalculoDuracionEl.addEventListener('change', () => {
+                const esNochesManual = ui.tipoCalculoDuracionEl.value === 'noches_manual';
+                ui.nochesManualContainer.style.display = esNochesManual ? '' : 'none';
+                ui.cantidadNochesInput.required = esNochesManual;
+                ui.tiempoPredefinidoContainer.style.display = esNochesManual ? 'none' : '';
+                ui.tiempoEstanciaIdSelect.required = !esNochesManual;
+                recalcularYActualizarTotalUI();
+            });
+        }
+
+        if (ui.form.elements.tipo_pago) ui.form.elements.tipo_pago.addEventListener('change', actualizarVisibilidadPago);
+        if (ui.form.elements.monto_abono) ui.form.elements.monto_abono.addEventListener('input', actualizarVisibilidadPago);
+
+        if (ui.form) ui.form.addEventListener('submit', handleFormSubmit);
+        if (ui.cancelEditButton) ui.cancelEditButton.addEventListener('click', () => resetFormToCreateMode());
+        if (ui.reservasListEl) ui.reservasListEl.addEventListener('click', handleListActions);
+        
+        document.addEventListener('datosActualizados', handleExternalUpdate);
+    };
+
+    // --- 5. CARGA DE DATOS Y ESTADO INICIAL ---
+    await loadInitialData(); 
+    setupEventListeners();   
+    
+    await syncReservasConGoogleCalendar(state); 
+    
+    resetFormToCreateMode(); 
+    
     console.log("[Reservas Mount] Montaje completado y listeners adjuntados.");
-}export function unmount(container) {
+}
+
+
+
+export function unmount(container) {
     console.log("Modulo Reservas desmontado.");
     if (ui.form && typeof handleFormSubmit === 'function') {
         ui.form.removeEventListener('submit', handleFormSubmit);

@@ -1,23 +1,25 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-   <meta charset="UTF-8">
-    <title>Tu Título de Página</title>
+    <meta charset="UTF-8">
+    <title>Gestión de Hotel</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Tu descripción de página.">
+    <meta name="description" content="Sistema de Gestión Hotelera - Tu hotel bajo control.">
 
     <link rel="icon" href="/favicon.ico" sizes="any">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestión de Hotel</title>
+    
     <link rel="stylesheet" href="../style.css"> 
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"> <script src="https://cdn.tailwindcss.com"></script>
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
+      // Configuración de Tailwind para colores personalizados
       tailwind.config = {
         theme: {
           extend: {
             colors: {
-              'primary': '#1d4ed8',
+              'primary': '#1d4ed8', 
               'secondary': '#f59e0b',
               'accent': '#10b981',
             }
@@ -25,58 +27,67 @@
         }
       }
     </script>
+
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap" rel="stylesheet">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <style>
+        /* Asegura que el sidebar y la barra superior móvil tengan un z-index menor que los modales */
+        #sidebar, #mobile-topbar {
+            z-index: 40;
+        }
+    </style>
+
 </head>
 <body>
-  <div id="main-wrapper" style="display: flex; min-height: 100vh;"> <div id="mobile-topbar">
-        <button id="hamburger-button" aria-label="Abrir menú" aria-expanded="false">
-            <i class="bi bi-list" style="font-size: 1.8rem;"></i> </button>
-        <div class="logo-mobile">
+  <div id="main-wrapper" class="flex min-h-screen"> 
+    
+    <div id="mobile-topbar" class="md:hidden flex items-center justify-between p-4 bg-[#2a3647] text-white shadow-md z-40">
+        <button id="hamburger-button" aria-label="Abrir menú" aria-expanded="false" class="text-white focus:outline-none">
+            <i class="bi bi-list" style="font-size: 1.8rem;"></i>
+        </button>
+        <div class="logo-mobile flex-shrink-0">
             <a href="#/dashboard">
                  <img src="/icons/logo.jpeg" alt="Gestión de Hotel" style="max-height: 35px; width:auto; border-radius: 5px;">
             </a>
         </div>
-        <div></div> </div>
+        <div></div>
+    </div>
 
-    <aside id="sidebar" class="bg-[#2a3647] flex flex-col items-center py-4">
+    <aside id="sidebar" class="bg-[#2a3647] text-white flex-col items-center py-4 hidden md:flex md:w-64 transition-all duration-300 ease-in-out z-40">
       <a href="#/dashboard" class="flex items-center justify-center px-4 py-3" style="text-decoration:none;">
-        <img src="/icons/logo.jpeg"
-          alt="Gestión de Hotel"
-          style="max-width:140px; width:100%; height:auto; display:block; border-radius: 10px;" />
+        <img src="/icons/logo.jpeg" alt="Gestión de Hotel" style="max-width:140px; width:100%; height:auto; display:block; border-radius: 10px;" />
       </a>
       <nav id="main-nav" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
       <div id="user-info-nav" class="mt-auto w-full"></div>
     </aside>
 
-    <div id="menu-overlay"></div>
+    <div id="menu-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden"></div>
 
-    <div id="main-content-area" style="flex:1; display:flex; flex-direction:column; min-width:0; background:#f7fafc; overflow:hidden;">
-      <div id="notificaciones-campanita-container" style="position:fixed; top:1rem; right:1rem; z-index:1050;"></div> 
-      <div id="app-global-feedback-banner" class="app-global-feedback" style="display:none;"></div>
-      <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto bg-gray-100 p-4 md:p-6">
+    <div id="main-content-area" class="flex-1 flex flex-col min-w-0 bg-gray-100 overflow-hidden">
+      <div id="notificaciones-campanita-container" class="fixed top-4 right-4 z-50"></div> 
+      <div id="app-global-feedback-banner" class="app-global-feedback fixed top-5 right-5 p-4 rounded-md shadow-lg z-50 text-sm" style="display:none;"></div>
+      
+      <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6">
         <p class="text-center text-gray-500">Cargando aplicación...</p>
       </main>
     </div>
   </div>
 
-  <div id="app-global-loading-overlay" style="display:none;">
-      <div class="spinner"></div>
-      <p id="global-loading-message">Cargando...</p>
+  <div id="app-global-loading-overlay" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[100] hidden">
+      <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mx-auto mb-4"></div>
+      <p id="global-loading-message" class="text-lg font-semibold text-white mt-4">Cargando...</p>
   </div>
-  
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
-  <script type="module" src="/js/main.js"></script>
+  <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[1000] hidden"></div>
+  <div id="modal-global" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[950] hidden"></div>
 
-  <div id="modal-global" style="
-    display: none;
-    position: fixed;
-    z-index: 99999; /* Muy alto para estar encima de todo */
-    left: 0; top: 0; width: 100vw; height: 100vh;
-    background: rgba(0,0,0,0.18);
-    align-items: center; justify-content: center;
-  "></div>
-  <div id="modal-container" style="display:none"></div>
-</body>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.js"></script>
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  
+  <script type="module" src="/js/main.js"></script>
+  
+  </body>
 </html>

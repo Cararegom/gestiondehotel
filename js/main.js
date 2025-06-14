@@ -378,6 +378,7 @@ async function router() {
       } else {
         try {
           console.log(`[Router] Montando módulo para: ${baseRoute}`);
+          console.log("DEBUG main.js: Valor de 'supabase' antes de pasarlo al módulo:", supabase); 
           await moduleDefinition.mount(appContainer, supabase, userForModule, hotelIdForModule, currentActivePlanDetails);
           currentModuleUnmount = moduleDefinition.unmount || null;
           currentPathLoaded = baseRoute;
