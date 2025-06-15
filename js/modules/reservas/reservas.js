@@ -658,6 +658,8 @@ async function recalcularYActualizarTotalUI() {
     }
 }
 
+// REEMPLAZA ESTA FUNCIÓN EN TU ARCHIVO reservas.js
+
 async function cargarHabitaciones() {
     if (!ui.habitacionIdSelect) return;
     ui.habitacionIdSelect.innerHTML = `<option value="">Cargando habitaciones...</option>`;
@@ -677,18 +679,17 @@ async function cargarHabitaciones() {
         let optionsHtml = `<option value="">Selecciona habitación...</option>`;
         
         rooms.forEach(room => {
-            // --- INICIO DE LA MODIFICACIÓN ---
-            
-            // 1. Verificamos si la habitación está 'libre'.
             const isAvailable = room.estado === 'libre';
-            
-            // 2. Si no está disponible, añadimos el atributo 'disabled' para que no se pueda seleccionar.
             const disabledAttribute = !isAvailable ? 'disabled' : '';
             
-            // 3. Creamos una etiqueta de texto para mostrar el estado si no está disponible.
-            const statusLabel = !isAvailable ? ` (${room.estado.charAt(0).toUpperCase() + room.estado.slice(1)})` : '';
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Se añade una comprobación para asegurar que 'room.estado' no es null
+            // antes de intentar usar métodos de string como .charAt() o .slice().
+            const statusLabel = !isAvailable && room.estado 
+                ? ` (${room.estado.charAt(0).toUpperCase() + room.estado.slice(1)})` 
+                : '';
+            // --- FIN DE LA CORRECCIÓN ---
 
-            // 4. Construimos la opción con los atributos y etiquetas dinámicas.
             optionsHtml += `
                 <option 
                     value="${room.id}" 
@@ -701,7 +702,6 @@ async function cargarHabitaciones() {
                     ${room.nombre} (${formatCurrency(room.precio, state.configHotel?.moneda_local_simbolo || '$')})${statusLabel}
                 </option>
             `;
-            // --- FIN DE LA MODIFICACIÓN ---
         });
         
         ui.habitacionIdSelect.innerHTML = optionsHtml;
@@ -709,6 +709,7 @@ async function cargarHabitaciones() {
     
     ui.habitacionIdSelect.disabled = false;
 }
+
 async function cargarMetodosPago() {
     if (!ui.form || !ui.form.elements.metodo_pago_id) return;
     const select = ui.form.elements.metodo_pago_id;

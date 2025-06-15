@@ -417,6 +417,8 @@ function updateActiveNavLink(currentPath) {
     });
 }
 
+// REEMPLAZA TU FUNCIÓN initializeApp COMPLETA CON ESTA VERSIÓN
+
 async function initializeApp() {
   appContainer = document.getElementById('app-container');
   mainNav = document.getElementById('main-nav'); 
@@ -441,22 +443,18 @@ async function initializeApp() {
     const appUser = session?.user; 
     console.log("[Auth] Estado cambiado. Evento:", event, "Usuario actual:", appUser ? appUser.email : "Ninguno");
 
-    // --- INICIO DE LA CORRECCIÓN DEFINITIVA ---
-    // Esta lógica revisa la URL para detectar si es un flujo de recuperación de contraseña
     if (session && session.user && session.user.aud === 'authenticated' && session.expires_in === 3600) {
-        const urlParams = new URLSearchParams(window.location.hash.substring(1)); // Lee los parámetros de la URL
+        const urlParams = new URLSearchParams(window.location.hash.substring(1));
         const type = urlParams.get('type');
 
         if (type === 'recovery') {
             console.log('✅✅✅ Evento de recuperación de contraseña detectado por URL. Mostrando formulario.');
             hideGlobalLoading();
             mostrarFormularioNuevaContrasena();
-            return; // ¡Este return es CRÍTICO para detener la carga normal de la app!
+            return;
         }
     }
-    // --- FIN DE LA CORRECCIÓN DEFINITIVA ---
 
-    // El resto de tu código para un inicio de sesión normal se ejecuta si NO es recuperación de contraseña
     if (appUser) {
         let hotelIdToLoad = appUser.user_metadata?.hotel_id || appUser.app_metadata?.hotel_id;
         
@@ -552,23 +550,26 @@ async function initializeApp() {
       }
     });
   }
-// ========= INICIO DE LA CORRECCIÓN =========
-// Agrega un listener al contenedor principal del menú
-if (mainNav && sidebar && menuOverlay && hamburgerButton) {
-  mainNav.addEventListener('click', (e) => {
-    // Verifica si el clic fue en un enlace de navegación
-    const linkClickeado = e.target.closest('a.nav-link-dynamic');
 
-    if (linkClickeado) {
-      // Si fue en un enlace, cierra el menú y el overlay
-      console.log('[Menú Móvil] Enlace clickeado, cerrando menú.');
-      sidebar.classList.remove('open');
-      menuOverlay.classList.remove('active');
-      hamburgerButton.setAttribute('aria-expanded', 'false');
-    }
-  });
-}
-// ========= FIN DE LA CORRECCIÓN =========
+  // ========= INICIO DE LA CORRECCIÓN =========
+  // Agrega un listener al contenedor principal del menú (`mainNav`)
+  if (mainNav && sidebar && menuOverlay && hamburgerButton) {
+    mainNav.addEventListener('click', (e) => {
+      // Verifica si el elemento clickeado es un enlace de navegación (`<a>`)
+      // o un elemento dentro de un enlace.
+      const linkClickeado = e.target.closest('a.nav-link-dynamic');
+
+      if (linkClickeado) {
+        // Si fue en un enlace, cierra el menú y el overlay.
+        console.log('[Menú Móvil] Enlace clickeado, cerrando menú.');
+        sidebar.classList.remove('open');
+        menuOverlay.classList.remove('active');
+        hamburgerButton.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+  // ========= FIN DE LA CORRECCIÓN =========
+
   if (menuOverlay && sidebar) {
     menuOverlay.addEventListener('click', () => {
       sidebar.classList.remove('open');
@@ -577,6 +578,9 @@ if (mainNav && sidebar && menuOverlay && hamburgerButton) {
     });
   }
 }
+
+
+
 // ===================================================================
 // ============= FUNCIÓN PARA MOSTRAR FORMULARIO DE RESETEO =============
 // ===================================================================

@@ -119,9 +119,9 @@ async function buscarDescuentoAplicable(supabase, hotelId, habitacionId, fechaDe
 
 /**
  * Busca el mejor descuento aplicable para una lista de servicios.
- * @param {Array} serviciosSeleccionados - Array de objetos de servicio [{servicio_id, cantidad, precio}].
+ * @param {Array} serviciosSeleccionados - Array de objetos de servicio [{servicio_id, nombre, cantidad, precio}].
  * @param {string|null} codigoManual - El código opcional introducido por el usuario.
- * @returns {Promise<{descuento: object, monto: number}|null>} - El objeto del descuento y el monto a descontar, o null.
+ * @returns {Promise<{descuento: object, monto: number, serviciosAplicadosNombres: string}|null>} - El descuento, monto, y los nombres de los servicios, o null.
  */
 async function buscarDescuentoParaServicios(serviciosSeleccionados, codigoManual = null) {
     if (!serviciosSeleccionados || serviciosSeleccionados.length === 0) return null;
@@ -132,11 +132,10 @@ async function buscarDescuentoParaServicios(serviciosSeleccionados, codigoManual
         .eq('activo', true)
         .or(`fecha_fin.is.null,fecha_fin.gte.${ahora}`);
 
-    // Filtra por tipo: automático (sin código) o por el código ingresado
     if (codigoManual) {
         query = query.eq('codigo', codigoManual.toUpperCase());
     } else {
-        query = query.is('codigo', null).lte('fecha_inicio', ahora); // Automáticos
+        query = query.is('codigo', null).lte('fecha_inicio', ahora);
     }
 
     const { data: descuentos, error } = await query;
@@ -147,37 +146,42 @@ async function buscarDescuentoParaServicios(serviciosSeleccionados, codigoManual
 
     if (!descuentos || descuentos.length === 0) return null;
 
-    // Validar y encontrar el mejor descuento
     for (const d of descuentos) {
-        if ((d.usos_maximos || 0) > 0 && (d.usos_actuales || 0) >= d.usos_maximos) continue; // Salta si ya no tiene usos
-
-        // Solo nos interesan los que aplican a 'servicios_adicionales'
+        if ((d.usos_maximos || 0) > 0 && (d.usos_actuales || 0) >= d.usos_maximos) continue;
         if (d.aplicabilidad !== 'servicios_adicionales') continue;
 
         const idsServiciosAplicables = d.habitaciones_aplicables || [];
+        
+        // Filtra los servicios de la promoción para obtener sus detalles
+        const serviciosAfectados = serviciosSeleccionados
+            .filter(s => idsServiciosAplicables.includes(s.servicio_id));
 
-        // Calcula la base sobre la que se puede aplicar el descuento
-        const baseDescuento = serviciosSeleccionados
-            .filter(s => idsServiciosAplicables.includes(s.servicio_id)) // Filtra solo los servicios de la promoción
-            .reduce((sum, s) => sum + (s.cantidad * s.precio), 0);
+        const baseDescuento = serviciosAfectados.reduce((sum, s) => sum + (s.cantidad * s.precio), 0);
 
         if (baseDescuento > 0) {
             let montoADescontar = 0;
             if (d.tipo === 'porcentaje') {
                 montoADescontar = baseDescuento * (d.valor / 100);
-            } else { // Fijo
+            } else {
                 montoADescontar = d.valor;
             }
-            // El descuento no puede ser mayor que la base sobre la que aplica
             montoADescontar = Math.min(montoADescontar, baseDescuento);
 
+            // Obtenemos los nombres de los servicios para mayor claridad
+            const nombresServiciosAplicados = serviciosAfectados.map(s => s.nombre).join(', ');
+
             console.log(`Descuento encontrado: ${d.nombre}, Monto: ${montoADescontar}`);
-            return { descuento: d, monto: montoADescontar };
+            return { 
+                descuento: d, 
+                monto: montoADescontar,
+                serviciosAplicadosNombres: nombresServiciosAplicados // Devolvemos los nombres
+            };
         }
     }
 
-    return null; // No se encontró ningún descuento válido
+    return null;
 }
+
 /**
  * Busca un descuento aplicable para un alquiler desde el mapa de habitaciones.
  * @param {string} habitacionId - El ID de la habitación para la que se busca el descuento.
@@ -1211,8 +1215,10 @@ setupButtonListener('close-modal-acciones', () => {
         modalContainer.innerHTML = '';
     });
 
+
+
+
 setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
-  // 1. Busca la reserva activa
   const { data: reserva, error: errRes } = await supabaseGlobal
     .from('reservas')
     .select('id, cliente_nombre, estado, monto_pagado')
@@ -1227,7 +1233,6 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
     return;
   }
 
-  // 2. Busca los servicios disponibles
   const { data: servicios, error: errServ } = await supabaseGlobal
     .from('servicios_adicionales')
     .select('id, nombre, precio')
@@ -1239,14 +1244,12 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
     return;
   }
   
-  // 3. Renderiza el modal (tu HTML está bien, lo mantenemos)
   const modalContainer = document.getElementById('modal-container');
   modalContainer.innerHTML = "";
   modalContainer.style.display = "flex";
   const modalContent = document.createElement('div');
   modalContent.className = "bg-white rounded-3xl shadow-2xl w-full max-w-xl p-6 sm:p-8 m-auto border-2 border-green-100 relative flex flex-col max-h-[90vh]";
 
-  // Tu HTML del modal se inserta aquí (lo abrevio por claridad, es el mismo que ya tenías)
   modalContent.innerHTML = `
       <h3 class="text-3xl font-black mb-7 text-green-700 text-center flex items-center justify-center gap-2 drop-shadow">
           <span>✨ Servicios Adicionales</span>
@@ -1303,20 +1306,17 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
   `;
   modalContainer.appendChild(modalContent);
   
-  // ============ INICIA LA LÓGICA CORREGIDA ============
-
-  // 4. Referencias al DOM y estado del descuento
   const form = modalContent.querySelector('#form-servicios-adicionales');
   const serviceItems = form.querySelectorAll('.service-item');
   const feedbackDescuentoEl = modalContent.querySelector('#feedback-descuento-servicios');
   const codigoInputEl = modalContent.querySelector('#codigo-descuento-servicios');
   
-  let descuentoAplicado = null; // Guardará el objeto del descuento
-  let montoDescuento = 0; // Guardará el monto numérico a descontar
+  let descuentoAplicado = null;
+  let montoDescuento = 0;
+  // Guardaremos los nombres de los servicios a los que se aplica el descuento
+  let nombresServiciosDescuento = ''; 
 
-  // 5. Función central para actualizar todo el resumen
   const actualizarResumenYDescuento = async (codigoManual = null) => {
-    // Recolectar servicios seleccionados
     const serviciosSeleccionados = Array.from(serviceItems)
       .map(item => {
         const checkbox = item.querySelector('input[type="checkbox"]');
@@ -1324,33 +1324,34 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
         return {
           servicio_id: checkbox.value,
           cantidad: Number(item.querySelector('input[type="number"]').value) || 1,
-          precio: Number(checkbox.dataset.precio) || 0
+          precio: Number(checkbox.dataset.precio) || 0,
+          nombre: servicios.find(s => s.id === checkbox.value)?.nombre || 'Servicio'
         };
       })
-      .filter(Boolean); // Filtrar los nulos
+      .filter(Boolean);
 
     const subtotal = serviciosSeleccionados.reduce((sum, s) => sum + (s.cantidad * s.precio), 0);
     
-    // Buscar descuento
     const resultadoDescuento = await buscarDescuentoParaServicios(serviciosSeleccionados, codigoManual);
 
     if (resultadoDescuento) {
         descuentoAplicado = resultadoDescuento.descuento;
         montoDescuento = resultadoDescuento.monto;
+        nombresServiciosDescuento = resultadoDescuento.serviciosAplicadosNombres; // Guardamos los nombres
         feedbackDescuentoEl.textContent = `Descuento "${descuentoAplicado.nombre}" aplicado: -${formatCurrency(montoDescuento)}`;
         feedbackDescuentoEl.className = 'text-sm mt-2 h-5 text-green-600 font-semibold';
     } else {
         descuentoAplicado = null;
         montoDescuento = 0;
+        nombresServiciosDescuento = ''; // Limpiamos los nombres
         if (codigoManual) {
             feedbackDescuentoEl.textContent = 'Código no válido o no aplicable.';
             feedbackDescuentoEl.className = 'text-sm mt-2 h-5 text-red-600 font-semibold';
         } else {
-            feedbackDescuentoEl.textContent = ''; // Limpiar si es automático y no encontró nada
+            feedbackDescuentoEl.textContent = '';
         }
     }
     
-    // Actualizar la UI del total
     const totalFinal = subtotal - montoDescuento;
     const totalContainer = modalContent.querySelector('#sticky-total-servicios');
     if (montoDescuento > 0) {
@@ -1370,23 +1371,17 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
     }
   };
 
-  // 6. Conectar los eventos
   form.addEventListener('input', (event) => {
     const target = event.target;
-    // Recalcular si se marca/desmarca un servicio o se cambia cantidad
     if (target.matches('input[type="checkbox"], input[type="number"]')) {
-      codigoInputEl.value = ''; // Limpiar código manual al cambiar la selección
-      actualizarResumenYDescuento(null); // Buscar automáticos
+      codigoInputEl.value = '';
+      actualizarResumenYDescuento(null);
     }
   });
 
   modalContent.querySelector('#btn-aplicar-descuento-servicios').onclick = async () => {
     const codigo = codigoInputEl.value.trim();
-    if (!codigo) { // Si el campo está vacío, busca automáticos
-      await actualizarResumenYDescuento(null);
-    } else {
-      await actualizarResumenYDescuento(codigo);
-    }
+    await actualizarResumenYDescuento(codigo || null);
   };
 
   modalContent.querySelector('#btn-cancelar-servicios').onclick = () => {
@@ -1394,7 +1389,6 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
     modalContainer.innerHTML = '';
   };
   
-  // 7. Modificar el onsubmit para que use los valores correctos
   form.onsubmit = async (ev) => {
     ev.preventDefault();
     const formData = new FormData(ev.target);
@@ -1420,7 +1414,6 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
     const subtotal = serviciosSeleccionados.reduce((sum, item) => sum + (item.cantidad * item.precio), 0);
     const totalFinalConDescuento = subtotal - montoDescuento;
 
-    // Pasar estos valores a los siguientes pasos
     mostrarInfoModalGlobal(`
       <div class="text-center p-5">
         <h4 class="text-2xl font-bold mb-3 text-blue-900">¿Cómo desea cobrar estos servicios?</h4>
@@ -1440,8 +1433,6 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
       </div>
     `, "¿Cómo desea cobrar?", [], modalContainer);
 
-    // Los listeners internos para estos botones se deben re-asignar
-    // Asegúrate de que usen 'totalFinalConDescuento' y los datos de 'descuentoAplicado'
     setTimeout(() => {
         const modalOpciones = document.getElementById('modal-container').querySelector('.bg-white');
         if (!modalOpciones) return;
@@ -1450,15 +1441,23 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
         modalOpciones.querySelector('#btn-cobro-final-serv').onclick = async () => {
           let serviciosParaInsertar = serviciosSeleccionados.map(item => ({
             hotel_id: hotelIdGlobal, reserva_id: reserva.id, servicio_id: item.servicio_id,
-            cantidad: item.cantidad, precio_cobrado: item.precio, nota, estado_pago: 'pendiente'
+            cantidad: item.cantidad, precio_cobrado: item.precio * item.cantidad,
+            nota, estado_pago: 'pendiente'
           }));
           
           if (montoDescuento > 0 && descuentoAplicado) {
+            // Creamos la descripción detallada del descuento
+            let descripcionDescuento = `Descuento: ${descuentoAplicado.nombre}`;
+            if (nombresServiciosDescuento) {
+                descripcionDescuento += ` (a ${nombresServiciosDescuento})`;
+            }
+
             serviciosParaInsertar.push({
               hotel_id: hotelIdGlobal, reserva_id: reserva.id,
-              descripcion_manual: `Descuento: ${descuentoAplicado.nombre}`, cantidad: 1,
-              precio_cobrado: -montoDescuento, // Valor negativo
-              estado_pago: 'aplicado'
+              descripcion_manual: descripcionDescuento, // Usamos la nueva descripción
+              cantidad: 1,
+              precio_cobrado: -montoDescuento,
+              estado_pago: 'aplicado' // El estado que usaremos para el color
             });
           }
           
@@ -1466,23 +1465,22 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
           if (error) {
             mostrarInfoModalGlobal(`Error al agregar servicios: ${error.message}`, "Error", [], modalContainer);
           } else {
-            mostrarInfoModalGlobal("Servicios agregados a la cuenta final de la habitación.", "Éxito", [], modalContainer);
+            const modalOpcionesContainer = modalOpciones.closest('#modal-container');
+            if(modalOpcionesContainer) {
+                modalOpcionesContainer.style.display = 'none';
+                modalOpcionesContainer.innerHTML = '';
+            }
+            mostrarInfoModalGlobal("Servicios agregados a la cuenta final de la habitación.", "Éxito");
           }
         };
 
-        // Botón Cobrar AHORA
+        // Lógica para cobrar AHORA (sin cambios)
         modalOpciones.querySelector('#btn-cobro-ahora-serv').onclick = async () => {
-          // Tu lógica para cobrar ahora, pero usando totalFinalConDescuento
           const { data: metodosPagoDB } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelIdGlobal).eq('activo', true);
           if (!metodosPagoDB || metodosPagoDB.length === 0) {
             mostrarInfoModalGlobal("No hay métodos de pago activos.", "Error", [], modalContainer);
             return;
           }
-          
-          // ...El resto de tu lógica de cobro AHORA, pero asegurándote de:
-          // 1. Usar `totalFinalConDescuento` como el monto a pagar.
-          // 2. Al insertar en `pagos_reserva`, añade `descuento_id: descuentoAplicado?.id` y `monto_descuento: montoDescuento`.
-          // (Esta parte de tu código ya parece manejar bien el sub-modal de pago, solo necesita recibir el total correcto)
           alert(`Simulación: Cobrar AHORA ${formatCurrency(totalFinalConDescuento)}`);
         };
 
@@ -1493,9 +1491,15 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
     }, 100);
   };
   
-  // Llamada inicial para buscar descuentos automáticos
   actualizarResumenYDescuento(null);
-});  // ====== Alquilar Ahora (con bloqueo por reservas próximas)
+});
+
+
+
+
+
+
+// ====== Alquilar Ahora (con bloqueo por reservas próximas)
 setupButtonListener('btn-alquilar-directo', async () => {
   const ahora = new Date();
 
@@ -1903,32 +1907,36 @@ const formatDateTime = d => new Date(d).toLocaleString('es-CO');
 // supabaseGlobal, currentUserGlobal, hotelIdGlobal, hotelConfigGlobal, mainAppContainer (para renderRooms)
 // mostrarInfoModalGlobal, formatCurrency, formatDateTime, imprimirTicketHabitacion, facturarElectronicaYMostrarResultado, turnoService
 
-setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
+// =================== BOTÓN VER CONSUMOS Y FACTURAR (CORREGIDO Y REFACTORIZADO) ===================
+
+// Esta es la nueva función que contiene toda la lógica para mostrar los consumos.
+// =================== BOTÓN VER CONSUMOS Y FACTURAR (CORREGIDO Y REFACTORIZADO) ===================
+
+// Esta es la nueva función que contiene toda la lógica para mostrar los consumos.
+async function showConsumosYFacturarModal(roomContext, supabase, currentUser, hotelId, mainAppContainer, initialButtonTrigger) {
     const modalContainerConsumos = document.getElementById('modal-container');
     if (!modalContainerConsumos) {
         console.error("El contenedor del modal principal 'modal-container' no se encontró.");
         return;
     }
 
-    // 1. OBTENCIÓN DE DATOS (CON LÓGICA DETALLADA)
-    const { data: reserva, error: errRes } = await supabaseGlobal.from('reservas').select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id, metodo_pago_id').eq('habitacion_id', roomContext.id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).order('fecha_inicio', { ascending: false }).limit(1).single();
+    // (Toda la lógica de obtención de datos permanece igual que en la corrección anterior...)
+    const { data: reserva, error: errRes } = await supabase.from('reservas').select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id, metodo_pago_id').eq('habitacion_id', roomContext.id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).order('fecha_inicio', { ascending: false }).limit(1).single();
     if (errRes || !reserva) {
         mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos", [], modalContainerConsumos);
         return;
     }
     reserva.habitacion_nombre = roomContext.nombre;
-
     const alojamientoCargo = { tipo: "Habitación", nombre: "Estancia Principal", cantidad: 1, subtotal: Number(reserva.monto_total) || 0, id: "hab", estado_pago: "pendiente", fecha: reserva.fecha_inicio };
-
     let cargosTienda = [];
-    const { data: ventasTiendaDB } = await supabaseGlobal.from('ventas_tienda').select('id, creado_en').eq('reserva_id', reserva.id);
+    const { data: ventasTiendaDB } = await supabase.from('ventas_tienda').select('id, creado_en').eq('reserva_id', reserva.id);
     if (ventasTiendaDB && ventasTiendaDB.length > 0) {
         const ventaTiendaIds = ventasTiendaDB.map(v => v.id);
-        const { data: detallesTienda, error: errDetallesT } = await supabaseGlobal.from('detalle_ventas_tienda').select('*, producto_id').in('venta_id', ventaTiendaIds);
+        const { data: detallesTienda, error: errDetallesT } = await supabase.from('detalle_ventas_tienda').select('*, producto_id').in('venta_id', ventaTiendaIds);
         if (errDetallesT) { console.error("Error obteniendo detalles de tienda:", errDetallesT); }
         else if (detallesTienda && detallesTienda.length > 0) {
             const productoIds = [...new Set(detallesTienda.map(d => d.producto_id))];
-            const { data: productos } = await supabaseGlobal.from('productos_tienda').select('id, nombre').in('id', productoIds);
+            const { data: productos } = await supabase.from('productos_tienda').select('id, nombre').in('id', productoIds);
             const productosMap = new Map(productos?.map(p => [p.id, p.nombre]));
             cargosTienda = detallesTienda.map(item => {
                 const ventaPadre = ventasTiendaDB.find(v => v.id === item.venta_id);
@@ -1936,16 +1944,15 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
             });
         }
     }
-
     let cargosRest = [];
-    const { data: ventasRestDB } = await supabaseGlobal.from('ventas_restaurante').select('id, creado_en').eq('reserva_id', reserva.id);
+    const { data: ventasRestDB } = await supabase.from('ventas_restaurante').select('id, creado_en').eq('reserva_id', reserva.id);
     if (ventasRestDB && ventasRestDB.length > 0) {
         const ventaRestIds = ventasRestDB.map(v => v.id);
-        const { data: detallesRest, error: errDetallesR } = await supabaseGlobal.from('ventas_restaurante_items').select('*, plato_id').in('venta_id', ventaRestIds);
+        const { data: detallesRest, error: errDetallesR } = await supabase.from('ventas_restaurante_items').select('*, plato_id').in('venta_id', ventaRestIds);
         if (errDetallesR) { console.error("Error obteniendo detalles de restaurante:", errDetallesR); }
         else if (detallesRest) {
             const platoIds = [...new Set(detallesRest.map(d => d.plato_id))];
-            const { data: platos } = await supabaseGlobal.from('platos').select('id, nombre').in('id', platoIds);
+            const { data: platos } = await supabase.from('platos').select('id, nombre').in('id', platoIds);
             const platosMap = new Map(platos?.map(p => [p.id, p.nombre]));
             cargosRest = detallesRest.map(item => {
                 const ventaPadre = ventasRestDB.find(v => v.id === item.venta_id);
@@ -1953,25 +1960,27 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
             });
         }
     }
-
-    const { data: serviciosYExtensiones } = await supabaseGlobal.from('servicios_x_reserva').select('id, servicio_id, cantidad, nota, estado_pago, creado_en, precio_cobrado, pago_reserva_id, descripcion_manual').eq('reserva_id', reserva.id);
+    const { data: serviciosYExtensiones } = await supabase.from('servicios_x_reserva').select('id, servicio_id, cantidad, nota, estado_pago, creado_en, precio_cobrado, pago_reserva_id, descripcion_manual').eq('reserva_id', reserva.id);
     let cargosServiciosYExtensiones = [];
     if (serviciosYExtensiones && serviciosYExtensiones.length) {
         const servicioIds = [...new Set(serviciosYExtensiones.map(s => s.servicio_id).filter(Boolean))];
         let nombresServicios = {};
         if (servicioIds.length > 0) {
-            const { data: infoServicios } = await supabaseGlobal.from('servicios_adicionales').select('id, nombre').in('id', servicioIds);
+            const { data: infoServicios } = await supabase.from('servicios_adicionales').select('id, nombre').in('id', servicioIds);
             if (infoServicios) { infoServicios.forEach(s => { nombresServicios[s.id] = s.nombre; }); }
         }
         cargosServiciosYExtensiones = serviciosYExtensiones.map(s => {
             let nombreItem = s.descripcion_manual || (s.servicio_id && nombresServicios[s.servicio_id]) || `Ítem #${s.id.slice(0,6)}`;
             let tipoItem = "Servicios";
-            if (s.descripcion_manual && s.descripcion_manual.toLowerCase().includes('extensi')) { tipoItem = "Extensión"; }
+            if (s.descripcion_manual && (s.descripcion_manual.toLowerCase().includes('extensi') || s.descripcion_manual.toLowerCase().includes('descuento'))) { 
+                tipoItem = "Ajuste";
+            }
             return { tipo: tipoItem, nombre: nombreItem, id: `sxr_${s.id}`, cantidad: s.cantidad || 1, subtotal: s.precio_cobrado !== null ? Number(s.precio_cobrado) : 0, estado_pago: s.estado_pago || "pendiente", fecha: s.creado_en, nota: s.nota || "" };
         });
     }
-
-    let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosRest, ...cargosServiciosYExtensiones].filter(c => c.id === 'hab' || c.subtotal > 0 || (c.subtotal === 0 && c.id !== 'hab' && c.tipo !== "Habitación" && c.nombre && c.nombre.toLowerCase() !== "seleccione duración"));
+    
+    // El resto de la lógica de cálculo y renderizado no cambia, excepto la línea de la tabla...
+    let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosRest, ...cargosServiciosYExtensiones].filter(c => c.id === 'hab' || c.subtotal !== 0);
     const totalPagadoCalculado = Number(reserva.monto_pagado) || 0;
     todosLosCargos.sort((a, b) => { if (a.id === 'hab') return -1; if (b.id === 'hab') return 1; return new Date(a.fecha || 0) - new Date(b.fecha || 0); });
     let saldoAcumuladoParaAplicar = totalPagadoCalculado;
@@ -1979,7 +1988,8 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
     const totalDeTodosLosCargos = todosLosCargos.reduce((sum, c) => sum + Number(c.subtotal), 0);
     const saldoPendienteFinal = Math.max(0, totalDeTodosLosCargos - totalPagadoCalculado);
     
-    // 2. RENDERIZAR EL MODAL
+    // ========= INICIO DE LA CORRECCIÓN CLAVE =========
+    // Se agrega "aplicado" al mapa de colores
     let htmlConsumos = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:auto;" class="bg-white p-6 rounded-xl">
         <div class="flex justify-between items-center mb-3"><h3 style="font-size:1.3em;font-weight:bold;color:#1459ae;">🧾 Consumos: Hab. ${roomContext.nombre}</h3><button id="btn-cerrar-modal-consumos-X" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
@@ -1987,7 +1997,7 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
         <div class="max-h-[50vh] overflow-y-auto pr-2 mb-4 border rounded-md">
             <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
                 <thead class="sticky top-0 bg-slate-100 z-10"><tr style="background:#f1f5f9;"><th style="padding:8px;text-align:left;border-bottom:1px solid #e2e8f0;">Tipo</th><th style="padding:8px;text-align:left;border-bottom:1px solid #e2e8f0;">Detalle</th><th style="padding:8px;text-align:center;border-bottom:1px solid #e2e8f0;">Cant.</th><th style="padding:8px;text-align:right;border-bottom:1px solid #e2e8f0;">Subtotal</th><th style="padding:8px;text-align:center;border-bottom:1px solid #e2e8f0;">Estado</th></tr></thead>
-                <tbody>${todosLosCargos.map(c => `<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px;">${c.tipo}</td><td style="padding:6px;">${c.nombre}${c.nota ? ` <i class="text-xs text-gray-500">(${c.nota})</i>` : ''}</td><td style="padding:6px;text-align:center;">${c.cantidad}</td><td style="padding:6px;text-align:right;">${formatCurrency(c.subtotal)}</td><td style="padding:6px;text-align:center;font-weight:bold;color:${{"pagado":"#16a34a","parcial":"#ca8a04","pendiente":"#dc2626"}[c.estado_pago] || "#6b7280"};">${c.estado_pago ? c.estado_pago.charAt(0).toUpperCase() + c.estado_pago.slice(1) : "N/A"}</td></tr>`).join('')}</tbody>
+                <tbody>${todosLosCargos.map(c => `<tr style="border-bottom:1px solid #e5e7eb;"><td style="padding:6px;">${c.tipo}</td><td style="padding:6px;">${c.nombre}${c.nota ? ` <i class="text-xs text-gray-500">(${c.nota})</i>` : ''}</td><td style="padding:6px;text-align:center;">${c.cantidad}</td><td style="padding:6px;text-align:right;">${formatCurrency(c.subtotal)}</td><td style="padding:6px;text-align:center;font-weight:bold;color:${{"pagado":"#16a34a","parcial":"#ca8a04","pendiente":"#dc2626","aplicado":"#16a34a"}[c.estado_pago] || "#6b7280"};">${c.estado_pago ? c.estado_pago.charAt(0).toUpperCase() + c.estado_pago.slice(1) : "N/A"}</td></tr>`).join('')}</tbody>
             </table>
         </div>
         <div style="margin-top:14px;font-size:1.1em; text-align:right; padding-right:10px;">
@@ -2001,11 +2011,12 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
             <button id="btn-cerrar-modal-consumos" class="button button-danger py-2.5 px-5 text-sm">Cerrar</button>
         </div>
     </div>`;
+    // ========= FIN DE LA CORRECCIÓN CLAVE =========
 
     modalContainerConsumos.innerHTML = htmlConsumos;
     modalContainerConsumos.style.display = "flex";
-
-    // 3. ASIGNAR LISTENERS (CÓDIGO COMPLETO)
+    
+    // (La lógica de los listeners que sigue no cambia)
     setTimeout(() => {
         const modalDialogActual = modalContainerConsumos.querySelector('.bg-white');
         if (!modalDialogActual) { return; }
@@ -2013,7 +2024,7 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
         const cerrarDesdeModal = () => { modalContainerConsumos.style.display = "none"; modalContainerConsumos.innerHTML = ''; };
         modalDialogActual.querySelector('#btn-cerrar-modal-consumos-X').onclick = cerrarDesdeModal;
         modalDialogActual.querySelector('#btn-cerrar-modal-consumos').onclick = cerrarDesdeModal;
-
+        
         const btnFacturar = modalDialogActual.querySelector('#btn-facturar');
         if (btnFacturar) {
             btnFacturar.onclick = () => {
@@ -2029,8 +2040,8 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
                         clase: 'button-neutral py-2 px-5',
                         accion: async () => {
                             const consumosParaTicket = todosLosCargos.map(c => ({ nombre: c.nombre, cantidad: c.cantidad, precio: c.cantidad > 0 ? (c.subtotal / c.cantidad) : c.subtotal, total: c.subtotal }));
-                            const datosParaTicketCompleto = { habitacion: roomContext.nombre, cliente: reserva.cliente_nombre, fechaIngreso: reserva.fecha_inicio, fechaSalida: reserva.fecha_fin, consumos: consumosParaTicket, totalConsumo: totalDeTodosLosCargos, otrosDatos: `Atendido por: ${currentUserGlobal?.email || 'Sistema'}<br>Total Pagado: ${formatCurrency(totalPagadoCalculado)}` };
-                            await imprimirTicketHabitacion({ supabase: supabaseGlobal, hotelId: reserva.hotel_id, datosTicket: datosParaTicketCompleto, tipoDocumento: 'Factura POS' });
+                            const datosParaTicketCompleto = { habitacion: roomContext.nombre, cliente: reserva.cliente_nombre, fechaIngreso: reserva.fecha_inicio, fechaSalida: reserva.fecha_fin, consumos: consumosParaTicket, totalConsumo: totalDeTodosLosCargos, otrosDatos: `Atendido por: ${currentUser?.email || 'Sistema'}<br>Total Pagado: ${formatCurrency(totalPagadoCalculado)}` };
+                            await imprimirTicketHabitacion({ supabase: supabase, hotelId: reserva.hotel_id, datosTicket: datosParaTicketCompleto, tipoDocumento: 'Factura POS' });
                         }
                     }, {
                         texto: 'Factura Electrónica',
@@ -2038,7 +2049,7 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
                         noCerrar: true,
                         accion: async () => {
                             if (confirm("¿Está seguro de que desea generar la factura electrónica?")) {
-                                await facturarElectronicaYMostrarResultado({ supabase: supabaseGlobal, hotelId: reserva.hotel_id, reserva, consumosTienda: cargosTienda, consumosRest: cargosRest, consumosServicios: cargosServiciosYExtensiones, metodoPagoIdLocal: reserva.metodo_pago_id });
+                                await facturarElectronicaYMostrarResultado({ supabase: supabase, hotelId: reserva.hotel_id, reserva, consumosTienda: cargosTienda, consumosRest: cargosRest, consumosServicios: cargosServiciosYExtensiones, metodoPagoIdLocal: reserva.metodo_pago_id });
                             }
                         }
                     }],
@@ -2050,8 +2061,9 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
         const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
         if (btnCobrarConsumosPend) {
             btnCobrarConsumosPend.onclick = async () => {
-                const { data: metodosPagoDB } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', reserva.hotel_id).eq('activo', true);
+                const { data: metodosPagoDB } = await supabase.from('metodos_pago').select('id, nombre').eq('hotel_id', reserva.hotel_id).eq('activo', true);
                 let opcionesPagoHTML = metodosPagoDB?.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('') || '';
+                
                 modalDialogActual.innerHTML = `
                   <div style="font-family:'Segoe UI',Arial,sans-serif; padding:10px;">
                     <div class="flex justify-between items-center mb-4"><h4 style="font-size:1.2em;font-weight:bold;color:#1e3a8a;">💳 Registrar Pago de Saldo</h4><button id="btn-cerrar-cobro-saldo-X-submodal" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
@@ -2065,10 +2077,12 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
                         <button type="button" id="cancelar-pago-modal-saldo" class="button button-neutral flex-1 py-2.5 text-base">Cancelar</button>
                     </div></div>`;
                 
-                const cerrarSubmodalCobro = () => { setupButtonListener('btn-ver-consumos', btn, roomContext); };
+                const cerrarSubmodalCobro = () => {
+                    showConsumosYFacturarModal(roomContext, supabase, currentUser, hotelId, mainAppContainer, initialButtonTrigger);
+                };
                 modalDialogActual.querySelector('#btn-cerrar-cobro-saldo-X-submodal').onclick = cerrarSubmodalCobro;
                 modalDialogActual.querySelector('#cancelar-pago-modal-saldo').onclick = cerrarSubmodalCobro;
-                
+
                 const btnRegPagoConfirmadoSaldo = modalDialogActual.querySelector('#btn-registrar-pago-confirmado-saldo');
                 if (btnRegPagoConfirmadoSaldo) {
                     btnRegPagoConfirmadoSaldo.onclick = async () => {
@@ -2078,14 +2092,14 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
                         if (!montoPagar || montoPagar <= 0 || !metodoPagoId) { alert("Monto y método de pago son requeridos."); btnRegPagoConfirmadoSaldo.disabled = false; btnRegPagoConfirmadoSaldo.textContent = 'Registrar Pago'; return; }
                         
                         try {
-                            const { data: pagoData, error: errPago } = await supabaseGlobal.from('pagos_reserva').insert([{ hotel_id: reserva.hotel_id, reserva_id: reserva.id, monto: montoPagar, fecha_pago: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUserGlobal?.id, concepto: `Pago Saldo Hab. ${roomContext.nombre}` }]).select().single();
+                            const { data: pagoData, error: errPago } = await supabase.from('pagos_reserva').insert([{ hotel_id: reserva.hotel_id, reserva_id: reserva.id, monto: montoPagar, fecha_pago: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUser?.id, concepto: `Pago Saldo Hab. ${roomContext.nombre}` }]).select().single();
                             if (errPago) throw new Error(`Error registrando el pago: ${errPago.message}`);
                             
                             const turnoIdActual = turnoService.getActiveTurnId();
                             if (!turnoIdActual) throw new Error("No hay un turno de caja activo para registrar este pago.");
                             
-                            await supabaseGlobal.from('caja').insert([{ hotel_id: reserva.hotel_id, tipo: 'ingreso', monto: montoPagar, concepto: `[COBRO SALDO] Hab. ${roomContext.nombre}`, fecha_movimiento: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUserGlobal?.id, reserva_id: reserva.id, pago_reserva_id: pagoData.id, turno_id: turnoIdActual }]);
-                            await supabaseGlobal.from('reservas').update({ monto_pagado: totalPagadoCalculado + montoPagar }).eq('id', reserva.id);
+                            await supabase.from('caja').insert([{ hotel_id: reserva.hotel_id, tipo: 'ingreso', monto: montoPagar, concepto: `[COBRO SALDO] Hab. ${roomContext.nombre}`, fecha_movimiento: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUser?.id, reserva_id: reserva.id, pago_reserva_id: pagoData.id, turno_id: turnoIdActual }]);
+                            await supabase.from('reservas').update({ monto_pagado: totalPagadoCalculado + montoPagar }).eq('id', reserva.id);
                             
                             mostrarInfoModalGlobal(`Pago de ${formatCurrency(montoPagar)} registrado.`, "Pago Exitoso", [{ texto: "Entendido", accion: cerrarSubmodalCobro }], modalContainerConsumos);
                         } catch (error) {
@@ -2098,8 +2112,17 @@ setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
             };
         }
     }, 100);
+}
+// Este es el listener original, ahora simplificado para llamar a la nueva función.
+setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
+    // Las variables globales/de módulo se pasan aquí a la función principal
+    await showConsumosYFacturarModal(roomContext, supabaseGlobal, currentUserGlobal, hotelIdGlobal, mainAppContainer, btn);
 });
-
+// Este es el listener original, ahora simplificado para llamar a la nueva función.
+setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
+    // Las variables globales/de módulo se pasan aquí a la función principal
+    await showConsumosYFacturarModal(roomContext, supabaseGlobal, currentUserGlobal, hotelIdGlobal, mainAppContainer, btn);
+});
 // =================== BOTÓN INFO HUÉSPED (igual que antes)
  setupButtonListener('btn-info-huesped', async () => {
     // Buscar la reserva activa
