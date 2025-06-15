@@ -552,7 +552,23 @@ async function initializeApp() {
       }
     });
   }
+// ========= INICIO DE LA CORRECCIÓN =========
+// Agrega un listener al contenedor principal del menú
+if (mainNav && sidebar && menuOverlay && hamburgerButton) {
+  mainNav.addEventListener('click', (e) => {
+    // Verifica si el clic fue en un enlace de navegación
+    const linkClickeado = e.target.closest('a.nav-link-dynamic');
 
+    if (linkClickeado) {
+      // Si fue en un enlace, cierra el menú y el overlay
+      console.log('[Menú Móvil] Enlace clickeado, cerrando menú.');
+      sidebar.classList.remove('open');
+      menuOverlay.classList.remove('active');
+      hamburgerButton.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+// ========= FIN DE LA CORRECCIÓN =========
   if (menuOverlay && sidebar) {
     menuOverlay.addEventListener('click', () => {
       sidebar.classList.remove('open');
