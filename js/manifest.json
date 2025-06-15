@@ -1,23 +1,20 @@
 {
-  "name": "Gestión de Hotel Pro",
-  "short_name": "HotelApp",
-  "description": "Software de gestión hotelera para optimizar tu negocio.",
-  "start_url": "/app/index.html", 
-  "display": "standalone", 
+  "name": "Gestión de Hotel",
+  "short_name": "GHotel",
+  "start_url": "/app/",
+  "display": "standalone",
   "background_color": "#ffffff",
-  "theme_color": "#1d4ed8", 
+  "theme_color": "#1d4ed8",
   "icons": [
     {
-      "src": "/icons/icon-192x192.png", 
+      "src": "../icons/192x192.png",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable" 
+      "type": "image/png"
     },
     {
-      "src": "/icons/icon-512x512.png", 
+      "src": "../icons/512x512.png",
       "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/png"
     }
   ]
 }
