@@ -139,6 +139,8 @@ html, body {
 }
 
 /* ======== RESPONSIVE LAYOUT ADJUSTMENTS ======== */
+/* REEMPLAZA ESTE BLOQUE COMPLETO EN TU style.css */
+
 @media (max-width: 900px) {
   #sidebar {
     position: fixed;
@@ -147,14 +149,37 @@ html, body {
     height: 100vh;
     transform: translateX(-100%);
     box-shadow: 2px 0 5px rgba(0,0,0,0.2);
-    /* Z-index ajustado para móvil: debe ser menor que los modales (que tienen 900 o 1000) */
-    z-index: 45; /* Mismo que mobile-topbar, para que no se superpongan entre ellos */
+    z-index: 45; 
+    
+    /* --- INICIO DE LA CORRECCIÓN CSS --- */
+    /* Hacemos que el sidebar sea un contenedor flex para controlar sus hijos. */
+    /* Esto ya estaba en tu CSS de escritorio, lo replicamos aquí. */
+    display: flex;
+    flex-direction: column;
+    /* Quitamos el padding de aquí para un mejor control del scroll. */
+    padding: 0; 
+    /* --- FIN DE LA CORRECCIÓN CSS --- */
   }
+
+  /* --- INICIO DE NUEVAS REGLAS CSS --- */
+  /* Creamos una nueva regla para el contenedor de los enlaces */
+  #sidebar #main-nav {
+    flex: 1 1 auto; /* Permite que esta área crezca y ocupe el espacio disponible */
+    overflow-y: auto; /* ¡LA CLAVE! Añade scroll vertical solo cuando sea necesario */
+    padding: 1.2rem 1rem; /* Movemos el padding aquí para que no sea afectado por el scroll */
+  }
+
+  /* Añadimos padding también a la información del usuario para consistencia */
+  #sidebar #user-info-nav {
+    padding: 0 1rem 1rem 1rem;
+  }
+  /* --- FIN DE NUEVAS REGLAS CSS --- */
+
   #sidebar.open {
     transform: translateX(0);
   }
   #mobile-topbar {
-    display: flex; /* Tailwind ya controla esto con md:hidden */
+    display: flex;
   }
   #main-content-area {
     padding-top: var(--topbar-height-mobile);
@@ -163,7 +188,6 @@ html, body {
     padding: 20px 15px;
   }
 }
-
 @media (max-width: 600px) {
   #sidebar {
     width: 280px;
