@@ -333,42 +333,38 @@ const abrirWompi = (plan, tipo) => {
     }
 
     // --- INICIO: CÓDIGO DE GOOGLE ANALYTICS ---
-    try {
-      if (typeof gtag === 'function') {
-        if (tipo === 'upgrade') {
-          // Evento para cambio de plan
-          gtag('event', 'cambio_plan', {
-            'currency': 'COP',
-            'value': montoPagar,
-            'plan_anterior': planActivo?.nombre || 'N/A',
-            'plan_nuevo': plan.nombre,
-            'hotel_id': hotel.id
-          });
-          console.log('✅ Evento GA4 [cambio_plan] enviado:', {
-            plan_anterior: planActivo?.nombre,
-            plan_nuevo: plan.nombre,
-            valor: montoPagar
-          });
+   // --- INICIO: CÓDIGO DE GOOGLE ANALYTICS (MÉTODO RECOMENDADO Y SEGURO) ---
+try {
+  // Aseguramos que dataLayer exista
+  window.dataLayer = window.dataLayer || [];
 
-        } else if (tipo === 'renew') {
-          // Evento para renovación
-          gtag('event', 'renovacion_plan', {
-            'currency': 'COP',
-            'value': montoPagar,
-            'plan': plan.nombre,
-            'hotel_id': hotel.id
-          });
-          console.log('✅ Evento GA4 [renovacion_plan] enviado:', {
-            plan: plan.nombre,
-            valor: montoPagar
-          });
-        }
-      } else {
-        console.warn('⚠️ gtag no está definido. Evento de GA4 no enviado.');
-      }
-    } catch (e) {
-      console.error('❌ Error al enviar evento a GA4:', e);
-    }
+  if (tipo === 'upgrade') {
+    // Evento para cambio de plan
+    window.dataLayer.push({
+      'event': 'cambio_plan',
+      'currency': 'COP',
+      'value': montoPagar,
+      'plan_anterior': planActivo?.nombre || 'N/A',
+      'plan_nuevo': plan.nombre,
+      'hotel_id': hotel.id
+    });
+    console.log('✅ Evento GA4 [cambio_plan] enviado al dataLayer.');
+
+  } else if (tipo === 'renew') {
+    // Evento para renovación
+    window.dataLayer.push({
+      'event': 'renovacion_plan',
+      'currency': 'COP',
+      'value': montoPagar,
+      'plan': plan.nombre,
+      'hotel_id': hotel.id
+    });
+    console.log('✅ Evento GA4 [renovacion_plan] enviado al dataLayer.');
+  }
+} catch (e) {
+  console.error('❌ Error al enviar evento al dataLayer de GA4:', e);
+}
+// --- FIN: CÓDIGO DE GOOGLE ANALYTICS ---
     // --- FIN: CÓDIGO DE GOOGLE ANALYTICS ---
 
     if (typeof Swal !== 'undefined') {
