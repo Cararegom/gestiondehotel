@@ -576,21 +576,21 @@ async function initializeApp() {
   }
 // ========= INICIO DE LA CORRECCIÓN PARA EL CAMBIO DE PESTAÑA =========
   // Este listener se activa cada vez que la ventana del navegador vuelve a tener foco.
-  window.addEventListener('focus', () => {
-    // Soluciona un bug de renderizado donde el overlay puede quedar visible
-    // al cambiar de pestaña y volver.
-    if (sidebar && menuOverlay && hamburgerButton) {
-      // Solo aplicamos esta corrección en la vista móvil, donde existe el problema.
-      if (window.innerWidth <= 900) {
-        console.log('[Focus] Ventana activada, asegurando que el menú esté cerrado.');
-        sidebar.classList.remove('open');
-        menuOverlay.classList.remove('active');
-        hamburgerButton.setAttribute('aria-expanded', 'false');
-      }
-    }
-  });
-  }
+window.addEventListener('visibilitychange', () => {
+  const sidebar = document.getElementById('sidebar');
+  const menuOverlay = document.getElementById('menu-overlay');
+  const hamburgerButton = document.getElementById('hamburger-button');
 
+  if (document.visibilityState === 'visible') {
+    if (window.innerWidth <= 900) {
+      console.log('[VisibilityChange] Pestaña volvió a estar activa. Cerrando menú y overlay por seguridad.');
+      if (sidebar) sidebar.classList.remove('open');
+      if (menuOverlay) menuOverlay.classList.remove('active');
+      if (hamburgerButton) hamburgerButton.setAttribute('aria-expanded', 'false');
+    }
+  }
+});
+}
 
 // ===================================================================
 // ============= FUNCIÓN PARA MOSTRAR FORMULARIO DE RESETEO =============
