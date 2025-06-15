@@ -128,7 +128,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.removeItem('referido_id');
                 showAlert(document.getElementById('registroFormAlert'), '¡Cuenta creada con éxito!', 'success');
                 registroForm.reset();
+                // Disparar evento personalizado para Google Tag Manager
+window.dataLayer = window.dataLayer || [];
+window.dataLayer.push({
+  event: 'crear_cuenta'
+});
+setTimeout(() => {
+  window.location.href = '/index.html#/registro-exitoso';
+}, 300);
                 window.location.href = '/index.html#/registro-exitoso';
+
 
 
             } catch (error) {

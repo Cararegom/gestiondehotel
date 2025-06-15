@@ -313,15 +313,15 @@ export async function mount(container, supabase, user, hotelId) {
     showSnackbar(container, '¡Enlace copiado!', 'success');
   });
 
-  const abrirWompi = (plan, tipo) => {
+const abrirWompi = (plan, tipo) => {
     const ref = `${tipo}-${hotel.id}-${plan.id}-${Date.now()}`;
     let amountInCents = plan.precio_mensual * 100;
+    let montoPagar = plan.precio_mensual;
 
     // Lógica de prorrateo para 'upgrade'
     if (tipo === 'upgrade') {
         const precioActual = planActivo?.precio_mensual || 0;
         const precioNuevo = plan.precio_mensual || 0;
-        let montoPagar = 0;
         if (diasRestantes > 0 && hotel.estado_suscripcion === "activo") {
             const credito = (diasRestantes / diasCiclo) * precioActual;
             const costoNuevo = (diasRestantes / diasCiclo) * precioNuevo;
@@ -331,6 +331,45 @@ export async function mount(container, supabase, user, hotelId) {
         }
         amountInCents = montoPagar * 100;
     }
+
+    // --- INICIO: CÓDIGO DE GOOGLE ANALYTICS ---
+    try {
+      if (typeof gtag === 'function') {
+        if (tipo === 'upgrade') {
+          // Evento para cambio de plan
+          gtag('event', 'cambio_plan', {
+            'currency': 'COP',
+            'value': montoPagar,
+            'plan_anterior': planActivo?.nombre || 'N/A',
+            'plan_nuevo': plan.nombre,
+            'hotel_id': hotel.id
+          });
+          console.log('✅ Evento GA4 [cambio_plan] enviado:', {
+            plan_anterior: planActivo?.nombre,
+            plan_nuevo: plan.nombre,
+            valor: montoPagar
+          });
+
+        } else if (tipo === 'renew') {
+          // Evento para renovación
+          gtag('event', 'renovacion_plan', {
+            'currency': 'COP',
+            'value': montoPagar,
+            'plan': plan.nombre,
+            'hotel_id': hotel.id
+          });
+          console.log('✅ Evento GA4 [renovacion_plan] enviado:', {
+            plan: plan.nombre,
+            valor: montoPagar
+          });
+        }
+      } else {
+        console.warn('⚠️ gtag no está definido. Evento de GA4 no enviado.');
+      }
+    } catch (e) {
+      console.error('❌ Error al enviar evento a GA4:', e);
+    }
+    // --- FIN: CÓDIGO DE GOOGLE ANALYTICS ---
 
     if (typeof Swal !== 'undefined') {
       Swal.fire({
@@ -351,7 +390,6 @@ export async function mount(container, supabase, user, hotelId) {
         window.open(`https://checkout.wompi.co/p/?public-key=${WOMPI_PUBLIC_KEY}&currency=COP&amount-in-cents=${amountInCents}&reference=${ref}&customer-email=${user.email}`, '_blank');
     }
   };
-
   // Renovar plan actual
   container.querySelector('#btnRenovarPlan')?.addEventListener('click', () => {
     if (planActivo) abrirWompi(planActivo, 'renew');
