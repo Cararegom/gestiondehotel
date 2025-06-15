@@ -128,6 +128,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 localStorage.removeItem('referido_id');
                 showAlert(document.getElementById('registroFormAlert'), '¡Cuenta creada con éxito!', 'success');
                 registroForm.reset();
+                window.location.href = '/index.html#/registro-exitoso';
+
 
             } catch (error) {
                 showAlert(document.getElementById('registroFormAlert'), `Error: ${error.message}`, 'danger');

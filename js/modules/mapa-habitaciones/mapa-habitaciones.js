@@ -1219,6 +1219,7 @@ setupButtonListener('close-modal-acciones', () => {
 
 
 setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
+      console.log("ID del usuario en la APP:", currentUserGlobal.id);
   const { data: reserva, error: errRes } = await supabaseGlobal
     .from('reservas')
     .select('id, cliente_nombre, estado, monto_pagado')
