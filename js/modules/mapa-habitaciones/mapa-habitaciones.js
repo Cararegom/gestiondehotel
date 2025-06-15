@@ -1475,15 +1475,122 @@ setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
         };
 
         // Lógica para cobrar AHORA (sin cambios)
-        modalOpciones.querySelector('#btn-cobro-ahora-serv').onclick = async () => {
-          const { data: metodosPagoDB } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelIdGlobal).eq('activo', true);
-          if (!metodosPagoDB || metodosPagoDB.length === 0) {
-            mostrarInfoModalGlobal("No hay métodos de pago activos.", "Error", [], modalContainer);
+// Reemplaza el bloque '.onclick' de '#btn-cobro-ahora-serv' con todo lo siguiente:
+modalOpciones.querySelector('#btn-cobro-ahora-serv').onclick = async () => {
+    try {
+        // 1. Verificar turno de caja activo ANTES de hacer nada.
+        const turnoId = turnoService.getActiveTurnId();
+        if (!turnoId) {
+            mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No se puede registrar el pago porque no hay un turno de caja activo.", "Error de Turno", [], modalContainer);
             return;
-          }
-          alert(`Simulación: Cobrar AHORA ${formatCurrency(totalFinalConDescuento)}`);
-        };
+        }
 
+        // 2. Obtener métodos de pago para el modal de selección
+        const { data: metodosPagoDB } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelIdGlobal).eq('activo', true);
+        if (!metodosPagoDB || metodosPagoDB.length === 0) {
+            mostrarInfoModalGlobal("No hay métodos de pago activos configurados.", "Error", [], modalContainer);
+            return;
+        }
+        
+        // 3. Mostrar modal para que el usuario elija el método de pago
+        const opcionesMetodosHTML = metodosPagoDB.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
+        const { value: metodoPagoId, isConfirmed } = await Swal.fire({
+            title: 'Confirmar Cobro Inmediato',
+            html: `
+                <p class="mb-4">Se cobrará un total de <strong>${formatCurrency(totalFinalConDescuento)}</strong>.</p>
+                <label for="swal-metodo-pago" class="swal2-label">Seleccione el método de pago:</label>
+                <select id="swal-metodo-pago" class="swal2-input">
+                    <option value="">-- Método de pago --</option>
+                    ${opcionesMetodosHTML}
+                </select>
+            `,
+            focusConfirm: false,
+            preConfirm: () => {
+                const metodo = document.getElementById('swal-metodo-pago').value;
+                if (!metodo) {
+                    Swal.showValidationMessage('Por favor, seleccione un método de pago.');
+                    return false;
+                }
+                return metodo;
+            },
+            showCancelButton: true,
+            confirmButtonText: 'Registrar Pago',
+            cancelButtonText: 'Cancelar'
+        });
+
+        if (!isConfirmed || !metodoPagoId) {
+            return; // El usuario canceló
+        }
+
+        // 4. Iniciar el proceso de registro en la base de datos
+        // 4.1. Registrar el pago principal en 'pagos_reserva'
+        const { data: pagoData, error: errPago } = await supabaseGlobal
+            .from('pagos_reserva')
+            .insert({
+                hotel_id: hotelIdGlobal,
+                reserva_id: reserva.id,
+                monto: totalFinalConDescuento,
+                fecha_pago: new Date().toISOString(),
+                metodo_pago_id: metodoPagoId,
+                usuario_id: currentUserGlobal.id,
+                concepto: 'Pago de servicios adicionales'
+            })
+            .select('id')
+            .single();
+
+        if (errPago) throw new Error(`Error al registrar el pago: ${errPago.message}`);
+        const pagoReservaId = pagoData.id;
+
+        // 4.2. Registrar el ingreso en 'caja'
+        await supabaseGlobal.from('caja').insert({
+            hotel_id: hotelIdGlobal,
+            tipo: 'ingreso',
+            monto: totalFinalConDescuento,
+            concepto: `Servicios Adicionales Hab. ${roomContext.nombre}`,
+            fecha_movimiento: new Date().toISOString(),
+            metodo_pago_id: metodoPagoId,
+            usuario_id: currentUserGlobal.id,
+            reserva_id: reserva.id,
+            turno_id: turnoId,
+            pago_reserva_id: pagoReservaId
+        });
+        
+        // 4.3. Registrar los servicios en 'servicios_x_reserva' como pagados
+        let serviciosParaInsertar = serviciosSeleccionados.map(item => ({
+            hotel_id: hotelIdGlobal, reserva_id: reserva.id, servicio_id: item.servicio_id,
+            cantidad: item.cantidad, precio_cobrado: item.precio * item.cantidad,
+            nota, estado_pago: 'pagado', pago_reserva_id: pagoReservaId
+        }));
+        
+        // 4.4. Registrar el descuento como un item negativo (si existe)
+        if (montoDescuento > 0 && descuentoAplicado) {
+            let descripcionDescuento = `Descuento: ${descuentoAplicado.nombre} (a ${nombresServiciosDescuento})`;
+            serviciosParaInsertar.push({
+                hotel_id: hotelIdGlobal, reserva_id: reserva.id,
+                descripcion_manual: descripcionDescuento,
+                cantidad: 1, precio_cobrado: -montoDescuento,
+                estado_pago: 'aplicado', pago_reserva_id: pagoReservaId
+            });
+
+            // 4.5. ¡INCREMENTAR EL USO DEL DESCUENTO!
+            const { error: rpcError } = await supabaseGlobal.rpc('incrementar_uso_descuento', {
+                id_descuento_usado: descuentoAplicado.id
+            });
+            if (rpcError) {
+                console.error("ADVERTENCIA: No se pudo incrementar el uso del descuento.", rpcError);
+            }
+        }
+
+        await supabaseGlobal.from('servicios_x_reserva').insert(serviciosParaInsertar);
+
+        // 5. Mostrar éxito y cerrar todo
+        mostrarInfoModalGlobal("¡Pago de servicios registrado con éxito en la caja!", "Éxito");
+
+    } catch (error) {
+        console.error("Error procesando el cobro inmediato:", error);
+        mostrarInfoModalGlobal(`Error al procesar el pago: ${error.message}`, "Error Crítico", [], modalContainer);
+    }
+};
         modalOpciones.querySelector('#btn-cancelar-cobro-servicio-serv').onclick = () => {
           modalContainer.style.display = 'none';
           modalContainer.innerHTML = '';
@@ -3036,12 +3143,18 @@ async function registrarReservaYMovimientosCaja({
 
     // 3. INCREMENTAR USO DEL DESCUENTO (SI APLICA)
     if (nuevaReserva.descuento_aplicado_id) {
-        const { error: rpcError } = await supabase.rpc('incrementar_uso_descuento', {
-            p_descuento_id: nuevaReserva.descuento_aplicado_id
-        });
+        const idDelDescuentoQueSeAplico = nuevaReserva.descuento_aplicado_id;
+    
+        const { error: rpcError } = await supabase
+          .rpc('incrementar_uso_descuento', {
+            // El nombre del parámetro ('id_descuento_usado') debe coincidir
+            // con el que definiste en la función SQL de Supabase.
+            id_descuento_usado: idDelDescuentoQueSeAplico
+          });
+    
         if (rpcError) {
-            // No detenemos el flujo, pero registramos el error para futura depuración.
-            console.error("Advertencia: No se pudo incrementar el uso del descuento.", rpcError);
+          // No detenemos el flujo, pero es importante registrar el error para futura depuración.
+          console.error('ADVERTENCIA: No se pudo incrementar el contador de uso del descuento.', rpcError);
         }
     }
 
@@ -3086,7 +3199,6 @@ async function registrarReservaYMovimientosCaja({
     mostrarInfoModalGlobal("¡Habitación alquilada con éxito!", "Alquiler Registrado");
     await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
 }
-
 // ===================== MODAL EXTENDER TIEMPO (POS STYLE - COMPLETO) =====================
 async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
