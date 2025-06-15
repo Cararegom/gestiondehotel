@@ -186,12 +186,13 @@ html, body {
   display: none;
   position: fixed;
   top: 0;
-  left: 0;
-  width: 100%;
+  left: 280px; /* ancho del sidebar */
+  width: calc(100% - 280px); /* solo cubre el fondo, no el menú */
   height: 100%;
   background: rgba(0,0,0,0.5);
-  z-index: 199; /* Correcto: por debajo del sidebar (200) */
+  z-index: 199;
 }
+
 #menu-overlay.active {
   display: block;
 }
