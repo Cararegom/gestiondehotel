@@ -4,15 +4,14 @@
   --color-secondary: #f59e0b;
   --color-accent: #10b981;
   --color-bg-main: #f7fafc;
-  --color-sidebar: #2d3748; /* Color de fondo para el menú lateral en desktop y desplegable en móvil */
-  --color-topbar-mobile: #2d3748; /* Color para la barra superior en móvil donde iría el logo y hamburguesa */
+  --color-sidebar: #2d3748;
+  --color-topbar-mobile: #2d3748;
   --color-card-bg: #fff;
   --color-card-border: #e2e8f0;
   --color-text-main: #22223b;
-  --color-text-sidebar: #e2e8f0; /* Texto para el sidebar */
+  --color-text-sidebar: #e2e8f0;
   --sidebar-width-desktop: 250px;
-  --topbar-height-mobile: 56px; /* Altura de la barra superior en móvil */
-  /* Variables de color para Focus Rings */
+  --topbar-height-mobile: 56px;
   --color-primary-light: rgba(29, 78, 216, 0.3);
   --color-secondary-light: rgba(245, 158, 11, 0.4);
   --color-accent-light: rgba(16, 185, 129, 0.4);
@@ -34,7 +33,7 @@ html, body {
   background: var(--color-bg-main);
   color: var(--color-text-main);
   line-height: 1.5;
-  overflow-x: hidden; /* Prevenir scroll horizontal en el body */
+  overflow-x: hidden;
 }
 
 /* ======== LAYOUT SPA GENERAL ======== */
@@ -42,22 +41,34 @@ html, body {
   display: flex;
   min-height: 100vh;
   width: 100%;
-  background: var(--color-bg-main);
 }
 
-/* Sidebar para Desktop */
 #sidebar {
   width: var(--sidebar-width-desktop);
-  min-width: 200px;
   background: var(--color-sidebar);
   color: var(--color-text-sidebar);
-  display: flex;
+  display: flex; /* Visible en desktop por defecto */
   flex-direction: column;
   padding: 1.2rem 1rem 1rem 1rem;
   box-shadow: 1px 0 18px 0 rgba(30,41,59,0.08);
-  z-index: 40;
+  z-index: 200; /* Z-index alto para desktop también */
   transition: transform 0.3s ease-in-out, width 0.3s ease-in-out;
   position: relative;
+}
+
+#main-content-area {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#app-container, main#app-container {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 28px 20px;
+  overflow-y: auto;
+  z-index: 1;
 }
 
 #sidebar a {
@@ -84,25 +95,6 @@ html, body {
   flex-shrink: 0;
 }
 
-#main-content-area {
-  flex: 1 1 0;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  background: var(--color-bg-main);
-  padding-top: 0;
-}
-
-#app-container, main#app-container {
-  flex: 1 1 0;
-  min-height: 0;
-  background: var(--color-bg-main);
-  padding: 28px 20px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  z-index: 1;
-}
-
 /* ======== BARRA SUPERIOR PARA MÓVILES ======== */
 #mobile-topbar {
   display: none;
@@ -116,7 +108,7 @@ html, body {
   top: 0;
   left: 0;
   width: 100%;
-  z-index: 45;
+  z-index: 45; 
   box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 
@@ -131,7 +123,6 @@ html, body {
   align-items: center;
   justify-content: center;
 }
-
 #mobile-topbar .logo-mobile img {
     max-height: calc(var(--topbar-height-mobile) - 20px);
     width: auto;
@@ -140,35 +131,32 @@ html, body {
 /* ======== RESPONSIVE LAYOUT ADJUSTMENTS ======== */
 @media (max-width: 900px) {
   #sidebar {
+    display: flex;
     position: fixed;
     top: 0;
     left: 0;
     height: 100vh;
+    width: 280px;
     transform: translateX(-100%);
+    z-index: 200; /* Z-INDEX CORREGIDO: Mayor que el overlay (199) */
     box-shadow: 2px 0 5px rgba(0,0,0,0.2);
-    /* Z-INDEX CORREGIDO: Debe ser mayor que el overlay (199) */
-    z-index: 200; 
-    /* Estilos flex para controlar el scroll interno */
-    display: flex;
-    flex-direction: column;
-    padding: 0; 
-  }
-
-  /* Nueva regla para que la lista de navegación sea la que tenga scroll */
-  #sidebar #main-nav {
-    flex: 1 1 auto; /* Permite que esta área crezca */
-    overflow-y: auto; /* AÑADE SCROLL VERTICAL si es necesario */
-    padding: 1.2rem 1rem; /* Mantenemos el espaciado interno */
-  }
-
-  /* Padding para la sección de info de usuario */
-  #sidebar #user-info-nav {
-    padding: 0 1rem 1rem 1rem;
+    padding: 0;
   }
 
   #sidebar.open {
     transform: translateX(0);
   }
+
+  /* Reglas para SCROLL en el menú */
+  #sidebar #main-nav {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 1.2rem 1rem;
+  }
+  #sidebar #user-info-nav {
+    padding: 0 1rem 1rem 1rem;
+  }
+
   #mobile-topbar {
     display: flex;
   }
@@ -199,8 +187,7 @@ html, body {
   width: 100%;
   height: 100%;
   background: rgba(0,0,0,0.5);
-  /* Este valor es correcto, debe estar por debajo del sidebar */
-  z-index: 199; 
+  z-index: 199; /* Correcto: por debajo del sidebar (200) */
 }
 #menu-overlay.active {
   display: block;
@@ -562,21 +549,25 @@ img, svg {
 
 .modal-container .rounded-xl { border-radius: 0.75rem !important; }
 .modal-container .rounded-3xl { border-radius: 1rem !important; }
+
+/* Corrección para botones en modales, asegurando que no hereden estilos conflictivos */
 .modal-container button {
-  display: block;
-  width: 100%;
-  text-align: left;
-  border: none;
-  background: none;
-  padding: 1rem;
-  font-size: 1rem;
-  border-bottom: 1px solid #e2e8f0;
+  display: inline-flex; /* Cambiado de block a inline-flex para que se ajuste al contenido */
+  width: auto; /* Para que el botón no ocupe todo el ancho */
+  text-align: center; /* Centrar el texto */
+  justify-content: center;
+  border: 1px solid #d1d5db; /* Hereda del .button base */
+  background: #f3f4f6; /* Hereda del .button-neutral si no se especifica otro */
+  padding: 0.6rem 1.2rem; /* Hereda del .button base */
+  font-size: 0.95rem;
+  border-bottom: 1px solid #d1d5db;
   transition: background 0.2s;
 }
 
 .modal-container button:hover {
-  background-color: #ebf8ff;
+  background-color: #e5e7eb;
 }
+
 #cliente_nombre_display {
   transition: all 0.3s ease;
 }
