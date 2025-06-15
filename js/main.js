@@ -419,6 +419,8 @@ function updateActiveNavLink(currentPath) {
 
 // REEMPLAZA TU FUNCIÓN initializeApp COMPLETA CON ESTA VERSIÓN
 
+// ASEGÚRATE DE QUE ESTA FUNCIÓN ESTÁ ASÍ EN TU main.js
+
 async function initializeApp() {
   appContainer = document.getElementById('app-container');
   mainNav = document.getElementById('main-nav'); 
@@ -551,16 +553,12 @@ async function initializeApp() {
     });
   }
 
-  // ========= INICIO DE LA CORRECCIÓN =========
-  // Agrega un listener al contenedor principal del menú (`mainNav`)
+  // Listener para cerrar el menú al hacer clic en un enlace
   if (mainNav && sidebar && menuOverlay && hamburgerButton) {
     mainNav.addEventListener('click', (e) => {
-      // Verifica si el elemento clickeado es un enlace de navegación (`<a>`)
-      // o un elemento dentro de un enlace.
       const linkClickeado = e.target.closest('a.nav-link-dynamic');
 
       if (linkClickeado) {
-        // Si fue en un enlace, cierra el menú y el overlay.
         console.log('[Menú Móvil] Enlace clickeado, cerrando menú.');
         sidebar.classList.remove('open');
         menuOverlay.classList.remove('active');
@@ -568,7 +566,6 @@ async function initializeApp() {
       }
     });
   }
-  // ========= FIN DE LA CORRECCIÓN =========
 
   if (menuOverlay && sidebar) {
     menuOverlay.addEventListener('click', () => {
@@ -578,7 +575,6 @@ async function initializeApp() {
     });
   }
 }
-
 
 
 // ===================================================================
