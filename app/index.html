@@ -38,6 +38,18 @@
             z-index: 40;
         }
     </style>
+<!-- Link al Manifest -->
+<link rel="manifest" href="/manifest.json">
+
+<!-- Color de barra superior para Android -->
+<meta name="theme-color" content="#1d4ed8">
+
+<!-- Apple Touch Icon (para iOS) -->
+<link rel="apple-touch-icon" href="/icons/icon-192x192.png">
+
+<!-- Apple Web App Settings -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
 </head>
 <body>
@@ -88,6 +100,16 @@
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
   
   <script type="module" src="/js/main.js"></script>
-  
+  <script>
+  // Registro del Service Worker
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('[PWA] Service Worker registrado:', reg.scope))
+        .catch(err => console.error('[PWA] Error al registrar el Service Worker:', err));
+    });
+  }
+</script>
+
   </body>
 </html>
