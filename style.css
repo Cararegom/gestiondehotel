@@ -149,7 +149,7 @@ html, body {
     height: 100vh;
     transform: translateX(-100%);
     box-shadow: 2px 0 5px rgba(0,0,0,0.2);
-    z-index: 45; 
+    z-index: 200; 
     
     /* --- INICIO DE LA CORRECCIÓN CSS --- */
     /* Hacemos que el sidebar sea un contenedor flex para controlar sus hijos. */
