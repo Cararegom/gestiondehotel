@@ -55,10 +55,9 @@ html, body {
   flex-direction: column;
   padding: 1.2rem 1rem 1rem 1rem;
   box-shadow: 1px 0 18px 0 rgba(30,41,59,0.08);
-  /* Z-index ajustado: debe ser menor que los modales (que tienen 900 o 1000) */
-  z-index: 40; /* Valor base para que esté sobre el contenido principal pero bajo modales */
+  z-index: 40;
   transition: transform 0.3s ease-in-out, width 0.3s ease-in-out;
-  position: relative; /* Mantener la posición para el z-index */
+  position: relative;
 }
 
 #sidebar a {
@@ -101,12 +100,12 @@ html, body {
   padding: 28px 20px;
   overflow-x: hidden;
   overflow-y: auto;
-  z-index: 1; /* Asegurar que el contenido de la app no se superponga al sidebar */
+  z-index: 1;
 }
 
 /* ======== BARRA SUPERIOR PARA MÓVILES ======== */
 #mobile-topbar {
-  display: none; /* Controlado por Tailwind md:hidden en index.html */
+  display: none;
   height: var(--topbar-height-mobile);
   background-color: var(--color-topbar-mobile);
   color: var(--color-text-sidebar);
@@ -117,8 +116,7 @@ html, body {
   top: 0;
   left: 0;
   width: 100%;
-  /* Z-index ajustado: debe ser menor que los modales */
-  z-index: 45; /* Ligeramente superior al sidebar base, pero bajo modales */
+  z-index: 45;
   box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 
@@ -133,14 +131,13 @@ html, body {
   align-items: center;
   justify-content: center;
 }
+
 #mobile-topbar .logo-mobile img {
     max-height: calc(var(--topbar-height-mobile) - 20px);
     width: auto;
 }
 
 /* ======== RESPONSIVE LAYOUT ADJUSTMENTS ======== */
-/* REEMPLAZA ESTE BLOQUE COMPLETO EN TU style.css */
-
 @media (max-width: 900px) {
   #sidebar {
     position: fixed;
@@ -149,31 +146,25 @@ html, body {
     height: 100vh;
     transform: translateX(-100%);
     box-shadow: 2px 0 5px rgba(0,0,0,0.2);
+    /* Z-INDEX CORREGIDO: Debe ser mayor que el overlay (199) */
     z-index: 200; 
-    
-    /* --- INICIO DE LA CORRECCIÓN CSS --- */
-    /* Hacemos que el sidebar sea un contenedor flex para controlar sus hijos. */
-    /* Esto ya estaba en tu CSS de escritorio, lo replicamos aquí. */
+    /* Estilos flex para controlar el scroll interno */
     display: flex;
     flex-direction: column;
-    /* Quitamos el padding de aquí para un mejor control del scroll. */
     padding: 0; 
-    /* --- FIN DE LA CORRECCIÓN CSS --- */
   }
 
-  /* --- INICIO DE NUEVAS REGLAS CSS --- */
-  /* Creamos una nueva regla para el contenedor de los enlaces */
+  /* Nueva regla para que la lista de navegación sea la que tenga scroll */
   #sidebar #main-nav {
-    flex: 1 1 auto; /* Permite que esta área crezca y ocupe el espacio disponible */
-    overflow-y: auto; /* ¡LA CLAVE! Añade scroll vertical solo cuando sea necesario */
-    padding: 1.2rem 1rem; /* Movemos el padding aquí para que no sea afectado por el scroll */
+    flex: 1 1 auto; /* Permite que esta área crezca */
+    overflow-y: auto; /* AÑADE SCROLL VERTICAL si es necesario */
+    padding: 1.2rem 1rem; /* Mantenemos el espaciado interno */
   }
 
-  /* Añadimos padding también a la información del usuario para consistencia */
+  /* Padding para la sección de info de usuario */
   #sidebar #user-info-nav {
     padding: 0 1rem 1rem 1rem;
   }
-  /* --- FIN DE NUEVAS REGLAS CSS --- */
 
   #sidebar.open {
     transform: translateX(0);
@@ -188,6 +179,7 @@ html, body {
     padding: 20px 15px;
   }
 }
+
 @media (max-width: 600px) {
   #sidebar {
     width: 280px;
@@ -200,14 +192,15 @@ html, body {
 
 /* Overlay para el menú en móvil */
 #menu-overlay {
-  display: none; /* Controlado por Tailwind hidden */
+  display: none;
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   background: rgba(0,0,0,0.5);
-  z-index: 199; /* Este z-index está bien, está por debajo del sidebar en móvil */
+  /* Este valor es correcto, debe estar por debajo del sidebar */
+  z-index: 199; 
 }
 #menu-overlay.active {
   display: block;
@@ -218,8 +211,7 @@ html, body {
   position: fixed;
   top: 1.2rem;
   right: 1.2rem;
-  /* Z-index ajustado: debe ser menor que los modales pero mayor que el sidebar/topbar */
-  z-index: 500; /* Un valor alto para que se vea, pero por debajo de los modales */
+  z-index: 500;
 }
 
 #app-global-feedback-banner {
@@ -229,9 +221,8 @@ html, body {
   padding: 1rem;
   border-radius: 0.375rem;
   box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
-  /* Z-index ajustado: debe ser menor que los modales */
-  z-index: 550; /* Un poco más alto que la campanita */
-  display: none; /* Controlado por JS */
+  z-index: 550;
+  display: none;
   max-width: 400px;
 }
 .app-global-feedback.success { background: #d1fae5; border: 1px solid #6ee7b7; color: #065f46; }
@@ -239,22 +230,21 @@ html, body {
 .app-global-feedback.info    { background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af; }
 .app-global-feedback.warning { background: #fef3c7; border: 1px solid #fcd34d; color: #92400e; }
 
-/* El #app-global-loading-overlay ya tenía un z-index 2000 en el index.html, lo cual es muy alto y correcto */
 #app-global-loading-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(0,0,0,0.4); /* Tailwind maneja esto con bg-opacity-75 */
-  display: none; /* Se cambia a flex por JS */
+  background-color: rgba(0,0,0,0.4);
+  display: none;
   align-items: center;
   justify-content: center;
-  z-index: 2000; /* Mantenemos este z-index muy alto para que siempre esté al frente */
+  z-index: 2000;
   color: white;
   flex-direction: column;
   gap: 1rem;
 }
 #app-global-loading-overlay .spinner {
   border: 4px solid rgba(255,255,255,0.3);
-  border-top: 4px solid #2563eb; /* Usar el azul de Tailwind */
+  border-top: 4px solid #2563eb;
   border-radius: 50%;
   width: 40px;
   height: 40px;
@@ -332,7 +322,7 @@ html, body {
 .button {
   padding: 0.6rem 1.2rem;
   border-radius: 0.5rem;
-  border: 1px solid #d1d5db; /* Borde gris claro por defecto para todos los botones */
+  border: 1px solid #d1d5db;
   cursor: pointer;
   font-weight: 500;
   transition: background-color 0.18s, color 0.18s, border-color 0.18s, box-shadow 0.18s, transform 0.1s ease-out;
@@ -352,11 +342,10 @@ html, body {
   outline: 2px solid transparent;
   box-shadow: 0 0 0 3px var(--color-primary-light);
 }
-.button:active { /* Efecto al presionar */
+.button:active {
     transform: translateY(1px);
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
 }
-
 
 .button-primary {
   background: var(--color-primary);
@@ -368,7 +357,7 @@ html, body {
   border-color: #2563eb;
 }
 
-.button-secondary { /* Esta es tu clase 'warning' visualmente por el color */
+.button-secondary {
   background: var(--color-secondary);
   color: #fff;
   border-color: var(--color-secondary);
@@ -381,8 +370,7 @@ html, body {
   box-shadow: 0 0 0 3px var(--color-secondary-light);
 }
 
-
-.button-accent, .button-success { /* Unificando accent y success si quieres el mismo verde */
+.button-accent, .button-success {
   background: var(--color-accent);
   color: #fff;
   border-color: var(--color-accent);
@@ -394,7 +382,6 @@ html, body {
 .button-accent:focus, .button-success:focus {
   box-shadow: 0 0 0 3px var(--color-accent-light);
 }
-
 
 .button-danger {
   background: #ef4444;
@@ -421,7 +408,6 @@ html, body {
 .button-neutral:focus {
   box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.4);
 }
-
 
 /* ======== UTILIDADES Y COSAS EXTRA ======== */
 .text-center { text-align: center; }
@@ -466,14 +452,9 @@ img, svg {
 }
 
 /* ======== Estilos específicos para modales (universales en index.html) ======== */
-/* NOTA: Las clases de Tailwind en index.html (ej. fixed inset-0 bg-black bg-opacity-75 z-[1000])
-   son la principal forma de controlar estos modales.
-   Aquí solo hay estilos adicionales o overrides muy específicos. */
-
-/* Estilos de fuente dentro de CUALQUIER modal-content (hijo de #modal-container o #modal-global) */
 .modal-container *,
 .modal-container input,
-.modal-container select, /* Añadido select */
+.modal-container select,
 .modal-container button {
   font-family: 'Montserrat', 'Segoe UI', Arial, sans-serif !important;
 }
@@ -481,49 +462,45 @@ img, svg {
 .modal-container h2,
 .modal-container label,
 .modal-container .font-bold {
-  font-weight: 700 !important; /* Más legible que 800 para texto normal */
-  letter-spacing: 0.2px; /* Reducido un poco */
+  font-weight: 700 !important;
+  letter-spacing: 0.2px;
 }
 
-/* Estilos ADICIONALES para CUALQUIER botón en el modal */
 .modal-container .button {
-    border-radius: 0.65rem !important; /* Un poco menos que 0.75 para que no sea tan curvo */
+    border-radius: 0.65rem !important;
     padding-top: 0.65rem !important;
     padding-bottom: 0.65rem !important;
-    padding-left: 1.3rem !important; /* Más padding horizontal */
+    padding-left: 1.3rem !important;
     padding-right: 1.3rem !important;
-    font-size: 0.95rem !important; /* Un poco más pequeño para caber mejor */
+    font-size: 0.95rem !important;
     font-weight: 600 !important;
-    text-transform: none; /* Quitamos el uppercase si prefieres texto normal */
+    text-transform: none;
     letter-spacing: 0.02em;
     box-shadow: 0 2px 4px rgba(0,0,0,0.08) !important;
-    /* El borde se hereda de la clase base .button o de la variante específica */
 }
 .modal-container .button:hover {
     box-shadow: 0 3px 6px rgba(0,0,0,0.12) !important;
     transform: translateY(-1px);
 }
 .modal-container .button:active {
-    transform: translateY(0px); /* Quitar el efecto de presionado si el hover ya levanta */
+    transform: translateY(0px);
     box-shadow: inset 0 1px 2px rgba(0,0,0,0.05) !important;
 }
 
-
-/* Botones con colores específicos dentro de modales */
 .modal-container .button-success {
-  background: var(--color-accent) !important; /* Usar variable accent global */
+  background: var(--color-accent) !important;
   color: #fff !important;
-  border-color: var(--color-accent) !important; /* Borde del mismo color que el fondo */
+  border-color: var(--color-accent) !important;
 }
 .modal-container .button-success:hover {
-  background: #059669 !important; /* Versión más oscura de accent */
+  background: #059669 !important;
   border-color: #059669 !important;
 }
 
 .modal-container .button-neutral {
   background: #e5e7eb !important;
   color: #374151 !important;
-  border-color: #b0b6be !important; /* Borde gris un poco más oscuro para definición */
+  border-color: #b0b6be !important;
 }
 .modal-container .button-neutral:hover {
   background: #d1d5db !important;
@@ -559,7 +536,6 @@ img, svg {
     background-color: #d97706 !important;
     border-color: #d97706 !important;
 }
-
 
 .modal-container .shadow-2xl, .modal-container .shadow-xl {
   box-shadow: 0 10px 30px 0 rgba(0, 0, 0, 0.15) !important;
