@@ -815,43 +815,6 @@ function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
     // ========== Lógica para mostrar el tiempo restante o excedido en la tarjeta ==========
    
 
-    if (["ocupada", "activa", "reservada", "tiempo agotado"].includes(room.estado) && room.fecha_fin) {
-        const cronometroTextEl = card.querySelector(`#cronometro-text-${room.id}`);
-        function updateCronometro() {
-            const ahora = new Date();
-            const fechaFin = new Date(room.fecha_fin);
-            let diff = fechaFin - ahora; // en ms
-
-            let negativo = false;
-            if (diff < 0) {
-                negativo = true;
-                diff = -diff;
-            }
-
-            let segundos = Math.floor(diff / 1000) % 60;
-            let minutos = Math.floor(diff / 1000 / 60) % 60;
-            let horas = Math.floor(diff / 1000 / 60 / 60);
-
-            const formatted = `${negativo ? "+" : ""}${horas}:${minutos.toString().padStart(2, '0')}:${segundos.toString().padStart(2, '0')}`;
-
-            if (negativo) {
-                cronometroTextEl.innerHTML = `<span class="text-red-600 font-bold animate-pulse">Excedido ${formatted}</span>`;
-                // SONIDO solo una vez
-                if (!sonidoLanzado) {
-                    playPopSound();
-                    sonidoLanzado = true;
-                }
-            } else if (diff <= 15 * 60 * 1000) {
-                cronometroTextEl.innerHTML = `<span class="text-orange-700 font-bold">Restan ${formatted}</span>`;
-                sonidoLanzado = false; // reset
-            } else {
-                cronometroTextEl.innerHTML = `<span class="text-slate-800 font-bold">Restan ${formatted}</span>`;
-                sonidoLanzado = false;
-            }
-        }
-        updateCronometro();
-        setInterval(updateCronometro, 1000);
-    }
 
     card.onclick = () => showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer);
     return card;
@@ -3630,9 +3593,9 @@ function startCronometro(room, supabase, hotelId, listEl) {
                     const m = String(Math.floor((diffPos % 3600000) / 60000)).padStart(2, '0');
                     const s = String(Math.floor((diffPos % 60000) / 1000)).padStart(2, '0');
                     cronometroDiv.innerHTML = `
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1.5 inline text-red-500 animate-ping-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        <span class="font-bold text-red-500 animate-pulse">⏰ Tiempo excedido: -${h}:${m}:${s}</span>
-                    `;
+        <svg ...></svg>
+        <span class="font-bold text-red-500 animate-pulse">⏰ Excedido: -${h}:${m}</span>
+    `;
                     if (cardElement) {
                         cardElement.classList.add('animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-opacity-50');
                     }
@@ -3654,7 +3617,7 @@ function startCronometro(room, supabase, hotelId, listEl) {
                         iconColor = 'text-orange-500';
                     }
 
-                    cronometroDiv.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1.5 inline ${iconColor}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span class="${textColor}">${h}:${m}:${s}</span>`;
+                    cronometroDiv.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1.5 inline ${iconColor}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span class="${textColor}">${h}:${m}</span>`;
 
                     // Si por error quedó como "tiempo agotado" pero ya está en tiempo normal, reestablece estado
                     const currentRoomInMap = currentRooms.find(r => r.id === room.id);
@@ -3673,7 +3636,7 @@ function startCronometro(room, supabase, hotelId, listEl) {
                 }
             }
             await updateCronoDisplay();
-            cronometrosInterval[cronometroId] = setInterval(updateCronoDisplay, 1000);
+            cronometrosInterval[cronometroId] = setInterval(updateCronoDisplay, 60000);
         })
         .catch(err => {
             if (err.code !== 'PGRST116') {

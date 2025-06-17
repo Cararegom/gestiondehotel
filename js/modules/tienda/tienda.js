@@ -182,7 +182,6 @@ async function renderPOS() {
           </thead>
           <tbody id="carritoPOS"></tbody>
         </table>
-       // REEMPLAZA CON ESTO:
 <div id="resumen-pago-pos">
     <div style="text-align:right;font-size:1.1rem;font-weight:600;margin-bottom:8px;">
         Subtotal: <span id="subtotalPOS">$0</span>

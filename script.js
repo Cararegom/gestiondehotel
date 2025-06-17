@@ -9,6 +9,52 @@ if (refId) {
   localStorage.setItem('referido_id', refId);
 }
 // ----------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+  const sliderWrapper = document.querySelector('.slider-wrapper');
+  if (!sliderWrapper) return;
+
+  let slides = sliderWrapper.querySelectorAll('.slide');
+  if (slides.length === 0) return;
+
+  let currentSlide = 0;
+  let isTransitioning = false;
+
+  // Clonar el primer slide al final
+  const firstSlideClone = slides[0].cloneNode(true);
+  sliderWrapper.appendChild(firstSlideClone);
+
+  // Recalcular slides luego de clonar
+  slides = sliderWrapper.querySelectorAll('.slide');
+  const totalSlides = slides.length;
+
+  // Establecer el ancho del wrapper según la cantidad de slides
+  sliderWrapper.style.width = `${totalSlides * 100}%`;
+
+
+  function goToNextSlide() {
+    if (isTransitioning) return;
+    isTransitioning = true;
+    currentSlide++;
+
+    sliderWrapper.style.transition = 'transform 0.8s ease-in-out';
+    sliderWrapper.style.transform = `translateX(-${currentSlide * 100 / totalSlides}%)`;
+
+  }
+
+  // Cuando termina la transición
+  sliderWrapper.addEventListener('transitionend', () => {
+    // Si está en el slide clonado
+    if (currentSlide === totalSlides - 1) {
+      sliderWrapper.style.transition = 'none';
+      currentSlide = 0;
+      sliderWrapper.style.transform = `translateX(0vw)`;
+    }
+    isTransitioning = false;
+  });
+
+  // Iniciar carrusel automático
+  setInterval(goToNextSlide, 6000); // Más tiempo para que se lea bien el contenido
+});
 
 // Importaciones y constantes globales
 import { supabase } from '/js/supabaseClient.js'; // Ajusta la ruta si es necesario

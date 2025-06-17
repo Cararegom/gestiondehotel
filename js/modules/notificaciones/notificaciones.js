@@ -23,8 +23,9 @@ let isCampanitaInitializing = false;
 
 /**
  * Inicializa la campanita de notificaciones global.
- * Carga el HTML, obtiene los datos del usuario y las notificaciones,
+ * Carga el HTML, obtiene los datos del usuario, verifica su plan de suscripción,
  * y establece los listeners para la interactividad y las actualizaciones en tiempo real.
+ * Solo se mostrará si el plan del hotel es 'Max'.
  *
  * @param {HTMLElement} bellContainer - El elemento contenedor donde se inyectará la campanita.
  * @param {object} supabaseInstance - La instancia activa del cliente de Supabase.
@@ -61,6 +62,37 @@ export async function inicializarCampanitaGlobal(bellContainer, supabaseInstance
         return;
       }
     }
+
+    // --- INICIO: Bloque de Verificación de Plan ---
+    try {
+        const { data: hotelData, error: hotelError } = await supabaseInstance
+            .from('hoteles')
+            .select('plan') // Asegúrate de que la columna se llame 'plan' en tu tabla 'hoteles'
+            .eq('id', hotelIdToUse)
+            .single();
+
+        if (hotelError) {
+            throw new Error(`Error al consultar el plan del hotel: ${hotelError.message}`);
+        }
+
+        const planActual = hotelData?.plan;
+
+        // Si el plan no es 'max', detenemos la inicialización de la campanita
+        if (!planActual || planActual.toLowerCase() !== 'max') {
+            console.log(`Campanita: No se inicializa. El plan actual ('${planActual}') no es 'Max'.`);
+            isCampanitaInitializing = false; // Reseteamos el flag
+            return; // Salimos de la función tempranamente
+        }
+        
+        console.log("Campanita: Plan 'Max' verificado. Continuando inicialización...");
+
+    } catch (err) {
+        console.error('Campanita: Error crítico durante la verificación del plan.', err);
+        isCampanitaInitializing = false; // Reseteamos el flag en caso de error
+        return; // Salimos de la función
+    }
+    // --- FIN: Bloque de Verificación de Plan ---
+
 
     // 3. Limpiar listeners y suscripciones anteriores para evitar duplicados
     if (globalNotificationSubscription) {
@@ -187,7 +219,6 @@ export async function inicializarCampanitaGlobal(bellContainer, supabaseInstance
     isCampanitaInitializing = false;
   }
 }
-
 
 export function desmontarCampanitaGlobal(supabaseInstance) {
   console.log("Campanita: desmontarCampanitaGlobal llamado.");
