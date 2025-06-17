@@ -10,7 +10,7 @@ let currentRooms = [];
 let cronometrosInterval = {};
 import { turnoService } from '../../services/turnoService.js';
 import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
-import { formatCurrency } from '../../uiUtils.js';
+import { formatCurrency, showError, registrarUsoDescuento } from '../../uiUtils.js';
 
 const estadoColores = {
     libre: { border: 'border-green-500', badge: 'bg-green-100 text-green-700', icon: `...` },
@@ -188,46 +188,52 @@ async function buscarDescuentoParaServicios(serviciosSeleccionados, codigoManual
  * @param {string|null} codigoManual - El código opcional introducido por el usuario.
  * @returns {Promise<object|null>} El objeto del descuento o null.
  */
-async function buscarDescuentoParaAlquiler(habitacionId, codigoManual = null) {
+async function buscarDescuentoParaAlquiler(supabase, hotelId, clienteId, habitacionId, codigoManual = null) {
+    if (!habitacionId && !codigoManual && !clienteId) return null;
+
     const ahora = new Date().toISOString();
-    
-    // Construcción de la consulta base
-    let query = supabaseGlobal.from('descuentos').select('*')
-        .eq('hotel_id', hotelIdGlobal)
+    let query = supabase.from('descuentos').select('*')
+        .eq('hotel_id', hotelId)
         .eq('activo', true)
         .or(`fecha_inicio.is.null,fecha_inicio.lte.${ahora}`)
         .or(`fecha_fin.is.null,fecha_fin.gte.${ahora}`);
 
-    // Condiciones para tipo de descuento (automático o por código)
     const orConditions = ['tipo_descuento_general.eq.automatico'];
     if (codigoManual) {
         orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`);
+    }
+    if (clienteId) {
+        orConditions.push(`cliente_id.eq.${clienteId}`);
     }
     query = query.or(orConditions.join(','));
 
     const { data: descuentosPotenciales, error } = await query;
     if (error) {
-        console.error("Error buscando descuentos para alquiler:", error);
+        console.error("Error buscando descuentos de alquiler:", error);
         return null;
     }
 
-    if (!descuentosPotenciales || descuentosPotenciales.length === 0) return null;
+    const descuentosValidos = descuentosPotenciales.filter(d => (d.usos_maximos || 0) === 0 || (d.usos_actuales || 0) < d.usos_maximos);
 
-    // Filtrado por usos y aplicabilidad
-    const descuentosValidos = descuentosPotenciales.filter(d => 
-        (d.usos_maximos || 0) === 0 || (d.usos_actuales || 0) < d.usos_maximos
-    );
-
+    // Prioridad: por cliente > por código > automáticos
+    if (clienteId) {
+        const descuentoCliente = descuentosValidos.find(d => d.cliente_id === clienteId);
+        if (descuentoCliente) return descuentoCliente;
+    }
+    if (codigoManual) {
+        const descuentoCodigo = descuentosValidos.find(d => d.codigo && d.codigo.toUpperCase() === codigoManual.toUpperCase());
+        if (descuentoCodigo) return descuentoCodigo;
+    }
     for (const descuento of descuentosValidos) {
         const aplicabilidad = descuento.aplicabilidad;
         if (aplicabilidad === 'reserva_total') return descuento;
-        if (aplicabilidad === 'habitaciones_especificas' && descuento.habitaciones_aplicables?.includes(habitacionId)) {
+        if (aplicabilidad === 'habitaciones_especificas' && habitacionId && descuento.habitaciones_aplicables?.includes(habitacionId)) {
             return descuento;
         }
     }
-
     return null;
 }
+
 
 async function imprimirTicketHabitacion({ supabase, hotelId, datosTicket, tipoDocumento }) {
   // 1. Leer configuración de impresora
@@ -1505,28 +1511,19 @@ modalOpciones.querySelector('#btn-cobro-ahora-serv').onclick = async () => {
         if (errPago) throw new Error(`Error al registrar el pago: ${errPago.message}`);
         const pagoReservaId = pagoData.id;
 
-        // 4.2. Registrar el ingreso en 'caja'
-        await supabaseGlobal.from('caja').insert({
-            hotel_id: hotelIdGlobal,
-            tipo: 'ingreso',
-            monto: totalFinalConDescuento,
-            concepto: `Servicios Adicionales Hab. ${roomContext.nombre}`,
-            fecha_movimiento: new Date().toISOString(),
-            metodo_pago_id: metodoPagoId,
-            usuario_id: currentUserGlobal.id,
-            reserva_id: reserva.id,
-            turno_id: turnoId,
-            pago_reserva_id: pagoReservaId
-        });
-        
-        // 4.3. Registrar los servicios en 'servicios_x_reserva' como pagados
-        let serviciosParaInsertar = serviciosSeleccionados.map(item => ({
-            hotel_id: hotelIdGlobal, reserva_id: reserva.id, servicio_id: item.servicio_id,
-            cantidad: item.cantidad, precio_cobrado: item.precio * item.cantidad,
-            nota, estado_pago: 'pagado', pago_reserva_id: pagoReservaId
-        }));
-        
-        // 4.4. Registrar el descuento como un item negativo (si existe)
+      //...
+// 4.2. Registrar el ingreso en 'caja'
+await supabaseGlobal.from('caja').insert({ /* ... */ });
+
+// ▼▼▼ INICIO DE LA CORRECCIÓN ▼▼▼
+// 4.3. ACTUALIZAR EL MONTO PAGADO EN LA RESERVA PRINCIPAL
+const nuevoMontoPagado = (reserva.monto_pagado || 0) + totalFinalConDescuento;
+await supabaseGlobal.from('reservas')
+    .update({ monto_pagado: nuevoMontoPagado })
+    .eq('id', reserva.id);
+// ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
+
+// 4.4. Registrar el descuento como un item negativo (si existe)
         if (montoDescuento > 0 && descuentoAplicado) {
             let descripcionDescuento = `Descuento: ${descuentoAplicado.nombre} (a ${nombresServiciosDescuento})`;
             serviciosParaInsertar.push({
@@ -1536,13 +1533,13 @@ modalOpciones.querySelector('#btn-cobro-ahora-serv').onclick = async () => {
                 estado_pago: 'aplicado', pago_reserva_id: pagoReservaId
             });
 
-            // 4.5. ¡INCREMENTAR EL USO DEL DESCUENTO!
-            const { error: rpcError } = await supabaseGlobal.rpc('incrementar_uso_descuento', {
-                id_descuento_usado: descuentoAplicado.id
-            });
-            if (rpcError) {
-                console.error("ADVERTENCIA: No se pudo incrementar el uso del descuento.", rpcError);
-            }
+           // 4.5. ¡INCREMENTAR EL USO DEL DESCUENTO!
+const { error: rpcError } = await supabaseGlobal.rpc('incrementar_uso_descuento', {
+    descuento_id_param: descuentoAplicado.id
+});
+if (rpcError) {
+    console.error("ADVERTENCIA: No se pudo incrementar el uso del descuento.", rpcError);
+}
         }
 
         await supabaseGlobal.from('servicios_x_reserva').insert(serviciosParaInsertar);
@@ -2675,9 +2672,7 @@ async function facturarElectronicaYMostrarResultado({
 
 
 
-// ===================== MODAL DE ALQUILER (POS STYLE - COMPLETO Y CORREGIDO) =====================
-
-// REEMPLAZA TU FUNCIÓN showAlquilarModal ACTUAL CON ESTA VERSIÓN COMPLETA Y CORREGIDA
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO mapa-habitaciones.js
 
 async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
@@ -2688,6 +2683,7 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     modalContainer.style.display = "flex";
     modalContainer.innerHTML = "";
 
+    // Variable para mantener el descuento aplicado en el scope del modal
     let descuentoAplicado = null;
     let horarios, tiempos, metodosPagoDisponibles;
 
@@ -2703,13 +2699,15 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     }
     
     metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
-const tarifaNocheUnica = tiempos.find(t => t.nombre.toLowerCase().includes('noche'));
+    const tarifaNocheUnica = tiempos.find(t => t.nombre.toLowerCase().includes('noche'));
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, tarifaNocheUnica, room);
     const opcionesHoras = crearOpcionesHoras(tiempos);
 
     const modalContent = document.createElement('div');
     modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-auto animate-fade-in-up overflow-hidden";
     
+    // ================== INICIO DEL HTML CORREGIDO ==================
+    // Se añade un input hidden para el cliente_id y un botón para limpiar la selección.
     modalContent.innerHTML = `
     <div class="flex flex-col md:flex-row">
         <div class="w-full md:w-3/5 p-6 sm:p-8 space-y-6 bg-slate-50 md:rounded-l-xl">
@@ -2722,12 +2720,14 @@ const tarifaNocheUnica = tiempos.find(t => t.nombre.toLowerCase().includes('noch
                 <input type="hidden" name="cliente_id" id="cliente_id_alquiler">
                 
                 <div>
-                    <label class="form-label">Nombre del Huésped*</label>
+                    <label class="form-label">Huésped*</label>
                     <div class="flex items-center gap-2">
-                        <input required name="cliente_nombre" id="cliente_nombre" class="form-control flex-grow" placeholder="Nombre completo">
-                        
+                        <input required name="cliente_nombre" id="cliente_nombre" class="form-control flex-grow" placeholder="Nombre completo o busque existente">
                         <button type="button" id="btn-buscar-cliente-alquiler" class="button button-info p-2 rounded-full" title="Buscar cliente existente">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <button type="button" id="btn-limpiar-cliente-alquiler" class="button button-danger p-2 rounded-full" title="Limpiar selección de cliente" style="display: none;">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
                         </button>
                     </div>
                 </div>
@@ -2752,10 +2752,10 @@ const tarifaNocheUnica = tiempos.find(t => t.nombre.toLowerCase().includes('noch
                 <div>
                     <label class="form-label">Código de Descuento</label>
                     <div class="flex items-center gap-2">
-                        <input type="text" id="codigo-descuento-alquiler" class="form-control flex-grow" placeholder="CÓDIGO OPCIONAL">
+                        <input type="text" id="codigo-descuento-alquiler" class="form-control flex-grow uppercase" placeholder="CÓDIGO OPCIONAL">
                         <button type="button" id="btn-aplicar-descuento-alquiler" class="button button-info">Aplicar</button>
                     </div>
-                    <div id="feedback-descuento-alquiler" class="text-xs mt-1 h-4"></div>
+                    <div id="feedback-descuento-alquiler" class="text-xs mt-1 h-4 font-semibold"></div>
                 </div>
 
                 <div class="pt-4"><button type="submit" id="btn-alquilar-hab" class="button button-success w-full py-3 text-lg font-bold rounded-lg">Confirmar y Registrar</button></div>
@@ -2765,52 +2765,58 @@ const tarifaNocheUnica = tiempos.find(t => t.nombre.toLowerCase().includes('noch
             <div>
                 <h4 class="text-xl sm:text-2xl font-semibold text-center border-b border-slate-600 pb-3 mb-5 text-cyan-400">Resumen del Alquiler</h4>
                 <div id="ticket-resumen-container" class="space-y-2 text-sm sm:text-base">
-                    </div>
+                </div>
             </div>
             <div class="border-t-2 border-cyan-500 pt-4 mt-6">
                 <div class="flex justify-between items-baseline"><span class="text-xl font-semibold text-green-400">TOTAL A PAGAR:</span><span id="ticket-total-price" class="text-3xl font-bold text-green-300">$0</span></div>
             </div>
         </div>
     </div>`;
+    // ================== FIN DEL HTML CORREGIDO ==================
     modalContainer.appendChild(modalContent);
     
     // --- LÓGICA Y LISTENERS ---
     const formEl = modalContent.querySelector('#alquilar-form-pos');
     const ticketResumenEl = modalContent.querySelector('#ticket-resumen-container');
     const ticketTotalEl = modalContent.querySelector('#ticket-total-price');
+    const selectNochesEl = modalContent.querySelector('#select-noches');
+    const selectHorasEl = modalContent.querySelector('#select-horas');
+    
+    // Lógica para que Noches y Horas se anulen mutuamente
+    selectNochesEl.addEventListener('change', () => {
+        if (selectNochesEl.value) selectHorasEl.value = '';
+    });
+    selectHorasEl.addEventListener('change', () => {
+        if (selectHorasEl.value) selectNochesEl.value = '';
+    });
 
-    // AÑADE ESTE BLOQUE DE CÓDIGO NUEVO
-
-const selectNochesEl = modalContent.querySelector('#select-noches');
-const selectHorasEl = modalContent.querySelector('#select-horas');
-
-// Lógica para que Noches y Horas se anulen mutuamente
-selectNochesEl.addEventListener('change', () => {
-    if (selectNochesEl.value) {
-        // Si el usuario selecciona un valor para noches,
-        // borramos la selección de horas.
-        selectHorasEl.value = '';
-    }
-});
-
-selectHorasEl.addEventListener('change', () => {
-    if (selectHorasEl.value) {
-        // Si el usuario selecciona un valor para horas,
-        // borramos la selección de noches.
-        selectNochesEl.value = '';
-    }
-});
-
-// FIN DEL BLOQUE A AÑADIR
-
-    // Función para actualizar el ticket de resumen
-    const actualizarResumenConDescuento = async () => {
+    // ================== INICIO DE LA NUEVA FUNCIÓN CENTRAL ==================
+    /**
+     * Esta función centraliza toda la lógica de cálculo.
+     * Obtiene datos, busca el mejor descuento (cliente, código o automático) y actualiza la UI.
+     */
+    const recalcularYActualizarTotalAlquiler = async (codigoManual = null) => {
         const formData = Object.fromEntries(new FormData(formEl));
-        // Solo busca automático si no hay uno manual ya aplicado
-        if (!descuentoAplicado || descuentoAplicado.tipo_descuento_general !== 'codigo') {
-            descuentoAplicado = await buscarDescuentoParaAlquiler(room.id, null);
+        const clienteId = formData.cliente_id || null;
+        const feedbackEl = modalContent.querySelector('#feedback-descuento-alquiler');
+        
+        // Busca el mejor descuento posible con la información actual
+        const descuentoEncontrado = await buscarDescuentoParaAlquiler(supabase, hotelId, clienteId, room.id, codigoManual);
+
+        descuentoAplicado = descuentoEncontrado; // Actualiza la variable de estado del modal
+
+        // Muestra feedback al usuario sobre el descuento encontrado
+        if (descuentoAplicado) {
+            feedbackEl.textContent = `¡"${descuentoAplicado.nombre}" aplicado!`;
+            feedbackEl.className = 'text-xs mt-1 h-4 font-semibold text-green-400';
+        } else if (codigoManual) {
+            feedbackEl.textContent = 'Código no válido o no aplicable.';
+            feedbackEl.className = 'text-xs mt-1 h-4 font-semibold text-red-500';
+        } else {
+            feedbackEl.textContent = ''; // Limpia el feedback si no hay código ni descuento automático
         }
 
+        // Calcula los detalles de la estancia con el descuento ya aplicado
         const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, tarifaNocheUnica, descuentoAplicado);
         
         const simbolo = hotelConfigGlobal?.moneda_local_simbolo || '$';
@@ -2832,8 +2838,10 @@ selectHorasEl.addEventListener('change', () => {
         ticketResumenEl.innerHTML = resumenHtml;
         ticketTotalEl.textContent = formatCurrency(detalles.precioTotal, simbolo, iso, dec);
     };
+    // ================== FIN DE LA NUEVA FUNCIÓN CENTRAL ==================
 
-    // --- CONEXIÓN DE EVENTOS (LISTENERS) ---
+
+    // --- CONEXIÓN DE EVENTOS (LISTENERS CORREGIDOS) ---
     modalContent.querySelector('#close-modal-alquilar').onclick = () => {
         modalContainer.style.display = "none";
         modalContainer.innerHTML = '';
@@ -2842,47 +2850,56 @@ selectHorasEl.addEventListener('change', () => {
     // Listener para buscar cliente
     modalContent.querySelector('#btn-buscar-cliente-alquiler').onclick = () => {
         showClienteSelectorModal(supabase, hotelId, {
-            onSelect: (cliente) => {
+            onSelect: async (cliente) => {
+                // Rellenar formulario
                 formEl.querySelector('#cliente_id_alquiler').value = cliente.id;
                 formEl.querySelector('#cliente_nombre').value = cliente.nombre;
                 formEl.querySelector('#cedula').value = cliente.documento || '';
                 formEl.querySelector('#telefono').value = cliente.telefono || '';
+                // Mostrar/ocultar botones
+                formEl.querySelector('#btn-limpiar-cliente-alquiler').style.display = 'inline-flex';
+                formEl.querySelector('#btn-buscar-cliente-alquiler').style.display = 'none';
+
+                // Disparar recálculo completo
+                await recalcularYActualizarTotalAlquiler();
             }
         });
     };
 
+    // Listener para limpiar selección de cliente
+    modalContent.querySelector('#btn-limpiar-cliente-alquiler').onclick = async () => {
+        // Limpiar formulario
+        formEl.querySelector('#cliente_id_alquiler').value = '';
+        formEl.querySelector('#cliente_nombre').value = '';
+        formEl.querySelector('#cedula').value = '';
+        formEl.querySelector('#telefono').value = '';
+        // Mostrar/ocultar botones
+        formEl.querySelector('#btn-limpiar-cliente-alquiler').style.display = 'none';
+        formEl.querySelector('#btn-buscar-cliente-alquiler').style.display = 'inline-flex';
+        
+        // Disparar recálculo completo
+        await recalcularYActualizarTotalAlquiler();
+    };
+
+
     // Listener para aplicar descuento con código
     modalContent.querySelector('#btn-aplicar-descuento-alquiler').onclick = async () => {
         const codigo = modalContent.querySelector('#codigo-descuento-alquiler').value.trim();
-        const feedbackEl = modalContent.querySelector('#feedback-descuento-alquiler');
-        if (!codigo) {
-            descuentoAplicado = null;
-            await actualizarResumenConDescuento();
-            return;
-        }
-        feedbackEl.textContent = 'Buscando...';
-        const descuentoEncontrado = await buscarDescuentoParaAlquiler(room.id, codigo);
-        if (descuentoEncontrado) {
-            descuentoAplicado = descuentoEncontrado;
-            feedbackEl.textContent = `¡"${descuentoAplicado.nombre}" aplicado!`;
-            feedbackEl.className = 'text-xs mt-1 h-4 text-green-400';
-        } else {
-            descuentoAplicado = null;
-            feedbackEl.textContent = 'Código no válido o no aplicable.';
-            feedbackEl.className = 'text-xs mt-1 h-4 text-red-400';
-        }
-        await actualizarResumenConDescuento();
+        modalContent.querySelector('#feedback-descuento-alquiler').textContent = 'Buscando...';
+        // Simplemente llamamos a la función central con el código
+        await recalcularYActualizarTotalAlquiler(codigo || null);
     };
     
     // Listeners para recalcular el precio al cambiar la duración o los huéspedes
     formEl.querySelectorAll('#select-noches, #select-horas, #cantidad_huespedes').forEach(el => {
-        el.addEventListener('change', actualizarResumenConDescuento);
+        el.addEventListener('change', () => recalcularYActualizarTotalAlquiler());
     });
-    actualizarResumenConDescuento(); // Llamada inicial para calcular con valores por defecto
+    
+    // Llamada inicial para calcular con valores por defecto y buscar descuentos automáticos
+    recalcularYActualizarTotalAlquiler(); 
 
-    // Listener para el envío del formulario
+    // Listener para el envío del formulario (sin cambios, ya era correcto)
     formEl.onsubmit = async (e) => {
-        // ... (Tu lógica de onsubmit se mantiene igual, es correcta)
         e.preventDefault();
         const submitBtn = formEl.querySelector('#btn-alquilar-hab');
         submitBtn.disabled = true;
@@ -2917,7 +2934,6 @@ selectHorasEl.addEventListener('change', () => {
         }
     };
 }
-
 /**
  * Muestra un modal para dividir el pago en varios métodos.
  * @param {number} totalAPagar - El monto total que se debe cubrir.
@@ -3036,19 +3052,11 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
         }
     };
 }
-// =========================================================================================
-// AÑADE ESTA NUEVA FUNCIÓN COMPLETA JUSTO DEBAJO DE showAlquilarModal
-// =========================================================================================
 
-// REEMPLAZA ESTA FUNCIÓN COMPLETA
-// PEGA ESTA FUNCIÓN COMPLETA EN mapa-habitaciones.js
 
-/**
- * Orquesta el proceso completo de guardar un nuevo alquiler/reserva desde el mapa.
- * Crea el cliente si es nuevo, registra la reserva, el cronómetro, los pagos en caja
- * e incrementa el uso del descuento si se aplicó uno.
- * @param {object} params - Objeto con toda la información necesaria.
- */
+
+
+
 async function registrarReservaYMovimientosCaja({
     formData,
     detallesEstancia,
@@ -3062,7 +3070,6 @@ async function registrarReservaYMovimientosCaja({
     // 1. OBTENER Y CREAR CLIENTE (SI ES NECESARIO)
     let clienteIdFinal = formData.cliente_id;
     if (!clienteIdFinal) {
-        // Si no se seleccionó un cliente existente, se crea uno nuevo.
         const { data: nuevoCliente, error: errCliente } = await supabase
             .from('clientes')
             .insert({
@@ -3093,7 +3100,7 @@ async function registrarReservaYMovimientosCaja({
         cantidad_huespedes: parseInt(formData.cantidad_huespedes),
         monto_total: detallesEstancia.precioTotal,
         monto_pagado: totalPagado,
-        estado: 'ocupada', // El alquiler desde el mapa siempre inicia como 'ocupada'
+        estado: 'ocupada',
         tipo_duracion: detallesEstancia.tipoCalculo,
         cantidad_duracion: detallesEstancia.cantidadCalculo,
         usuario_id: currentUser.id,
@@ -3105,22 +3112,13 @@ async function registrarReservaYMovimientosCaja({
 
     if (errReserva) throw new Error('Error al crear la reserva: ' + errReserva.message);
 
+    // ======================= INICIO DE LA CORRECCIÓN =======================
     // 3. INCREMENTAR USO DEL DESCUENTO (SI APLICA)
     if (nuevaReserva.descuento_aplicado_id) {
-        const idDelDescuentoQueSeAplico = nuevaReserva.descuento_aplicado_id;
-    
-        const { error: rpcError } = await supabase
-          .rpc('incrementar_uso_descuento', {
-            // El nombre del parámetro ('id_descuento_usado') debe coincidir
-            // con el que definiste en la función SQL de Supabase.
-            id_descuento_usado: idDelDescuentoQueSeAplico
-          });
-    
-        if (rpcError) {
-          // No detenemos el flujo, pero es importante registrar el error para futura depuración.
-          console.error('ADVERTENCIA: No se pudo incrementar el contador de uso del descuento.', rpcError);
-        }
+        // Aquí usamos la función importada desde uiUtils.js, que es la correcta y estandarizada.
+        await registrarUsoDescuento(supabase, nuevaReserva.descuento_aplicado_id);
     }
+    // ======================== FIN DE LA CORRECCIÓN =========================
 
     // 4. ACTUALIZAR ESTADO DE LA HABITACIÓN
     await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
@@ -3153,7 +3151,6 @@ async function registrarReservaYMovimientosCaja({
 
     const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
     if (errCaja) {
-        // A pesar del error en caja, la reserva ya se creó. Se notifica al usuario.
         throw new Error(`¡Reserva creada, pero hubo un error al registrar el pago en caja! ${errCaja.message}. Por favor, revise la caja manualmente.`);
     }
 

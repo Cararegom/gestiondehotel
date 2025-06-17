@@ -7,7 +7,8 @@ import {
     setFormLoadingState,
     formatCurrency,
     formatDateTime,
-    formatMinutesToHoursMinutes
+    formatMinutesToHoursMinutes,
+    registrarUsoDescuento 
 } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
@@ -778,7 +779,7 @@ async function cargarTiemposEstancia() {
  * @returns {Promise<object|null>} El objeto del descuento si es aplicable, o null.
  */
 async function buscarDescuentoParaReserva(formData, codigoManual = null) {
-    if (!formData.habitacion_id && !codigoManual) return null;
+    if (!formData.habitacion_id && !codigoManual && !formData.cliente_id) return null;
 
     const ahora = new Date().toISOString();
     let query = state.supabase.from('descuentos').select('*')
@@ -791,6 +792,10 @@ async function buscarDescuentoParaReserva(formData, codigoManual = null) {
     if (codigoManual) {
         orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`);
     }
+    // --- NUEVO: si hay cliente, agrega condición para cliente específico
+    if (formData.cliente_id) {
+        orConditions.push(`cliente_id.eq.${formData.cliente_id}`);
+    }
     query = query.or(orConditions.join(','));
 
     const { data: descuentosPotenciales, error } = await query;
@@ -801,18 +806,23 @@ async function buscarDescuentoParaReserva(formData, codigoManual = null) {
 
     const descuentosValidos = descuentosPotenciales.filter(d => (d.usos_maximos || 0) === 0 || (d.usos_actuales || 0) < d.usos_maximos);
 
-    // Itera para encontrar el primer descuento válido para la reserva
+    // Prioridad: por cliente > por código > automáticos
+    // 1. Por cliente_id
+    if (formData.cliente_id) {
+        const descuentoCliente = descuentosValidos.find(d => d.cliente_id === formData.cliente_id);
+        if (descuentoCliente) return descuentoCliente;
+    }
+    // 2. Por código
+    if (codigoManual) {
+        const descuentoCodigo = descuentosValidos.find(d => d.codigo && d.codigo.toUpperCase() === codigoManual.toUpperCase());
+        if (descuentoCodigo) return descuentoCodigo;
+    }
+    // 3. Automático/habitaciones específicas
     for (const descuento of descuentosValidos) {
         const aplicabilidad = descuento.aplicabilidad;
-        // Si el descuento es para 'reserva_total', es válido inmediatamente.
-        if (aplicabilidad === 'reserva_total') {
+        if (aplicabilidad === 'reserva_total') return descuento;
+        if (aplicabilidad === 'habitaciones_especificas' && formData.habitacion_id && descuento.habitaciones_aplicables?.includes(formData.habitacion_id)) {
             return descuento;
-        }
-        // Si es para habitaciones específicas, verifica si la habitación actual está en la lista.
-        if (aplicabilidad === 'habitaciones_especificas' && formData.habitacion_id) {
-            if (descuento.habitaciones_aplicables?.includes(formData.habitacion_id)) {
-                return descuento;
-            }
         }
     }
     return null; // No se encontró ningún descuento aplicable
@@ -937,14 +947,14 @@ async function createBooking(payload) {
     // --- INICIO DE LA LÓGICA AÑADIDA ---
     // Si la reserva se creó con un descuento, llamamos a la función de la BD para incrementar su uso.
     if (reservaInsertada.descuento_aplicado_id) {
-        const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
-            p_descuento_id: reservaInsertada.descuento_aplicado_id
-        });
-        if (rpcError) {
-            // No detenemos el flujo, pero sí registramos el error para futura depuración.
-            console.error("Advertencia: No se pudo incrementar el uso del descuento.", rpcError);
-        }
+    const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
+        descuento_id_param: reservaInsertada.descuento_aplicado_id
+    });
+    if (rpcError) {
+        console.error("Advertencia: No se pudo incrementar el uso del descuento.", rpcError);
     }
+}
+
     // --- FIN DE LA LÓGICA AÑADIDA ---
 
     const nuevaReservaId = reservaInsertada.id;
@@ -1041,12 +1051,14 @@ async function updateBooking(payload) {
         // NOTA: Esta lógica asume que el descuento no se puede cambiar una vez aplicado,
         // solo se puede añadir. Si se pudiera cambiar, necesitaríamos una lógica más compleja
         // para decrementar el uso del descuento anterior.
-        const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
-            p_descuento_id: updatedReserva.descuento_aplicado_id
-        });
-        if (rpcError) {
-            console.error("Advertencia: No se pudo incrementar el uso del descuento al actualizar la reserva.", rpcError);
-        }
+       if (updatedReserva.descuento_aplicado_id) {
+    const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
+        descuento_id_param: updatedReserva.descuento_aplicado_id
+    });
+    if (rpcError) {
+        console.error("Advertencia: No se pudo incrementar el uso del descuento al actualizar la reserva.", rpcError);
+    }
+       }
     }
     // --- FIN DE LA LÓGICA AÑADIDA ---
 
@@ -1868,6 +1880,7 @@ export async function mount(container, supabaseClient, user, hotelId) {
         container.innerHTML = `<p class="error-box">ID del hotel no disponible. Módulo de reservas no puede operar.</p>`;
         return;
     }
+    await turnoService.getTurnoAbierto(supabaseClient, user.id, hotelId);
 
     console.log("[Reservas Mount] Iniciando montaje...");
 
@@ -1946,7 +1959,7 @@ container.innerHTML = `
                     </div>
                     <div>
                         <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes*</label>
-                        <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="1" class="form-control" required />
+                        <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="2" class="form-control" required />
                     </div>
                 </div>
             </fieldset>
@@ -2047,17 +2060,20 @@ container.innerHTML = `
         }
     };
     
-    if(ui.btnBuscarCliente) {
-        ui.btnBuscarCliente.onclick = () => {
-            showClienteSelectorModal(state.supabase, state.hotelId, {
-                onSelect: (cliente) => {
-                    updateClienteFields(cliente);
-                    clearFeedback(ui.feedbackDiv);
-                }
-            });
-        };
-    }
-    
+    if (ui.btnBuscarCliente) {
+    ui.btnBuscarCliente.onclick = () => {
+        showClienteSelectorModal(state.supabase, state.hotelId, {
+            onSelect: async (cliente) => {
+                updateClienteFields(cliente);
+                clearFeedback(ui.feedbackDiv);
+                // 👉 Aquí llamas a recalcular con el nuevo cliente seleccionado
+                await recalcularYActualizarTotalUI();
+            }
+        });
+    };
+}
+
+
     const btnCrearCliente = container.querySelector('#btn_crear_cliente');
     if (btnCrearCliente) {
         btnCrearCliente.onclick = () => {

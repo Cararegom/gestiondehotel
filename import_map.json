@@ -1,0 +1,5 @@
+{
+  "imports": {
+    "resend": "https://esm.sh/jsr/@resend/deno@2.1.0"
+  }
+}

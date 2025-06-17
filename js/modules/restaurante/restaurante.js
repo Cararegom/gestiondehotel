@@ -3,6 +3,7 @@ import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { turnoService } from '../../services/turnoService.js';
 import * as inventarioModule from './inventario.js';
 import { getIngredientesList } from './inventario.js';
+import { formatCurrency, showError, registrarUsoDescuento } from '../../uiUtils.js';
 
 // --- Module-Scoped Variables ---
 let moduleRootListeners = [];
@@ -1191,15 +1192,15 @@ const finalizarVentaHandler = async (e) => {
  * Procesa y guarda una venta, sus items y los pagos correspondientes en la base de datos.
  * Acepta los montos pre-calculados para asegurar consistencia.
  */
+// En restaurante.js
+
 async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombreClienteTemporal, configuracionImpuestos, montoDescontado, montoImpuesto }) {
     const formFinalizarVentaEl = document.getElementById('form-finalizar-venta-restaurante');
     const btnFinalizarVentaEl = document.getElementById('btn-finalizar-venta-restaurante');
     const posFeedbackEl = document.getElementById('posVentaFeedback');
     const posPedidoItemsBodyEl = document.getElementById('pos-pedido-items-body');
 
-    // El estado de "cargando" ya se activó en el handler, aquí solo continuamos.
     try {
-        // 1. Insertar la venta principal con los datos de impuestos
         const { data: ventaData, error: ventaError } = await currentSupabaseInstance
             .from('ventas_restaurante')
             .insert({
@@ -1207,7 +1208,7 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
                 usuario_id: currentModuleUser.id,
                 monto_total: montoTotalVenta,
                 nombre_cliente_temporal: nombreClienteTemporal,
-                descuento_aplicado_id: descuentoAplicadoRestaurante?.id || null,
+                descuento_aplicado_id: descuentoAplicadoRestaurante?.id || null, // <- Ya guarda el ID del descuento
                 monto_descontado: montoDescontado,
                 estado_pago: 'pagado',
                 monto_impuestos: montoImpuesto,
@@ -1216,37 +1217,56 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
             })
             .select()
             .single();
-
         if (ventaError) throw new Error(`Error al registrar la venta: ${ventaError.message}`);
         const ventaId = ventaData.id;
 
-        // 2. Insertar los items de la venta
         const itemsParaInsertar = ventaItems.map(item => ({
-            venta_id: ventaId, plato_id: item.plato_id, cantidad: item.cantidad,
-            precio_unitario_venta: item.precio_unitario, subtotal: item.cantidad * item.precio_unitario
+            venta_id: ventaId,
+            plato_id: item.plato_id,
+            cantidad: item.cantidad,
+            precio_unitario_venta: item.precio_unitario,
+            subtotal: item.cantidad * item.precio_unitario
         }));
         const { error: itemsError } = await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
-        if (itemsError) throw new Error(`Error al registrar los items: ${itemsError.message}`);
-
-        // 3. Insertar los movimientos en caja por cada pago
+        if (itemsError) throw new Error(`Error al registrar los items de la venta: ${itemsError.message}`);
+        
         const turnoActual = await turnoService.getTurnoAbierto(currentSupabaseInstance, currentModuleUser.id, currentHotelId);
-        if (!turnoActual) throw new Error("No hay un turno abierto. Por favor, abre un turno para registrar ventas.");
+        if (!turnoActual) throw new Error("No hay un turno abierto. Por favor, abre un turno para poder registrar ventas.");
         
         let conceptoDetallado = "Venta: " + ventaItems.map(item => `${item.cantidad}x ${item.nombre_plato}`).join(', ');
         if (conceptoDetallado.length > 100) conceptoDetallado = conceptoDetallado.substring(0, 97) + '...';
 
         const cajaInserts = pagos.map(pago => ({
-            hotel_id: currentHotelId, usuario_id: currentModuleUser.id, turno_id: turnoActual.id, tipo: 'ingreso',
-            monto: pago.monto, metodo_pago_id: pago.metodo_pago_id, concepto: conceptoDetallado, venta_restaurante_id: ventaId
+            hotel_id: currentHotelId,
+            usuario_id: currentModuleUser.id,
+            turno_id: turnoActual.id,
+            tipo: 'ingreso',
+            monto: pago.monto,
+            metodo_pago_id: pago.metodo_pago_id,
+            concepto: conceptoDetallado,
+            venta_restaurante_id: ventaId
         }));
         const { error: cajaError } = await currentSupabaseInstance.from('caja').insert(cajaInserts);
-        if (cajaError) throw new Error(`Error al registrar en caja: ${cajaError.message}`);
+        if (cajaError) throw new Error(`Error al registrar el pago en caja: ${cajaError.message}`);
 
-        // 4. Registrar en bitácora y resetear UI
+        // ======================= INICIO DE LA CORRECCIÓN =======================
+        // Si se aplicó un descuento, ahora incrementamos su contador de uso
+        if (descuentoAplicadoRestaurante && descuentoAplicadoRestaurante.id) {
+            const { error: rpcError } = await currentSupabaseInstance.rpc('incrementar_uso_descuento', {
+                descuento_id_param: descuentoAplicadoRestaurante.id
+            });
+            if (rpcError) {
+                // No detenemos el flujo, pero registramos la advertencia
+                console.warn("Advertencia: La venta se registró, pero no se pudo actualizar el contador del descuento.", rpcError);
+            }
+        }
+        // ======================== FIN DE LA CORRECCIÓN =========================
+
         await registrarEnBitacora(currentSupabaseInstance, currentHotelId, currentModuleUser.id, 'Restaurante', 'Nueva Venta', { ventaId, monto: montoTotalVenta });
         
         showRestauranteFeedback(posFeedbackEl, `✅ ¡Venta #${ventaId.substring(0, 8)} registrada con éxito!`, 'success-indicator');
-        ventaItems = []; descuentoAplicadoRestaurante = null;
+        ventaItems = [];
+        descuentoAplicadoRestaurante = null;
         await renderVentaItemsUI(posPedidoItemsBodyEl, configuracionImpuestos);
         formFinalizarVentaEl.reset();
         document.getElementById('feedback-descuento-restaurante').textContent = '';
@@ -1254,14 +1274,9 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     } catch (error) {
         console.error("Error completo al finalizar venta:", error);
         showRestauranteFeedback(posFeedbackEl, `Error: ${error.message}`, 'error-indicator', 0);
-    } finally {
-        // El estado de carga se resetea en el handler principal
-    }
-
-    
-}
-}    
-    
+    } 
+}   
+} 
 
 
 async function renderHistorialVentasTab(tabContentEl, supabaseInstance, hotelId) {
@@ -1674,7 +1689,9 @@ export async function mount(container, sbInstance, user) {
             console.error("Restaurante Module: Error fetching hotel_id from profile:", err);
         }
     }
-    
+    if (currentModuleUser?.id && currentHotelId) {
+        await turnoService.getTurnoAbierto(currentSupabaseInstance, currentModuleUser.id, currentHotelId);
+    }
     container.innerHTML = `
       <div class="card restaurante-module shadow-lg rounded-lg bg-gray-50">
         <div class="card-header bg-white p-3 md:p-4 border-b rounded-t-lg">

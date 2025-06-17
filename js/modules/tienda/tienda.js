@@ -15,7 +15,7 @@ let proveedoresCache = [];
 let productosCache = [];
 
 import { turnoService } from '../../services/turnoService.js';
-import { showError, showSuccess } from '../../uiUtils.js';
+import { showError, registrarUsoDescuento } from '../../uiUtils.js';
 import { fetchTurnoActivo } from '../../services/turnoService.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
 
@@ -41,7 +41,9 @@ export async function mount(container, supabase, user, hotelId) {
   currentSupabase = supabase;
   currentUser = user;
   currentHotelId = hotelId || user?.user_metadata?.hotel_id;
-
+if (currentUser && currentUser.id && currentHotelId) {
+    await turnoService.getTurnoAbierto(currentSupabase, currentUser.id, currentHotelId);
+  }
   renderTiendaTabs('POS'); // Muestra pestaña inicial POS
 
   // Evento para navegación de tabs
@@ -686,6 +688,8 @@ async function mostrarModalPagoMixto(total, callback) {
   };
 }
 
+// En tu archivo tienda.js
+
 async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo, total }) {
     const msgPOSEl = document.getElementById('msgPOS');
     
@@ -696,19 +700,20 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
 
     if (descuentoAplicado) {
         const baseDescuento = getDiscountableBase(descuentoAplicado, posCarrito);
-        if (descuentoAplicado.tipo === 'porcentaje') {
-            montoDescuento = baseDescuento * (descuentoAplicado.valor / 100);
-        } else {
-            montoDescuento = descuentoAplicado.valor;
+        if (baseDescuento > 0) {
+            if (descuentoAplicado.tipo === 'porcentaje') {
+                montoDescuento = baseDescuento * (descuentoAplicado.valor / 100);
+            } else {
+                montoDescuento = descuentoAplicado.valor;
+            }
+            montoDescuento = Math.min(montoDescuento, baseDescuento);
+            totalVentaFinal = subtotalVenta - montoDescuento;
         }
-        montoDescuento = Math.min(montoDescuento, baseDescuento);
-        totalVentaFinal = subtotalVenta - montoDescuento;
     }
     // --- Fin del cálculo ---
 
     let reservaId = null;
     if (habitacion_id) {
-        // Tu lógica para obtener reservaId no cambia...
         const { data: reservasActivas } = await currentSupabase
             .from('reservas')
             .select('id')
@@ -726,13 +731,13 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
         usuario_id: currentUser.id,
         habitacion_id: habitacion_id,
         reserva_id: reservaId,
-        total_venta: totalVentaFinal, // <-- ¡Importante! Usamos el total con descuento
+        total_venta: totalVentaFinal,
         fecha: new Date().toISOString(),
         creado_en: new Date().toISOString(),
         cliente_temporal,
         metodo_pago_id: modo === 'inmediato' && pagos.length === 1 ? pagos[0].metodo_pago_id : null,
-        descuento_id: descuentoAplicado ? descuentoAplicado.id : null, // <-- NUEVO
-        monto_descuento: montoDescuento > 0 ? montoDescuento : null   // <-- NUEVO
+        descuento_id: descuentoAplicado ? descuentoAplicado.id : null,
+        monto_descuento: montoDescuento > 0 ? montoDescuento : null
     };
     
     let { data: ventas, error } = await currentSupabase.from('ventas_tienda').insert([ventaPayload]).select();
@@ -740,17 +745,21 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
     
     let ventaId = ventas[0].id;
 
-    // Incrementar el uso del descuento si se aplicó
+    // ======================= INICIO DE LA CORRECCIÓN =======================
+    // Incrementar el uso del descuento si se aplicó, llamando a la función correcta.
     if (descuentoAplicado && montoDescuento > 0) {
-        const { error: updateError } = await currentSupabase.rpc('increment', {
-            table_name: 'descuentos',
-            column_name: 'usos_actuales',
-            row_id: descuentoAplicado.id
+        // ANTES (Incorrecto): await currentSupabase.rpc('increment', ...
+        // AHORA (Correcto):
+        const { error: rpcError } = await currentSupabase.rpc('incrementar_uso_descuento', {
+            descuento_id_param: descuentoAplicado.id
         });
-        if (updateError) console.error("Error al actualizar usos del descuento:", updateError);
+        if (rpcError) {
+             console.error("ADVERTENCIA: No se pudo incrementar el uso del descuento en la tienda.", rpcError);
+        }
     }
+    // ======================== FIN DE LA CORRECCIÓN =========================
 
-    // El resto de la función (guardar detalle_ventas, actualizar stock, etc.) no cambia...
+    // El resto de la función para guardar los detalles, el stock y el movimiento en caja no cambia.
     for (let item of posCarrito) {
         await currentSupabase.from('detalle_ventas_tienda').insert([{
             venta_id: ventaId,
@@ -765,15 +774,14 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
             table_name: 'productos_tienda',
             column_name: 'stock_actual',
             row_id: item.id,
-            amount: -item.cantidad // Restamos el stock
+            amount: -item.cantidad
         });
     }
 
-    // Lógica de caja no cambia...
     const turnoId = turnoService.getActiveTurnId();
     if (modo === 'inmediato') {
         if (!turnoId) {
-            if (msgPOSEl) showError(msgPOSEl, "No hay un turno de caja activo.");
+            showError(msgPOSEl, "No hay un turno de caja activo.");
             return;
         }
         const nombresProductos = posCarrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
@@ -782,7 +790,7 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
                 hotel_id: currentHotelId,
                 tipo: 'ingreso',
                 monto: Number(p.monto),
-                concepto: `Venta: ${nombresProductos}`,
+                concepto: `Venta Tienda: ${nombresProductos}`,
                 fecha_movimiento: new Date().toISOString(),
                 metodo_pago_id: p.metodo_pago_id,
                 usuario_id: currentUser.id,
@@ -796,16 +804,14 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
         msgPOSEl.textContent = "Consumo cargado a la cuenta de la habitación.";
     }
 
-    // --- Limpieza final ---
     posCarrito = [];
-    descuentoAplicado = null; // <-- Limpiamos el descuento aplicado
-    document.getElementById('codigoDescuentoInput').value = ''; // Limpiamos el input
+    descuentoAplicado = null;
+    document.getElementById('codigoDescuentoInput').value = '';
     renderCarritoPOS();
     await cargarDatosPOS();
     renderProductosPOS();
     setTimeout(() => { msgPOSEl.textContent = ""; }, 2500);
-}
-// ====================  PESTAÑA INVENTARIO  ====================
+}// ====================  PESTAÑA INVENTARIO  ====================
 let inventarioProductos = [];
 // Reemplaza esta función completa en tu archivo
 

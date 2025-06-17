@@ -240,6 +240,24 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
                 Cuando te enamores de la plataforma (¡lo harás!), estos son nuestros planes transparentes y llenos de valor. <br>
                 <strong>¡Ahorra ~17% (equivalente a 2 meses GRATIS) con el pago anual!</strong>
             </p>
+            <div class="d-flex justify-content-center align-items-center mb-4 gap-3 flex-wrap">
+    <div class="d-flex align-items-center gap-2">
+        <label for="monedaLandingSelector" class="fw-semibold">Moneda:</label>
+        <select id="monedaLandingSelector" class="form-select form-select-sm w-auto">
+            <option value="COP">COP</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+        </select>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+        <label for="periodoLandingSelector" class="fw-semibold">Pago:</label>
+        <select id="periodoLandingSelector" class="form-select form-select-sm w-auto">
+            <option value="mensual">Mensual</option>
+            <option value="anual">Anual (-2 meses gratis)</option>
+        </select>
+    </div>
+</div>
+
 
             <div class="table-responsive shadow-lg rounded-3">
                 <table class="table table-bordered align-middle text-center bg-white mb-0" style="min-width: 980px;">
@@ -249,24 +267,27 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
                                 <h3 class="fs-5 fw-semibold mb-0">Funcionalidades Clave</h3>
                             </th>
                             <th scope="col" class="p-3">
-                                <h4 class="fs-4 fw-bold text-primary mb-1">Lite</h4>
-                                <p class="h3 fw-semibold mb-0" style="color: #007bff;">$99.000</p>
-                                <p class="text-muted small mb-1">COP/mes</p>
-                                <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;">Anual: $990.000 (Ahorra $198.000)</p>
-                            </th>
-                            <th scope="col" class="p-3 border-primary border-3 border-bottom-0 border-top-0 position-relative">
-                                <span class="badge bg-warning text-dark position-absolute top-0 start-50 translate-middle-x py-1 px-2" style="font-size: 0.75rem; margin-top:-0.5rem !important;">RECOMENDADO</span>
-                                <h4 class="fs-4 fw-bold text-primary mb-1">Pro</h4>
-                                <p class="h3 fw-semibold mb-0" style="color: #ff9800;">$149.000</p>
-                                <p class="text-muted small mb-1">COP/mes</p>
-                                <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;">Anual: $1.490.000 (Ahorra $298.000)</p>
-                            </th>
-                            <th scope="col" class="p-3">
-                                <h4 class="fs-4 fw-bold text-primary mb-1">Max</h4>
-                                <p class="h3 fw-semibold mb-0" style="color: #4caf50;">$199.000</p>
-                                <p class="text-muted small mb-1">COP/mes</p>
-                                <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;">Anual: $1.990.000 (Ahorra $398.000)</p>
-                            </th>
+      <h4 class="fs-4 fw-bold text-primary mb-1">Lite</h4>
+      <p class="h3 fw-semibold mb-0" style="color: #007bff;"><span id="precio-lite"></span></p>
+      <p class="text-muted small mb-1" id="unidad-lite"></p>
+      <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;" id="anual-lite"></p>
+    </th>
+    <th scope="col" class="p-3">
+      <h4 class="fs-4 fw-bold text-success mb-1">Pro</h4>
+      <p class="h3 fw-semibold mb-0" style="color: #28a745;"><span id="precio-pro"></span></p>
+      <p class="text-muted small mb-1" id="unidad-pro"></p>
+      <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;" id="anual-pro"></p>
+    </th>
+    <th scope="col" class="p-3 position-relative">
+      <!-- Listón recomendado -->
+      <div class="position-absolute top-0 start-50 translate-middle-x" style="z-index:2;">
+        <span class="badge bg-warning text-dark px-3 py-2" style="font-size:0.75rem; box-shadow:0 2px 6px #0002;">Recomendado</span>
+      </div>
+      <h4 class="fs-4 fw-bold text-warning mb-1 pt-3">Max</h4>
+      <p class="h3 fw-semibold mb-0" style="color: #ffc107;"><span id="precio-max"></span></p>
+      <p class="text-muted small mb-1" id="unidad-max"></p>
+      <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;" id="anual-max"></p>
+    </th>
                         </tr>
                     </thead>
                     <tbody>
@@ -343,12 +364,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
                             <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
                             <td><i class="bi bi-check-lg text-success fs-4"></i></td>
                         </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Configuración avanzada del hotel</td>
-                            <td><i class="bi bi-check-circle text-muted"></i> <span class="small">(Básica)</span></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i> <span class="small">(Completa)</span></td>
-                        </tr>
+                  
                         <tr>
                             <td class="text-start px-4 py-3">Reportes y estadísticas</td>
                              <td><i class="bi bi-check-circle text-muted"></i> <span class="small">(Básicos)</span></td>
@@ -377,12 +393,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
                             <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
                             <td><i class="bi bi-check-lg text-success fs-4"></i></td>
                         </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Automatización WhatsApp</td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
+                        
                          <tr>
                             <td class="text-start px-4 py-3">Backups automáticos en la nube</td>
                             <td><i class="bi bi-check-lg text-success fs-4"></i></td>

@@ -192,3 +192,52 @@ setTimeout(() => {
         });
     }
 });
+// --- PRECIOS FIJOS ---
+// Si quieres puedes extraer esto a un archivo config
+const PLANES_LANDING = [
+    { id: 'lite', nombre: 'Lite', cop: 99000, usd: 30, eur: 30 },
+    { id: 'pro',  nombre: 'Pro',  cop: 149000, usd: 45, eur: 45 },
+    { id: 'max',  nombre: 'Max',  cop: 199000, usd: 60, eur: 60 }
+];
+
+function formatMonedaLanding(valor, moneda) {
+    if (moneda === 'USD') {
+        return '$' + valor.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+    if (moneda === 'EUR') {
+        return '€' + valor.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+    // COP
+    return '$' + valor.toLocaleString('es-CO', { maximumFractionDigits: 0 });
+}
+
+function actualizarPreciosLanding() {
+    const moneda = document.getElementById('monedaLandingSelector')?.value || 'COP';
+    const periodo = document.getElementById('periodoLandingSelector')?.value || 'mensual';
+    PLANES_LANDING.forEach(plan => {
+        // Obtiene el precio según la moneda seleccionada
+        let precio = plan[moneda.toLowerCase()];
+        let labelUnidad = (moneda === 'USD' ? 'USD' : (moneda === 'EUR' ? 'EUR' : 'COP')) + '/' + (periodo === 'anual' ? 'año' : 'mes');
+        let precioAnual = plan[moneda.toLowerCase()] * 10;
+        let badgeAhorro = `Anual: ${formatMonedaLanding(precioAnual, moneda)} (Ahorra ${formatMonedaLanding(precio*2, moneda)})`;
+
+        // Si es anual, multiplicar precio * 10 (2 meses gratis)
+        let mostrarPrecio = periodo === 'anual' ? precio * 10 : precio;
+        let unidad = (moneda === 'USD' ? 'USD' : (moneda === 'EUR' ? 'EUR' : 'COP')) + '/' + (periodo === 'anual' ? 'año' : 'mes');
+        
+        document.getElementById('precio-' + plan.id).textContent = formatMonedaLanding(mostrarPrecio, moneda);
+        document.getElementById('unidad-' + plan.id).textContent = unidad;
+        document.getElementById('anual-' + plan.id).textContent = badgeAhorro;
+
+        // Opcional: Cambia texto del botón para mostrar precio seleccionado
+        const btn = document.getElementById('btn-' + plan.id);
+        if(btn) btn.innerHTML = `Suscribirme a ${plan.nombre} <span class="fw-bold">(${formatMonedaLanding(mostrarPrecio, moneda)})</span>`;
+    });
+}
+
+// Listeners para cambiar moneda y periodo
+document.getElementById('monedaLandingSelector')?.addEventListener('change', actualizarPreciosLanding);
+document.getElementById('periodoLandingSelector')?.addEventListener('change', actualizarPreciosLanding);
+
+// Al cargar la página
+document.addEventListener('DOMContentLoaded', actualizarPreciosLanding);

@@ -11,6 +11,33 @@ let hotelConfigGlobal = null;
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { formatCurrency, formatDateTime } from '../../uiUtils.js'; // Assuming these are available globally or adjust path
 
+const REPORTES_POR_PLAN = {
+  lite: [
+    'listado_reservas',
+    'ocupacion',
+    'ingresos_por_habitaciones_periodo'
+  ],
+  pro: [
+    'listado_reservas',
+    'ocupacion',
+    'ingresos_por_habitaciones_periodo',
+    'movimientos_financieros_global',
+    'detalle_ingresos_categoria',
+    'detalle_egresos_categoria',
+    'cierres_de_caja'
+  ],
+  max: [
+    'listado_reservas',
+    'ocupacion',
+    'ingresos_por_habitaciones_periodo',
+    'movimientos_financieros_global',
+    'detalle_ingresos_categoria',
+    'detalle_egresos_categoria',
+    'cierres_de_caja',
+    'kpis_avanzados'
+  ]
+};
+
 // --- Utilities ---
 // Use existing formatCurrency and formatDateTime from uiUtils if they match this signature
 // If not, you can keep these local versions or adapt uiUtils.
@@ -60,7 +87,32 @@ function showReportesLoading(loadingEl, generateButtonEl, show, message = 'Gener
     generateButtonEl.classList.toggle('opacity-50', show);
     generateButtonEl.classList.toggle('cursor-not-allowed', show);
   }
+ 
 }
+function renderSelectorReportes(planActivo) {
+  // Lista de todos los reportes (puedes agregar/quitar)
+  const TODOS_LOS_REPORTES = [
+    { key: 'listado_reservas', label: 'Listado de Reservas' },
+    { key: 'ocupacion', label: 'Porcentaje de Ocupación' },
+    { key: 'ingresos_por_habitaciones_periodo', label: 'Ingresos por Habitaciones (Caja)' },
+    { key: 'movimientos_financieros_global', label: 'Resumen Financiero Global' },
+    { key: 'detalle_ingresos_categoria', label: 'Detalle de Ingresos por Categoría' },
+    { key: 'detalle_egresos_categoria', label: 'Detalle de Egresos por Categoría' },
+    { key: 'cierres_de_caja', label: 'Historial de Cierres de Caja' },
+    { key: 'kpis_avanzados', label: 'KPIs y Gráficos Avanzados' }
+  ];
+  // Reportes permitidos por plan
+  const tiposDisponibles = REPORTES_POR_PLAN[planActivo] || REPORTES_POR_PLAN['lite'];
+  const select = document.getElementById('reporte-tipo-select');
+  select.innerHTML = '<option value="">-- Elija un reporte --</option>';
+  TODOS_LOS_REPORTES.forEach(r => {
+    const permitido = tiposDisponibles.includes(r.key);
+    select.innerHTML += `<option value="${r.key}" ${!permitido ? 'data-bloqueado="1"' : ''}>
+  ${permitido ? '' : '🔒'} ${r.label}${!permitido ? ' (PRO/MAX)' : ''}
+</option>`;
+  });
+}
+
 
 // --- Report Generation Functions ---
 function destroyChartInstance(chartId) {
@@ -1106,6 +1158,54 @@ async function imprimirDetalleCierreCaja(turnoData, movimientos, ingresosPorMeto
         alert("No se pudo abrir la ventana de impresión. Revise la configuración de bloqueo de ventanas emergentes de su navegador.");
     }
 }
+
+
+function mostrarModalUpgrade(tipoReporte) {
+  const reportesLabels = {
+    'movimientos_financieros_global': 'Resumen Financiero Global',
+    'detalle_ingresos_categoria': 'Detalle de Ingresos por Categoría',
+    'detalle_egresos_categoria': 'Detalle de Egresos por Categoría',
+    'cierres_de_caja': 'Historial de Cierres de Caja',
+    'kpis_avanzados': 'KPIs y Gráficos Avanzados',
+    // Puedes agregar más si quieres
+  };
+  Swal.fire({
+    icon: 'info',
+    title: '¡Disponible solo en planes superiores!',
+    html: `
+      <div style="text-align:left;">
+        <b>El reporte <span style="color:#4f46e5;">${reportesLabels[tipoReporte] || tipoReporte}</span> es exclusivo de los planes <span style="color:#059669;">PRO</span> y <span style="color:#b45309;">MAX</span>.</b>
+        <ul style="font-size:1em;margin:14px 0 6px 0;">
+          <li style="margin-bottom:3px;">✅ Más métricas y KPIs clave</li>
+          <li style="margin-bottom:3px;">✅ Comparativas avanzadas y exportaciones</li>
+          <li style="margin-bottom:3px;">✅ ¡Desbloquea el verdadero potencial de tu hotel!</li>
+        </ul>
+        <div class="d-flex justify-content-center mt-4">
+         <button id="btn-mejorar-plan" class="btn btn-success btn-lg px-5 py-2 mt-3">
+  <i class="bi bi-stars me-2"></i> ¡Mejorar mi plan!
+</button>
+
+        </div>
+      </div>
+    `,
+    showConfirmButton: true,
+    confirmButtonText: 'Cerrar'
+  });
+
+  // Activa navegación interna al módulo Mi cuenta
+  setTimeout(() => {
+    const btn = document.getElementById('btn-mejorar-plan');
+    if (btn) {
+      btn.onclick = () => {
+        // Navega al módulo Mi Cuenta con router interno
+        window.location.hash = '#/micuenta';
+        Swal.close();
+      };
+    }
+  }, 50);
+}
+
+
 // --- Mount / Unmount ---
 export async function mount(container, sbInstance, user) {
   unmount(container); 
@@ -1178,7 +1278,21 @@ export async function mount(container, sbInstance, user) {
     [tipoSelectEl, fechaInicioEl, fechaFinEl, agrupacionPeriodoEl].forEach(el => { if(el) el.disabled = true; });
     return;
   }
+  const planActivo = (user?.user_metadata?.plan || 'lite').toLowerCase();
 
+  renderSelectorReportes(planActivo);
+  
+   tipoSelectEl.addEventListener('change', function() {
+  const reporteSeleccionado = this.value;
+  const tiposDisponibles = REPORTES_POR_PLAN[planActivo] || REPORTES_POR_PLAN['lite'];
+  // Si selecciona uno bloqueado...
+  if (!tiposDisponibles.includes(reporteSeleccionado) && reporteSeleccionado !== "") {
+    mostrarModalUpgrade(reporteSeleccionado);
+    this.value = "";
+    return;
+  }
+  // Aquí va el código normal que muestra el reporte permitido...
+});
   if (!window.Chart) {
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';

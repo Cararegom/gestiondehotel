@@ -249,3 +249,64 @@ export function formatMinutesToHoursMinutes(totalMinutes) {
     if (durationString === '') durationString = '0m';
     return durationString.trim();
 }
+
+/**
+ * Llama a la función de la base de datos para incrementar el contador de un descuento.
+ * Esta es la función centralizada y correcta.
+ * @param {SupabaseClient} supabase - La instancia activa de Supabase.
+ * @param {string} descuentoId - El UUID del descuento que se utilizó.
+ */
+export async function registrarUsoDescuento(supabase, descuentoId) {
+    // Si no se pasó un ID de descuento, no hacemos nada.
+    if (!descuentoId) return;
+
+    try {
+        // La llamada RPC estandarizada con el nombre de parámetro correcto.
+        const { error } = await supabase.rpc('incrementar_uso_descuento', {
+            descuento_id_param: descuentoId
+        });
+
+        if (error) {
+            // Este error ya no debería ocurrir, pero lo dejamos por si acaso.
+            console.error('Error al registrar el uso del descuento:', error);
+        } else {
+            console.log(`Uso registrado exitosamente para el descuento ID: ${descuentoId}`);
+        }
+    } catch (err) {
+        console.error('Excepción al intentar registrar el uso del descuento:', err);
+    }
+}
+
+// Agrega esta función a tu archivo /js/uiUtils.js
+
+/**
+ * Muestra un modal de confirmación moderno y profesional.
+ * @param {string} title - El título del modal.
+ * @param {string} text - El texto o HTML del cuerpo del modal.
+ * @param {string} confirmButtonText - El texto para el botón de confirmación.
+ * @returns {Promise<boolean>} - Una promesa que resuelve a `true` si el usuario confirma, `false` si cancela.
+ */
+export async function showConfirmationModal({
+    title = '¿Estás seguro?',
+    text = 'Esta acción no se puede revertir.',
+    confirmButtonText = 'Sí, continuar'
+}) {
+    const result = await Swal.fire({
+        title: title,
+        html: text, // Usamos 'html' para permitir etiquetas como <strong>
+        icon: 'warning',
+        iconColor: '#f59e0b', // Un color ámbar para la advertencia
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626', // Rojo para acciones destructivas
+        cancelButtonColor: '#6b7280',  // Gris para cancelar
+        confirmButtonText: confirmButtonText,
+        cancelButtonText: 'Cancelar',
+        customClass: {
+            popup: 'rounded-xl shadow-lg',
+            confirmButton: 'button button-danger py-2 px-5',
+            cancelButton: 'button button-neutral py-2 px-5'
+        },
+        buttonsStyling: false // Importante para que tome nuestras clases
+    });
+    return result.isConfirmed;
+}

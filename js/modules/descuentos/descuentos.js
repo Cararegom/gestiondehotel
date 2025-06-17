@@ -1,5 +1,5 @@
 // js/modules/descuentos/descuentos.js
-import { formatCurrency, formatDateShort, showError, showSuccess, clearFeedback, setFormLoadingState } from '/js/uiUtils.js';
+import { formatCurrency, formatDateShort, showError, showSuccess, clearFeedback, setFormLoadingState, showConfirmationModal } from '/js/uiUtils.js';
 
 let moduleListeners = []; // Centralized array for event listeners
 let currentHotelId = null; // Stores the hotel ID for the current session of this module
@@ -12,107 +12,159 @@ let currentHotelId = null; // Stores the hotel ID for the current session of thi
  * <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
  * =================================================================================
  */
+/**
+ * =================================================================================
+ * FUNCIÓN COMPLETA Y CORREGIDA: Generador de Tarjeta de Descuento
+ * Crea un modal con una tarjeta de descuento, la clona para una captura de imagen
+ * de alta calidad y permite descargarla o enviarla por email.
+ * Requiere la librería html2canvas: <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+ * =================================================================================
+ */
 async function generateDiscountCard(discount, logoUrl, supabaseInstance) {
-    // 1. Crear y mostrar el modal
+    // 1. Dibuja el modal en la página
     const modalHtml = `
-        <div id="card-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1050;">
-          <div class="card" style="max-width: 500px; width: 90%; animation: fadeIn 0.3s;">
-            <div class="card-header flex justify-between items-center">
-                <h3>Tarjeta de Descuento</h3>
-                <button id="modal-close-btn" class="button button-icon" title="Cerrar">&times;</button>
+    <div id="card-modal" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); display:flex; align-items:center; justify-content:center; z-index:1050; backdrop-filter: blur(5px);">
+      <div class="card" style="max-width: 450px; width: 90%; background: transparent; border: none; box-shadow: none;">
+        
+        <div id="discount-card-container" 
+             style="
+                background-color: #1a202c;
+                background-image: radial-gradient(circle at 1px 1px, rgba(255,255,255,0.05) 1px, transparent 0);
+                background-size: 25px 25px;
+             "
+             class="text-white rounded-2xl shadow-2xl overflow-hidden font-sans flex flex-col justify-between h-[580px]">
+            
+            <div class="p-6 text-center border-b border-gray-700">
+                ${logoUrl ? `<img src="${logoUrl}" alt="Logo del Hotel" class="max-h-16 object-contain mx-auto"/>` : `<div class="h-16"></div>`}
             </div>
-            <div class="card-body">
-              <div id="discount-card-container" class="bg-white p-4 rounded-lg shadow-lg border-dashed border-gray-400">
-                <div class="flex justify-between items-start mb-4">
-                  <h4 class="text-xl font-bold">${discount.nombre}</h4>
-                  ${logoUrl ? `<img src="${logoUrl}" alt="Logo del Hotel" class="max-h-16 object-contain"/>` : '<div class="max-h-16"></div>'}
-                </div>
-                <div class="text-center my-8">
-                  <p class="text-lg">¡Tienes un descuento de!</p>
-                  <p class="text-5xl font-bold my-2 text-primary">${discount.tipo === 'porcentaje' ? `${discount.valor}%` : formatCurrency(discount.valor)}</p>
-                </div>
-                <div class="text-center">
-                  <p>${discount.tipo_descuento_general === 'codigo' ? 'Usa el código:' : 'Promoción Automática'}</p>
-                  ${discount.codigo ? `<p class="text-2xl font-mono bg-slate-100 p-2 my-2 inline-block">${discount.codigo}</p>` : ''}
-                </div>
-                <div class="text-xs text-gray-500 mt-6">
+
+            <div class="p-6 text-center flex-grow flex flex-col justify-center">
+                <h4 class="text-2xl font-light text-gray-300 tracking-wider">${discount.nombre}</h4>
+                <p class="text-7xl font-bold my-3 text-white tracking-tighter">${discount.tipo === 'porcentaje' ? `${discount.valor}%` : formatCurrency(discount.valor)}</p>
+                <p class="text-xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 to-amber-500">DE DESCUENTO</p>
+            </div>
+
+            <div class="bg-black bg-opacity-20 p-6 text-center">
+                ${discount.codigo 
+                    ? `<div>
+                         <p class="text-sm text-gray-400">Usa este código en tu próxima visita:</p>
+                         <p class="font-mono text-3xl bg-gray-700 text-white rounded-lg px-6 py-2 my-2 inline-block border border-gray-600 shadow-inner">${discount.codigo}</p>
+                       </div>` 
+                    : `<p class="text-lg font-semibold text-gray-200">Promoción Automática</p>`
+                }
+                <div class="text-xs text-gray-400 mt-4">
                   <p><strong>Válido:</strong> ${discount.fecha_inicio ? `Del ${formatDateShort(discount.fecha_inicio)} al ${formatDateShort(discount.fecha_fin)}` : 'Contactar para validez'}</p>
-                  ${(discount.usos_maximos || 0) > 0 ? `<p><strong>Usos restantes:</strong> ${discount.usos_maximos - (discount.usos_actuales || 0)}</p>`: ''}
-                  <p>Aplican términos y condiciones.</p>
                 </div>
-              </div>
-              <div class="mt-4 flex flex-wrap items-center gap-2">
-                <button id="download-card-btn" class="button button-primary">Descargar</button>
-                <input type="email" id="email-recipient-input" placeholder="correo@cliente.com" class="form-control flex-grow" />
-                <button id="email-card-btn" class="button button-success">Enviar</button>
-              </div>
-              <div id="email-feedback" class="text-sm mt-2"></div>
             </div>
-          </div>
-        </div>`;
+        </div>
+
+        <div class="mt-4 p-4 bg-white rounded-lg shadow-lg flex flex-wrap items-center gap-2">
+            <button id="download-card-btn" class="button button-primary">Descargar</button>
+            <input type="email" id="email-recipient-input" placeholder="correo@cliente.com" class="form-control flex-grow" />
+            <button id="email-card-btn" class="button button-success">Enviar</button>
+            <button id="modal-close-btn" class="button button-neutral ml-auto">Cerrar</button>
+        </div>
+        <div id="email-feedback" class="text-sm mt-2 p-2 bg-white rounded"></div>
+      </div>
+    </div>`;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
 
-    // 2. Lógica de los botones del modal
+    // 2. Obtener referencias a los elementos del modal
     const modal = document.getElementById('card-modal');
     const emailFeedbackEl = document.getElementById('email-feedback');
+    const downloadBtn = document.getElementById('download-card-btn');
+    const emailBtn = document.getElementById('email-card-btn');
+    const closeBtn = document.getElementById('modal-close-btn');
 
-    document.getElementById('modal-close-btn').onclick = () => modal.remove();
-    modal.onclick = (e) => { if (e.target.id === 'card-modal') modal.remove(); };
-
-    // Lógica para Descargar
-    document.getElementById('download-card-btn').onclick = () => {
-        const cardElement = document.getElementById('discount-card-container');
-        html2canvas(cardElement).then(canvas => {
-            const link = document.createElement('a');
-            link.download = `descuento-${discount.nombre.replace(/\s+/g, '-')}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-        });
+    // 3. Función de limpieza para remover el modal y el clon
+    const cleanup = () => {
+        const clone = document.getElementById('discount-card-for-download');
+        if (clone) clone.remove();
+        modal.remove();
+    };
+    
+    // Asignar eventos de cierre
+    closeBtn.onclick = cleanup;
+    modal.onclick = (e) => { 
+        if (e.target.id === 'card-modal') cleanup(); 
     };
 
-    // Lógica para Enviar por Email (usando Supabase Edge Function)
-    document.getElementById('email-card-btn').onclick = async (e) => {
+    // 4. Lógica para descargar la tarjeta (usa un clon para calidad)
+    downloadBtn.onclick = async () => {
+        const cardOriginal = document.getElementById('discount-card-container');
+        if (!cardOriginal) return;
+
+        // Crear clon, posicionarlo fuera de pantalla y darle un ancho fijo
+        const cardClone = cardOriginal.cloneNode(true);
+        cardClone.id = 'discount-card-for-download';
+        cardClone.style.position = 'absolute';
+        cardClone.style.left = '-9999px';
+        cardClone.style.width = '450px';
+        document.body.appendChild(cardClone);
+
+        try {
+            const canvas = await html2canvas(cardClone, { scale: 2, useCORS: true });
+            const link = document.createElement('a');
+            link.download = `descuento-${discount.nombre.replace(/\s+/g, '-')}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        } catch (error) {
+            console.error("Error al generar la imagen:", error);
+            alert("Hubo un error al generar la imagen de la tarjeta.");
+        } finally {
+            // Limpiar después de la operación
+            cleanup();
+        }
+    };
+
+    // 5. Lógica para enviar por email
+    emailBtn.onclick = async (e) => {
         const button = e.currentTarget;
         const recipient = document.getElementById('email-recipient-input').value;
         if (!recipient) {
             emailFeedbackEl.textContent = 'Por favor, ingresa un email.';
-            emailFeedbackEl.className = 'text-sm mt-2 text-danger';
+            emailFeedbackEl.className = 'text-sm mt-2 text-red-600';
             return;
         }
         button.disabled = true;
         button.textContent = 'Enviando...';
         emailFeedbackEl.textContent = '';
 
+        // Clonar la tarjeta para la captura
+        const cardOriginal = document.getElementById('discount-card-container');
+        if (!cardOriginal) return;
+        const cardClone = cardOriginal.cloneNode(true);
+        cardClone.id = 'discount-card-for-download';
+        cardClone.style.position = 'absolute';
+        cardClone.style.left = '-9999px';
+        cardClone.style.width = '450px';
+        document.body.appendChild(cardClone);
+
         try {
-            const cardElement = document.getElementById('discount-card-container');
-            const canvas = await html2canvas(cardElement);
+            const canvas = await html2canvas(cardClone, { scale: 2, useCORS: true });
             const imageBase64 = canvas.toDataURL().split('base64,')[1];
 
-            // IMPORTANTE: Debes crear una Edge Function en Supabase llamada 'send-discount-email'
             const { error } = await supabaseInstance.functions.invoke('send-discount-email', {
-                body: { 
-                    recipient, 
-                    imageBase64, 
-                    discountName: discount.nombre, 
-                    hotelId: currentHotelId // Pasa el ID del hotel para obtener más datos si es necesario
-                }
+                body: { recipient, imageBase64, discountName: discount.nombre, hotelId: currentHotelId }
             });
 
             if (error) throw error;
             emailFeedbackEl.textContent = '¡Email enviado con éxito!';
-            emailFeedbackEl.className = 'text-sm mt-2 text-success';
+            emailFeedbackEl.className = 'text-sm mt-2 text-green-700';
             document.getElementById('email-recipient-input').value = '';
         } catch (err) {
             console.error("Error sending discount email:", err);
             emailFeedbackEl.textContent = `Error al enviar: ${err.message}`;
-            emailFeedbackEl.className = 'text-sm mt-2 text-danger';
+            emailFeedbackEl.className = 'text-sm mt-2 text-red-600';
         } finally {
             button.disabled = false;
             button.textContent = 'Enviar';
+            // Siempre limpiar el clon
+            const clone = document.getElementById('discount-card-for-download');
+            if (clone) clone.remove();
         }
     };
 }
-
 
 /**
  * Carga las habitaciones activas del hotel en un selector.
@@ -275,104 +327,129 @@ function toggleFormVisibility(formEl) {
 /**
  * Carga y renderiza la lista de descuentos (VERSIÓN TEMPORAL SIN JOIN)
  */
-async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId) {
-  if (!tbodyEl || !hotelId) {
-    tbodyEl.innerHTML = `<tr><td colspan="8" class="text-center p-2 text-danger">Error: No se pudo cargar la información.</td></tr>`;
-    return;
-  }
-  tbodyEl.innerHTML = `<tr><td colspan="8" class="text-center p-2"><span class="loading-indicator visible">Cargando...</span></td></tr>`;
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN descuentos.js
+
+async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAll = false) {
+    if (!tbodyEl || !hotelId) {
+        tbodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-red-500">Error: No se pudo cargar la información.</td></tr>`;
+        return;
+    }
+    tbodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-slate-500">Cargando...</td></tr>`;
   
-  try {
-    // 1. Obtenemos solo los descuentos, SIN el join a clientes
-    const { data: discounts, error: discountsError } = await supabaseInstance
-      .from('descuentos')
-      .select('*') // Cambiado: ya no intentamos hacer el join aquí
-      .eq('hotel_id', hotelId)
-      .order('created_at', { ascending: false });
+    try {
+        // Construimos la consulta base
+        let query = supabaseInstance
+            .from('descuentos')
+            .select('*')
+            .eq('hotel_id', hotelId);
 
-    if (discountsError) throw discountsError;
+        // AÑADIMOS EL FILTRO CONDICIONAL
+        // Si showAll es `false` (el valor por defecto), solo mostramos los activos.
+        if (!showAll) {
+            query = query.eq('activo', true);
+        }
 
-    tbodyEl.innerHTML = '';
-    if (!discounts.length) {
-      tbodyEl.innerHTML = `<tr><td colspan="8" class="text-center p-2">No hay descuentos configurados. Crea el primero.</td></tr>`;
-      return;
-    }
+        // Añadimos el ordenamiento al final
+        query = query.order('created_at', { ascending: false });
 
-    // 2. Recolectamos los IDs de los clientes que tienen descuentos
-    const clienteIds = discounts
-      .map(d => d.cliente_id)
-      .filter(id => id !== null); // Filtramos los que no son nulos
+        // Ejecutamos la consulta ya construida
+        const { data: discounts, error: discountsError } = await query;
 
-    let clientMap = new Map();
+        if (discountsError) throw discountsError;
 
-    // 3. Si hay IDs de clientes, hacemos UNA sola consulta para traer todos sus nombres
-    if (clienteIds.length > 0) {
-        const { data: clientes, error: clientsError } = await supabaseInstance
-            .from('clientes')
-            .select('id, nombre')
-            .in('id', clienteIds); // 'in' trae todos los clientes cuyos IDs están en el array
+        if (!discounts.length) {
+            tbodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-slate-500">No hay descuentos para mostrar.</td></tr>`;
+            return;
+        }
 
-        if (clientsError) throw clientsError;
+        const clienteIds = discounts.map(d => d.cliente_id).filter(id => id !== null);
+        let clientMap = new Map();
 
-        // 4. Creamos un mapa para buscar nombres de cliente fácilmente (id -> nombre)
-        clientMap = new Map(clientes.map(c => [c.id, c.nombre]));
-    }
+        if (clienteIds.length > 0) {
+            const { data: clientes, error: clientsError } = await supabaseInstance
+                .from('clientes')
+                .select('id, nombre')
+                .in('id', clienteIds);
+            if (clientsError) throw clientsError;
+            clientMap = new Map(clientes.map(c => [c.id, c.nombre]));
+        }
 
-    // 5. Renderizamos la tabla usando el mapa para encontrar los nombres
-    discounts.forEach(d => {
-      const tr = document.createElement('tr');
-      tr.dataset.id = d.id;
+        // Limpiamos el tbody antes de renderizar las nuevas filas
+        tbodyEl.innerHTML = ''; 
+    
+        discounts.forEach(d => {
+            const tr = document.createElement('tr');
+            tr.className = "hover:bg-slate-50";
+            tr.dataset.id = d.id;
 
-      // ... (código para valorDisplay, usosDisplay no cambia) ...
-      const valorDisplay = d.tipo === 'porcentaje' ? `${d.valor}%` : formatCurrency(d.valor);
-      const usosDisplay = `${d.usos_actuales || 0} / ${(d.usos_maximos || 0) === 0 ? '∞' : d.usos_maximos}`;
+            const valorDisplay = d.tipo === 'porcentaje' ? `${d.valor}%` : formatCurrency(d.valor);
+            const usosDisplay = `${d.usos_actuales || 0} / ${(d.usos_maximos || 0) === 0 ? '∞' : d.usos_maximos}`;
       
-      let nombreCodigoDisplay = `<strong>${d.nombre}</strong>`;
-      if (d.codigo) {
-        nombreCodigoDisplay += `<br><span class="text-sm text-gray-600 font-mono">${d.codigo}</span>`;
-      }
+            let tipoDisplay = '';
+            let nombreDisplay = `<div class="font-medium text-slate-900">${d.nombre}</div>`;
 
-      let aplicabilidadDisplay = '';
-      switch (d.tipo_descuento_general) {
-        case 'codigo': aplicabilidadDisplay = 'Por Código'; break;
-        case 'automatico': aplicabilidadDisplay = 'Automático'; break;
-        case 'cliente_especifico': 
-            // Usamos el mapa para buscar el nombre
-            const clientName = clientMap.get(d.cliente_id) || 'N/A';
-            aplicabilidadDisplay = `Cliente: ${clientName}`;
-            break;
-        default: aplicabilidadDisplay = 'General';
-      }
+            switch (d.tipo_descuento_general) {
+                case 'codigo': 
+                    tipoDisplay = 'Por Código';
+                    if (d.codigo) {
+                        nombreDisplay += `<div class="text-slate-500 font-mono text-xs inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded mt-1">${d.codigo}</div>`;
+                    }
+                    break;
+                case 'automatico': tipoDisplay = 'Automático'; break;
+                case 'cliente_especifico': 
+                    const clientName = clientMap.get(d.cliente_id) || 'N/A';
+                    tipoDisplay = `Cliente Específico`;
+                    nombreDisplay += `<div class="text-slate-500 text-xs inline-block bg-purple-100 text-purple-800 px-2 py-0.5 rounded mt-1">👤 ${clientName}</div>`;
+                    break;
+                default: tipoDisplay = 'General';
+            }
 
-      let fechasDisplay = 'N/A';
-      if(d.fecha_inicio && d.fecha_fin) {
-          fechasDisplay = `${formatDateShort(d.fecha_inicio)} - ${formatDateShort(d.fecha_fin)}`;
-      } else if (d.fecha_fin) {
-          fechasDisplay = `Hasta ${formatDateShort(d.fecha_fin)}`;
-      }
+            let fechasDisplay = '<span class="text-slate-400">N/A</span>';
+            if (d.fecha_inicio && d.fecha_fin) {
+                fechasDisplay = `${formatDateShort(d.fecha_inicio)} - ${formatDateShort(d.fecha_fin)}`;
+            } else if (d.fecha_fin) {
+                fechasDisplay = `Hasta ${formatDateShort(d.fecha_fin)}`;
+            }
 
-      tr.innerHTML = `
-        <td>${nombreCodigoDisplay}</td>
-        <td>${aplicabilidadDisplay}</td>
-        <td>${valorDisplay}</td>
-        <td>${fechasDisplay}</td>
-        <td>${usosDisplay}</td>
-        <td><span class="badge ${d.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${d.activo ? 'Activo' : 'Inactivo'}</span></td>
-        <td class="actions-cell">
-    <button class="button button-outline button-small" data-action="edit" data-id="${d.id}" title="Editar">Editar</button>
-    <button class="button button-small ${d.activo ? 'button-warning' : 'button-success'}" data-action="toggle" data-id="${d.id}" data-active="${d.activo}" title="${d.activo ? 'Desactivar' : 'Activar'}">${d.activo ? 'Desactivar' : 'Activar'}</button>
-    <button class="button button-info button-small" data-action="card" data-id="${d.id}" title="Crear Tarjeta">Tarjeta</button>
-    ${(d.usos_actuales || 0) === 0 ? `<button class="button button-danger button-small" data-action="delete" data-id="${d.id}" title="Eliminar">Eliminar</button>` : ''}
-    </td>`;
-      tbodyEl.appendChild(tr);
-    });
-  } catch (err) {
-    console.error('Error loading discounts:', err);
-    tbodyEl.innerHTML = `<tr><td colspan="8" class="text-danger text-center p-2">Error al cargar descuentos: ${err.message}</td></tr>`;
-  }
-}/**
- * Popula el formulario para editar un descuento existente.
- */
+            const estadoBadge = d.activo
+                ? `<span class="inline-flex items-center gap-x-1.5 rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700"><svg class="h-1.5 w-1.5 fill-green-500" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" /></svg>Activo</span>`
+                : `<span class="inline-flex items-center gap-x-1.5 rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700"><svg class="h-1.5 w-1.5 fill-red-500" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" /></svg>Inactivo</span>`;
+
+            tr.innerHTML = `
+                <td class="px-6 py-4">${nombreDisplay}</td>
+                <td class="px-6 py-4 text-slate-700">${tipoDisplay}</td>
+                <td class="px-6 py-4 font-semibold text-slate-900">${valorDisplay}</td>
+                <td class="px-6 py-4 text-slate-700">${fechasDisplay}</td>
+                <td class="px-6 py-4 text-slate-700">${usosDisplay}</td>
+                <td class="px-6 py-4 text-center">${estadoBadge}</td>
+                <td class="px-6 py-4 text-center">
+                    <div class="flex items-center justify-center gap-x-2">
+                        <button data-action="edit" data-id="${d.id}" title="Editar" class="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <button data-action="toggle" data-id="${d.id}" title="${d.activo ? 'Desactivar' : 'Activar'}" class="p-1.5 text-slate-500 hover:text-green-600 hover:bg-slate-100 rounded-md">
+                           ${d.activo 
+                                ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>` 
+                                : `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>`}
+                        </button>
+                        <button data-action="card" data-id="${d.id}" title="Crear Tarjeta de Descuento" class="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-slate-100 rounded-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4zm0 2h4.586l1 1H16v6H4V6z" /></svg>
+                        </button>
+                        ${(d.usos_actuales || 0) === 0 ? `<button data-action="delete" data-id="${d.id}" title="Eliminar" class="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                        </button>` : ''}
+                    </div>
+                </td>
+            `;
+            tbodyEl.appendChild(tr);
+        });
+    } catch (err) {
+        console.error('Error loading discounts:', err);
+        tbodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-red-500">Error al cargar descuentos: ${err.message}</td></tr>`;
+    }
+} 
+
+
 function populateForm(formEl, discount, formTitleEl, cancelButtonEl) {
   formEl.reset();
   formEl.querySelector('#descuento-id-edit').value = discount.id;
@@ -433,144 +510,202 @@ function resetForm(formEl, formTitleEl, cancelButtonEl, feedbackEl) {
  * Construye la UI del módulo y conecta todos los eventos.
  * =================================================================================
  */
+// REEMPLAZA ESTE BLOQUE DE CÓDIGO EN TU ARCHIVO descuentos.js
+
+/**
+ * =================================================================================
+ * FUNCIÓN PRINCIPAL: mount
+ * Construye la UI del módulo y conecta todos los eventos.
+ * =================================================================================
+ */
 export async function mount(container, supabaseInstance, currentUser) {
     console.log('[Descuentos.js] Montando el módulo de descuentos...');
     unmount(container);
 
     // Se añade un contenedor para el modal que evita conflictos
     container.innerHTML = `
-    <div id="descuentos-module-content">
-      <div class="card">
-        <div class="card-header"><h2>Gestión de Descuentos y Promociones</h2></div>
-        <div class="card-body">
-          <div id="descuentos-feedback" role="status" aria-live="polite" class="mb-2" style="min-height: 24px;"></div>
-          
-          <h3 id="form-descuento-titulo" class="text-lg font-semibold mb-2">Crear Nuevo Descuento</h3>
-          <form id="form-descuento" class="form mb-4 p-4 border rounded-lg bg-slate-50" novalidate>
-            <input type="hidden" id="descuento-id-edit" name="id" />
-
-            <div class="form-row grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-              <div class="form-group">
-                <label for="nombre" class="form-label">Nombre o Descripción *</label>
-                <input type="text" id="nombre" name="nombre" class="form-control" required maxlength="100" placeholder="Ej: Promo Verano Familiar"/>
-              </div>
-              <div class="form-group">
-                <label for="tipo_descuento_general" class="form-label">Tipo de Promoción *</label>
-                <select id="tipo_descuento_general" name="tipo_descuento_general" class="form-control" required>
-                  <option value="codigo">Por Código (manual)</option>
-                  <option value="automatico">Automática (por fecha)</option>
-                  <option value="cliente_especifico">Para Cliente Específico</option>
-                </select>
-              </div>
-              <div class="form-group" id="codigo-container">
-                <label for="codigo" class="form-label">Código del Cupón *</label>
-                <input type="text" id="codigo" name="codigo" class="form-control" required maxlength="50" placeholder="EJ: INVIERNO25"/>
-              </div>
-              <div class="form-group" id="cliente-container" style="display: none;">
-                <label for="cliente" class="form-label">Seleccionar Cliente *</label>
-                <select id="cliente" name="cliente_id" class="form-control" required></select>
-              </div>
+    <div id="descuentos-module-container" class="bg-slate-50 min-h-full">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10">
+    
+            <div>
+                <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight">Gestión de Promociones</h1>
+                <p class="mt-2 text-lg text-slate-600">Crea, edita y administra todos los descuentos y códigos para tu hotel.</p>
             </div>
-            
-            <div class="form-row grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div class="form-group">
-                <label for="tipo" class="form-label">Descuento en *</label>
-                <select id="tipo" name="tipo" class="form-control" required>
-                  <option value="porcentaje">Porcentaje (%)</option>
-                  <option value="fijo">Monto Fijo ($)</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="valor" class="form-label">Valor *</label>
-                <input type="number" id="valor" name="valor" class="form-control" required min="0" step="0.01" />
-              </div>
-              <div class="form-group">
-                  <label for="usos_maximos" class="form-label">Límite de Usos (0 para ilimitado)</label>
-                  <input type="number" id="usos_maximos" name="usos_maximos" class="form-control" min="0" value="0" placeholder="0" />
-              </div>
+    
+            <div id="form-card" class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+                <div class="divide-y divide-slate-200">
+                    <div class="px-6 py-5">
+                        <h2 id="form-descuento-titulo" class="text-xl font-bold text-slate-800">Crear Nuevo Descuento</h2>
+                    </div>
+    
+                    <div class="px-6 py-6">
+                        <form id="form-descuento" class="space-y-8" novalidate>
+                            <input type="hidden" id="descuento-id-edit" name="id" />
+    
+                            <div class="space-y-6">
+                                <h3 class="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2">1. Información Básica</h3>
+                                <div class="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-6">
+                                    <div class="form-group lg:col-span-1">
+                                        <label for="nombre" class="form-label font-semibold">Nombre de la promo *</label>
+                                        <input type="text" id="nombre" name="nombre" class="form-control" required maxlength="100" placeholder="Ej: Descuento Fin de Semana"/>
+                                    </div>
+                                    <div class="form-group lg:col-span-1">
+                                        <label for="tipo_descuento_general" class="form-label font-semibold">Tipo de Promoción *</label>
+                                        <select id="tipo_descuento_general" name="tipo_descuento_general" class="form-control" required>
+                                            <option value="codigo">Por Código (manual)</option>
+                                            <option value="automatico">Automática (por fecha)</option>
+                                            <option value="cliente_especifico">Para Cliente Específico</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group lg:col-span-1" id="codigo-container">
+                                        <label for="codigo" class="form-label font-semibold">Código *</label>
+                                        <input type="text" id="codigo" name="codigo" class="form-control uppercase" required maxlength="50" placeholder="FINDE25"/>
+                                    </div>
+                                    <div class="form-group lg:col-span-2" id="cliente-container" style="display: none;">
+                                        <label for="cliente" class="form-label font-semibold">Cliente Específico *</label>
+                                        <select id="cliente" name="cliente_id" class="form-control" required></select>
+                                    </div>
+                                </div>
+                            </div>
+    
+                            <div class="space-y-6">
+                                 <h3 class="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2">2. Valor y Condiciones</h3>
+                                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-x-8 gap-y-6">
+                                    <div class="form-group">
+                                        <label for="tipo" class="form-label font-semibold">Tipo de Valor *</label>
+                                        <select id="tipo" name="tipo" class="form-control" required>
+                                            <option value="porcentaje">Porcentaje (%)</option>
+                                            <option value="fijo">Monto Fijo ($)</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="valor" class="form-label font-semibold">Valor del Descuento *</label>
+                                        <input type="number" id="valor" name="valor" class="form-control" required min="0" step="0.01" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="usos_maximos" class="form-label font-semibold">Límite de Usos</label>
+                                        <input type="number" id="usos_maximos" name="usos_maximos" class="form-control" min="0" value="0" placeholder="0 para ilimitado"/>
+                                    </div>
+                                 </div>
+                            </div>
+    
+                            <div class="space-y-6">
+                                <h3 class="text-base font-semibold text-slate-800 border-b border-slate-200 pb-2">3. Aplicabilidad y Vigencia</h3>
+                                <div id="rango-fechas-container" class="grid grid-cols-1 sm:grid-cols-2 gap-x-8" style="display: none;">
+                                    <div class="form-group">
+                                        <label for="fecha_inicio" class="form-label font-semibold">Válido Desde *</label>
+                                        <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control" />
+                                    </div>
+                                    <div class="form-group">
+                                        <label for="fecha_fin" class="form-label font-semibold">Válido Hasta *</label>
+                                        <input type="date" id="fecha_fin" name="fecha_fin" class="form-control" />
+                                    </div>
+                                </div>
+                                <div id="aplicabilidad-container" class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-6" style="display: none;">
+                                    <div class="form-group">
+                                        <label for="aplicabilidad" class="form-label font-semibold">Aplicar a *</label>
+                                        <select id="aplicabilidad" name="aplicabilidad" class="form-control">
+                                            <option value="reserva_total">Toda la reserva de Alojamiento</option>
+                                            <option value="habitaciones_especificas">Habitaciones Específicas</option>
+                                            <option value="servicios_adicionales">Servicios Adicionales Específicos</option>
+                                            <option value="productos_tienda">Productos de Tienda Específicos</option>
+                                            <option value="categorias_restaurante">Categorías de Restaurante Específicas</option>
+                                        </select>
+                                    </div>
+                                    <div class="space-y-6">
+                                        <div class="form-group items-container" id="items-habitaciones_especificas-container" style="display: none;">
+                                            <label for="habitaciones_aplicables" class="form-label font-semibold">Habitaciones Aplicables*</label>
+                                            <p class="form-helper-text">Mantén 'Ctrl' o 'Cmd' para selección múltiple.</p>
+                                            <select id="habitaciones_aplicables" name="habitaciones_aplicables" class="form-control" multiple size="5"></select>
+                                        </div>
+                                        <div class="form-group items-container" id="items-servicios_adicionales-container" style="display: none;">
+                                            <label for="items_servicios_adicionales" class="form-label font-semibold">Servicios Aplicables*</label>
+                                            <p class="form-helper-text">Mantén 'Ctrl' o 'Cmd' para selección múltiple.</p>
+                                            <select id="items_servicios_adicionales" name="items_servicios_adicionales" class="form-control" multiple size="5"></select>
+                                        </div>
+                                        <div class="form-group items-container" id="items-productos_tienda-container" style="display: none;">
+                                            <label for="items_productos_tienda" class="form-label font-semibold">Productos Aplicables*</label>
+                                            <p class="form-helper-text">Mantén 'Ctrl' o 'Cmd' para selección múltiple.</p>
+                                            <select id="items_productos_tienda" name="items_productos_tienda" class="form-control" multiple size="5"></select>
+                                        </div>
+                                        <div class="form-group items-container" id="items-categorias_restaurante-container" style="display: none;">
+                                            <label for="items_categorias_restaurante" class="form-label font-semibold">Categorías de Restaurante*</label>
+                                            <p class="form-helper-text">Mantén 'Ctrl' o 'Cmd' para selección múltiple.</p>
+                                            <select id="items_categorias_restaurante" name="items_categorias_restaurante" class="form-control" multiple size="5"></select>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+    
+                    <div class="px-6 py-4 bg-slate-50 flex items-center justify-between">
+                        <div class="form-group flex items-center">
+                            <input type="checkbox" id="activo" name="activo" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked />
+                            <label for="activo" class="ml-3 block text-sm font-medium text-slate-700">Activar este descuento</label>
+                        </div>
+                        <div class="form-actions flex items-center gap-x-4">
+                            <button type="button" id="btn-cancelar-edicion-descuento" class="button button-neutral py-2 px-4" style="display:none;">Cancelar</button>
+                            <button type="submit" form="form-descuento" id="btn-guardar-descuento" class="button button-primary py-2 px-5 font-semibold">Guardar Descuento</button>
+                        </div>
+                    </div>
+                </div>
             </div>
-
-            <div id="rango-fechas-container" class="form-row grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" style="display: none;">
-              <div class="form-group">
-                <label for="fecha_inicio" class="form-label">Fecha de Inicio *</label>
-                <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control" />
-              </div>
-              <div class="form-group">
-                <label for="fecha_fin" class="form-label">Fecha de Fin *</label>
-                <input type="date" id="fecha_fin" name="fecha_fin" class="form-control" />
-              </div>
+    
+           <div id="table-card" class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+    <div class="px-6 py-5 border-b border-slate-200">
+        <div class="flex flex-wrap items-center justify-between gap-4">
+            <h3 class="text-xl font-bold text-slate-800">Descuentos Existentes</h3>
+            <div class="flex items-center">
+                <input id="show-inactive-discounts-checkbox" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                <label for="show-inactive-discounts-checkbox" class="ml-2 block text-sm font-medium text-slate-700">Mostrar inactivos</label>
             </div>
-
-            <div id="aplicabilidad-container" class="form-row grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" style="display: none;">
-              <div class="form-group">
-                  <label for="aplicabilidad" class="form-label">Aplicar a *</label>
-                  <select id="aplicabilidad" name="aplicabilidad" class="form-control">
-    <option value="reserva_total">Toda la reserva de Alojamiento</option>
-    <option value="habitaciones_especificas">Habitaciones Específicas</option>
-    <option value="servicios_adicionales">Servicios Adicionales Específicos</option>
-    <option value="productos_tienda">Productos de Tienda Específicos</option>
-    <option value="categorias_restaurante">Categorías de Restaurante Específicas</option>
-</select>
-              </div>
-              <div class="form-group items-container" id="items-habitaciones_especificas-container" style="display: none;">
-    <label for="habitaciones_aplicables" class="form-label">Seleccionar Habitaciones Aplicables*</label>
-    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
-    <select id="habitaciones_aplicables" name="habitaciones_aplicables" class="form-control" multiple size="4"></select>
-</div>
-            </div>
-<div class="form-group items-container" id="items-servicios_adicionales-container" style="display: none;">
-    <label for="items_servicios_adicionales" class="form-label">Seleccionar Servicios Aplicables*</label>
-    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
-    <select id="items_servicios_adicionales" class="form-control" multiple size="5"></select>
-</div>
-<div class="form-group items-container" id="items-productos_tienda-container" style="display: none;">
-    <label for="items_productos_tienda" class="form-label">Seleccionar Productos Aplicables*</label>
-    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
-    <select id="items_productos_tienda" class="form-control" multiple size="5"></select>
-</div>
-<div class="form-group items-container" id="items-categorias_restaurante-container" style="display: none;">
-    <label for="items_categorias_restaurante" class="form-label">Seleccionar Categorías de Restaurante*</label>
-    <p class="form-helper-text mb-2">Para seleccionar varios, mantén presionada la tecla 'Ctrl' (o 'Cmd' en Mac). Para un rango, usa 'Shift'.</p>
-    <select id="items_categorias_restaurante" class="form-control" multiple size="5"></select>
-</div>
-
-            <div class="form-group mb-4">
-              <div class="flex items-center">
-                <input type="checkbox" id="activo" name="activo" class="form-check-input" checked />
-                <label for="activo" class="ml-2">Activo</label>
-              </div>
-            </div>
-
-            <div class="form-actions flex items-center gap-3">
-              <button type="submit" id="btn-guardar-descuento" class="button button-primary">Guardar Descuento</button>
-              <button type="button" id="btn-cancelar-edicion-descuento" class="button button-outline" style="display:none;">Cancelar Edición</button>
-            </div>
-          </form>
-          <hr class="my-4"/>
-
-          <h3 class="text-lg font-semibold mb-2">Descuentos y Promociones Existentes</h3>
-          <div class="table-container overflow-x-auto">
-            <table class="tabla-estilizada w-full">
-              <thead>
-                <tr>
-                  <th>Nombre / Código</th><th>Tipo Promoción</th><th>Valor</th><th>Fechas</th><th>Usos</th><th>Estado</th><th>Acciones</th>
-                </tr>
-              </thead>
-              <tbody id="tabla-descuentos-body"></tbody>
-            </table>
-          </div>
         </div>
-      </div>
+        <div id="descuentos-feedback" role="status" aria-live="polite" class="mt-2" style="min-height: 24px;"></div>
     </div>
-    <div id="modal-container"></div>`;
+    </div>
+                <div class="table-container overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="text-xs text-slate-600 uppercase bg-slate-100">
+                            <tr>
+                                <th scope="col" class="px-6 py-3">Nombre / Código</th>
+                                <th scope="col" class="px-6 py-3">Tipo</th>
+                                <th scope="col" class="px-6 py-3">Valor</th>
+                                <th scope="col" class="px-6 py-3">Vigencia</th>
+                                <th scope="col" class="px-6 py-3">Uso</th>
+                                <th scope="col" class="px-6 py-3 text-center">Estado</th>
+                                <th scope="col" class="px-6 py-3 text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-descuentos-body" class="divide-y divide-slate-200">
+                            </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="modal-container"></div>
+    `;
 
-  const moduleContent = container.querySelector('#descuentos-module-content');
-  const feedbackEl = moduleContent.querySelector('#descuentos-feedback');
-  const formEl = moduleContent.querySelector('#form-descuento');
-  const tbodyEl = moduleContent.querySelector('#tabla-descuentos-body');
-  const btnGuardarEl = moduleContent.querySelector('#btn-guardar-descuento');
-  const btnCancelarEl = moduleContent.querySelector('#btn-cancelar-edicion-descuento');
-  const formTitleEl = moduleContent.querySelector('#form-descuento-titulo');
+    // ▼▼▼ ¡ESTA ES LA CORRECCIÓN CLAVE! ▼▼▼
+    // Buscamos los elementos directamente en el 'document' después de que
+    // el innerHTML ha sido renderizado. Esto garantiza que siempre se encuentren.
+    const feedbackEl = document.getElementById('descuentos-feedback');
+    const formEl = document.getElementById('form-descuento');
+    const tbodyEl = document.getElementById('tabla-descuentos-body');
+    const btnGuardarEl = document.getElementById('btn-guardar-descuento');
+    const btnCancelarEl = document.getElementById('btn-cancelar-edicion-descuento');
+    const formTitleEl = document.getElementById('form-descuento-titulo');
+
+    // Comprobación de seguridad para evitar errores si algo falla catastróficamente
+    if (!feedbackEl || !formEl || !tbodyEl || !btnGuardarEl || !btnCancelarEl || !formTitleEl) {
+        console.error("Error crítico: Uno o más elementos esenciales del DOM no se encontraron después de renderizar el módulo de descuentos.");
+        container.innerHTML = `<p class="error-box">Error al inicializar el módulo. Por favor, recargue la página.</p>`;
+        return;
+    }
+
+    // Determine hotelId
+    // ... (El resto de tu función 'mount' continúa desde aquí sin cambios) ...
 
   // Determine hotelId
   try {
@@ -599,7 +734,16 @@ await loadServiciosParaSelector(formEl.querySelector('#items_servicios_adicional
 await loadProductosParaSelector(formEl.querySelector('#items_productos_tienda'), supabaseInstance, currentHotelId);
 await loadCategoriasRestauranteParaSelector(formEl.querySelector('#items_categorias_restaurante'), supabaseInstance, currentHotelId);
 
-
+const showInactiveCheckbox = document.getElementById('show-inactive-discounts-checkbox');
+if (showInactiveCheckbox) {
+    const checkboxChangeHandler = async (event) => {
+        const showAll = event.target.checked;
+        await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId, showAll);
+    };
+    showInactiveCheckbox.addEventListener('change', checkboxChangeHandler);
+    // Guardamos el listener para poder limpiarlo después
+    moduleListeners.push({ element: showInactiveCheckbox, type: 'change', handler: checkboxChangeHandler });
+}
   // Lógica de visibilidad del formulario
   const visibilityHandler = () => toggleFormVisibility(formEl);
   formEl.tipo_descuento_general.addEventListener('change', visibilityHandler);
@@ -738,17 +882,33 @@ const formSubmitHandler = async (event) => {
         if (error) throw error;
         showSuccess(feedbackEl, `Descuento ${!discount.activo ? 'activado' : 'desactivado'}.`);
         await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId);
-      } else if (action === 'delete') {
-         if ((discount.usos_actuales || 0) > 0) {
-            showError(feedbackEl, 'No se puede eliminar un descuento que ya ha sido utilizado.');
-            return;
-          }
-        if (confirm(`¿Eliminar permanentemente el descuento "${discount.nombre}"?`)) {
-          const { error } = await supabaseInstance.from('descuentos').delete().eq('id', discountId);
-          if (error) throw error;
-          showSuccess(feedbackEl, 'Descuento eliminado.');
-          await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId);
+      // ...
+} else if (action === 'delete') {
+    if ((discount.usos_actuales || 0) > 0) {
+        showError(feedbackEl, 'No se puede eliminar un descuento que ya ha sido utilizado.');
+        return;
+    }
+
+    // Llamamos a nuestro nuevo modal de confirmación
+    const confirmed = await showConfirmationModal({
+        title: 'Confirmar Eliminación',
+        text: `¿Realmente deseas eliminar el descuento "<strong>${discount.nombre}</strong>"?<br><br>Esta acción no se puede deshacer.`,
+        confirmButtonText: 'Sí, ¡Eliminar!'
+    });
+
+    // Si el usuario confirmó, procedemos a eliminar
+    if (confirmed) {
+        try {
+            const { error } = await supabaseInstance.from('descuentos').delete().eq('id', discountId);
+            if (error) throw error;
+            showSuccess(feedbackEl, 'Descuento eliminado exitosamente.');
+            await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId);
+        } catch (err) {
+            console.error('Error al eliminar el descuento:', err);
+            showError(feedbackEl, `Error al eliminar: ${err.message}`);
         }
+    }
+
       } else if (action === 'card') {
         const { data: hotelData } = await supabaseInstance.from('configuracion_hotel').select('logo_url').eq('hotel_id', currentHotelId).single();
         await generateDiscountCard(discount, hotelData?.logo_url, supabaseInstance);
