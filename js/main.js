@@ -22,6 +22,7 @@ import * as Mantenimiento from './modules/mantenimiento/mantenimiento.js';
 import * as Descuentos from './modules/descuentos/descuentos.js';
 import * as Micuenta from './modules/micuenta/micuenta.js';
 import * as Clientes from './modules/clientes/clientes.js';
+import * as faq from './modules/faq/faq.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -58,7 +59,8 @@ const routes = {
   '/notificaciones': { module: NotificacionesPage, moduleKey: 'notificaciones_page' },
   '/mantenimiento': { module: Mantenimiento, moduleKey: 'mantenimiento' },
   '/descuentos': { module: Descuentos, moduleKey: 'descuentos' },
-  '/micuenta': { module: Micuenta, moduleKey: 'micuenta' }
+  '/micuenta': { module: Micuenta, moduleKey: 'micuenta' },
+  '/faq': { module: faq, moduleKey: 'faq' }
 };
 
 const navLinksConfig = [
@@ -79,7 +81,9 @@ const navLinksConfig = [
     { path: '#/configuracion', text: 'Configuración', icon: '⚙️', moduleKey: 'configuracion' },
     { path: '#/integraciones', text: 'Integraciones', icon: '🔗', moduleKey: 'integraciones' },
     { path: '#/notificaciones', text: 'Ver Notificaciones', icon: '📜', moduleKey: 'notificaciones_page' },
-    { path: '#/micuenta', text: 'Mi cuenta', icon: '🛡️', moduleKey: 'micuenta' }
+    { path: '#/micuenta', text: 'Mi cuenta', icon: '🛡️', moduleKey: 'micuenta' },
+    { path: '#/faq', text: 'FAQ', icon: '❓', moduleKey: 'faq' }
+
 ];
 
 function calculateSubscriptionExpiredStatus(hotel) {
@@ -141,6 +145,8 @@ async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
   }
 }
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA en tu archivo js/main.js
+
 function renderNavigation(user) {
     if (!mainNav) return;
     const dynamicLinksContainer = mainNav.querySelector('#dynamic-nav-links');
@@ -160,6 +166,7 @@ function renderNavigation(user) {
     }
 
     if (isSubscriptionFueraDeGracia && esAdminNavegacion) {
+        // Lógica para suscripción vencida (sin cambios)
         navLinksConfig.forEach(linkConfig => {
             if (linkConfig.moduleKey === 'micuenta') {
                 const a = document.createElement('a');
@@ -171,9 +178,14 @@ function renderNavigation(user) {
         });
     } else if (currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
         const modulosPermitidos = currentActivePlanDetails.funcionalidades.modulos_permitidos;
+        
+        // ▼▼▼ INICIO DE LA CORRECCIÓN ▼▼▼
+        // Se añade la misma lista de módulos exentos que en el router.
+        const modulosExentos = ['micuenta', 'faq'];
+
         navLinksConfig.forEach(linkConfig => {
-            if (linkConfig.moduleKey === 'micuenta' || 
-                modulosPermitidos.includes(linkConfig.moduleKey)) { 
+            // Un enlace se muestra si su 'moduleKey' está en la lista de permitidos O en la lista de exentos.
+            if (modulosPermitidos.includes(linkConfig.moduleKey) || modulosExentos.includes(linkConfig.moduleKey)) { 
                 
                 const a = document.createElement('a');
                 a.href = linkConfig.path;
@@ -182,7 +194,9 @@ function renderNavigation(user) {
                 if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
             }
         });
+        // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
     } else { 
+        // Lógica de fallback (sin cambios)
         navLinksConfig.forEach(linkConfig => {
             if (linkConfig.moduleKey === 'micuenta' || linkConfig.moduleKey === 'dashboard') {
                  const a = document.createElement('a');
@@ -195,7 +209,6 @@ function renderNavigation(user) {
         console.warn("RenderNavigation: Detalles del plan no disponibles o incompletos, mostrando navegación esencial.");
     }
 }
-
 function updateUserInfo(user) {
   if (!userInfoNav) return;
   if (user) {
@@ -332,18 +345,28 @@ async function router() {
         hotelIdForModule = perfilUserAppRouter?.hotel_id;
     }
 
-    if (userForModule && currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
-        if (moduleKeyFromRoute && 
-            moduleKeyFromRoute !== 'micuenta' && 
-            !currentActivePlanDetails.funcionalidades.modulos_permitidos.includes(moduleKeyFromRoute)) {
-            
-            console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
-            appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al Módulo</h2><p class="text-gray-700 mb-1">La funcionalidad o módulo '<strong>${moduleKeyFromRoute}</strong>' no está incluida en tu plan actual (<strong>${currentActivePlanDetails.nombre}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta sección, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
-            hideGlobalLoading();
-            routerBusy = false;
-            return;
-        }
+    // En js/main.js, dentro de la función router()
+
+if (userForModule && currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
+    
+    // ▼▼▼ INICIO DE LA CORRECCIÓN ▼▼▼
+    // Creamos una lista de módulos que SIEMPRE deben estar accesibles.
+    const modulosExentos = ['micuenta', 'faq'];
+
+    // Verificamos si el módulo actual está en la lista de exentos.
+    const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
+
+    // Si el módulo NO es exento Y NO está en la lista de permitidos del plan, entonces bloqueamos.
+    if (!esModuloExento && moduleKeyFromRoute && !currentActivePlanDetails.funcionalidades.modulos_permitidos.includes(moduleKeyFromRoute)) {
+        
+        console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
+        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al Módulo</h2><p class="text-gray-700 mb-1">La funcionalidad o módulo '<strong>${moduleKeyFromRoute}</strong>' no está incluida en tu plan actual (<strong>${currentActivePlanDetails.nombre}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta sección, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
+        hideGlobalLoading();
+        routerBusy = false;
+        return;
     }
+    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
+}
     
     if (hotelIdForModule && userForModule && currentActiveHotel) {
         const usuarioId = userForModule.id;

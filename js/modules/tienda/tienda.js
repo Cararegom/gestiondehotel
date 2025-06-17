@@ -9,6 +9,7 @@ let currentSupabase = null;
 let currentUser = null;
 let currentHotelId = null;
 
+
 // --- Memorias auxiliares
 let categoriasCache = [];
 let proveedoresCache = [];
@@ -33,8 +34,361 @@ async function checkTurnoActivo(supabase, hotelId, usuarioId) {
   // Si hay turno, sigue con el flujo normal
   return true;
 }
+// ========================================================================
+// === INICIA BLOQUE DE CÓDIGO PARA COMPRAS PENDIENTES - REEMPLAZAR TODO ===
+// ========================================================================
 
+// Variable para guardar en memoria las compras y evitar problemas de sincronización.
+let comprasPendientesCache = [];
 
+/**
+ * Función principal que dibuja la pestaña de "Compras Pendientes".
+ * Carga los datos iniciales desde la base de datos y los guarda en el caché.
+ */
+async function renderComprasPendientes() {
+    const cont = document.getElementById('contenidoTiendaTab');
+    cont.innerHTML = `
+        <h4 style="font-weight:bold; font-size:1.3em; color:#1e293b; margin-bottom:1rem;">Compras Pendientes de Recibir</h4>
+        <div id="comprasPendientesList">Cargando...</div>
+        <hr style="margin: 2rem 0; border-top: 1px solid #e5e7eb;">
+        <h5 style="font-weight:bold; font-size:1.2em; color:#1e293b; margin-bottom:1rem;">Historial de Compras Ya Recibidas</h5>
+        <div id="historial-recibidos-container"></div>
+    `;
+
+    const listEl = document.getElementById('comprasPendientesList');
+    try {
+        const { data: compras, error } = await currentSupabase
+            .from('compras_tienda')
+            .select('*, proveedor:proveedores(nombre)')
+            .eq('hotel_id', currentHotelId)
+            .eq('estado', 'pendiente') // Ahora solo trae las que están estrictamente pendientes
+            .order('fecha', { ascending: false });
+
+        if (error) throw error;
+        
+        await cargarDetallesCompras(compras || []);
+        
+        // Guardamos los datos en el caché y filtramos las que no tienen detalles.
+        comprasPendientesCache = (compras || []).filter(c => c.detalles && c.detalles.length > 0);
+        
+        redibujarListaPendientes(); // Usamos una nueva función para dibujar desde el caché
+
+    } catch (err) {
+        if (listEl) listEl.innerHTML = `<div style="color:red;">Error cargando compras pendientes: ${err.message}</div>`;
+    }
+
+    await renderHistorialRecibidos();
+}
+
+/**
+ * Función auxiliar para dibujar la lista desde los datos en memoria (el caché).
+ */
+function redibujarListaPendientes() {
+    const listEl = document.getElementById('comprasPendientesList');
+    if (!listEl) return;
+
+    if (comprasPendientesCache.length === 0) {
+        listEl.innerHTML = `<p style="text-align:center;padding:1rem;color:#888;">No hay compras pendientes.</p>`;
+    } else {
+        listEl.innerHTML = comprasPendientesCache.map(compra => renderTarjetaCompraPendiente(compra)).join('');
+    }
+}
+
+/**
+ * Carga los detalles (productos) para cada compra.
+ */
+async function cargarDetallesCompras(compras) {
+    for (let compra of compras) {
+        if (!compra.id) continue;
+        const { data: detalles, error } = await currentSupabase
+            .from('detalle_compras_tienda')
+            .select('*, producto:productos_tienda!inner(id, nombre)')
+            .eq('compra_id', compra.id);
+
+        if (error) {
+            console.error(`Error cargando detalles para compra ${compra.id}:`, error);
+            compra.detalles = [];
+        } else {
+            compra.detalles = detalles || [];
+        }
+    }
+}
+
+/**
+ * Dibuja una tarjeta de compra pendiente. Ya no tiene inputs para recibir.
+ */
+function renderTarjetaCompraPendiente(compra) {
+    if (!compra.detalles || compra.detalles.length === 0) return ''; 
+
+    const productosHtml = `
+        <table style="width:100%; border-collapse: collapse; font-size: 0.95em;">
+            <thead>
+                <tr style="text-align:left; color:#475569;">
+                    <th style="padding:4px; border-bottom:1.5px solid #e2e8f0;">Producto</th>
+                    <th style="padding:4px; border-bottom:1.5px solid #e2e8f0; text-align:center;">Pedido</th>
+                    <th style="padding:4px; border-bottom:1.5px solid #e2e8f0; text-align:right;">Precio Unit.</th>
+                    <th style="padding:4px; border-bottom:1.5px solid #e2e8f0; text-align:right;">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${compra.detalles.map(det => `
+                    <tr style="border-bottom:1px solid #f1f5f9;">
+                        <td style="padding:8px 4px; font-weight:600; color:#1e293b;">${det.producto?.nombre || 'N/A'}</td>
+                        <td style="padding:8px 4px; text-align:center; font-weight:bold;">${det.cantidad}</td>
+                        <td style="padding:8px 4px; text-align:right;">${formatCurrency(det.precio_unitario)}</td>
+                        <td style="padding:8px 4px; text-align:right; font-weight:600;">${formatCurrency(det.subtotal)}</td>
+                    </tr>
+                `).join('')}
+            </tbody>
+        </table>`;
+
+    return `
+        <div style="border-radius:11px;background:#fff;border:1.7px solid #e2e8f0;box-shadow:0 2px 10px #94a3b81a;margin-bottom:23px;padding:24px 18px 16px 18px;max-width:520px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                <span style="font-size:1.07em; font-weight:700; color:#4f46e5;">Proveedor: <span style="color:#1e293b;">${compra.proveedor?.nombre || 'N/A'}</span></span>
+                <span style="font-size:0.9em; color:#475569;">${new Date(compra.fecha).toLocaleDateString()}</span>
+            </div>
+            ${productosHtml}
+            <div style="margin:16px 0 13px 0; text-align:right; font-weight:700; font-size:1.1em; color:#166534;">Total Compra: ${formatCurrency(compra.total_compra)}</div>
+            <div style="display:flex;gap:8px;">
+                <button onclick="window.recibirPedido('${compra.id}')" style="background:#16a34a;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;flex-grow:1;">✔️ Recibir Productos</button>
+                <button onclick="window.showModalEditarCompra('${compra.id}')" style="background:#4f46e5;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;">✏️ Editar</button>
+                <button onclick="window.cancelarCompra('${compra.id}')" style="background:#ef4444;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;">❌ Cancelar</button>
+            </div>
+        </div>`;
+}
+
+/**
+ * Lógica para recibir el pedido. Simplificada para recibir todo lo que hay en la orden.
+ */
+window.recibirPedido = async function(compraId) {
+    showGlobalLoading("Cargando orden...");
+    try {
+        const { data: detallesCompra, error: errDetalles } = await currentSupabase
+            .from('detalle_compras_tienda')
+            .select('*, producto:productos_tienda!inner(id, nombre)')
+            .eq('compra_id', compraId);
+            
+        if (errDetalles || !detallesCompra || detallesCompra.length === 0) {
+            throw new Error('No se encontraron los detalles de la compra para recibir.');
+        }
+
+        // Lógica corregida: Se calcula el total a pagar en base a los datos actuales de la compra.
+        const recibidoTotalMonto = detallesCompra.reduce((sum, det) => sum + (det.cantidad * det.precio_unitario), 0);
+        
+        const turnoId = turnoService.getActiveTurnId();
+        if (!turnoId) throw new Error("ACCIÓN BLOQUEADA: No hay un turno de caja activo.");
+        
+        const { data: metodosPago } = await currentSupabase.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true);
+        const inputOptions = new Map(metodosPago.map(mp => [mp.id, mp.nombre]));
+        
+        hideGlobalLoading();
+
+        const { value: metodoPagoId, isDismissed } = await Swal.fire({
+            title: 'Confirmar Recepción y Pago',
+            html: `Se dará ingreso al inventario y se registrará un egreso de <b>${formatCurrency(recibidoTotalMonto)}</b>.<br>Selecciona el método de pago:`,
+            input: 'select', inputOptions, inputPlaceholder: '-- Selecciona método --',
+            confirmButtonText: 'Confirmar y Registrar', showCancelButton: true, cancelButtonText: 'Cancelar',
+            inputValidator: (v) => !v && 'Debes seleccionar un método de pago'
+        });
+
+        if (isDismissed || !metodoPagoId) return;
+
+        showGlobalLoading("Procesando recepción...");
+
+        for (const det of detallesCompra) {
+            await currentSupabase.rpc('ajustar_stock_producto', {
+                p_producto_id: det.producto.id,
+                p_cantidad_ajuste: det.cantidad,
+                p_tipo_movimiento: 'ingreso_compra',
+                p_usuario_id: currentUser.id,
+                p_notas: `Recepción de OC #${compraId.substring(0, 8)}`
+            });
+        }
+        
+        await currentSupabase.from('compras_tienda').update({
+            estado: 'recibido',
+            recibido_por_usuario_id: currentUser.id,
+            fecha_recepcion: new Date().toISOString()
+        }).eq('id', compraId);
+        
+        const { data: compraData } = await currentSupabase.from('compras_tienda').select('proveedor:proveedores(nombre)').eq('id', compraId).single();
+        
+        await currentSupabase.from('caja').insert({
+            hotel_id: currentHotelId, tipo: 'egreso', monto: recibidoTotalMonto,
+            concepto: `Pago Compra a ${compraData.proveedor?.nombre || 'N/A'}`,
+            usuario_id: currentUser.id, compra_tienda_id: compraId,
+            turno_id: turnoId, metodo_pago_id: metodoPagoId
+        });
+        
+        hideGlobalLoading();
+        await Swal.fire('¡Éxito!', 'La recepción ha sido procesada correctamente.', 'success');
+
+    } catch (err) {
+        hideGlobalLoading();
+        console.error("Error en recibirPedido:", err);
+        await Swal.fire('Error', 'No se pudo procesar la recepción: ' + err.message, 'error');
+    } finally {
+        // Al final, siempre se hace una recarga completa de la lista.
+        await renderComprasPendientes();
+    }
+};
+
+/**
+ * Muestra el modal para editar la compra.
+ */
+window.showModalEditarCompra = async function(compraId) {
+    showGlobalLoading("Cargando detalles de la compra...");
+    try {
+        const { data: detalles, error } = await currentSupabase
+            .from('detalle_compras_tienda').select('*, producto:productos_tienda(nombre)').eq('compra_id', compraId);
+        if (error) throw error;
+        hideGlobalLoading();
+
+        const modalHtml = `
+            <div id="modal-editar-compra" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:1001;">
+                <div style="background:white;width:95%;max-width:600px;border-radius:12px;padding:24px;max-height:90vh;display:flex;flex-direction:column;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                        <h3 style="margin:0;font-size:1.2em;color:#4f46e5;">Editar Orden de Compra</h3>
+                        <button onclick="document.getElementById('modal-editar-compra').remove()" style="background:none;border:none;font-size:1.5em;cursor:pointer;">&times;</button>
+                    </div>
+                    <div id="edit-details-list" style="overflow-y:auto;flex-grow:1;padding-right:10px;">
+                        ${detalles.map(det => `
+                            <div class="edit-detail-row" data-detail-id="${det.id}" style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #eee;">
+                                <span style="flex:1;font-weight:600;">${det.producto.nombre}</span>
+                                <label>Cant: <input type="number" value="${det.cantidad}" min="1" class="edit-cantidad" style="width:70px;padding:4px;border-radius:4px;border:1px solid #ccc;"></label>
+                                <label>Precio: <input type="number" value="${det.precio_unitario}" min="0" step="any" class="edit-precio" style="width:90px;padding:4px;border-radius:4px;border:1px solid #ccc;"></label>
+                                <button class="delete-detail-btn" style="background:#fee2e2;color:#dc2626;border:none;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Eliminar producto">✖</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div style="margin-top:20px;text-align:right;">
+                        <button onclick="window.guardarCambiosCompra('${compraId}')" style="background:#16a34a;color:white;border:none;padding:10px 20px;border-radius:6px;font-weight:600;cursor:pointer;">Guardar Cambios</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        document.querySelectorAll('.delete-detail-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.target.closest('.edit-detail-row').style.display = 'none';
+            };
+        });
+    } catch (err) {
+        hideGlobalLoading();
+        alert("Error al cargar detalles para editar: " + err.message);
+    }
+};
+
+/**
+ * Guarda los cambios del modal y actualiza el caché local.
+ */
+window.guardarCambiosCompra = async function(compraId) {
+    const modal = document.getElementById('modal-editar-compra');
+    if (!modal) return;
+
+    try {
+        showGlobalLoading("Guardando cambios...");
+        
+        const rows = modal.querySelectorAll('.edit-detail-row');
+        const detalles_a_actualizar = [];
+        const ids_a_eliminar = [];
+
+        for (const row of rows) {
+            const detailId = row.getAttribute('data-detail-id');
+            if (row.style.display === 'none') {
+                ids_a_eliminar.push(detailId);
+            } else {
+                const cantidad = parseInt(row.querySelector('.edit-cantidad').value, 10);
+                const precio_unitario = parseFloat(row.querySelector('.edit-precio').value);
+
+                if (isNaN(cantidad) || cantidad <= 0) throw new Error(`La cantidad para '${row.querySelector('span').textContent}' debe ser positiva.`);
+                if (isNaN(precio_unitario) || precio_unitario < 0) throw new Error(`El precio para '${row.querySelector('span').textContent}' debe ser válido.`);
+                
+                detalles_a_actualizar.push({ id: detailId, cantidad, precio_unitario });
+            }
+        }
+        
+        const { error } = await currentSupabase.rpc('actualizar_compra_y_detalles', {
+            p_compra_id: compraId,
+            detalles_a_actualizar,
+            ids_a_eliminar
+        });
+
+        if (error) throw error;
+        
+        const compraIndex = comprasPendientesCache.findIndex(c => c.id === compraId);
+        if (compraIndex !== -1) {
+            let nuevoTotalCalculado = 0;
+            const idsAEliminarSet = new Set(ids_a_eliminar);
+
+            const nuevosDetalles = comprasPendientesCache[compraIndex].detalles
+                .filter(det => !idsAEliminarSet.has(det.id))
+                .map(det => {
+                    const detalleActualizado = detalles_a_actualizar.find(act => act.id === det.id);
+                    if (detalleActualizado) {
+                        const subtotal = detalleActualizado.cantidad * detalleActualizado.precio_unitario;
+                        nuevoTotalCalculado += subtotal;
+                        return { ...det, cantidad: detalleActualizado.cantidad, precio_unitario: detalleActualizado.precio_unitario, subtotal: subtotal };
+                    }
+                    nuevoTotalCalculado += det.subtotal;
+                    return det;
+                });
+            
+            comprasPendientesCache[compraIndex].detalles = nuevosDetalles;
+            comprasPendientesCache[compraIndex].total_compra = nuevoTotalCalculado;
+
+            if (nuevosDetalles.length === 0) {
+                comprasPendientesCache.splice(compraIndex, 1);
+            }
+        }
+
+        hideGlobalLoading();
+        modal.remove();
+        await Swal.fire('¡Éxito!', 'La orden de compra ha sido actualizada.', 'success');
+
+        redibujarListaPendientes(); // Redibujamos desde el cache actualizado
+
+    } catch (err) {
+        hideGlobalLoading();
+        console.error("Error al guardar cambios:", err);
+        await Swal.fire('Error', 'No se pudo guardar: ' + err.message, 'error');
+    }
+};
+
+/**
+ * Maneja la cancelación de una orden de compra.
+ */
+window.cancelarCompra = async function(compraId) {
+    const result = await Swal.fire({
+        title: '¿Estás seguro?',
+        text: "Esta acción cancelará la orden de compra y no se puede deshacer.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Sí, cancelar',
+        cancelButtonText: 'No'
+    });
+
+    if (result.isConfirmed) {
+        try {
+            await currentSupabase.from('compras_tienda').update({ estado: 'cancelada' }).eq('id', compraId);
+            
+            // Eliminamos la compra del caché para que desaparezca de la vista
+            comprasPendientesCache = comprasPendientesCache.filter(c => c.id !== compraId);
+            redibujarListaPendientes();
+            
+            await Swal.fire('¡Cancelada!', 'La orden ha sido cancelada.', 'success');
+        } catch (error) {
+            await Swal.fire('Error', 'No se pudo cancelar la compra: ' + error.message, 'error');
+        }
+    }
+};
+
+// ========================================================================
+// === FIN DEL BLOQUE DE CÓDIGO PARA COMPRAS PENDIENTES ===
+// ========================================================================
 // ---------  MONTAJE PRINCIPAL Y NAVEGACION DE PESTAÑAS ----------
 export async function mount(container, supabase, user, hotelId) {
   currentContainerEl = container;
@@ -245,6 +599,138 @@ async function renderPOS() {
 document.getElementById('btnAplicarDescuento').onclick = aplicarDescuentoPOS;
 document.getElementById('btnRemoverDescuento').onclick = removerDescuentoPOS;
 }
+
+
+// AÑADE ESTA FUNCIÓN en tienda.js
+// REEMPLAZA esta función en tienda.js
+// REEMPLAZA esta función en tu archivo tienda.js
+// REEMPLAZA esta función en tu archivo tienda.js
+async function renderHistorialCompras() {
+    const container = document.getElementById('historial-compras-container');
+    if (!container) return;
+
+    container.innerHTML = `<p class="text-sm text-gray-500">Cargando historial de compras...</p>`;
+    try {
+        const { data, error } = await currentSupabase
+            .from('compras_tienda')
+            .select(`
+                *,
+                proveedor:proveedores(nombre),
+                creador:usuarios!compras_tienda_usuario_id_fkey(nombre)
+            `)
+            .eq('hotel_id', currentHotelId)
+            // ▼▼▼ CORRECCIÓN AQUÍ ▼▼▼
+            .order('fecha', { ascending: false }) // Se cambió de 'fecha_compra' a 'fecha'
+            .limit(50);
+
+        if (error) throw error;
+        if (!data.length) {
+            container.innerHTML = `<p class="text-sm text-gray-500 text-center py-4">No hay historial de compras para mostrar.</p>`;
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="table-responsive-sm mt-4 border rounded-lg shadow-sm">
+                <table class="table table-sm table-hover">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th>Fecha Creación</th>
+                            <th>Proveedor</th>
+                            <th>Total Est.</th>
+                            <th>Estado</th>
+                            <th>Creado por</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(compra => `
+                            <tr>
+                                <td>${new Date(compra.fecha).toLocaleDateString()}</td>
+                                <td>${compra.proveedor?.nombre || 'N/A'}</td>
+                                <td>${formatCurrency(compra.total_compra)}</td>
+                                <td><span class="badge bg-secondary text-white">${compra.estado}</span></td>
+                                <td>${compra.creador?.nombre || 'N/A'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+    } catch (err) {
+        // La consulta fallará aquí y mostrará el mensaje que viste
+        container.innerHTML = `<p class="text-red-500">Error al cargar el historial: ${err.message}</p>`;
+    }
+}
+
+// REEMPLAZA esta función en tu archivo tienda.js
+
+async function renderHistorialRecibidos() {
+    const container = document.getElementById('historial-recibidos-container');
+    if (!container) return;
+
+    container.innerHTML = `<p style="color:#666;">Cargando historial...</p>`;
+    try {
+        // ▼▼▼ INICIA CORRECCIÓN EN LA CONSULTA .select() ▼▼▼
+        // Se cambia la forma de obtener los nombres para que sea más robusta.
+        const { data, error } = await currentSupabase
+            .from('compras_tienda')
+            .select(`
+                *,
+                proveedor:proveedor_id(nombre),
+                creador:usuario_id(nombre),
+                receptor:recibido_por_usuario_id(nombre)
+            `)
+            .eq('hotel_id', currentHotelId)
+            .in('estado', ['recibido', 'recibido_parcial'])
+            .order('fecha_recepcion', { ascending: false })
+            .limit(50);
+        // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
+
+        if (error) throw error;
+        
+        if (!data || data.length === 0) {
+            container.innerHTML = `<p style="text-align:center;padding:1rem;color:#888;">No hay compras recibidas para mostrar.</p>`;
+            return;
+        }
+        
+        container.innerHTML = `
+            <table style="width:100%; border-collapse:collapse; font-size:0.95em;">
+                <thead>
+                    <tr style="text-align:left; background:#f1f5f9;">
+                        <th style="padding:10px;">Fecha Recepción</th>
+                        <th style="padding:10px;">Proveedor</th>
+                        <th style="padding:10px;">Estado</th>
+                        <th style="padding:10px;">Creado por</th>
+                        <th style="padding:10px;">Recibido por</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.map(compra => {
+                        // Lógica para dar estilo y texto legible al estado
+                        const esParcial = compra.estado === 'recibido_parcial';
+                        const estadoStyle = `
+                            background: ${esParcial ? '#fef3c7' : '#dcfce7'};
+                            color: ${esParcial ? '#b45309' : '#166534'};
+                            font-weight: 600; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;
+                        `;
+                        const estadoTexto = esParcial ? 'Recibido Parcial' : 'Recibido';
+
+                        return `
+                            <tr style="border-bottom: 1px solid #e5e7eb;">
+                                <td style="padding:8px 10px;">${new Date(compra.fecha_recepcion).toLocaleString()}</td>
+                                <td style="padding:8px 10px;">${compra.proveedor?.nombre || 'N/A'}</td>
+                                <td style="padding:8px 10px;"><span style="${estadoStyle}">${estadoTexto}</span></td>
+                                <td style="padding:8px 10px;">${compra.creador?.nombre || 'N/A'}</td>
+                                <td style="padding:8px 10px;">${compra.receptor?.nombre || 'N/A'}</td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>`;
+    } catch (err) {
+        console.error("Error al cargar historial de recibidos:", err);
+        container.innerHTML = `<p style="color:red;">Error al cargar el historial: ${err.message}</p>`;
+    }
+}
+
 // --- INICIA BLOQUE DE LÓGICA DE DESCUENTOS ---
 
 
@@ -342,6 +828,8 @@ async function aplicarDescuentoPOS() {
     msgEl.textContent = `¡Descuento "${discount.nombre}" aplicado!`;
     renderCarritoPOS(); // Actualizamos el carrito para mostrar el descuento
 }
+
+
 
 /**
  * Remueve el descuento aplicado y recalcula el total.
@@ -2569,103 +3057,94 @@ window.agregarProductoCompra = (id)=>{
 };
 
 // 5. Registra la compra (en estado pendiente)
+
+// REEMPLAZA esta función en tu archivo tienda.js
+// REEMPLAZA esta función en tu archivo tienda.js
 async function registrarCompraProveedor() {
-  try {
-    if (compraProveedorCarrito.length === 0) {
-      document.getElementById('msgCompra').textContent = "Carrito vacío";
-      return;
-    }
-    let proveedorId = document.getElementById('selectProveedorCompraForm').value;
-    if (!proveedorId) {
-      document.getElementById('msgCompra').textContent = "Selecciona un proveedor";
-      return;
-    }
-    let total = compraProveedorCarrito.reduce((a, b) => a + b.precio * b.cantidad, 0);
-
-    // 1. Registra compra principal en estado pendiente
-    let { data: compras, error } = await currentSupabase.from('compras_tienda').insert([{
-      hotel_id: currentHotelId,
-      usuario_id: currentUser.id,
-      proveedor_id: proveedorId,
-      total_compra: total,
-      fecha: new Date().toISOString(),
-      estado: "pendiente",
-      creado_en: new Date().toISOString()
-    }]).select();
-    if (error || !compras?.[0]) throw new Error("Error guardando compra");
-    let compraId = compras[0].id;
-
-    // 2. Detalle de compra
-    for (let item of compraProveedorCarrito) {
-      await currentSupabase.from('detalle_compras_tienda').insert([{
-        compra_id: compraId,
-        producto_id: item.id,
-        cantidad: item.cantidad,
-        precio_unitario: item.precio,
-        subtotal: item.cantidad * item.precio,
-        hotel_id: currentHotelId
-      }]);
-      await currentSupabase
-      .from('productos_tienda')
-     .update({ precio: item.precio })
-      .eq('id', item.id);
+    const msgEl = document.getElementById('msgCompra');
+    const btnEl = document.getElementById('btnRegistrarCompra');
+    const originalBtnText = btnEl.textContent;
+  
+    // ▼▼▼ CORRECCIÓN AQUÍ ▼▼▼
+    // Reemplazamos clearFeedback(msgEl) por una limpieza manual del mensaje.
+    if (msgEl) msgEl.textContent = '';
     
+    btnEl.disabled = true;
+    btnEl.textContent = 'Procesando...';
+
+    try {
+        if (compraProveedorCarrito.length === 0) {
+            throw new Error("El carrito de compra está vacío.");
+        }
+        let proveedorId = document.getElementById('selectProveedorCompraForm').value;
+        if (!proveedorId) {
+            throw new Error("Debes seleccionar un proveedor.");
+        }
+
+        let total = compraProveedorCarrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+
+        // 1. Registra la compra principal en estado pendiente
+        const { data: compraData, error: compraError } = await currentSupabase.from('compras_tienda').insert({
+            hotel_id: currentHotelId,
+            usuario_id: currentUser.id,
+            proveedor_id: proveedorId,
+            total_compra: total,
+            fecha: new Date().toISOString(),
+            estado: "pendiente"
+        }).select().single();
+
+        if (compraError) throw new Error(`Error al guardar la orden de compra: ${compraError.message}`);
+        
+        const compraId = compraData.id;
+        console.log(`✅ Orden de compra principal creada con ID: ${compraId}`);
+
+        // 2. Prepara los items del detalle para ser insertados
+        const detalleItems = compraProveedorCarrito.map(item => ({
+            compra_id: compraId,
+            producto_id: item.id,
+            cantidad: item.cantidad,
+            precio_unitario: item.precio,
+            subtotal: item.cantidad * item.precio,
+            hotel_id: currentHotelId
+        }));
+        
+        const { error: detalleError } = await currentSupabase.from('detalle_compras_tienda').insert(detalleItems);
+        
+        if (detalleError) {
+            console.error("Error al guardar los detalles, revirtiendo la compra principal...", detalleError);
+            await currentSupabase.from('compras_tienda').delete().eq('id', compraId);
+            throw new Error(`Error al guardar los detalles de la compra: ${detalleError.message}`);
+        }
+        console.log(`✅ ${detalleItems.length} detalles de compra guardados para la orden ${compraId}`);
+
+        for (let item of compraProveedorCarrito) {
+            await currentSupabase
+                .from('productos_tienda')
+                .update({ precio: item.precio })
+                .eq('id', item.id);
+        }
+        console.log("✅ Precios de compra de los productos actualizados.");
+
+        alert('¡Compra registrada con éxito! Ya puedes verla y recibirla desde "Compras Pendientes".');
+        
+        compraProveedorCarrito = [];
+        renderCarritoCompra();
+        document.getElementById('buscarProductoCompra').value = '';
+        renderProductosCompra();
+        await renderHistorialCompras();
+
+    } catch (err) {
+        console.error("Error en registrarCompraProveedor:", err);
+        // `showError` no está definida, la reemplazamos con un alert
+        if (msgEl) msgEl.textContent = err.message; else alert(err.message);
+    } finally {
+        btnEl.disabled = false;
+        btnEl.textContent = originalBtnText;
+    }
 }
-
-
-    function mostrarAlertaCompraExitosa(msg) {
-  // Si ya existe una alerta, elimínala
-  let alertaExistente = document.getElementById('miAlertaCompra');
-  if (alertaExistente) alertaExistente.remove();
-
-  const alerta = document.createElement('div');
-  alerta.id = 'miAlertaCompra';
-  alerta.innerHTML = `
-    <div style="
-      position: fixed; left: 0; top: 0; width: 100vw; height: 100vh;
-      background: rgba(0,0,0,0.18); display: flex; align-items: center; justify-content: center; z-index: 1000;">
-      <div style="
-        background: #fff;
-        padding: 34px 32px 22px 32px;
-        border-radius: 18px;
-        box-shadow: 0 6px 36px #1d4ed860;
-        text-align: center;
-        max-width: 350px;">
-        <div style="font-size: 2.3em; color: #22c55e;">✔️</div>
-        <div style="font-size:1.15em; color:#334155; margin:16px 0 10px 0; font-weight:600;">${msg || 'Compra registrada exitosamente'}</div>
-        <button onclick="document.getElementById('miAlertaCompra').remove()" style="
-          background: linear-gradient(90deg,#16a34a,#22c55e);
-          color: #fff;
-          font-weight:600;
-          border:none;
-          border-radius:6px;
-          padding:10px 30px;
-          margin-top:12px;
-          font-size:1.05em;
-          cursor:pointer;
-          box-shadow:0 2px 8px #22c55e20;
-          transition:background 0.18s;
-        ">OK</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(alerta);
-}
-
-// Usa así:
-mostrarAlertaCompraExitosa('¡Compra registrada! Puedes recibir el pedido cuando llegue para actualizar inventario y caja.');
-
-
-    compraProveedorCarrito = [];
-    renderCarritoCompra();
-    // Aquí puedes llamar a una función para refrescar la lista de compras pendientes:
-    // await renderComprasPendientes();
-  } catch (err) {
-    document.getElementById('msgCompra').textContent = err.message;
-  }
-}
-
 // 6. Renderiza el formulario de compras, carrito y proveedores
+// REEMPLAZA esta función en tu archivo tienda.js
+// REEMPLAZA esta función en tu archivo tienda.js
 async function renderModuloCompras() {
   const cont = document.getElementById('contenidoTiendaTab');
 
@@ -2684,140 +3163,73 @@ async function renderModuloCompras() {
 
   // --- ALERTAS: Si no hay productos o proveedores cargados ---
   if (!productosCache.length) {
+    cont.innerHTML = `
+      <div style="background: #fee2e2; color: #b91c1c; font-weight: 600; border-radius: 10px; padding: 18px 26px; margin: 40px auto 0 auto; max-width: 420px; box-shadow: 0 2px 10px #ef444422; display: flex; align-items: center; gap: 13px; font-size: 1.07em;">
+        <span style="font-size:1.5em;">🚫</span>
+        No hay productos cargados.<br>
+        <span style="font-weight:400;">Registra productos antes de realizar compras.</span>
+      </div>`;
+    return;
+  }
+  if (!proveedoresCache.length) {
+    cont.innerHTML = `
+      <div style="background: #fef9c3; color: #a16207; font-weight: 600; border-radius: 10px; padding: 18px 26px; margin: 40px auto 0 auto; max-width: 420px; box-shadow: 0 2px 10px #fde04799; display: flex; align-items: center; gap: 13px; font-size: 1.07em;">
+        <span style="font-size:1.5em;">⚠️</span>
+        No hay proveedores cargados.<br>
+        <span style="font-weight:400;">Registra proveedores antes de realizar compras.</span>
+      </div>`;
+    return;
+  }
+
+  // --- FORMULARIO NORMAL (TU CÓDIGO ORIGINAL) + Contenedor para el Historial ---
   cont.innerHTML = `
-    <div style="
-      background: #fee2e2;
-      color: #b91c1c;
-      font-weight: 600;
-      border-radius: 10px;
-      padding: 18px 26px;
-      margin: 40px auto 0 auto;
-      max-width: 420px;
-      box-shadow: 0 2px 10px #ef444422;
-      display: flex;
-      align-items: center;
-      gap: 13px;
-      font-size: 1.07em;
-    ">
-      <span style="font-size:1.5em;">🚫</span>
-      No hay productos cargados.<br>
-      <span style="font-weight:400;">Registra productos antes de realizar compras.</span>
+    <div style="background:#fff; border-radius:14px; box-shadow:0 3px 16px #0002; padding:30px 24px; max-width:520px; margin:auto;">
+      <h3 style="font-size:1.24em;color:#1d4ed8;font-weight:700;margin-bottom:18px;">
+        📝 Registrar Compra a Proveedor
+      </h3>
+      <div style="margin-bottom:15px;">
+        <label style="font-weight:600; color:#334155; margin-bottom:6px; display:block;">
+          Proveedor:
+          <select id="selectProveedorCompraForm" style="margin-top:6px; width:100%; padding:9px 13px; border-radius:7px; border:1.5px solid #cbd5e1; background:#f9fafb; font-size:1em; font-weight:500; color:#2563eb;">
+            <option value="">Selecciona proveedor</option>
+            ${proveedoresCache.map(pr => `<option value="${pr.id}">${pr.nombre}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+      <input id="buscarProductoCompra" placeholder="Buscar producto o categoría..." style="width:100%; padding:9px 13px; margin-bottom:13px; border-radius:6px; border:1.5px solid #d1d5db; background:#f9fafb; font-size:1em; box-sizing: border-box; transition:border 0.18s; outline:none;" onfocus="this.style.borderColor='#2563eb'" onblur="this.style.borderColor='#d1d5db'"/>
+      <div id="productosCompraList" style="margin-bottom:20px;"></div>
+      <h5 style="margin:18px 0 10px 0; font-size:1.09em; color:#0f766e; font-weight:600;">
+        🛒 Carrito de compra:
+      </h5>
+      <div style="overflow-x:auto;background:#f9fafb;border-radius:9px;">
+        <table style="width:100%;font-size:0.97em;border-collapse:collapse;">
+          <thead>
+            <tr style="background:#e0f2fe;color:#0e7490;">
+              <th style="padding:8px 4px;">Producto</th>
+              <th style="padding:8px 4px;">Cantidad</th>
+              <th style="padding:8px 4px;">Precio compra</th>
+              <th style="padding:8px 4px;">Subtotal</th>
+              <th style="padding:8px 4px;"></th>
+            </tr>
+          </thead>
+          <tbody id="carritoCompra"></tbody>
+        </table>
+      </div>
+      <div style="text-align:right;font-size:1.08em;margin-top:10px;font-weight:600;">
+        Total: <span id="totalCompra" style="color:#16a34a;">$0</span>
+      </div>
+      <button id="btnRegistrarCompra" style="background:linear-gradient(90deg,#16a34a,#22c55e); color:#fff; font-size:1.07em; padding:11px 36px; border:none; border-radius:7px; margin-top:24px; margin-bottom:8px; font-weight:700; cursor:pointer; box-shadow:0 2px 8px #22c55e20; transition:background 0.18s;" onmouseover="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'" onmouseout="this.style.background='linear-gradient(90deg,#16a34a,#22c55e)'">
+        Registrar Compra
+      </button>
+      <div id="msgCompra" style="color:#e11d48;margin-top:18px;font-weight:bold;font-size:1em;"></div>
     </div>
-  `;
-  return;
-}
-if (!proveedoresCache.length) {
-  cont.innerHTML = `
-    <div style="
-      background: #fef9c3;
-      color: #a16207;
-      font-weight: 600;
-      border-radius: 10px;
-      padding: 18px 26px;
-      margin: 40px auto 0 auto;
-      max-width: 420px;
-      box-shadow: 0 2px 10px #fde04799;
-      display: flex;
-      align-items: center;
-      gap: 13px;
-      font-size: 1.07em;
-    ">
-      <span style="font-size:1.5em;">⚠️</span>
-      No hay proveedores cargados.<br>
-      <span style="font-weight:400;">Registra proveedores antes de realizar compras.</span>
-    </div>
-  `;
-  return;
-}
+    
+    <hr class="my-5 border-t-2">
+    <h5 class="font-bold text-lg mt-4">Historial General de Compras</h5>
+    <div id="historial-compras-container" class="mt-3"></div>
+    `;
 
-
-  // --- FORMULARIO NORMAL ---
-  cont.innerHTML = `
-  <div style="background:#fff; border-radius:14px; box-shadow:0 3px 16px #0002; padding:30px 24px; max-width:520px; margin:auto;">
-    <h3 style="font-size:1.24em;color:#1d4ed8;font-weight:700;margin-bottom:18px;">
-      📝 Registrar Compra a Proveedor
-    </h3>
-    <div style="margin-bottom:15px;">
-      <label style="font-weight:600; color:#334155; margin-bottom:6px; display:block;">
-        Proveedor:
-        <select id="selectProveedorCompraForm"
-          style="
-            margin-top:6px;
-            width:100%;
-            padding:9px 13px;
-            border-radius:7px;
-            border:1.5px solid #cbd5e1;
-            background:#f9fafb;
-            font-size:1em;
-            font-weight:500;
-            color:#2563eb;
-          ">
-          <option value="">Selecciona proveedor</option>
-          ${proveedoresCache.map(pr => `<option value="${pr.id}">${pr.nombre}</option>`).join('')}
-        </select>
-      </label>
-    </div>
-    <input id="buscarProductoCompra"
-      placeholder="Buscar producto o categoría..."
-      style="
-        width:100%;
-        padding:9px 13px;
-        margin-bottom:13px;
-        border-radius:6px;
-        border:1.5px solid #d1d5db;
-        background:#f9fafb;
-        font-size:1em;
-        box-sizing: border-box;
-        transition:border 0.18s;
-        outline:none;
-      "
-      onfocus="this.style.borderColor='#2563eb'"
-      onblur="this.style.borderColor='#d1d5db'"
-    />
-    <div id="productosCompraList" style="margin-bottom:20px;"></div>
-    <h5 style="margin:18px 0 10px 0; font-size:1.09em; color:#0f766e; font-weight:600;">
-      🛒 Carrito de compra:
-    </h5>
-    <div style="overflow-x:auto;background:#f9fafb;border-radius:9px;">
-      <table style="width:100%;font-size:0.97em;border-collapse:collapse;">
-        <thead>
-          <tr style="background:#e0f2fe;color:#0e7490;">
-            <th style="padding:8px 4px;">Producto</th>
-            <th style="padding:8px 4px;">Cantidad</th>
-            <th style="padding:8px 4px;">Precio compra</th>
-            <th style="padding:8px 4px;">Subtotal</th>
-            <th style="padding:8px 4px;"></th>
-          </tr>
-        </thead>
-        <tbody id="carritoCompra"></tbody>
-      </table>
-    </div>
-    <div style="text-align:right;font-size:1.08em;margin-top:10px;font-weight:600;">
-      Total: <span id="totalCompra" style="color:#16a34a;">$0</span>
-    </div>
-    <button id="btnRegistrarCompra"
-      style="
-        background:linear-gradient(90deg,#16a34a,#22c55e);
-        color:#fff;
-        font-size:1.07em;
-        padding:11px 36px;
-        border:none;
-        border-radius:7px;
-        margin-top:24px;
-        margin-bottom:8px;
-        font-weight:700;
-        cursor:pointer;
-        box-shadow:0 2px 8px #22c55e20;
-        transition:background 0.18s;
-      "
-      onmouseover="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
-      onmouseout="this.style.background='linear-gradient(90deg,#16a34a,#22c55e)'"
-    >Registrar Compra</button>
-    <div id="msgCompra" style="color:#e11d48;margin-top:18px;font-weight:bold;font-size:1em;"></div>
-  </div>
-`;
-
-
+  // Asignación de eventos y renderizado inicial (tu código original)
   document.getElementById('buscarProductoCompra').oninput = (e) => {
     compraProveedorFiltro = e.target.value.toLowerCase();
     renderProductosCompra();
@@ -2828,144 +3240,17 @@ if (!proveedoresCache.length) {
   compraProveedorCarrito = [];
   renderProductosCompra();
   renderCarritoCompra();
-}
 
+  // Llamada a la nueva función para poblar el historial
+  await renderHistorialCompras();
+}
 
 // ==================== FUNCIONES DE COMPRAS PENDIENTES Y RECEPCIÓN ====================
 
 // 7. Renderiza la lista de compras pendientes
-async function renderComprasPendientes() {
-  const cont = document.getElementById('contenidoTiendaTab');
-  cont.innerHTML = `
-  <div style="
-    display:flex;
-    align-items:center;
-    gap:14px;
-    margin-bottom:23px;
-    padding:8px 0 6px 0;
-  ">
-    <span style="
-      display:inline-block;
-      background:#fef08a;
-      color:#b45309;
-      font-weight:700;
-      font-size:1.2em;
-      padding:8px 15px;
-      border-radius:10px;
-      box-shadow:0 1px 6px #fde04744;
-    ">
-      <span style="font-size:1.3em;">📦</span>
-      Compras pendientes por recibir
-    </span>
-  </div>
-  <div id="comprasPendientesList"></div>
-`;
+// REEMPLAZA esta función en tu archivo tienda.js
+// REEMPLAZA esta función en tu archivo tienda.js
 
-  // Cargar compras pendientes/parciales
-  const { data: compras, error } = await currentSupabase
-    .from('compras_tienda')
-    .select('*')
-    .eq('hotel_id', currentHotelId)
-    .in('estado', ['pendiente', 'parcial'])
-    .order('fecha', { ascending: false });
-
-  if (error) {
-    cont.innerHTML += `<div class="text-red-600">Error cargando compras: ${error.message}</div>`;
-    return;
-  }
-  if (!compras || compras.length === 0) {
-    cont.innerHTML += `<div class="text-gray-500 mt-5">No hay compras pendientes o parciales.</div>`;
-    return;
-  }
-  await cargarDetallesCompras(compras);
-  let html = compras.map(compra => renderTarjetaCompraPendiente(compra)).join('');
-  document.getElementById('comprasPendientesList').innerHTML = html;
-}
-
-// 8. Carga detalles de productos de una compra
-async function cargarDetallesCompras(compras) {
-  for (let compra of compras) {
-    const { data: detalles } = await currentSupabase
-      .from('detalle_compras_tienda')
-      // Se une con productos_tienda para obtener el nombre directamente
-      .select('*, producto_id(id, nombre)')
-      .eq('compra_id', compra.id);
-    compra.detalles = detalles; // Ahora los detalles ya incluyen el objeto producto
-  }
-}
-
-// 9. Renderiza una tarjeta de compra pendiente con inputs de recepción
-function renderTarjetaCompraPendiente(compra) {
-    let productosHtml = '';
-    if (compra.detalles && compra.detalles.length > 0) {
-        productosHtml = `
-            <table style="width:100%; border-collapse: collapse; font-size: 0.95em;">
-                <thead>
-                    <tr style="text-align:left; color:#475569;">
-                        <th style="padding:4px; border-bottom:1.5px solid #e2e8f0;">Producto</th>
-                        <th style="padding:4px; border-bottom:1.5px solid #e2e8f0; text-align:center;">Pedido</th>
-                        <th style="padding:4px; border-bottom:1.5px solid #e2e8f0; text-align:center;">Recibido</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${compra.detalles.map(det => `
-                        <tr style="border-bottom:1px solid #f1f5f9;">
-                            <td style="padding:8px 4px; font-weight:600; color:#1e293b;">
-                                ${det.producto_id.nombre || 'Producto Desconocido'}
-                            </td>
-                            <td style="padding:8px 4px; text-align:center;">
-                                ${det.cantidad}
-                            </td>
-                            <td style="padding:8px 4px; text-align:center;">
-                                <input 
-                                    type="number" 
-                                    id="recibido_${compra.id}_${det.producto_id.id}" 
-                                    value="${det.cantidad}" 
-                                    min="0" 
-                                    max="${det.cantidad}"
-                                    style="width:70px; padding:5px 7px; border-radius:6px; border:1.3px solid #cbd5e1; background:#f8fafc; text-align:center;">
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
-    }
-
-    return `
-        <div style="border-radius:11px;background:#fef9c3;border:1.7px solid #fde047;box-shadow:0 2px 10px #fde04738;margin-bottom:23px;padding:24px 18px 16px 18px;max-width:520px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
-                <span style="font-size:1.07em; font-weight:700; color:#b45309;">
-                    Proveedor: <span style="color:#2563eb;">${getProveedorNombre(compra.proveedor_id)}</span>
-                </span>
-                <span style="font-size:0.9em; color:#475569;">${new Date(compra.fecha).toLocaleDateString()}</span>
-            </div>
-            ${productosHtml}
-            <div style="margin:16px 0 13px 0; text-align:right; font-weight:700; font-size:1.1em; color:#166534;">
-                Total Compra: ${formatCurrency(compra.total_compra)}
-            </div>
-            <div style="display:flex;gap:8px;">
-                <button onclick="window.recibirPedido('${compra.id}')" style="background:#16a34a;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;flex-grow:1;">✔️ Recibir Productos</button>
-                <button onclick="window.cancelarCompra('${compra.id}')" style="background:#ef4444;color:#fff;padding:8px 18px;border:none;border-radius:6px;font-weight:600;cursor:pointer;">❌ Cancelar Compra</button>
-            </div>
-            <div id="msgRecibido_${compra.id}" style="margin-top:8px;font-size:0.95em;color:#64748b;text-align:center;"></div>
-        </div>`;
-}
-
-// La función 'guardarEdicionCompra' no se llama desde la tarjeta de recepción, se mantiene por si se usa en otro lado.
-window.guardarEdicionCompra = async function (compraId) {
-    // ... tu código original de guardarEdicionCompra ...
-};
-
-window.cancelarCompra = async function (compraId) {
-    if (!confirm("¿Está seguro que desea cancelar esta compra? Esta acción no se puede deshacer.")) return;
-    await currentSupabase.from('compras_tienda')
-      .update({ estado: 'cancelada' })
-      .eq('id', compraId);
-
-    showSuccess(document.getElementById(`msgRecibido_${compraId}`), 'Compra cancelada.');
-    renderComprasPendientes();
-};
 
 // 10. Obtiene el nombre del proveedor por id (de tu cache)
 function getProveedorNombre(proveedorId) {
@@ -2976,155 +3261,4 @@ function getProveedorNombre(proveedorId) {
 // 11. Lógica para recibir pedido (total o parcial) - VERSIÓN CORREGIDA
 // Reemplaza tu función window.recibirPedido existente con esta versión final
 
-window.recibirPedido = async function(compraId) {
-    const feedbackElementForToast = document.getElementById(`msgRecibido_${compraId}`) || document.body;
 
-    try {
-        // 1. Carga detalles de productos de la compra
-        const { data: detallesCompra, error: errDetalles } = await currentSupabase
-            .from('detalle_compras_tienda')
-            .select('*, producto_id(id, nombre)')
-            .eq('compra_id', compraId);
-
-        if (errDetalles || !detallesCompra || detallesCompra.length === 0) {
-            showError(feedbackElementForToast, 'No se encontraron detalles para esta compra.');
-            return;
-        }
-
-        // 2. Recopilar cantidades recibidas
-        let esRecepcionParcial = false;
-        let recibidoTotalMonto = 0;
-        const itemsRecibidosParaActualizar = [];
-
-        for (let det of detallesCompra) {
-            const recibidoInput = document.getElementById(`recibido_${compraId}_${det.producto_id.id}`);
-            const cantidadRecibida = recibidoInput ? Number(recibidoInput.value) : 0;
-            
-            if (isNaN(cantidadRecibida) || cantidadRecibida < 0) {
-                showError(feedbackElementForToast, `Cantidad inválida para ${det.producto_id.nombre}.`);
-                return;
-            }
-            if (cantidadRecibida > det.cantidad) {
-                showError(feedbackElementForToast, `No puedes recibir más de lo pedido (${det.cantidad}) para ${det.producto_id.nombre}.`);
-                return;
-            }
-
-            if (cantidadRecibida < det.cantidad) {
-                esRecepcionParcial = true;
-            }
-
-            if (cantidadRecibida > 0) {
-                itemsRecibidosParaActualizar.push({
-                    producto_id: det.producto_id.id,
-                    cantidadRecibida: cantidadRecibida,
-                    precio_compra: det.precio_unitario
-                });
-                recibidoTotalMonto += cantidadRecibida * det.precio_unitario;
-            }
-        }
-
-        if (itemsRecibidosParaActualizar.length === 0) {
-            showError(feedbackElementForToast, "No se indicó ninguna cantidad recibida.");
-            return;
-        }
-
-        // 3. Confirmación con el usuario (método de pago)
-        const turnoId = turnoService.getActiveTurnId();
-        if (!turnoId) {
-            showError(feedbackElementForToast, "ACCIÓN BLOQUEADA: No hay un turno de caja activo.");
-            return;
-        }
-        const { data: metodosPago, error: errMetodos } = await currentSupabase.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
-        if (errMetodos || !metodosPago || metodosPago.length === 0) {
-            showError(feedbackElementForToast, "No hay métodos de pago activos configurados.");
-            return;
-        }
-        const inputOptions = new Map(metodosPago.map(mp => [mp.id, mp.nombre]));
-        const { value: metodoPagoId, isDismissed } = await Swal.fire({
-            title: 'Confirmar Recepción y Pago',
-            html: `Se registrará un egreso de <b>${formatCurrency(recibidoTotalMonto)}</b>.<br>Por favor, selecciona el método de pago:`,
-            input: 'select',
-            inputOptions,
-            inputPlaceholder: '-- Selecciona un método --',
-            confirmButtonText: 'Confirmar y Registrar',
-            showCancelButton: true,
-            cancelButtonText: 'Cancelar',
-            inputValidator: (value) => !value && '¡Debes seleccionar un método de pago!'
-        });
-        if (isDismissed || !metodoPagoId) {
-            showError(feedbackElementForToast, "Recepción cancelada.");
-            return;
-        }
-
-        showGlobalLoading("Procesando recepción...");
-
-        // 4. Actualizar stock y precio de compra en la base de datos
-        for (const item of itemsRecibidosParaActualizar) {
-            const { data: productoActual, error: errProd } = await currentSupabase
-                .from('productos_tienda')
-                .select('stock_actual')
-                .eq('id', item.producto_id)
-                .single();
-
-            if (errProd || !productoActual) {
-                throw new Error(`No se pudo encontrar el producto con ID ${item.producto_id} para actualizar stock.`);
-            }
-
-            const nuevoStock = (productoActual.stock_actual || 0) + item.cantidadRecibida;
-            
-            // --- CORRECCIÓN FINAL ---
-            // Cambiamos 'precio_compra' por 'precio', asumiendo que ese es el nombre correcto de tu columna.
-            const { error: updateError } = await currentSupabase
-                .from('productos_tienda')
-                .update({
-                    stock_actual: nuevoStock,
-                    precio: item.precio_compra 
-                })
-                .eq('id', item.producto_id);
-
-            if (updateError) {
-                // Si este error persiste, verifica el nombre exacto de la columna de precio en tu tabla 'productos_tienda'.
-                throw new Error(`Error actualizando el stock para el producto ID ${item.producto_id}: ${updateError.message}`);
-            }
-        }
-
-        // 5. Actualizar estado de la compra y registrar egreso en caja
-        const nuevoEstadoCompra = esRecepcionParcial ? 'parcial' : 'recibida';
-        await currentSupabase.from('compras_tienda').update({
-            estado: nuevoEstadoCompra
-        }).eq('id', compraId);
-        
-        const { data: compraData } = await currentSupabase.from('compras_tienda').select('proveedor_id').eq('id', compraId).single();
-        const proveedorNombre = getProveedorNombre(compraData.proveedor_id);
-        const concepto = `Compra a ${proveedorNombre} (${nuevoEstadoCompra})`;
-
-        const { error: errorCaja } = await currentSupabase.from('caja').insert({
-            hotel_id: currentHotelId,
-            tipo: 'egreso',
-            monto: recibidoTotalMonto,
-            concepto: concepto,
-            usuario_id: currentUser.id,
-            compra_tienda_id: compraId,
-            turno_id: turnoId, 
-            metodo_pago_id: metodoPagoId
-        });
-
-        if (errorCaja) {
-            throw new Error(`Inventario actualizado, pero falló el registro en caja: ${errorCaja.message}. REVISAR MANUALMENTE.`);
-        }
-        
-        showSuccess(feedbackElementForToast, '¡Éxito! Inventario y caja actualizados.');
-
-    } catch (err) {
-        console.error("Error en recibirPedido:", err);
-        showError(feedbackElementForToast, 'Error al procesar: ' + err.message);
-    } finally {
-        hideGlobalLoading();
-        if (typeof window.recargarProductosYProveedores === "function") {
-            await window.recargarProductosYProveedores();
-        }
-        if (typeof renderComprasPendientes === "function") {
-            await renderComprasPendientes();
-        }
-    }
-};

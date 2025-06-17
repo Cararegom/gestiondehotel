@@ -46,7 +46,27 @@ function formatDate(dateString) {
         return dateString; // Retorna la original si hay error
     }
 }
-
+// AÑADE ESTA FUNCIÓN EN clientes.js
+function renderClienteDescuentos(descuentos) {
+    if (!descuentos || !descuentos.length) {
+        return '<div class="text-center text-gray-500 p-6">Este cliente no tiene descuentos personalizados asignados.</div>';
+    }
+    return descuentos.map(d => `
+        <div class="mb-3 p-4 border border-blue-200 rounded-lg bg-blue-50 shadow-sm">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h5 class="font-bold text-blue-800 text-lg">${d.nombre}</h5>
+                    ${d.codigo ? `<p class="font-mono text-sm bg-blue-100 text-blue-700 px-2 py-0.5 rounded inline-block my-1">${d.codigo}</p>` : '<p class="text-sm text-gray-600">Automático</p>'}
+                </div>
+                <span class="text-xl font-bold text-blue-600">${d.tipo === 'porcentaje' ? `${d.valor}%` : formatCurrency(d.valor)}</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">
+                <p><strong>Estado:</strong> ${d.activo ? '<span class="text-green-600 font-semibold">Activo</span>' : '<span class="text-red-600 font-semibold">Inactivo</span>'}</p>
+                <p><strong>Uso:</strong> ${d.usos_actuales || 0} / ${(d.usos_maximos || 0) === 0 ? '∞' : d.usos_maximos}</p>
+            </div>
+        </div>
+    `).join('');
+}
 /**
  * Formatea un monto numérico a formato de moneda (COP).
  * @param {number} amount El monto a formatear.
@@ -244,6 +264,7 @@ export async function getClienteById(clienteId) {
  * @param {string} clienteId El ID del cliente.
  * @returns {object} Un objeto que contiene reservas, ventas, ventas de tienda, ventas de restaurante y actividades CRM.
  */
+// REEMPLAZA ESTA FUNCIÓN EN clientes.js
 async function fetchClientHistory(clienteId) {
     logDebug('Obteniendo historial del cliente para ID:', clienteId);
     const feedbackEl = document.getElementById('clientes-feedback');
@@ -254,6 +275,8 @@ async function fetchClientHistory(clienteId) {
             throw new Error('Supabase no está disponible.');
         }
 
+        // ▼▼▼ CORRECCIÓN CLAVE AQUÍ ▼▼▼
+        // Se añade .select('*, habitaciones(nombre)') para traer el nombre de la habitación.
         const [
             { data: reservas, error: errorReservas },
             { data: ventas, error: errorVentas },
@@ -261,7 +284,7 @@ async function fetchClientHistory(clienteId) {
             { data: ventasRestaurante, error: errorVentasRestaurante },
             { data: actividades, error: errorActividades }
         ] = await Promise.all([
-            supabaseInstance.from('reservas').select('*').eq('cliente_id', clienteId),
+            supabaseInstance.from('reservas').select('*, habitaciones(nombre)').eq('cliente_id', clienteId),
             supabaseInstance.from('ventas').select('*').eq('cliente_id', clienteId),
             supabaseInstance.from('ventas_tienda').select('*').eq('cliente_id', clienteId),
             supabaseInstance.from('ventas_restaurante').select('*').eq('cliente_id', clienteId),
@@ -290,7 +313,6 @@ async function fetchClientHistory(clienteId) {
         clearFeedback(feedbackEl);
     }
 }
-
 // --- LISTADO Y FILTRADO DE CLIENTES ---
 
 /**
@@ -395,6 +417,8 @@ async function filtrarTabla(texto, dateRange) {
  */
 
 
+// js/modules/clientes/clientes.js
+
 export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, opts = {}) {
     logDebug('Mostrando formulario de cliente para ID:', clienteId);
 
@@ -404,18 +428,26 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         return;
     }
 
-    // --- CORRECCIÓN: Usar el contenedor de modal secundario para evitar conflictos ---
-    const modal = document.getElementById('modal-container-secondary');
+    // Se cambió 'const' por 'let' para permitir reasignación en caso de fallback.
+    let modal = document.getElementById('modal-container-secondary');
+    
     if (!modal) {
-        console.error("Error: #modal-container-secondary no fue encontrado. Asegúrate que esté en tu HTML principal.");
-        // Fallback al modal primario si el secundario no existe
+        console.error("ADVERTENCIA: #modal-container-secondary no fue encontrado. Usando fallback a #modal-container.");
+        // Si el contenedor secundario no existe, intenta usar el primario como respaldo.
         modal = document.getElementById('modal-container');
+    }
+
+    if (!modal) {
+        // Si ninguno de los dos existe, detenemos la ejecución.
+        console.error("Error crítico: No se encontró ningún contenedor de modal (#modal-container o #modal-container-secondary).");
+        alert("Error: No se puede mostrar el formulario porque falta el contenedor del modal.");
+        return;
     }
     
     const cliente = clienteId ? clientesData.find(c => c.id === clienteId) : {};
     
     modal.innerHTML = `
-        <div class="modal-content bg-white rounded-xl shadow-2xl p-6 max-w-lg mx-auto w-full relative">
+        <div class="modal-content bg-white rounded-xl shadow-2xl p-6 max-w-lg mx-auto w-full relative animate-fade-in-up">
             <button class="modal-close-button absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
             <h3 class="text-2xl font-bold mb-4">${clienteId ? 'Editar Cliente' : 'Registrar Cliente'}</h3>
             <form id="form-cliente">
@@ -461,9 +493,11 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
 
     const afterSaveCallback = opts.afterSave || (() => {});
     const closeModal = () => { modal.innerHTML = ''; modal.style.display = 'none'; };
+
     modal.querySelector('.modal-close-button').onclick = closeModal;
     modal.querySelector('#btn-cancelar-form').onclick = closeModal;
-     modal.querySelector('.modal-content').onclick = (e) => e.stopPropagation();
+    modal.querySelector('.modal-content').onclick = (e) => e.stopPropagation();
+    modal.onclick = (e) => { if (e.target === modal) closeModal(); };
 
 
     modal.querySelector('#form-cliente').onsubmit = async (e) => {
@@ -487,15 +521,13 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
 
             showSuccess(feedback, "Cliente guardado exitosamente.");
             
-            // --- CORRECCIÓN FINAL ---
-            // Solo intentamos recargar la tabla si existe en el DOM (es decir, si estamos en la página de clientes)
             if (document.getElementById('clientes-table-wrapper')) {
                 await cargarYRenderizarClientes();
             }
             
             setTimeout(() => {
                 closeModal();
-                afterSaveCallback(resp.data); // Ejecutar el callback con el cliente nuevo/actualizado
+                afterSaveCallback(resp.data);
             }, 500);
 
         } catch (err) {
@@ -503,88 +535,67 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
             showError(feedback, `Error: ${err.message}`);
         }
     };
-}// --- VISTA DETALLADA DEL CLIENTE (PESTAÑAS, HISTORIAL, CRM, GRÁFICOS) ---
+}
+
+// --- VISTA DETALLADA DEL CLIENTE (PESTAÑAS, HISTORIAL, CRM, GRÁFICOS) ---
 
 /**
  * Muestra una vista detallada de un cliente con pestañas para datos generales, historial, gastos y actividades CRM.
  * @param {string} clienteId El ID del cliente a mostrar.
  */
+
 async function mostrarHistorialCliente(clienteId) {
     logDebug('Mostrando historial del cliente para ID:', clienteId);
     const cliente = clientesData.find(c => c.id === clienteId);
     if (!cliente) {
         showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');
-        logError('Cliente no encontrado para ID:', clienteId);
         return;
     }
 
     const modal = document.getElementById('modal-container');
-    showLoading(modal, `Cargando detalles de ${cliente.nombre}...`); // Mensaje de carga en el modal
+    showLoading(modal, `Cargando detalles de ${cliente.nombre}...`);
 
-    // Obtener todo el historial del cliente de forma asíncrona
     const { reservas, ventas, ventasTienda, ventasRestaurante, actividades } = await fetchClientHistory(clienteId);
-
-    // NUEVO: Obtener descuentos asociados a este cliente
+    
     let descuentosCliente = [];
     try {
-        if (!supabaseInstance) {
-            logError('Supabase instance no está inicializada al obtener descuentos del cliente.');
-            throw new Error('Supabase no está disponible para obtener descuentos.');
-        }
-        const { data: clienteDescuentos, error: errDescuentos } = await supabaseInstance
-            .from('clientes_descuentos') // Asumimos una tabla de relación muchos a muchos
-            .select('descuentos(*)') // Traer los detalles del descuento
-            .eq('cliente_id', clienteId);
-
-        if (errDescuentos) throw errDescuentos;
-        descuentosCliente = clienteDescuentos.map(cd => cd.descuentos) || [];
+        const { data, error } = await supabaseInstance.from('descuentos').select('*').eq('cliente_id', clienteId);
+        if (error) throw error;
+        descuentosCliente = data || [];
     } catch (err) {
         logError('Error al cargar descuentos del cliente:', err);
-        // showAppFeedback (o similar) si es un error que el usuario final deba ver.
     }
 
-    // Calcular el total de gastos por módulo
+    const totalReservas = reservas.reduce((sum, item) => sum + (item.monto_total || 0), 0);
     const totalVentas = ventas.reduce((sum, item) => sum + (item.total || 0), 0);
     const totalVentasTienda = ventasTienda.reduce((sum, item) => sum + (item.total_venta || item.total || 0), 0);
     const totalVentasRestaurante = ventasRestaurante.reduce((sum, item) => sum + (item.monto_total || item.total_venta || item.total || 0), 0);
-    const totalReservas = reservas.reduce((sum, item) => sum + (item.precio_total || 0), 0); // Asumiendo que las reservas tienen un precio_total
 
-    // Renderiza la estructura HTML del modal de detalles del cliente
     modal.innerHTML = `
         <div class="modal-content bg-white rounded-xl shadow-2xl p-6 max-w-4xl mx-auto w-full relative h-5/6 flex flex-col">
             <button class="modal-close-button absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
             <h3 class="text-2xl font-bold mb-4 border-b pb-2">Detalles de Cliente: ${cliente.nombre}</h3>
-
             <div class="tabs flex border-b border-gray-200 mb-4 bg-gray-50 rounded-t-lg overflow-hidden">
-                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100 transition-colors duration-200" data-tab="datos-generales">Datos Generales</button>
-                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100 transition-colors duration-200" data-tab="historial-visitas">Historial de Visitas</button>
-                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100 transition-colors duration-200" data-tab="historial-gastos">Historial de Gastos</button>
-                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100 transition-colors duration-200" data-tab="actividades-crm">Actividades CRM</button>
-                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100 transition-colors duration-200" data-tab="descuentos-cliente">Descuentos</button>
+                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="datos-generales">Datos Generales</button>
+                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="historial-visitas">Historial de Visitas</button>
+                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="historial-gastos">Historial de Gastos</button>
+                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="actividades-crm">Actividades CRM</button>
+                <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="descuentos">Descuentos</button>
             </div>
             <div id="tab-content" class="flex-grow overflow-y-auto">
                 <div id="tab-datos-generales" class="tab-pane active p-2">
                     <form id="form-cliente-detail">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
-                                <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="nombre" value="${cliente.nombre || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Documento</label>
-                                <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="documento" value="${cliente.documento || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                                <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="email" type="email" value="${cliente.email || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
-                                <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="telefono" value="${cliente.telefono || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
-                                <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="direccion" value="${cliente.direccion || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Fecha de nacimiento</label>
-                                <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="fecha_nacimiento" type="date" value="${cliente.fecha_nacimiento ? cliente.fecha_nacimiento.substr(0, 10) : ''}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="nombre" value="${cliente.nombre || ''}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Documento</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="documento" value="${cliente.documento || ''}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Email</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="email" type="email" value="${cliente.email || ''}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="telefono" value="${cliente.telefono || ''}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="direccion" value="${cliente.direccion || ''}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Fecha de nacimiento</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="fecha_nacimiento" type="date" value="${cliente.fecha_nacimiento ? cliente.fecha_nacimiento.substr(0, 10) : ''}"></div>
                         </div>
-                        <div class="form-group mt-4"><label class="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-                            <textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-24" name="notas">${cliente.notas || ''}</textarea></div>
+                        <div class="form-group mt-4"><label class="block text-sm font-medium text-gray-700 mb-1">Notas</label><textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-24" name="notas">${cliente.notas || ''}</textarea></div>
                         <div id="feedback-form-cliente-detail" class="mt-3 text-center"></div>
-                        <div class="flex justify-end gap-2 mt-4">
-                            <button type="submit" class="button button-success bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md">Guardar Cambios</button>
-                        </div>
+                        <div class="flex justify-end gap-2 mt-4"><button type="submit" class="button button-success bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md">Guardar Cambios</button></div>
                     </form>
                 </div>
 
@@ -598,20 +609,16 @@ async function mostrarHistorialCliente(clienteId) {
 
                 <div id="tab-historial-gastos" class="tab-pane hidden p-2">
                     <h4 class="font-bold mb-2 text-lg">Resumen de Gastos</h4>
-                    <p class="text-gray-700"><strong>Total en Reservas:</strong> ${formatCurrency(totalReservas)}</p>
-                    <p class="text-gray-700"><strong>Total en Ventas Generales:</strong> ${formatCurrency(totalVentas)}</p>
-                    <p class="text-gray-700"><strong>Total en Tienda:</strong> ${formatCurrency(totalVentasTienda)}</p>
-                    <p class="text-gray-700"><strong>Total en Restaurante:</strong> ${formatCurrency(totalVentasRestaurante)}</p>
-                    <div class="mt-4 h-64"> <canvas id="gastosChart"></canvas>
-                    </div>
+                    <p><strong>Total en Reservas:</strong> ${formatCurrency(totalReservas)}</p>
+                    <p><strong>Total en Ventas Generales:</strong> ${formatCurrency(totalVentas)}</p>
+                    <p><strong>Total en Tienda:</strong> ${formatCurrency(totalVentasTienda)}</p>
+                    <p><strong>Total en Restaurante:</strong> ${formatCurrency(totalVentasRestaurante)}</p>
+                    <div class="mt-4 h-64"><canvas id="gastosChart"></canvas></div>
                     <div class="mt-8">
                         <h4 class="font-bold mb-2 text-lg">Detalle de Consumos</h4>
-                        <div class="overflow-y-auto max-h-64 border border-gray-200 rounded p-2 bg-gray-50">
-                            ${renderDetalleGastos(reservas, ventas, ventasTienda, ventasRestaurante)}
-                        </div>
+                        <div class="overflow-y-auto max-h-64 border rounded p-2 bg-gray-50">${renderDetalleGastos(reservas, ventas, ventasTienda, ventasRestaurante)}</div>
                     </div>
                 </div>
-
                 <div id="tab-actividades-crm" class="tab-pane hidden p-2">
                     <h4 class="font-bold mb-2 text-lg">Actividades CRM</h4>
                     <ul id="lista-actividades-crm" class="list-disc list-inside mb-4 space-y-2">
@@ -620,44 +627,27 @@ async function mostrarHistorialCliente(clienteId) {
                     <form id="form-crm-actividad" class="mt-4 border-t pt-3 border-gray-200">
                         <label class="block text-base font-semibold text-gray-800 mb-2">Agregar Actividad CRM</label>
                         <div class="flex flex-wrap gap-3 mb-3">
-                            <select name="tipo" class="form-control p-2 border border-gray-300 rounded-md flex-grow" required>
-                                <option value="">Tipo de Actividad</option>
-                                <option>Llamada</option>
-                                <option>Email</option>
-                                <option>Nota</option>
-                                <option>Tarea</option>
-                                <option>WhatsApp</option>
-                                <option>Visita</option>
-                                <option>Recordatorio</option>
-                            </select>
-                            <select name="estado" class="form-control p-2 border border-gray-300 rounded-md flex-grow" required>
-                                <option value="pendiente">Pendiente</option>
-                                <option value="completada">Completada</option>
-                                <option value="reagendada">Reagendada</option>
-                                <option value="cancelada">Cancelada</option>
-                            </select>
+                            <select name="tipo" class="form-control p-2 border border-gray-300 rounded-md flex-grow" required><option value="">Tipo de Actividad</option><option>Llamada</option><option>Email</option><option>Nota</option><option>Tarea</option><option>WhatsApp</option><option>Visita</option><option>Recordatorio</option></select>
+                            <select name="estado" class="form-control p-2 border border-gray-300 rounded-md flex-grow" required><option value="pendiente">Pendiente</option><option value="completada">Completada</option><option value="reagendada">Reagendada</option><option value="cancelada">Cancelada</option></select>
                         </div>
                         <textarea name="descripcion" class="form-control w-full p-2 border border-gray-300 rounded-md h-24 mb-3" required placeholder="Descripción de la actividad"></textarea>
                         <div id="feedback-form-crm-actividad" class="mb-3 text-center"></div>
                         <div class="flex justify-between items-center">
                             <button type="submit" class="button button-success bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md">Agregar Actividad</button>
-                            <button id="btn-ai-sugerencia" class="button button-info bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md">Sugerencia IA</button>
+                            <button type="button" id="btn-ai-sugerencia" class="button button-info bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md">Sugerencia IA</button>
                         </div>
                     </form>
                 </div>
+                <div id="tab-descuentos" class="tab-pane hidden p-2">${renderClienteDescuentos(descuentosCliente)}</div>
             </div>
-
             <div class="flex justify-end mt-4 border-t pt-4">
                 <button class="button button-neutral bg-gray-300 hover:bg-gray-400 text-gray-800 px-4 py-2 rounded-md" id="btn-cerrar-historial">Cerrar</button>
             </div>
         </div>
     `;
-    modal.style.display = 'flex'; // Usar flexbox para centrar el modal
-
+    modal.style.display = 'flex';
     setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventasTienda, ventasRestaurante, actividades);
-    logDebug('Modal de detalles de cliente renderizado y escuchadores configurados.');
 }
-
 /**
  * Configura los escuchadores de eventos para la vista detallada del cliente.
  * @param {string} clienteId
@@ -668,181 +658,212 @@ async function mostrarHistorialCliente(clienteId) {
  * @param {Array} ventasRestaurante
  * @param {Array} actividades
  */
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN clientes.js
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN clientes.js
 function setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventasTienda, ventasRestaurante, actividades) {
     const modal = document.getElementById('modal-container');
-
-    // Función para cerrar el modal de detalles
     const closeModal = () => {
         modal.innerHTML = '';
         modal.style.display = 'none';
         if (currentChartInstance) {
-            currentChartInstance.destroy(); // Destruir el gráfico al cerrar el modal
+            currentChartInstance.destroy();
             currentChartInstance = null;
         }
-        logDebug('Modal de detalles de cliente cerrado.');
     };
 
     modal.querySelector('.modal-close-button').onclick = closeModal;
     modal.querySelector('#btn-cerrar-historial').onclick = closeModal;
 
-    // Lógica para cambiar de pestaña
+    // Lógica de pestañas (sin cambios)
     modal.querySelectorAll('.tab-button').forEach(button => {
         button.onclick = (e) => {
-            // 1. Quitar clases 'active' y restaurar 'inactivo' a TODAS las pestañas
-            modal.querySelectorAll('.tab-button').forEach(btn => {
-                btn.classList.remove(
-                    'active',
-                    'bg-white',        // Fondo blanco (activo)
-                    'border-b-2',      // Borde inferior (activo)
-                    'border-blue-600', // Color del borde (activo)
-                    'text-blue-600',   // Color del texto (activo)
-                    'shadow-sm'        // Sombra (activo)
-                );
-                // Restaurar clases de inactivo (fondo gris, texto gris)
-                btn.classList.add('bg-gray-50', 'text-gray-700'); 
-            });
-
-            // 2. Añadir clases 'active' y quitar 'inactivo' a la pestaña clickeada
-            e.target.classList.add(
-                'active',
-                'bg-white',
-                'border-b-2',
-                'border-blue-600',
-                'text-blue-600',
-                'shadow-sm'
-            );
-            // Quitar clases de inactivo de la pestaña actual
-            e.target.classList.remove('bg-gray-50', 'text-gray-700');
-            
-            // 3. Ocultar todos los paneles de contenido y mostrar solo el del activo
+            modal.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'bg-white', 'border-b-2', 'border-blue-600', 'text-blue-600', 'shadow-sm'));
+            e.target.classList.add('active', 'bg-white', 'border-b-2', 'border-blue-600', 'text-blue-600', 'shadow-sm');
             const targetTab = e.target.dataset.tab;
             modal.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
             modal.querySelector(`#tab-${targetTab}`).classList.remove('hidden');
-
-            // 4. Lógica específica para gráficos (si la pestaña de gastos es seleccionada)
             if (targetTab === 'historial-gastos') {
                 renderGastosChart({ reservas, ventas, ventasTienda, ventasRestaurante });
             } else if (currentChartInstance) {
-                currentChartInstance.destroy(); // Destruir chart si la pestaña es cambiada
+                currentChartInstance.destroy();
                 currentChartInstance = null;
             }
-            logDebug(`Cambiado a la pestaña: ${targetTab}`);
         };
     });
 
-    // Guardar datos generales del cliente (formulario en la pestaña "Datos Generales")
+    // Guardar datos generales del cliente (sin cambios)
     modal.querySelector('#form-cliente-detail').onsubmit = async (e) => {
         e.preventDefault();
-        const form = e.target;
-        const data = Object.fromEntries(new FormData(form));
+        const data = Object.fromEntries(new FormData(e.target));
         const feedback = document.getElementById('feedback-form-cliente-detail');
-        clearFeedback(feedback);
-        logDebug('Guardando datos generales del cliente:', data);
-        showLoading(feedback, 'Guardando cambios...');
+        showLoading(feedback, 'Guardando...');
         try {
             const { error } = await supabaseInstance.from('clientes').update(data).eq('id', clienteId);
             if (error) throw error;
-            showSuccess(feedback, "Datos generales actualizados.");
-            logDebug('Datos generales del cliente actualizados.');
-            // Actualizar el cliente en la caché local para reflejar los cambios
-            const updatedClient = { ...cliente, ...data };
-            clientesData = clientesData.map(c => c.id === clienteId ? updatedClient : c);
-            setTimeout(() => clearFeedback(feedback), 2000); // Limpiar feedback después de un retardo
+            showSuccess(feedback, "Datos actualizados.");
+            setTimeout(() => clearFeedback(feedback), 2000);
         } catch (err) {
-            logError('Error al actualizar datos generales del cliente:', err);
             showError(feedback, "Error al guardar: " + (err?.message || err));
         }
     };
 
-    // Agregar actividad CRM (formulario en la pestaña "Actividades CRM")
+    // Agregar nueva actividad CRM (sin cambios)
     modal.querySelector('#form-crm-actividad').onsubmit = async (e) => {
         e.preventDefault();
         const form = e.target;
         const data = Object.fromEntries(new FormData(form));
-        const feedback = document.getElementById('feedback-form-crm-actividad');
-        clearFeedback(feedback);
-
-        if (!data.tipo || !data.descripcion || !data.estado) {
-            return showError(feedback, "Por favor, completa Tipo, Descripción y Estado.");
-        }
-
-        let nuevaActividad = {
-            ...data,
-            cliente_id: clienteId,
-            hotel_id: hotelIdActual,
-            usuario_creador_id: null, // Asumirás que el ID del usuario loggeado se manejará aquí
-            fecha: new Date().toISOString()
-        };
-
-        logDebug('Añadiendo nueva actividad CRM:', nuevaActividad);
-        showLoading(feedback, 'Guardando actividad...');
+        if (!data.tipo || !data.descripcion || !data.estado) return;
+        
+        showLoading(form.querySelector('#feedback-form-crm-actividad'), 'Guardando...');
+        const nuevaActividad = { ...data, cliente_id: clienteId, hotel_id: hotelIdActual, fecha: new Date().toISOString() };
+        
         try {
             const { error } = await supabaseInstance.from('crm_actividades').insert([nuevaActividad]);
             if (error) throw error;
-            showSuccess(feedback, "Actividad CRM registrada.");
-            logDebug('Actividad CRM añadida exitosamente.');
-
-            // Volver a obtener y renderizar las actividades para que se muestre la nueva
-            const { data: updatedActivities, error: fetchError } = await supabaseInstance.from('crm_actividades').select('*').eq('cliente_id', clienteId).order('fecha', { ascending: false });
-            if (fetchError) throw fetchError; // Lanzar error si la re-obtención falla
+            const { data: updatedActivities } = await supabaseInstance.from('crm_actividades').select('*').eq('cliente_id', clienteId).order('fecha', { ascending: false });
             modal.querySelector('#lista-actividades-crm').innerHTML = renderActividades(updatedActivities);
-            form.reset(); // Limpiar el formulario
-            setTimeout(() => clearFeedback(feedback), 2000); // Limpiar feedback después de un retardo
-
+            form.reset();
         } catch (err) {
-            logError('Error al añadir actividad CRM:', err);
-            showError(feedback, 'Error al guardar actividad: ' + (err?.message || err));
+            showError(form.querySelector('#feedback-form-crm-actividad'), 'Error: ' + (err?.message || err));
         }
     };
 
-    // Placeholder para la sugerencia de IA
-    modal.querySelector('#btn-ai-sugerencia').onclick = () => {
-        alert('Próximamente: Sugerencias de acciones CRM por IA.');
-        logDebug('Botón de sugerencia IA clickeado (placeholder).');
-    };
+    // ▼▼▼ LÓGICA NUEVA PARA MANEJAR LAS ACCIONES DE EDICIÓN Y ELIMINACIÓN ▼▼▼
+    const listaActividadesEl = modal.querySelector('#lista-actividades-crm');
+    if (listaActividadesEl) {
+        listaActividadesEl.addEventListener('click', async (e) => {
+            const button = e.target.closest('button[data-action]');
+            if (!button) return;
 
-    // Placeholder para la exportación a PDF
-    modal.querySelector('#btn-exportar-pdf-historial').onclick = () => {
-        alert('Próximamente: Exportar historial individual a PDF.');
-        logDebug('Botón de exportar PDF clickeado (placeholder).');
-    };
+            const action = button.dataset.action;
+            const activityId = button.dataset.id;
+            const listItem = button.closest('.actividad-item');
+
+            if (action === 'delete-crm') {
+                const confirmed = confirm('¿Estás seguro de que quieres eliminar esta actividad?');
+                if (confirmed) {
+                    const { error } = await supabaseInstance.from('crm_actividades').delete().eq('id', activityId);
+                    if (error) {
+                        alert('Error al eliminar la actividad: ' + error.message);
+                    } else {
+                        listItem.remove(); // Elimina el elemento de la vista
+                    }
+                }
+            } else if (action === 'edit-crm') {
+                // Cambia el <li> a un formulario de edición
+                const { data: activity, error } = await supabaseInstance.from('crm_actividades').select('*').eq('id', activityId).single();
+                if (error) return alert('Error al cargar datos para editar.');
+                
+                const originalContent = listItem.innerHTML; // Guardar el contenido original para cancelar
+
+                listItem.innerHTML = `
+                    <div class="space-y-3">
+                        <h6 class="font-bold text-base">Editando Actividad</h6>
+                        <textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-20" id="edit-desc-${activity.id}">${activity.descripcion}</textarea>
+                        <div class="flex gap-3">
+                            <select class="form-control flex-grow p-2 border border-gray-300 rounded-md" id="edit-estado-${activity.id}">
+                                <option value="pendiente" ${activity.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+                                <option value="completada" ${activity.estado === 'completada' ? 'selected' : ''}>Completada</option>
+                                <option value="reagendada" ${activity.estado === 'reagendada' ? 'selected' : ''}>Reagendada</option>
+                                <option value="cancelada" ${activity.estado === 'cancelada' ? 'selected' : ''}>Cancelada</option>
+                            </select>
+                            <button class="button button-success py-1 px-3" data-action="save-crm-edit" data-id="${activity.id}">Guardar</button>
+                            <button class="button button-neutral py-1 px-3" data-action="cancel-crm-edit">Cancelar</button>
+                        </div>
+                    </div>
+                `;
+
+                // Añadir listeners para los nuevos botones de Guardar y Cancelar
+                listItem.querySelector('[data-action="cancel-crm-edit"]').onclick = () => {
+                    listItem.innerHTML = originalContent;
+                };
+
+                listItem.querySelector('[data-action="save-crm-edit"]').onclick = async () => {
+                    const newDescription = listItem.querySelector(`#edit-desc-${activity.id}`).value;
+                    const newStatus = listItem.querySelector(`#edit-estado-${activity.id}`).value;
+
+                    const { data: updatedActivity, error: updateError } = await supabaseInstance
+                        .from('crm_actividades')
+                        .update({ descripcion: newDescription, estado: newStatus })
+                        .eq('id', activityId)
+                        .select()
+                        .single();
+                    
+                    if (updateError) {
+                        alert('Error al guardar los cambios: ' + updateError.message);
+                    } else {
+                        // Re-renderizar solo este item con la información actualizada
+                        const { data: updatedActivitiesList } = await supabaseInstance.from('crm_actividades').select('*').eq('id', activityId).single();
+                        listItem.innerHTML = renderActividades([updatedActivitiesList]).replace(/<li.*?>|<\/li>/g, '');
+                    }
+                };
+            }
+        });
+    }
+
+    // Placeholders (sin cambios)
+    modal.querySelector('#btn-ai-sugerencia').onclick = () => alert('Próximamente: Sugerencias de acciones CRM por IA.');
+    modal.querySelector('#btn-exportar-pdf-historial').onclick = () => alert('Próximamente: Exportar historial individual a PDF.');
 }
-
 /**
  * Renderiza la lista de reservas para el historial del cliente.
  * @param {Array} reservas Array de objetos de reserva.
  * @returns {string} HTML para la lista de reservas.
  */
+// REEMPLAZA ESTA FUNCIÓN EN clientes.js
 function renderReservas(reservas) {
     if (!reservas || !reservas.length) return '<li>No tiene reservas registradas.</li>';
+    
+    // ▼▼▼ CORRECCIÓN CLAVE AQUÍ ▼▼▼
+    // Se usa r.habitaciones.nombre para el nombre y r.monto_total para el total.
     return reservas.map(r => `
-        <li class="mb-1 p-1 bg-gray-50 rounded">
-            <strong>Fecha:</strong> ${formatDate(r.fecha_checkin || r.fecha_inicio)} -
-            <strong>Habitación:</strong> ${r.habitacion_nombre || 'N/A'} -
-            <strong>Total:</strong> ${formatCurrency(r.precio_total || 0)}
+        <li class="mb-1 p-2 bg-gray-50 rounded border border-gray-200">
+            <strong>Fecha:</strong> ${formatDate(r.fecha_inicio)} -
+            <strong>Habitación:</strong> ${r.habitaciones?.nombre || 'N/A'} -
+            <strong>Total:</strong> ${formatCurrency(r.monto_total || 0)}
         </li>
     `).join('');
 }
-
 /**
  * Renderiza la lista de actividades CRM.
  * @param {Array} arr Array de objetos de actividad CRM.
  * @returns {string} HTML para la lista de actividades.
  */
+// REEMPLAZA ESTA FUNCIÓN EN clientes.js
 function renderActividades(arr) {
-    if (!arr || !arr.length) return '<li>No hay actividades CRM registradas.</li>';
+    if (!arr || arr.length === 0) return '<li>No hay actividades CRM registradas.</li>';
+
+    // Objeto para mapear estados a colores para los badges
+    const estadoColores = {
+        pendiente: 'bg-yellow-100 text-yellow-800',
+        completada: 'bg-green-100 text-green-800',
+        reagendada: 'bg-blue-100 text-blue-800',
+        cancelada: 'bg-red-100 text-red-800'
+    };
+
     return arr.map(a => `
-        <li class="mb-2 p-3 border border-gray-200 rounded-md bg-white shadow-sm">
-            <div class="flex justify-between items-center mb-1">
-                <span class="font-bold text-blue-700">${a.tipo}</span>
-                <span class="text-xs text-gray-500">${formatDate(a.fecha)}</span>
+        <li class="actividad-item mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-sm" data-activity-id="${a.id}">
+            <div class="flex justify-between items-start">
+                <div class="flex-grow">
+                    <div class="flex items-center gap-3 mb-1">
+                        <span class="font-bold text-blue-800 text-base">${a.tipo}</span>
+                        <span class="px-2 py-0.5 text-xs font-semibold rounded-full ${estadoColores[a.estado] || 'bg-gray-100 text-gray-800'}">${a.estado || 'Pendiente'}</span>
+                    </div>
+                    <p class="text-gray-700 text-sm mb-2">${a.descripcion || ''}</p>
+                    <p class="text-xs text-gray-500">Registrado: ${formatDate(a.fecha)}</p>
+                </div>
+                <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+                    <button data-action="edit-crm" data-id="${a.id}" title="Editar Actividad" class="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
+                    </button>
+                    <button data-action="delete-crm" data-id="${a.id}" title="Eliminar Actividad" class="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded-md">
+                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                    </button>
+                </div>
             </div>
-            <div class="text-gray-700 text-sm mb-1">${a.descripcion || ''}</div>
-            <div class="text-xs text-gray-500">Estado: <span class="capitalize font-semibold">${a.estado || 'Pendiente'}</span></div>
         </li>
     `).join('');
 }
-
 /**
  * Renderiza el detalle de todos los gastos del cliente en una tabla combinada.
  * @param {Array} reservas
@@ -851,42 +872,43 @@ function renderActividades(arr) {
  * @param {Array} Array de ventasRestaurante.
  * @returns {string} HTML para la tabla de detalle de gastos.
  */
+// REEMPLAZA ESTA FUNCIÓN EN clientes.js
 function renderDetalleGastos(reservas, ventas, ventasTienda, ventasRestaurante) {
     let allTransactions = [];
 
+    // ▼▼▼ CORRECCIÓN AQUÍ ▼▼▼
     reservas.forEach(r => allTransactions.push({
         type: 'Reserva',
-        date: r.fecha_checkin || r.fecha_inicio || new Date().toISOString(),
-        description: `Habitación: ${r.habitacion_nombre || 'N/A'}`,
-        amount: r.precio_total || 0,
+        date: r.fecha_inicio || new Date().toISOString(),
+        description: `Habitación: ${r.habitaciones?.nombre || 'N/A'}`,
+        amount: r.monto_total || 0, // Se cambió de precio_total a monto_total
         id: r.id
     }));
     ventas.forEach(v => allTransactions.push({
         type: 'Venta General',
         date: v.fecha_venta || new Date().toISOString(),
-        description: v.descripcion || `Venta #${v.id}`,
+        description: v.descripcion || `Venta #${v.id.slice(0, 6)}`,
         amount: v.total || 0,
         id: v.id
     }));
     ventasTienda.forEach(vt => allTransactions.push({
         type: 'Venta Tienda',
-        date: vt.fecha || vt.fecha_venta || new Date().toISOString(),
-        description: vt.descripcion || `Compra tienda #${vt.id}`,
+        date: vt.fecha_venta || new Date().toISOString(),
+        description: vt.descripcion || `Compra tienda #${vt.id.slice(0, 6)}`,
         amount: vt.total_venta || vt.total || 0,
         id: vt.id
     }));
     ventasRestaurante.forEach(vr => allTransactions.push({
         type: 'Venta Restaurante',
-        date: vr.fecha || vr.fecha_venta || new Date().toISOString(),
-        description: vr.descripcion || `Consumo restaurante #${vr.id}`,
+        date: vr.fecha_venta || new Date().toISOString(),
+        description: vr.descripcion || `Consumo restaurante #${vr.id.slice(0, 6)}`,
         amount: vr.monto_total || vr.total_venta || vr.total || 0,
         id: vr.id
     }));
 
-    // Ordenar todas las transacciones por fecha descendente
     allTransactions.sort((a, b) => new Date(b.date) - new Date(a.date));
 
-    if (!allTransactions.length) return '<p class="text-center text-gray-500 p-4">No hay detalles de gastos registrados para este cliente.</p>';
+    if (!allTransactions.length) return '<p class="text-center text-gray-500 p-4">No hay detalles de gastos registrados.</p>';
 
     return `
         <table class="table w-full text-sm border-collapse">
@@ -911,15 +933,15 @@ function renderDetalleGastos(reservas, ventas, ventasTienda, ventasRestaurante) 
         </table>
     `;
 }
-
 /**
  * Renderiza el gráfico de gastos del cliente usando Chart.js.
  * @param {object} data Objeto con los arrays de reservas, ventas, etc.
  */
+// REEMPLAZA ESTA FUNCIÓN EN clientes.js
 function renderGastosChart({ reservas, ventas, ventasTienda, ventasRestaurante }) {
     logDebug('Renderizando gráfico de gastos...');
     if (currentChartInstance) {
-        currentChartInstance.destroy(); // Destruye cualquier instancia anterior para evitar duplicados
+        currentChartInstance.destroy();
     }
 
     const ctx = document.getElementById('gastosChart');
@@ -928,8 +950,8 @@ function renderGastosChart({ reservas, ventas, ventasTienda, ventasRestaurante }
         return;
     }
 
-    // Calcula los totales
-    const totalReservas = reservas.reduce((sum, item) => sum + (item.precio_total || 0), 0);
+    // ▼▼▼ CORRECCIÓN AQUÍ ▼▼▼
+    const totalReservas = reservas.reduce((sum, item) => sum + (item.monto_total || 0), 0); // Se cambió de precio_total a monto_total
     const totalVentas = ventas.reduce((sum, item) => sum + (item.total || 0), 0);
     const totalVentasTienda = ventasTienda.reduce((sum, item) => sum + (item.total_venta || item.total || 0), 0);
     const totalVentasRestaurante = ventasRestaurante.reduce((sum, item) => sum + (item.monto_total || item.total_venta || item.total || 0), 0);
@@ -940,61 +962,42 @@ function renderGastosChart({ reservas, ventas, ventasTienda, ventasRestaurante }
             label: 'Total de Gastos',
             data: [totalReservas, totalVentas, totalVentasTienda, totalVentasRestaurante],
             backgroundColor: [
-                'rgba(255, 99, 132, 0.7)', // Rojo
-                'rgba(54, 162, 235, 0.7)', // Azul
-                'rgba(255, 206, 86, 0.7)', // Amarillo
-                'rgba(75, 192, 192, 0.7)'  // Verde
+                'rgba(59, 130, 246, 0.7)',  // Azul
+                'rgba(234, 179, 8, 0.7)',   // Amarillo
+                'rgba(139, 92, 246, 0.7)',  // Púrpura
+                'rgba(22, 163, 74, 0.7)'    // Verde
             ],
             borderColor: [
-                'rgba(255, 99, 132, 1)',
-                'rgba(54, 162, 235, 1)',
-                'rgba(255, 206, 86, 1)',
-                'rgba(75, 192, 192, 1)'
+                'rgba(59, 130, 246, 1)',
+                'rgba(234, 179, 8, 1)',
+                'rgba(139, 92, 246, 1)',
+                'rgba(22, 163, 74, 1)'
             ],
             borderWidth: 1
         }]
     };
 
     const config = {
-        type: 'bar', // Tipo de gráfico: barras
+        type: 'bar',
         data: dataChart,
         options: {
             responsive: true,
-            maintainAspectRatio: false, // Permitir que el gráfico no mantenga su aspecto si el contenedor cambia de tamaño
+            maintainAspectRatio: false,
             scales: {
-                y: {
-                    beginAtZero: true,
-                    title: {
-                        display: true,
-                        text: 'Monto ($)'
-                    },
-                    ticks: {
-                        callback: function(value) {
-                            return formatCurrency(value); // Formatear los ticks del eje Y como moneda
-                        }
-                    }
+                y: { beginAtZero: true, title: { display: true, text: 'Monto ($)' },
+                    ticks: { callback: value => formatCurrency(value) }
                 }
             },
             plugins: {
-                legend: {
-                    display: false // No mostrar la leyenda si solo hay un dataset
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            // Formatear el valor del tooltip como moneda
-                            return `${context.label}: ${formatCurrency(context.raw)}`;
-                        }
-                    }
-                }
+                legend: { display: false },
+                tooltip: { callbacks: { label: context => `${context.label}: ${formatCurrency(context.raw)}` } }
             }
         }
     };
-    // Crea una nueva instancia del gráfico y la guarda en currentChartInstance
+    
     currentChartInstance = new Chart(ctx, config);
     logDebug('Gráfico de gastos renderizado.');
 }
-
 // --- MODAL DE SELECCIÓN DE CLIENTES (REUTILIZABLE) ---
 
 /**
