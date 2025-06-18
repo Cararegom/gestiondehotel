@@ -90,6 +90,70 @@ async function listarEventosGoogle(container, uiElements) {
   }
 }
 
+
+
+// ... (código existente, por ejemplo, después de listarEventosGoogle) ...
+
+async function listarEventosOutlook(container, uiElements) {
+  const lista = uiElements.outlook.listaEventosEl;
+  lista.innerHTML = '<li class="text-gray-400 text-sm">Cargando eventos...</li>';
+  try {
+    // CAMBIO CLAVE: Invoca la nueva Edge Function para Outlook
+    const { data, error } = await supabaseInstance.functions.invoke('outlook-calendar-events', {
+      body: { hotelId: currentHotelId, action: 'list' } // 'action: list' para indicar que quieres listar
+    });
+
+    if (error || !data || !Array.isArray(data.items)) {
+      lista.innerHTML = `<li class="text-red-600 text-sm">No se pudieron obtener los eventos de Outlook: ${error?.message || 'Error desconocido'}.</li>`;
+      return;
+    }
+    if (data.items.length === 0) {
+      lista.innerHTML = '<li class="text-gray-500 text-sm">No hay eventos próximos en Outlook.</li>';
+      return;
+    }
+
+    lista.innerHTML = '';
+    data.items.forEach(evento => {
+      const li = document.createElement('li');
+      li.className = 'flex justify-between items-center py-1 border-b border-gray-100';
+      li.innerHTML = `
+        <span>
+          <strong>${evento.summary || 'Sin título'}</strong>
+          <span class="ml-2 text-gray-500 text-xs">${evento.start?.dateTime?.replace('T', ' ').slice(0, 16) || evento.start?.date || ''}</span>
+        </span>
+      `;
+      const btn = document.createElement('button');
+      btn.textContent = 'Eliminar';
+      btn.className = 'ml-3 px-2 py-1 rounded bg-red-100 text-red-700 text-xs hover:bg-red-200 transition';
+      btn.onclick = async () => {
+        if (confirm('¿Seguro que deseas borrar este evento de Outlook?')) {
+          btn.disabled = true;
+          btn.textContent = 'Eliminando...';
+          // CAMBIO CLAVE: Invoca la nueva Edge Function para eliminar eventos de Outlook
+          const { data: delData, error: delError } = await supabaseInstance.functions.invoke('outlook-calendar-events', {
+            body: { hotelId: currentHotelId, action: 'delete', eventId: evento.id } // 'action: delete'
+          });
+          if (delError) {
+            alert('Error al eliminar evento de Outlook: ' + delError.message);
+            btn.disabled = false;
+            btn.textContent = 'Eliminar';
+            return;
+          }
+          li.remove();
+        }
+      };
+      li.appendChild(btn);
+      lista.appendChild(li);
+    });
+  } catch (err) {
+    lista.innerHTML = `<li class="text-red-600 text-sm">Error al listar eventos de Outlook: ${err.message}.</li>`;
+    console.error("Error en listarEventosOutlook:", err);
+  }
+}
+
+
+// ... (dentro de la función verificarEstadoCalendarios)
+
 async function verificarEstadoCalendarios(uiElements) {
     if (!currentHotelId || !supabaseInstance) {
         showFeedback(uiElements.mainFeedback, 'Error: Hotel no identificado.', true, 0);
@@ -110,7 +174,7 @@ async function verificarEstadoCalendarios(uiElements) {
             uiElements.google.disconnectBtn.style.display = 'inline-block';
             uiElements.google.testForm.style.display = 'block';
             uiElements.google.listarBtn.style.display = 'inline-block';
-            listarEventosGoogle(null, uiElements);
+            listarEventosGoogle(null, uiElements); // Se mantiene para Google
         } else {
             uiElements.google.statusEl.textContent = 'No conectado.';
             uiElements.google.connectBtn.style.display = 'inline-block';
@@ -126,11 +190,17 @@ async function verificarEstadoCalendarios(uiElements) {
             uiElements.outlook.connectBtn.style.display = 'none';
             uiElements.outlook.disconnectBtn.style.display = 'inline-block';
             uiElements.outlook.testForm.style.display = 'block';
+            // AÑADIR ESTAS LÍNEAS PARA OUTLOOK
+            uiElements.outlook.listarBtn.style.display = 'inline-block'; // Mostrar el botón
+            listarEventosOutlook(null, uiElements); // Llamar a listar eventos de Outlook
         } else {
             uiElements.outlook.statusEl.textContent = 'No conectado.';
             uiElements.outlook.connectBtn.style.display = 'inline-block';
             uiElements.outlook.disconnectBtn.style.display = 'none';
             uiElements.outlook.testForm.style.display = 'none';
+            // AÑADIR ESTAS LÍNEAS PARA OUTLOOK
+            uiElements.outlook.listarBtn.style.display = 'none'; // Ocultar el botón
+            uiElements.outlook.listaEventosEl.innerHTML = ''; // Limpiar la lista
         }
         clearFeedback(uiElements.mainFeedback);
 
@@ -139,6 +209,7 @@ async function verificarEstadoCalendarios(uiElements) {
         showFeedback(uiElements.mainFeedback, `Error al verificar estado: ${err.message}`, true, 0);
     }
 }
+
 
 async function iniciarConexionCalendario(provider, feedbackEl) {
   if (!currentHotelId || !supabaseInstance) {
@@ -311,14 +382,13 @@ async function generarFacturaPruebaAlegra(feedbackEl, buttonEl) {
 // --- FUNCIÓN PRINCIPAL DEL MÓDULO ---
 
 export async function mount(container, sbInstance, user) {
+  console.log('[Integraciones.js] Montando el módulo de integraciones...');
+  // Limpia los listeners existentes al desmontar/remontar el módulo
+  unmount(); 
+
   supabaseInstance = sbInstance;
   userObject = user;
-  currentHotelId = null;
-
-  moduleListeners.forEach(({ element, type, handler }) => {
-    element?.removeEventListener(type, handler);
-  });
-  moduleListeners = [];
+  currentHotelId = null; // Reinicia hotelId al montar
 
   container.innerHTML = `
     <div class="card">
@@ -355,6 +425,7 @@ export async function mount(container, sbInstance, user) {
                 <div class="flex flex-wrap items-center gap-4">
                     <button type="button" id="btn-connect-outlook" class="button button-primary py-2 px-4 rounded-md">Conectar con Outlook</button>
                     <button type="button" id="btn-disconnect-outlook" class="button button-danger py-2 px-4 rounded-md" style="display:none;">Desconectar Outlook</button>
+                    <button type="button" id="btn-listar-outlook" class="button button-accent py-2 px-4 rounded-md" style="display:none;">Ver Eventos</button>
                 </div>
                 <form id="outlook-test-form" style="display:none;" class="mt-4 p-3 border-t">
                      <p class="text-sm font-medium mb-2">Probar la conexión:</p>
@@ -364,6 +435,7 @@ export async function mount(container, sbInstance, user) {
                      </div>
                      <div id="outlook-test-feedback" class="mt-2 text-sm"></div>
                 </form>
+                <ul id="outlook-lista-eventos" class="mt-4 text-sm space-y-1"></ul>
             </div>
         </fieldset>
         <form id="form-alegra" novalidate class="space-y-6 mt-6">
@@ -439,7 +511,10 @@ export async function mount(container, sbInstance, user) {
         connectBtn: container.querySelector('#btn-connect-outlook'),
         disconnectBtn: container.querySelector('#btn-disconnect-outlook'),
         testForm: container.querySelector('#outlook-test-form'),
-        testFeedbackEl: container.querySelector('#outlook-test-feedback')
+        testFeedbackEl: container.querySelector('#outlook-test-feedback'),
+        // NUEVAS REFERENCIAS PARA OUTLOOK
+        listarBtn: container.querySelector('#btn-listar-outlook'), // ¡Añadir esta línea!
+        listaEventosEl: container.querySelector('#outlook-lista-eventos') // ¡Añadir esta línea!
       },
   };
 
@@ -451,6 +526,9 @@ export async function mount(container, sbInstance, user) {
   addEvt(calendarUiElements.outlook.connectBtn, 'click', () => iniciarConexionCalendario('outlook', calendarUiElements.outlook.statusEl));
   addEvt(calendarUiElements.outlook.disconnectBtn, 'click', (e) => desconectarCalendario('outlook', e.target, calendarUiElements.outlook.statusEl, calendarUiElements));
   addEvt(calendarUiElements.outlook.testForm, 'submit', (e) => { e.preventDefault(); crearEventoDePrueba('outlook', e.target, e.target.querySelector('button'), calendarUiElements.outlook.testFeedbackEl, calendarUiElements); });
+  
+  // ¡NUEVA LÍNEA para el botón de listar de Outlook!
+  addEvt(calendarUiElements.outlook.listarBtn, 'click', () => listarEventosOutlook(null, calendarUiElements));
 
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.has('calendar_status')) {
@@ -458,8 +536,10 @@ export async function mount(container, sbInstance, user) {
     const provider = urlParams.get('provider');
     const message = urlParams.get('message') || '';
     showFeedback(calendarUiElements.mainFeedback, status === 'success' ? `Conexión con ${provider} exitosa.` : `Falló la autorización con ${provider}: ${message}`, status !== 'success', 5000);
+    // Limpia los parámetros de la URL para evitar que se muestre el mensaje cada vez que se recarga la página.
     window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
   }
+  // Verificar el estado inicial de conexión de ambos calendarios al cargar el módulo
   await verificarEstadoCalendarios(calendarUiElements);
 
   // --- Lógica y Listeners de Alegra ---
@@ -503,7 +583,6 @@ export async function mount(container, sbInstance, user) {
     addEvt(btnFacturaPruebaAlegraEl, 'click', () => generarFacturaPruebaAlegra(alegraInvoiceFeedbackEl, btnFacturaPruebaAlegraEl));
   }
 }
-
 export function unmount() {
   moduleListeners.forEach(({ element, type, handler }) => {
     element?.removeEventListener(type, handler);

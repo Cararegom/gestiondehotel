@@ -158,6 +158,8 @@ function renderTarjetaCompraPendiente(compra) {
         </div>`;
 }
 
+
+
 /**
  * Lógica para recibir el pedido. Simplificada para recibir todo lo que hay en la orden.
  */
@@ -1708,6 +1710,7 @@ async function eliminarProducto(id, estado) {
 
 
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO tienda.js
 window.showModalProducto = async function showModalProducto(productoId = null) {
   const modalContainer = document.getElementById('modalContainer');
   const prod = productoId ? inventarioProductos.find(p => p.id === productoId) : null;
@@ -1732,6 +1735,14 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
           <select id="prodCategoria" required style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
             <option value="">Selecciona...</option>
             ${categoriasCache.map(cat=>`<option value="${cat.id}"${prod?.categoria_id===cat.id?' selected':''}>${cat.nombre}</option>`).join('')}
+          </select>
+        </div>
+
+        <div>
+          <label>Proveedor</label>
+          <select id="prodProveedor" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <option value="">(Opcional)</option>
+            ${proveedoresCache.map(pr => `<option value="${pr.id}" ${prod?.proveedor_id === pr.id ? 'selected' : ''}>${pr.nombre}</option>`).join('')}
           </select>
         </div>
         <div>
@@ -1791,6 +1802,103 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
     };
   }
 }
+
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO tienda.js
+async function saveProductoInv(productoId) {
+  const btnSubmit = document.querySelector('#formProductoInv button[type="submit"]');
+  const originalText = btnSubmit.textContent;
+  btnSubmit.disabled = true;
+  btnSubmit.textContent = 'Guardando...';
+
+  try {
+    let imagenUrl = document.getElementById('prodImagenUrl').value;
+    const archivoInput = document.getElementById('prodImagenArchivo');
+    const archivo = archivoInput?.files[0];
+
+    // --- CAPTURAR PROVEEDOR ---
+    const proveedorId = document.getElementById('prodProveedor').value || null;
+
+    if (archivo) {
+      const nombreArchivo = `producto_${Date.now()}_${archivo.name}`;
+      let { error: errorUp } = await currentSupabase.storage.from('productos').upload(nombreArchivo, archivo, { upsert: true });
+      if (errorUp) throw new Error(`Error subiendo imagen: ${errorUp.message}`);
+
+      let { data: publicUrlData } = currentSupabase.storage.from('productos').getPublicUrl(nombreArchivo);
+      imagenUrl = publicUrlData.publicUrl;
+    }
+
+    // --- Si es una ACTUALIZACIÓN de un producto existente ---
+    if (productoId) {
+      let datosUpdate = {
+        hotel_id: currentHotelId,
+        nombre: document.getElementById('prodNombre').value,
+        categoria_id: document.getElementById('prodCategoria').value,
+        precio: Number(document.getElementById('prodPrecio').value) || 0,
+        precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
+        stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
+        stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
+        imagen_url: imagenUrl,
+        actualizado_en: new Date().toISOString(),
+        // --- GUARDAR PROVEEDOR ---
+        proveedor_id: proveedorId,
+      };
+      const { error } = await currentSupabase.from('productos_tienda').update(datosUpdate).eq('id', productoId);
+      if (error) throw error;
+    }
+    // --- Si es la CREACIÓN de un producto nuevo ---
+    else {
+      const stockInicial = Number(document.getElementById('prodStock').value) || 0;
+      let datosInsert = {
+        hotel_id: currentHotelId,
+        nombre: document.getElementById('prodNombre').value,
+        categoria_id: document.getElementById('prodCategoria').value,
+        precio: Number(document.getElementById('prodPrecio').value) || 0,
+        precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
+        stock_actual: stockInicial,
+        stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
+        stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
+        imagen_url: imagenUrl,
+        creado_en: new Date().toISOString(),
+        actualizado_en: new Date().toISOString(),
+        activo: true,
+        // --- GUARDAR PROVEEDOR ---
+        proveedor_id: proveedorId
+      };
+      const { data: nuevoProducto, error } = await currentSupabase.from('productos_tienda').insert([datosInsert]).select();
+      if (error) throw error;
+
+      if (stockInicial > 0 && nuevoProducto.length > 0) {
+        const { data: { user } } = await currentSupabase.auth.getUser();
+        const nombreResponsable = user.user_metadata?.full_name || user.user_metadata?.nombre || user.email;
+        const movimientoData = {
+          hotel_id: currentHotelId,
+          producto_id: nuevoProducto[0].id,
+          tipo_movimiento: 'INGRESO',
+          cantidad: stockInicial,
+          razon: 'Stock inicial de creación',
+          usuario_responsable: nombreResponsable,
+          stock_anterior: 0,
+          stock_nuevo: stockInicial
+        };
+        await currentSupabase.from('movimientos_inventario').insert([movimientoData]);
+      }
+    }
+
+    closeModal();
+    // Refrescamos los caches y la tabla para mostrar el nuevo producto con su proveedor
+    await cargarCategoriasYProveedores(); 
+    await cargarProductosInventario();
+    renderTablaInventario('');
+
+  } catch (error) {
+    console.error("Error guardando el producto:", error);
+    alert("Error al guardar el producto: " + error.message);
+    btnSubmit.disabled = false;
+    btnSubmit.textContent = originalText;
+  }
+}
+
+
 window.showModalHistorial = async (productoId = null) => {
     const modalContainer = document.getElementById('modalContainer');
     modalContainer.style.display = 'flex';
@@ -1992,91 +2100,6 @@ async function saveMovimiento(productoId, tipo) {
 
 // Reemplaza esta función completa en tu archivo
 
-async function saveProductoInv(productoId) {
-  const btnSubmit = document.querySelector('#formProductoInv button[type="submit"]');
-  const originalText = btnSubmit.textContent;
-  btnSubmit.disabled = true;
-  btnSubmit.textContent = 'Guardando...';
-
-  try {
-    let imagenUrl = document.getElementById('prodImagenUrl').value;
-    const archivoInput = document.getElementById('prodImagenArchivo');
-    const archivo = archivoInput?.files[0];
-
-    if (archivo) {
-      const nombreArchivo = `producto_${Date.now()}_${archivo.name}`;
-      let { error: errorUp } = await currentSupabase.storage.from('productos').upload(nombreArchivo, archivo, { upsert: true });
-      if (errorUp) throw new Error(`Error subiendo imagen: ${errorUp.message}`);
-
-      let { data: publicUrlData } = currentSupabase.storage.from('productos').getPublicUrl(nombreArchivo);
-      imagenUrl = publicUrlData.publicUrl;
-    }
-
-    // --- Si es una ACTUALIZACIÓN de un producto existente ---
-    if (productoId) {
-      let datosUpdate = {
-        hotel_id: currentHotelId,
-        nombre: document.getElementById('prodNombre').value,
-        categoria_id: document.getElementById('prodCategoria').value,
-        precio: Number(document.getElementById('prodPrecio').value) || 0,
-        precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
-        // 🎯 CORRECCIÓN: Nombres de columna corregidos para la ACTUALIZACIÓN
-        stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
-        stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
-        imagen_url: imagenUrl,
-        actualizado_en: new Date().toISOString(),
-      };
-      const { error } = await currentSupabase.from('productos_tienda').update(datosUpdate).eq('id', productoId);
-      if (error) throw error;
-    }
-    // --- Si es la CREACIÓN de un producto nuevo ---
-    else {
-      const stockInicial = Number(document.getElementById('prodStock').value) || 0;
-      let datosInsert = {
-        hotel_id: currentHotelId,
-        nombre: document.getElementById('prodNombre').value,
-        categoria_id: document.getElementById('prodCategoria').value,
-        precio: Number(document.getElementById('prodPrecio').value) || 0,
-        precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
-        stock_actual: stockInicial,
-        stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
-        stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
-        imagen_url: imagenUrl,
-        creado_en: new Date().toISOString(),
-        actualizado_en: new Date().toISOString(),
-        activo: true,
-      };
-      const { data: nuevoProducto, error } = await currentSupabase.from('productos_tienda').insert([datosInsert]).select();
-      if (error) throw error;
-
-      if (stockInicial > 0 && nuevoProducto.length > 0) {
-        const { data: { user } } = await currentSupabase.auth.getUser();
-        const nombreResponsable = user.user_metadata?.full_name || user.user_metadata?.nombre || user.email;
-        const movimientoData = {
-          hotel_id: currentHotelId,
-          producto_id: nuevoProducto[0].id,
-          tipo_movimiento: 'INGRESO',
-          cantidad: stockInicial,
-          razon: 'Stock inicial de creación',
-          usuario_responsable: nombreResponsable,
-          stock_anterior: 0,
-          stock_nuevo: stockInicial
-        };
-        await currentSupabase.from('movimientos_inventario').insert([movimientoData]);
-      }
-    }
-
-    closeModal();
-    await cargarProductosInventario();
-    renderTablaInventario('');
-
-  } catch (error) {
-    console.error("Error guardando el producto:", error);
-    alert("Error al guardar el producto: " + error.message);
-    btnSubmit.disabled = false;
-    btnSubmit.textContent = originalText;
-  }
-}
 
 window.closeModal = () => {
   const modalContainer = document.getElementById('modalContainer');
@@ -3125,8 +3148,14 @@ async function registrarCompraProveedor() {
         }
         console.log("✅ Precios de compra de los productos actualizados.");
 
-        alert('¡Compra registrada con éxito! Ya puedes verla y recibirla desde "Compras Pendientes".');
-        
+await Swal.fire({
+  icon: 'success',
+  title: '¡Compra Registrada!',
+  text: 'La orden se ha creado exitosamente y ahora está en la pestaña "Compras Pendientes".',
+  confirmButtonColor: '#16a34a',
+  timer: 3000, // La notificación se cierra sola después de 3 segundos
+  timerProgressBar: true
+});        
         compraProveedorCarrito = [];
         renderCarritoCompra();
         document.getElementById('buscarProductoCompra').value = '';

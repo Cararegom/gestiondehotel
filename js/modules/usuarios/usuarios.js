@@ -655,17 +655,28 @@ export async function mount(container, sbInstance, user, hotelId, planDetails) {
   btnCancelarEl.addEventListener('click', cancelHandler);
   moduleListeners.push({ element: btnCancelarEl, type: 'click', handler: cancelHandler });
   
+// REEMPLAZA esta función completa en tu archivo usuarios.js
+
 const tableClickHandler = async (event) => {
     const button = event.target.closest('button[data-accion]');
     if (!button) return;
     const usuarioId = button.dataset.id;
     const accion = button.dataset.accion;
+    const feedbackGlobalEl = document.getElementById('usuarios-feedback');
+    const tablaBodyEl = document.getElementById('tabla-usuarios-body');
+    
     clearUsuariosFeedback(feedbackGlobalEl);
 
     if (accion === 'editar') {
         try {
-            const { data: u, error } = await sbInstance.from('usuarios').select('*, usuarios_roles(roles(id))').eq('id', usuarioId).single();
+            const { data: u, error } = await currentSupabaseInstance.from('usuarios').select('*, usuarios_roles(roles(id))').eq('id', usuarioId).single();
             if (error) throw error;
+            const formUsuarioEl = document.getElementById('form-crear-editar-usuario');
+            const formTitleEl = document.getElementById('form-usuario-titulo');
+            const passwordGroupEl = document.getElementById('password-group');
+            const btnCancelarEl = document.getElementById('btn-cancelar-edicion-usuario');
+            const selectRolesEl = document.getElementById('usuario-roles');
+
             formUsuarioEl.elements.usuarioIdEdit.value = u.id;
             formTitleEl.textContent = 'Editar Usuario';
             passwordGroupEl.style.display = 'none';
@@ -684,32 +695,47 @@ const tableClickHandler = async (event) => {
         }
     } else if (accion === 'toggle-activo') {
         const estadoActual = button.dataset.estadoActual === 'true';
-        const { error } = await sbInstance.from('usuarios').update({ activo: !estadoActual }).eq('id', usuarioId);
+        const { error } = await currentSupabaseInstance.from('usuarios').update({ activo: !estadoActual }).eq('id', usuarioId);
         if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
         else {
             showUsuariosFeedback(feedbackGlobalEl, `Usuario ${!estadoActual ? 'activado' : 'desactivado'}.`, 'success-indicator');
-            await cargarYRenderizarUsuarios(tablaBodyEl, sbInstance, currentHotelId);
+            await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
             await renderHorarioTurnosSemanal();
         }
     } else if (accion === 'reset-password') {
+        // ▼▼▼ INICIA CAMBIO ▼▼▼
+        // Reemplazamos el confirm() nativo por Swal.fire()
         const email = button.dataset.correo;
-        if (confirm(`¿Enviar enlace para resetear contraseña a ${email}?`)) {
-            const { error } = await sbInstance.auth.resetPasswordForEmail(email, {
+        const result = await Swal.fire({
+            title: '¿Enviar enlace de reseteo?',
+            html: `Se enviará un correo a <b>${email}</b> con las instrucciones para restablecer la contraseña.`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, enviar enlace',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#3b82f6', // Un azul amigable
+            cancelButtonColor: '#6b7280',  // Un gris
+        });
+
+        if (result.isConfirmed) {
+            // El usuario confirmó, procedemos a enviar el correo.
+            showUsuariosFeedback(feedbackGlobalEl, `Enviando enlace a ${email}...`, 'info-indicator', 0);
+            const { error } = await currentSupabaseInstance.auth.resetPasswordForEmail(email, {
               redirectTo: 'https://www.gestiondehotel.com/password-reset.html',
             });
-            if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
-            else showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo enviado a ${email}.`, 'success-indicator');
+            if (error) {
+                showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
+            } else {
+                showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo enviado a ${email}.`, 'success-indicator');
+            }
         }
+        // ▲▲▲ FIN DEL CAMBIO ▲▲▲
     } else if (accion === 'permisos') {
         const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo };
         await abrirModalPermisos(usuario);
     } 
-    // ---- Lógica para Eliminar Usuario ----
     else if (accion === 'eliminar') {
         const nombreUsuario = button.dataset.nombre;
-        
-        console.log('Intentando eliminar. ID de usuario:', usuarioId, 'Nombre:', nombreUsuario);
-
         const confirmacion = await Swal.fire({
             icon: 'error',
             title: `¿Estás seguro de eliminar a ${nombreUsuario}?`,
@@ -723,27 +749,19 @@ const tableClickHandler = async (event) => {
         if (confirmacion.isConfirmed) {
             showUsuariosFeedback(feedbackGlobalEl, `Eliminando a ${nombreUsuario}...`, 'info-indicator', 0);
             try {
-                // Llamamos a la Edge Function que creamos
-                const { error } = await sbInstance.functions.invoke('delete-user', {
+                const { error } = await currentSupabaseInstance.functions.invoke('delete-user', {
                     body: { user_id: usuarioId },
                 });
-
-                if (error) {
-                    throw new Error(error.message);
-                }
-
+                if (error) throw new Error(error.message);
                 showUsuariosFeedback(feedbackGlobalEl, `Usuario ${nombreUsuario} eliminado correctamente.`, 'success-indicator');
-                
-                // Volvemos a cargar la lista de usuarios para que el usuario eliminado desaparezca de la tabla
-                await cargarYRenderizarUsuarios(tablaBodyEl, sbInstance, currentHotelId);
-
+                await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
             } catch (err) {
                 showUsuariosFeedback(feedbackGlobalEl, `Error al eliminar: ${err.message}`, 'error-indicator');
             }
         }
     }
   };
-  
+
   tablaBodyEl.addEventListener('click', tableClickHandler);
   moduleListeners.push({ element: tablaBodyEl, type: 'click', handler: tableClickHandler });
 }

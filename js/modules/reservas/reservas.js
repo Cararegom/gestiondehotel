@@ -169,21 +169,19 @@ updateTotalDisplay(montoDescontado = 0) {
 
 // js/modules/reservas/reservas.js
 
+// REEMPLAZA esta función en tu archivo reservas.js
 function gatherFormData() {
     if (!ui.form) return {};
     const formElements = ui.form.elements;
     
-    // Lógica inteligente para obtener los datos del cliente
     const clienteIdSeleccionado = ui.clienteIdHiddenInput?.value || null;
     let nombreCliente, cedulaCliente, telefonoCliente;
 
     if (clienteIdSeleccionado) {
-        // Si hay un cliente seleccionado, tomamos su nombre del display
         nombreCliente = ui.clienteNombreDisplay?.querySelector('#selected_client_name')?.textContent || '';
         cedulaCliente = formElements.cedula?.value || '';
         telefonoCliente = formElements.telefono?.value || '';
     } else {
-        // Si no, tomamos los datos de los campos de texto manuales
         nombreCliente = formElements.cliente_nombre?.value || '';
         cedulaCliente = formElements.cedula?.value || '';
         telefonoCliente = formElements.telefono?.value || '';
@@ -203,9 +201,16 @@ function gatherFormData() {
         metodo_pago_id: formElements.metodo_pago_id?.value || '',
         monto_abono: formElements.monto_abono?.value || '0',
         notas: formElements.notas?.value || '',
-        tipo_pago: formElements.tipo_pago?.value || 'parcial'
+        tipo_pago: formElements.tipo_pago?.value || 'parcial',
+        precio_libre_toggle: formElements.precio_libre_toggle?.checked || false, // <-- AÑADIDO
+        precio_libre_valor: formElements.precio_libre_valor?.value || '0'       // <-- AÑADIDO
     };
 }
+
+
+
+
+
 function validateInitialInputs(formData) {
     // Si hay un `cliente_id` (cliente seleccionado desde el selector), el `cliente_nombre` ya está validado.
     // Si NO hay `cliente_id`, entonces el `cliente_nombre` manual es obligatorio.
@@ -487,22 +492,31 @@ function esTiempoEstanciaNoches(tiempoEstanciaId) {
 
 // REEMPLAZA ESTA FUNCIÓN COMPLETA
 // REEMPLAZA ESTA FUNCIÓN COMPLETA
-function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, tiempoId) {
+// REEMPLAZA esta función completa en tu archivo reservas.js
+function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, tiempoId, precioLibreActivado, precioLibreValor) {
     let montoEstanciaBaseBruto = 0;
     if (!habitacionInfo) return { errorMonto: "Información de habitación no disponible." };
 
-    if (tipoDuracion === "noches_manual") {
-        montoEstanciaBaseBruto = (habitacionInfo.precio || 0) * cantDuracion;
+    // --- LÓGICA DE PRECIO LIBRE ---
+    if (precioLibreActivado && typeof precioLibreValor === 'number' && precioLibreValor >= 0) {
+        montoEstanciaBaseBruto = precioLibreValor;
     } else {
-        const tiempo = state.tiemposEstanciaDisponibles.find(ts => ts.id === tiempoId);
-        if (tiempo && typeof tiempo.precio === 'number' && tiempo.precio >= 0) {
-            montoEstanciaBaseBruto = tiempo.precio;
+        // --- LÓGICA DE CÁLCULO NORMAL (SI PRECIO LIBRE NO ESTÁ ACTIVO) ---
+        if (tipoDuracion === "noches_manual") {
+            montoEstanciaBaseBruto = (habitacionInfo.precio || 0) * cantDuracion;
         } else {
-            return { errorMonto: "Precio no definido para el tiempo de estancia seleccionado." };
+            const tiempo = state.tiemposEstanciaDisponibles.find(ts => ts.id === tiempoId);
+            if (tiempo && typeof tiempo.precio === 'number' && tiempo.precio >= 0) {
+                montoEstanciaBaseBruto = tiempo.precio;
+            } else {
+                return { errorMonto: "Precio no definido para el tiempo de estancia seleccionado." };
+            }
         }
     }
+    // --- FIN LÓGICA DE PRECIO ---
 
     let montoPorHuespedesAdicionales = 0;
+    // ... (el resto de la función para calcular adicionales, descuentos e impuestos no cambia)
     const capacidadMaxima = habitacionInfo.capacidad_maxima || huespedes;
     if (huespedes > capacidadMaxima) {
         return { errorMonto: `Cantidad de huéspedes (${huespedes}) excede la capacidad máxima (${capacidadMaxima}).` };
@@ -520,8 +534,7 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
     }
 
     const totalAntesDeDescuento = montoEstanciaBaseBruto + montoPorHuespedesAdicionales;
-
-    // Lógica para aplicar el descuento
+    
     let montoDescontado = 0;
     if (state.descuentoAplicado) {
         if (state.descuentoAplicado.tipo === 'fijo') {
@@ -533,7 +546,6 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
     montoDescontado = Math.min(totalAntesDeDescuento, montoDescontado);
     const totalConDescuento = totalAntesDeDescuento - montoDescontado;
 
-    // Lógica para calcular el impuesto sobre el monto ya descontado
     let montoImpuestoCalculado = 0;
     let baseImponibleFinal = totalConDescuento;
 
@@ -552,22 +564,18 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
         baseSinImpuestos: Math.round(baseImponibleFinal),
         errorMonto: null
     };
-}
-// REEMPLAZA ESTA FUNCIÓN COMPLETA
+}// REEMPLAZA ESTA FUNCIÓN COMPLETA
+
+
 async function validateAndCalculateBooking(formData) {
     const [habitacionResult] = await Promise.all([
-        state.supabase.from('habitaciones')
-            .select('precio, capacidad_base, capacidad_maxima, precio_huesped_adicional')
-            .eq('id', formData.habitacion_id).single(),
+        state.supabase.from('habitaciones').select('precio, capacidad_base, capacidad_maxima, precio_huesped_adicional').eq('id', formData.habitacion_id).single(),
     ]);
-
     if (habitacionResult.error) throw new Error(`Error obteniendo detalles de la habitación: ${habitacionResult.error.message}`);
     const habitacionInfo = habitacionResult.data;
     if (!habitacionInfo) throw new Error("No se encontró la habitación seleccionada.");
 
-    const { fechaEntrada, fechaSalida, tipoDuracionOriginal, cantidadDuracionOriginal, errorFechas } = calculateFechasEstancia(
-        formData.fecha_entrada, formData.tipo_calculo_duracion, formData.cantidad_noches, formData.tiempo_estancia_id, state.configHotel.checkout_hora_config
-    );
+    const { fechaEntrada, fechaSalida, tipoDuracionOriginal, cantidadDuracionOriginal, errorFechas } = calculateFechasEstancia(formData.fecha_entrada, formData.tipo_calculo_duracion, formData.cantidad_noches, formData.tiempo_estancia_id, state.configHotel.checkout_hora_config);
     if (errorFechas) throw new Error(errorFechas);
 
     const { data: hayCruce, error: errCruce } = await state.supabase.rpc('validar_cruce_reserva', {
@@ -576,15 +584,27 @@ async function validateAndCalculateBooking(formData) {
     });
     if (errCruce) throw new Error(`Error validando disponibilidad: ${errCruce.message}.`);
     if (hayCruce === true) throw new Error("Conflicto: La habitación no está disponible para el período seleccionado.");
-
+    
+    // ▼▼▼ INICIO DE LA CORRECCIÓN CLAVE ▼▼▼
+    // Ahora pasamos correctamente los valores del precio libre a la función de cálculo.
     const { montoEstanciaBase, montoPorHuespedesAdicionales, montoDescontado, montoImpuesto, baseSinImpuestos, errorMonto } = calculateMontos(
-        habitacionInfo, parseInt(formData.cantidad_huespedes), tipoDuracionOriginal, cantidadDuracionOriginal, formData.tiempo_estancia_id
+        habitacionInfo, parseInt(formData.cantidad_huespedes), tipoDuracionOriginal, cantidadDuracionOriginal, formData.tiempo_estancia_id, 
+        formData.precio_libre_toggle, 
+        parseFloat(formData.precio_libre_valor)
     );
+    // ▲▲▲ FIN DE LA CORRECCIÓN CLAVE ▲▲▲
+
     if (errorMonto) throw new Error(errorMonto);
 
     state.currentBookingTotal = baseSinImpuestos + montoImpuesto;
     if (ui && typeof ui.updateTotalDisplay === 'function') { 
         ui.updateTotalDisplay(montoDescontado);
+    }
+    
+    let notasFinales = formData.notas.trim() || null;
+    if (formData.precio_libre_toggle) {
+        const precioManualStr = `[PRECIO MANUAL: ${formatCurrency(parseFloat(formData.precio_libre_valor))}]`;
+        notasFinales = notasFinales ? `${precioManualStr} ${notasFinales}` : precioManualStr;
     }
 
     const datosReserva = {
@@ -609,7 +629,7 @@ async function validateAndCalculateBooking(formData) {
         monto_total: state.currentBookingTotal,
         descuento_aplicado_id: state.descuentoAplicado?.id || null,
         monto_descontado: montoDescontado,
-        notas: formData.notas.trim() || null,
+        notas: notasFinales,
         origen_reserva: 'directa',
         id_temporal_o_final: state.isEditMode ? state.editingReservaId : `TEMP-${Date.now()}`
     };
@@ -622,6 +642,8 @@ async function validateAndCalculateBooking(formData) {
     
     return { datosReserva, datosPago };
 }
+
+
 
 
 
@@ -1931,38 +1953,49 @@ container.innerHTML = `
                 </div>
             </fieldset>
 
-            <fieldset class="border border-slate-200 p-6 rounded-xl">
-                <legend class="text-lg font-bold text-slate-700 px-2">2. Detalles de la Reserva</legend>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
-                    <div>
-                        <label for="fecha_entrada" class="font-semibold text-sm text-gray-700">Fecha y hora de llegada*</label>
-                        <input type="datetime-local" name="fecha_entrada" id="fecha_entrada" class="form-control" required />
-                    </div>
-                    <div>
-                        <label for="tipo_calculo_duracion" class="font-semibold text-sm text-gray-700">Calcular duración por*</label>
-                        <select name="tipo_calculo_duracion" id="tipo_calculo_duracion" class="form-control" required>
-                            <option value="noches_manual">Noches (manual)</option>
-                            <option value="tiempo_predefinido">Tiempo predefinido</option>
-                        </select>
-                    </div>
-                    <div id="noches-manual-container">
-                        <label for="cantidad_noches" class="font-semibold text-sm text-gray-700">Cantidad de noches*</label>
-                        <input name="cantidad_noches" id="cantidad_noches" type="number" min="1" max="90" value="1" class="form-control" />
-                    </div>
-                    <div id="tiempo-predefinido-container" style="display:none;">
-                        <label for="tiempo_estancia_id" class="font-semibold text-sm text-gray-700">Selecciona tiempo de estancia*</label>
-                        <select name="tiempo_estancia_id" id="tiempo_estancia_id" class="form-control"></select>
-                    </div>
-                    <div>
-                        <label for="habitacion_id" class="font-semibold text-sm text-gray-700">Habitación*</label>
-                        <select name="habitacion_id" id="habitacion_id" class="form-control" required></select>
-                    </div>
-                    <div>
-                        <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes*</label>
-                        <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="2" class="form-control" required />
-                    </div>
-                </div>
-            </fieldset>
+           <fieldset class="border border-slate-200 p-6 rounded-xl">
+    <legend class="text-lg font-bold text-slate-700 px-2">2. Detalles de la Reserva</legend>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
+        <div>
+            <label for="fecha_entrada" class="font-semibold text-sm text-gray-700">Fecha y hora de llegada*</label>
+            <input type="datetime-local" name="fecha_entrada" id="fecha_entrada" class="form-control" required />
+        </div>
+        <div>
+            <label for="tipo_calculo_duracion" class="font-semibold text-sm text-gray-700">Calcular duración por*</label>
+            <select name="tipo_calculo_duracion" id="tipo_calculo_duracion" class="form-control" required>
+                <option value="noches_manual">Noches (manual)</option>
+                <option value="tiempo_predefinido">Tiempo predefinido</option>
+            </select>
+        </div>
+        <div id="noches-manual-container">
+            <label for="cantidad_noches" class="font-semibold text-sm text-gray-700">Cantidad de noches*</label>
+            <input name="cantidad_noches" id="cantidad_noches" type="number" min="1" max="90" value="1" class="form-control" />
+        </div>
+        <div id="tiempo-predefinido-container" style="display:none;">
+            <label for="tiempo_estancia_id" class="font-semibold text-sm text-gray-700">Selecciona tiempo de estancia*</label>
+            <select name="tiempo_estancia_id" id="tiempo_estancia_id" class="form-control"></select>
+        </div>
+        <div>
+            <label for="habitacion_id" class="font-semibold text-sm text-gray-700">Habitación*</label>
+            <select name="habitacion_id" id="habitacion_id" class="form-control" required></select>
+        </div>
+        <div>
+            <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes*</label>
+            <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="2" class="form-control" required />
+        </div>
+
+        <div class="lg:col-span-3 md:col-span-2 pt-3 mt-3 border-t border-slate-200">
+            <label class="flex items-center gap-3 cursor-pointer">
+                <input type="checkbox" id="precio_libre_toggle" name="precio_libre_toggle" class="form-checkbox h-5 w-5 text-indigo-600">
+                <span class="font-semibold text-indigo-700">Asignar Precio Manual (Libre)</span>
+            </label>
+            <div id="precio_libre_container" class="mt-2" style="display:none;">
+                <label for="precio_libre_valor" class="font-semibold text-sm text-gray-700">Valor Total de la Estancia (sin impuestos)</label>
+                <input type="number" id="precio_libre_valor" name="precio_libre_valor" class="form-control mt-1 text-lg font-bold" placeholder="Ingrese el valor total">
+            </div>
+        </div>
+        </div>
+</fieldset>
             
             <fieldset class="border border-slate-200 p-6 rounded-xl">
                 <legend class="text-lg font-bold text-slate-700 px-2">Descuento</legend>
@@ -2090,42 +2123,66 @@ container.innerHTML = `
     container.querySelector('#btn_clear_cliente')?.addEventListener('click', () => updateClienteFields(null));
     
     // Listeners que afectan el cálculo del total y la UI
-    const setupEventListeners = () => {
-        const btnAplicarDescuento = ui.container.querySelector('#btn-aplicar-descuento-reserva');
+
+
+const setupEventListeners = () => {
+    // Referencias a los elementos de la UI
+    const togglePrecioLibre = ui.container.querySelector('#precio_libre_toggle');
+    const containerPrecioLibre = ui.container.querySelector('#precio_libre_container');
+
+    // Listener para mostrar/ocultar el campo de precio libre
+    if (togglePrecioLibre && containerPrecioLibre) {
+        togglePrecioLibre.addEventListener('change', () => {
+            containerPrecioLibre.style.display = togglePrecioLibre.checked ? 'block' : 'none';
+        });
+    }
+
+    // Lista de todos los inputs que deben disparar un recálculo del total
+    const inputsToRecalculate = [
+        ui.habitacionIdSelect,
+        ui.cantidadNochesInput,
+        ui.tiempoEstanciaIdSelect,
+        ui.form.elements.cantidad_huespedes,
+        ui.fechaEntradaInput,
+        togglePrecioLibre, // La casilla de precio libre
+        ui.container.querySelector('#precio_libre_valor') // El input del valor de precio libre
+    ];
+
+    inputsToRecalculate.forEach(el => {
+        if (el) {
+            const eventType = (el.tagName === 'SELECT' || el.type === 'checkbox') ? 'change' : 'input';
+            el.addEventListener(eventType, () => recalcularYActualizarTotalUI());
+        }
+    });
+    
+    // Listeners existentes que se mantienen
+    const btnAplicarDescuento = ui.container.querySelector('#btn-aplicar-descuento-reserva');
     if (btnAplicarDescuento) {
         btnAplicarDescuento.addEventListener('click', handleAplicarDescuentoReserva);
     }
-        const inputsToRecalculate = [
-            ui.habitacionIdSelect, ui.cantidadNochesInput, ui.tiempoEstanciaIdSelect, 
-            ui.form.elements.cantidad_huespedes, ui.fechaEntradaInput
-        ];
-        inputsToRecalculate.forEach(el => {
-    if (el) el.addEventListener((el.tagName === 'SELECT' ? 'change' : 'input'), async () => await recalcularYActualizarTotalUI());
-});
 
-        if (ui.tipoCalculoDuracionEl) {
-            ui.tipoCalculoDuracionEl.addEventListener('change', () => {
-                const esNochesManual = ui.tipoCalculoDuracionEl.value === 'noches_manual';
-                ui.nochesManualContainer.style.display = esNochesManual ? '' : 'none';
-                ui.cantidadNochesInput.required = esNochesManual;
-                ui.tiempoPredefinidoContainer.style.display = esNochesManual ? 'none' : '';
-                ui.tiempoEstanciaIdSelect.required = !esNochesManual;
-                recalcularYActualizarTotalUI();
-            });
-        }
+    if (ui.tipoCalculoDuracionEl) {
+        ui.tipoCalculoDuracionEl.addEventListener('change', () => {
+            const esNochesManual = ui.tipoCalculoDuracionEl.value === 'noches_manual';
+            if(ui.nochesManualContainer) ui.nochesManualContainer.style.display = esNochesManual ? '' : 'none';
+            if(ui.cantidadNochesInput) ui.cantidadNochesInput.required = esNochesManual;
+            if(ui.tiempoPredefinidoContainer) ui.tiempoPredefinidoContainer.style.display = esNochesManual ? 'none' : '';
+            if(ui.tiempoEstanciaIdSelect) ui.tiempoEstanciaIdSelect.required = !esNochesManual;
+        });
+    }
 
-        if (ui.form.elements.tipo_pago) ui.form.elements.tipo_pago.addEventListener('change', actualizarVisibilidadPago);
-        if (ui.form.elements.monto_abono) ui.form.elements.monto_abono.addEventListener('input', actualizarVisibilidadPago);
+    if (ui.form.elements.tipo_pago) ui.form.elements.tipo_pago.addEventListener('change', actualizarVisibilidadPago);
+    if (ui.form.elements.monto_abono) ui.form.elements.monto_abono.addEventListener('input', actualizarVisibilidadPago);
 
-        if (ui.form) ui.form.addEventListener('submit', handleFormSubmit);
-        if (ui.cancelEditButton) ui.cancelEditButton.addEventListener('click', () => resetFormToCreateMode());
-        if (ui.reservasListEl) ui.reservasListEl.addEventListener('click', handleListActions);
-        
-        document.addEventListener('datosActualizados', handleExternalUpdate);
-    };
+    if (ui.form) ui.form.addEventListener('submit', handleFormSubmit);
+    if (ui.cancelEditButton) ui.cancelEditButton.addEventListener('click', () => resetFormToCreateMode());
+    if (ui.reservasListEl) ui.reservasListEl.addEventListener('click', handleListActions);
+    
+    document.addEventListener('datosActualizados', handleExternalUpdate);
+};   
 
-    // --- 5. CARGA DE DATOS Y ESTADO INICIAL ---
-    await loadInitialData(); 
+
+await loadInitialData(); 
     setupEventListeners();   
     
     await syncReservasConGoogleCalendar(state); 
