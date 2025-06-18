@@ -34,19 +34,37 @@ export async function abrirMercadoPagoCheckout(plan, tipo, montoPagarUSD, hotelI
     return;
   }
   
+// En mercadoPagoService.js
+
+// ...
+
   const result = await Swal.fire({
     icon: 'info',
     title: 'Serás redirigido a Mercado Pago',
-    html: `Continuarás el pago en la plataforma segura de Mercado Pago.<br><br>
-      Monto a pagar: <b>$${montoFixed.toFixed(2)} USD</b><br>
-      ¿Deseas continuar?`,
-    confirmButtonText: 'Sí, continuar al pago',
+    // --- INICIO DE LA MODIFICACIÓN ---
+    html: `
+      <div style="text-align: left; padding: 0 1rem;">
+          Estás a punto de ir a nuestra pasarela de pago segura.
+          <div style="margin-top: 1rem; padding: 0.8rem; background-color: #f0f5ff; border: 1px solid #adc6ff; border-radius: 8px; font-size: 0.9em; color: #2d3748;">
+              <b>Nota sobre la moneda:</b> Para procesar tu pago de forma segura a través de Mercado Pago Colombia, el monto final se mostrará en Pesos Colombianos (COP).</strong>.
+              <br><br>
+              No te preocupes, el valor es el equivalente exacto a tu total en dólares.
+
+          </div>
+          <div style="margin-top: 1rem; font-weight: 600;">
+              Valor de referencia: <b>$${montoFixed.toFixed(2)} USD</b>
+          </div>
+      </div>
+    `,
+    // --- FIN DE LA MODIFICACIÓN ---
+    confirmButtonText: 'Entendido, continuar al pago',
     cancelButtonText: 'Cancelar',
     showCancelButton: true,
-    confirmButtonColor: '#009ee3',
-    cancelButtonColor: '#f44336'
+    confirmButtonColor: '#1d4ed8', // Tono azul para consistencia
+    cancelButtonColor: '#64748b'
   });
 
+// ...
   if (!result.isConfirmed) {
     return;
   }

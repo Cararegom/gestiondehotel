@@ -173,17 +173,21 @@ export async function mount(container, supabase, user, hotelId) {
             </div>
             <div class="text-gray-600 text-sm mb-1"><span class="font-semibold">Vence:</span> ${fechaFin ? fechaFin.toLocaleDateString('es-CO') : 'N/A'}</div>
           </div>
-          <div class="flex gap-2 items-center mt-3 md:mt-0">
-            <label for="monedaSelector" class="font-semibold text-sm text-gray-600 mr-1">Moneda:</label>
-            <select id="monedaSelector" class="form-control w-auto px-2 py-1 text-xs">
-              <option value="COP">COP (Colombia)</option>
-              <option value="USD">USD (US$)</option>
-            </select>
-            <label for="tipoPagoSelector" class="font-semibold text-sm text-gray-600 ml-3 mr-1">Pago:</label>
-            <select id="tipoPagoSelector" class="form-control w-auto px-2 py-1 text-xs">
-              <option value="mensual">Mensual</option>
-              <option value="anual">Anual (-2 meses gratis)</option>
-            </select>
+          <div class="flex flex-wrap gap-x-4 gap-y-2 items-center mt-3 md:mt-0">
+            <div class="flex items-center gap-2">
+              <label for="monedaSelector" class="font-semibold text-sm text-gray-600">Moneda:</label>
+              <select id="monedaSelector" class="form-control w-auto px-2 py-1 text-xs">
+                <option value="COP">COP (Colombia)</option>
+                <option value="USD">USD (US$)</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2">
+              <label for="tipoPagoSelector" class="font-semibold text-sm text-gray-600">Pago:</label>
+              <select id="tipoPagoSelector" class="form-control w-auto px-2 py-1 text-xs">
+                <option value="mensual">Mensual</option>
+                <option value="anual">Anual (-2 meses gratis)</option>
+              </select>
+            </div>
           </div>
         </div>
         <div class="flex flex-wrap gap-4 mt-6">
