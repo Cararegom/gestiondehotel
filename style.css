@@ -726,3 +726,23 @@ img, svg {
   30%, 50%, 70% { transform: translateX(-4px); }
   40%, 60% { transform: translateX(4px); }
 }
+/* ================================================== */
+/* === AJUSTES PARA BANNERS EN MÓVILES (CELULAR) ==== */
+/* ================================================== */
+
+@media (max-width: 767px) {
+
+  /* 1. Ajustamos la altura del slider para que no ocupe toda la pantalla */
+  .hero-slider {
+    height: 65vh; /* Puedes probar valores como 60vh, 70vh, o 500px */
+    min-height: 450px; /* Asegura una altura mínima por si el vh es muy poco */
+  }
+
+  /* 2. Hacemos que la imagen del banner CUBRA todo su contenedor */
+  .slide.slide-con-imagen img {
+    object-fit: cover; /* <-- ESTE ES EL CAMBIO CLAVE */
+    height: 100%; /* Asegura que la imagen llene la altura del slide */
+    width: 100%; /* Asegura que la imagen llene el ancho del slide */
+  }
+
+}
