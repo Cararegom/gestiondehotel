@@ -756,7 +756,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
             const chatInput = document.getElementById('chat-input');
 
             // --- URL del Webhook de n8n ---
-            const N8N_WEBHOOK_URL = 'https://n8n.gestiondehotel.com/webhook/chatbot-gestion-hotel';
+            const N8N_WEBHOOK_URL = 'https://hook.us2.make.com/g3uvarlsonw4fjqvbtlt64iakapeof43';
 
             // --- Funciones auxiliares (Definidas primero) ---
             const appendMessage = (message, type) => {
@@ -799,7 +799,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
                         headers: {
                           'Content-Type': 'application/json'
                         },
-                        body: JSON.stringify({ message: userMessage }),
+                        body: JSON.stringify({ text: userMessage }),
                     });
 
                     if (!response.ok) {
