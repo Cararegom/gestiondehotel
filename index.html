@@ -93,7 +93,18 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
         .footer a:hover { color: #fff; text-decoration: underline; }
         
         /* Navbar */
-        .navbar-brand img { max-height: 45px; }
+       /* --- Estilos Responsivos para el Logo --- */
+        /* Tamaño para MÓVIL por defecto */
+        .navbar-brand img {
+          max-height: 40px;
+        }
+
+        /* Tamaño para ESCRITORIO (pantallas más grandes que 900px) */
+        @media (min-width: 901px) {
+          .navbar-brand img {
+            max-height: 55px; /* ¡Ajusta este valor si quieres! */
+          }
+        }
         .navbar { padding-top: 1rem; padding-bottom: 1rem; background-color: #ffffff !important; }
         
         /* Modal */
@@ -145,7 +156,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
     <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm fixed-top">
         <div class="container">
             <a class="navbar-brand" href="index.html">
-                <img src="https://placehold.co/180x45/1a5ca3/ffffff?text=Gesti%C3%B3nHotelPro" alt="Gestión de Hotel Logo" class="me-2">
+                <img src="/icons/favicon.png" alt="Gestión de Hotel Logo" class="me-2">
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Menú">
                 <span class="navbar-toggler-icon"></span>
@@ -173,10 +184,6 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
 
     <div class="slide slide-2 slide-con-imagen">
       <img src="segundo banner.png" alt="Banner de funcionalidades">
-    </div>
-
-    <div class="slide slide-3 slide-con-imagen">
-      <img src="slide3.jpg" alt="Banner de oferta">
     </div>
 
   </div>
@@ -376,7 +383,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
                             <th colspan="4" class="text-start bg-light py-2 px-4 fw-semibold text-secondary-emphasis small" scope="colgroup">AUTOMATIZACIÓN E INTEGRACIONES</th>
                         </tr>
                         <tr>
-                            <td class="text-start px-4 py-3">Google Calendar</td>
+                            <td class="text-start px-4 py-3">Google Calendar y Outlook Calendar</td>
                             <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
                             <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
                             <td><i class="bi bi-check-lg text-success fs-4"></i></td>
@@ -720,8 +727,115 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
         </div>
       </div>
     </div>
+<div id="chat-fab">
+        <i class="bi bi-chat-dots-fill"></i>
+    </div>
+    <div id="chat-window">
+        <div class="chat-header">
+            <span>Asistente Virtual</span>
+            <button type="button" class="btn-close" id="chat-close-btn" aria-label="Cerrar"></button>
+        </div>
+        <div class="chat-body" id="chat-body">
+            <div class="chat-message bot">
+                ¡Hola! Soy tu asistente experto de "Gestión de Hotel". ¿En qué puedo ayudarte hoy? Puedes preguntarme sobre planes, funcionalidades o reportar un problema.
+            </div>
+        </div>
+        <div class="chat-footer">
+            <input type="text" id="chat-input" placeholder="Escribe tu mensaje...">
+            <button id="chat-send-btn"><i class="bi bi-send-fill"></i></button>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Elementos del DOM ---
+            const chatFab = document.getElementById('chat-fab');
+            const chatWindow = document.getElementById('chat-window');
+            const closeBtn = document.getElementById('chat-close-btn');
+            const chatBody = document.getElementById('chat-body');
+            const sendBtn = document.getElementById('chat-send-btn');
+            const chatInput = document.getElementById('chat-input');
 
+            // --- URL del Webhook de n8n ---
+            // URL configurada con la IP pública de tu servidor de Google Cloud.
+const N8N_WEBHOOK_URL = 'http://34.58.11.81:5678/webhook-test/chatbot-gestion-hotel';
+
+            // --- Abrir y cerrar la ventana de chat ---
+            chatFab.addEventListener('click', () => {
+                chatWindow.classList.toggle('open');
+            });
+
+            closeBtn.addEventListener('click', () => {
+                chatWindow.classList.remove('open');
+            });
+
+            // --- Lógica para enviar mensajes ---
+            const sendMessage = async () => {
+                const userMessage = chatInput.value.trim();
+                if (userMessage === '') return;
+
+                appendMessage(userMessage, 'user');
+                chatInput.value = '';
+                showTypingIndicator();
+
+                try {
+                    const response = await fetch(N8N_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ message: userMessage }),
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Error del servidor: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    const botReply = data.json.choices[0].text;
+                    
+                    removeTypingIndicator();
+                    appendMessage(botReply, 'bot');
+
+                } catch (error) {
+                    console.error('Error al contactar el webhook:', error);
+                    removeTypingIndicator();
+                    const errorMessage = "Lo siento, no pude conectarme con mi cerebro en este momento. Por favor, intenta de nuevo más tarde.";
+                    appendMessage(errorMessage, 'error');
+                }
+            };
+
+            // --- Funciones auxiliares ---
+            const appendMessage = (message, type) => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `chat-message ${type}`;
+                messageDiv.innerHTML = message;
+                chatBody.appendChild(messageDiv);
+                chatBody.scrollTop = chatBody.scrollHeight;
+            };
+            
+            const showTypingIndicator = () => {
+                const indicatorDiv = document.createElement('div');
+                indicatorDiv.className = 'typing-indicator';
+                indicatorDiv.innerHTML = '<span></span><span></span><span></span>';
+                chatBody.appendChild(indicatorDiv);
+                chatBody.scrollTop = chatBody.scrollHeight;
+            }
+
+            const removeTypingIndicator = () => {
+                const indicator = chatBody.querySelector('.typing-indicator');
+                if (indicator) {
+                    indicator.remove();
+                }
+            }
+
+            // --- Event Listeners para el envío ---
+            sendBtn.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', (event) => {
+                if (event.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        });
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module" src="script.js"></script>
+    
 </body>
 </html>

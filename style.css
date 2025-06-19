@@ -727,22 +727,158 @@ img, svg {
   40%, 60% { transform: translateX(4px); }
 }
 /* ================================================== */
-/* === AJUSTES PARA BANNERS EN MÓVILES (CELULAR) ==== */
+/* === AJUSTES PARA BANNERS EN CELULARES (MÓVIL) ==== */
 /* ================================================== */
 
 @media (max-width: 767px) {
 
-  /* 1. Ajustamos la altura del slider para que no ocupe toda la pantalla */
+  /* 1. Hacemos que el slider sea menos alto en celulares para que no sea tan invasivo.
+     Puedes probar valores como 60vh, 70vh, etc. */
   .hero-slider {
-    height: 65vh; /* Puedes probar valores como 60vh, 70vh, o 500px */
-    min-height: 450px; /* Asegura una altura mínima por si el vh es muy poco */
+    height: 70vh; 
+    min-height: 450px; /* Altura mínima para que no sea demasiado pequeño en dispositivos cortos */
   }
 
-  /* 2. Hacemos que la imagen del banner CUBRA todo su contenedor */
+  /* 2. Hacemos que la imagen del banner CUBRA el 100% del espacio.
+     Esta es la regla mágica que soluciona tu problema. */
   .slide.slide-con-imagen img {
-    object-fit: cover; /* <-- ESTE ES EL CAMBIO CLAVE */
-    height: 100%; /* Asegura que la imagen llene la altura del slide */
-    width: 100%; /* Asegura que la imagen llene el ancho del slide */
+    width: 100%;       /* Ocupa todo el ancho del contenedor */
+    height: 100%;      /* Ocupa toda la altura del contenedor */
+    object-fit: cover; /* Se estira para cubrir todo, recortando los excesos en lugar de encogerse.
+                          Esto elimina las barras azules de los lados. */
   }
 
 }
+/* =========== ESTILOS DEL CHATBOT =========== */
+        #chat-fab {
+            position: fixed;
+            bottom: 25px;
+            right: 25px;
+            width: 60px;
+            height: 60px;
+            background-color: #1a5ca3;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            cursor: pointer;
+            z-index: 999;
+            transition: transform 0.2s ease-in-out;
+        }
+        #chat-fab:hover {
+            transform: scale(1.1);
+        }
+        #chat-window {
+            position: fixed;
+            bottom: 100px;
+            right: 25px;
+            width: 90%;
+            max-width: 370px;
+            height: 70%;
+            max-height: 550px;
+            background-color: #fff;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            z-index: 998;
+            transform: scale(0);
+            transform-origin: bottom right;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        #chat-window.open {
+            transform: scale(1);
+        }
+        .chat-header {
+            background-color: #1a5ca3;
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+        }
+        .chat-header .btn-close {
+            filter: invert(1) grayscale(100%) brightness(200%);
+        }
+        .chat-body {
+            flex-grow: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            background-color: #f4f7f9;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .chat-message {
+            padding: 0.6rem 1rem;
+            border-radius: 18px;
+            max-width: 80%;
+            line-height: 1.4;
+        }
+        .chat-message.bot {
+            background-color: #e9ecef;
+            color: #333;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+        .chat-message.user {
+            background-color: #0d6efd;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .chat-message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            align-self: flex-start;
+        }
+        .typing-indicator {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0.6rem 1rem;
+        }
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background-color: #ccc;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: -0.32s; }
+        .typing-indicator span:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+        .chat-footer {
+            padding: 0.75rem;
+            border-top: 1px solid #dee2e6;
+            background-color: #fff;
+            display: flex;
+            gap: 0.5rem;
+        }
+        .chat-footer input {
+            flex-grow: 1;
+            border-radius: 20px;
+            border: 1px solid #ced4da;
+            padding: 0.5rem 1rem;
+        }
+        .chat-footer input:focus {
+            outline: none;
+            box-shadow: 0 0 0 0.25rem rgba(26, 92, 163, 0.25);
+            border-color: #1a5ca3;
+        }
+        .chat-footer button {
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            background-color: #1a5ca3;
+            color: white;
+            border: none;
+        }
