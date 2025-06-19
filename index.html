@@ -778,28 +778,32 @@ const N8N_WEBHOOK_URL = 'https://n8n.gestiondehotel.com/webhook/chatbot-gestion-
                 showTypingIndicator();
 
                 try {
-                    const response = await fetch(N8N_WEBHOOK_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ message: userMessage }),
-                    });
+  const response = await fetch(N8N_WEBHOOK_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ message: userMessage }),
+  });
 
-                    if (!response.ok) {
-                        throw new Error(`Error del servidor: ${response.status}`);
-                    }
-                    const data = await response.json();
-                    const botReply = data.json.choices[0].text;
-                    
-                    removeTypingIndicator();
-                    appendMessage(botReply, 'bot');
+  if (!response.ok) {
+    throw new Error(`Error del servidor: ${response.status}`);
+  }
 
-                } catch (error) {
-                    console.error('Error al contactar el webhook:', error);
-                    removeTypingIndicator();
-                    const errorMessage = "Lo siento, no pude conectarme con mi cerebro en este momento. Por favor, intenta de nuevo más tarde.";
-                    appendMessage(errorMessage, 'error');
-                }
-            };
+  // Asumimos que n8n devuelve { choices: [...] } directamente en JSON
+  const data = await response.json();
+  const botReply = data.choices[0].text;
+
+  removeTypingIndicator();
+  appendMessage(botReply, 'bot');
+
+} catch (error) {
+  console.error('Error al contactar el webhook:', error);
+  removeTypingIndicator();
+  const errorMessage = "Lo siento, no pude conectarme con mi cerebro en este momento. Por favor, intenta de nuevo más tarde.";
+  appendMessage(errorMessage, 'error');
+}
+            
 
             // --- Funciones auxiliares ---
             const appendMessage = (message, type) => {
@@ -824,13 +828,15 @@ const N8N_WEBHOOK_URL = 'https://n8n.gestiondehotel.com/webhook/chatbot-gestion-
                     indicator.remove();
                 }
             }
-
+          }
+          
             // --- Event Listeners para el envío ---
             sendBtn.addEventListener('click', sendMessage);
             chatInput.addEventListener('keypress', (event) => {
                 if (event.key === 'Enter') {
                     sendMessage();
                 }
+            
             });
         });
     </script>
