@@ -756,19 +756,35 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
             const chatInput = document.getElementById('chat-input');
 
             // --- URL del Webhook de n8n ---
-            // URL configurada con la IP pública de tu servidor de Google Cloud.
-const N8N_WEBHOOK_URL = 'https://n8n.gestiondehotel.com/webhook/chatbot-gestion-hotel';
+            const N8N_WEBHOOK_URL = 'https://n8n.gestiondehotel.com/webhook/chatbot-gestion-hotel';
 
-            // --- Abrir y cerrar la ventana de chat ---
-            chatFab.addEventListener('click', () => {
-                chatWindow.classList.toggle('open');
-            });
+            // --- Funciones auxiliares (Definidas primero) ---
+            const appendMessage = (message, type) => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `chat-message ${type}`;
+                // Para renderizar saltos de línea y otros formatos que envíe el bot
+                messageDiv.innerHTML = message.replace(/\n/g, '<br>');
+                chatBody.appendChild(messageDiv);
+                chatBody.scrollTop = chatBody.scrollHeight;
+            };
+            
+            const showTypingIndicator = () => {
+                const indicatorDiv = document.createElement('div');
+                indicatorDiv.id = 'typing-indicator'; // Usar ID para fácil selección
+                indicatorDiv.className = 'chat-message bot';
+                indicatorDiv.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div>`;
+                chatBody.appendChild(indicatorDiv);
+                chatBody.scrollTop = chatBody.scrollHeight;
+            }
 
-            closeBtn.addEventListener('click', () => {
-                chatWindow.classList.remove('open');
-            });
+            const removeTypingIndicator = () => {
+                const indicator = document.getElementById('typing-indicator');
+                if (indicator) {
+                    indicator.remove();
+                }
+            }
 
-            // --- Lógica para enviar mensajes ---
+            // --- Lógica para enviar mensajes (Ahora puede "ver" las funciones de arriba) ---
             const sendMessage = async () => {
                 const userMessage = chatInput.value.trim();
                 if (userMessage === '') return;
@@ -778,65 +794,66 @@ const N8N_WEBHOOK_URL = 'https://n8n.gestiondehotel.com/webhook/chatbot-gestion-
                 showTypingIndicator();
 
                 try {
-  const response = await fetch(N8N_WEBHOOK_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ message: userMessage }),
-  });
+                    const response = await fetch(N8N_WEBHOOK_URL, {
+                        method: 'POST',
+                        headers: {
+                          'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ message: userMessage }),
+                    });
 
-  if (!response.ok) {
-    throw new Error(`Error del servidor: ${response.status}`);
-  }
+                    if (!response.ok) {
+                        throw new Error(`Error del servidor: ${response.status}`);
+                    }
 
-  // Asumimos que n8n devuelve { choices: [...] } directamente en JSON
-  const data = await response.json();
-  const botReply = data.choices[0].text;
+                    const data = await response.json();
+                    
+                    // La respuesta de OpenAI en n8n a veces viene en data.choices[0].text
+                    // o a veces como un JSON que es un string. Hay que manejar ambos casos.
+                    let botReply = '';
+                    if (typeof data === 'string') {
+                        try {
+                            const parsedData = JSON.parse(data);
+                            botReply = parsedData.choices[0].message.content;
+                        } catch (e) {
+                            botReply = data; // Si no es un JSON, usar el texto directamente
+                        }
+                    } else if (data.choices && data.choices[0].message) {
+                         botReply = data.choices[0].message.content;
+                    } else if (data.choices && data.choices[0].text) {
+                        botReply = data.choices[0].text;
+                    }
+                    else {
+                        // Fallback por si la estructura cambia
+                        botReply = JSON.stringify(data);
+                    }
 
-  removeTypingIndicator();
-  appendMessage(botReply, 'bot');
+                    removeTypingIndicator();
+                    appendMessage(botReply, 'bot');
 
-} catch (error) {
-  console.error('Error al contactar el webhook:', error);
-  removeTypingIndicator();
-  const errorMessage = "Lo siento, no pude conectarme con mi cerebro en este momento. Por favor, intenta de nuevo más tarde.";
-  appendMessage(errorMessage, 'error');
-}
-            
-
-            // --- Funciones auxiliares ---
-            const appendMessage = (message, type) => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `chat-message ${type}`;
-                messageDiv.innerHTML = message;
-                chatBody.appendChild(messageDiv);
-                chatBody.scrollTop = chatBody.scrollHeight;
+                } catch (error) {
+                    console.error('Error al contactar el webhook:', error);
+                    removeTypingIndicator();
+                    const errorMessage = "Lo siento, no pude conectarme con mi cerebro en este momento. Por favor, intenta de nuevo más tarde.";
+                    appendMessage(errorMessage, 'error');
+                }
             };
             
-            const showTypingIndicator = () => {
-                const indicatorDiv = document.createElement('div');
-                indicatorDiv.className = 'typing-indicator';
-                indicatorDiv.innerHTML = '<span></span><span></span><span></span>';
-                chatBody.appendChild(indicatorDiv);
-                chatBody.scrollTop = chatBody.scrollHeight;
-            }
+            // --- Abrir y cerrar la ventana de chat ---
+            chatFab.addEventListener('click', () => {
+                chatWindow.classList.toggle('open');
+            });
 
-            const removeTypingIndicator = () => {
-                const indicator = chatBody.querySelector('.typing-indicator');
-                if (indicator) {
-                    indicator.remove();
-                }
-            }
-          }
-          
+            closeBtn.addEventListener('click', () => {
+                chatWindow.classList.remove('open');
+            });
+            
             // --- Event Listeners para el envío ---
             sendBtn.addEventListener('click', sendMessage);
             chatInput.addEventListener('keypress', (event) => {
                 if (event.key === 'Enter') {
                     sendMessage();
                 }
-            
             });
         });
     </script>
