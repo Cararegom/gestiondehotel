@@ -794,13 +794,16 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
                 showTypingIndicator();
 
                 try {
-                    const response = await fetch(N8N_WEBHOOK_URL, {
-                        method: 'POST',
-                        headers: {
-                          'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ text: userMessage }),
-                    });
+                    fetch("https://hook.us2.make.com/g3uvarlsonw4fjqvbtlt64iakapeof43", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    text: "¿Qué incluye el Plan Max?"
+  })
+});
+
 
                     if (!response.ok) {
                         throw new Error(`Error del servidor: ${response.status}`);
