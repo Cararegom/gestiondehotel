@@ -761,8 +761,8 @@ img, svg {
   /* 2. Hacemos que la imagen del banner CUBRA el 100% del espacio.
      Esta es la regla mágica que soluciona tu problema. */
   .slide.slide-con-imagen img {
-    width: 90%;       /* Ocupa todo el ancho del contenedor */
-    height: 90%;      /* Ocupa toda la altura del contenedor */
+    width: 100%;       /* Ocupa todo el ancho del contenedor */
+    height: 70%;      /* Ocupa toda la altura del contenedor */
     object-fit: cover; /* Se estira para cubrir todo, recortando los excesos en lugar de encogerse.*/
     object-position: center center;
                           /*Esto elimina las barras azules de los lados. */
