@@ -1,129 +1,197 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-   <meta name="facebook-domain-verification" content="xlupp8gcyq6hzhzyyg3azwoqznd4mk" />
-  <!-- Google Tag Manager -->
-<script>
-(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id=GTM-NDC7DNLK'+dl;f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-NDC7DNLK');
-</script>
-<!-- End Google Tag Manager -->
-
-     <meta charset="UTF-8">
-    <title>Tu Título de Página</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Tu descripción de página.">
-
-    <link rel="icon" href="/favicon.ico" sizes="any">
     <meta charset="UTF-8">
-    <title>Gestión de Hotel | Transforma tu Hotel - Prueba TODO GRATIS 30 Días</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Hotel | Transforma tu Hotel - Prueba TODO GRATIS 30 Días</title>
     <meta name="description" content="Software de gestión hotelera diseñado para Latinoamérica. Optimiza reservas (¡también por horas!), habitaciones y aumenta tu rentabilidad. Prueba TODAS las funciones GRATIS por 30 días. Sin tarjeta, solo regístrate.">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css"> 
-    <script type="importmap">
-    {
-      "imports": {
-        "chart.js": "https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js",
-        "bootstrap": "https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-      }
-    }
+    <meta name="facebook-domain-verification" content="xlupp8gcyq6hzhzyyg3azwoqznd4mk" />
+    
+    <link rel="icon" href="/icons/favicon.png" type="image/png">
+
+    <script>
+        (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+        new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+        'https://www.googletagmanager.com/gtm.js?id=GTM-NDC7DNLK'+dl;f.parentNode.insertBefore(j,f);
+        })(window,document,'script','dataLayer','GTM-NDC7DNLK');
     </script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <style>
+        /* --------------------------------------------------- */
+        /* Estilos Globales y Variables                        */
+        /* --------------------------------------------------- */
+        :root {
+            --primary-color: #1a5ca3;
+            --primary-darker: #144981;
+            --secondary-color: #ffc107;
+            --secondary-darker: #e0a800;
+            --light-gray: #f8f9fa;
+            --dark-blue: #2c3e50;
+            --text-color: #343a40;
+            --text-muted-color: #6c757d;
+            --border-radius-md: 0.5rem;
+            --border-radius-lg: 0.75rem;
+            --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+            --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 1rem 3rem rgba(0, 0, 0, 0.12);
+        }
+
         body {
             font-family: 'Poppins', sans-serif;
             line-height: 1.7;
-            color: #333; /* Color de texto base */
+            color: var(--text-color);
+            background-color: #fdfdff; /* Un fondo casi blanco para que los elementos resalten */
         }
 
-        /* Estilos del Hero Section (como los tenías, con ajustes de legibilidad) */
-        .hero-section {
-            background-image: linear-gradient(rgba(26, 92, 163, 0.92), rgba(26, 92, 163, 0.88)), url('hero-background.png');
-            background-size: cover;
-            background-position: center center;
+        .section-padding {
+            padding: 80px 0;
+        }
+
+        .section-title {
+            font-weight: 700;
+            font-size: clamp(2rem, 5vw, 2.8rem);
+            margin-bottom: 1rem;
+        }
+
+        .section-subtitle {
+            font-size: clamp(1rem, 2.5vw, 1.15rem);
+            color: var(--text-muted-color);
+            margin-bottom: 4rem;
+            max-width: 750px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* --------------------------------------------------- */
+        /* Barra de Navegación                                 */
+        /* --------------------------------------------------- */
+        .navbar {
+            padding: 1rem 0;
+            transition: all 0.3s ease-in-out;
+            background-color: transparent !important;
+        }
+
+        .navbar-brand img {
+            max-height: 50px;
+            transition: all 0.3s ease-in-out;
+        }
+
+        .navbar.scrolled {
+            background-color: #ffffff !important;
+            box-shadow: var(--shadow-md);
+            padding: 0.5rem 0;
+        }
+
+        .navbar.scrolled .navbar-brand img {
+            max-height: 45px;
+        }
+        
+        .navbar .nav-link {
+            font-weight: 500;
             color: #fff;
-            padding-top: 160px;
-            padding-bottom: 120px;
-            min-height: 75vh;
+            position: relative;
+            padding-bottom: 0.5rem;
+        }
+
+        .navbar.scrolled .nav-link {
+            color: var(--text-color);
+        }
+
+        .navbar .nav-link::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 2px;
+            background-color: var(--secondary-color);
+            transition: width 0.3s ease-in-out;
+        }
+
+        .navbar .nav-link:hover::after,
+        .navbar .nav-item.active .nav-link::after {
+            width: 60%;
+        }
+        
+        /* --------------------------------------------------- */
+        /* Hero Section                                        */
+        /* --------------------------------------------------- */
+        .hero-section {
+            background-image: linear-gradient(rgba(26, 92, 163, 0.9), rgba(20, 73, 129, 0.95)), url('https://images.unsplash.com/photo-1566073771259-6a8506099945?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=MnwxfDB8MXxyYW5kb218MHx8aG90ZWx8fHx8fHwxNjE4NDEyMjYy&ixlib=rb-1.2.1&q=80&w=1080');
+            background-size: cover;
+            background-position: center;
+            color: #fff;
+            padding: 200px 0 140px 0;
+            min-height: 90vh;
             display: flex;
             align-items: center;
             text-align: center;
         }
-        .hero-section .container { max-width: 850px; animation: fadeInHeroContent 1s ease-out forwards; }
-        @keyframes fadeInHeroContent { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        .hero-section h1 { font-weight: 800; font-size: clamp(2.8rem, 5.5vw, 4rem); line-height: 1.15; margin-bottom: 1rem; text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.65); }
-        .hero-section .lead { font-size: clamp(1.15rem, 2.6vw, 1.45rem); font-weight: 400; margin-bottom: 1.8rem; line-height: 1.75; text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.6); }
-        .hero-section .sub-offer { font-size: clamp(1.05rem, 2.1vw, 1.2rem); font-weight: 600; color: #ffdd57; background-color: rgba(0,0,0,0.35); padding: 0.6rem 1.2rem; border-radius: 6px; display: inline-block; margin-bottom: 2.8rem; border: 1px solid rgba(255,222,89,0.4); text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5); }
-        .hero-section .btn { padding: 1rem 2.2rem; font-size: 1.1rem; margin: 0.5rem; transition: transform 0.2s ease-out, box-shadow 0.2s ease-out; }
-        .hero-section .btn:hover { transform: translateY(-3px); box-shadow: 0 6px 12px rgba(0,0,0,0.2); }
-        
-        /* Botones personalizados */
-        .btn-custom-warning { background-color: #ffc107; border-color: #ffc107; color: #333; font-weight: 700; padding: 0.8rem 1.8rem; transition: all 0.3s ease; }
-        .btn-custom-warning:hover { background-color: #e0a800; border-color: #d39e00; transform: translateY(-3px); box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
-        .btn-outline-light-custom { border-width: 2px; font-weight: 600; padding: 0.7rem 1.7rem; color: #fff; border-color: #fff; text-shadow: none; }
-        .btn-outline-light-custom:hover { background-color: #fff; color: #1a5ca3; }
 
-        /* Títulos de Sección */
-        .section-title { font-weight: 700; margin-bottom: 1rem; font-size: 2.5rem; }
-        .section-subtitle { font-size: 1.1rem; color: #555; margin-bottom: 3rem; max-width: 700px; margin-left: auto; margin-right: auto; }
-        
-        /* Cards */
-        .card { border: 1px solid #e9ecef; transition: transform 0.3s ease, box-shadow 0.3s ease; }
-        .card:hover { transform: translateY(-7px); box-shadow: 0 0.75rem 1.5rem rgba(0,0,0,.1)!important; }
-        .card-header { font-weight: 700; font-size: 1.3rem; }
-        .why-choose-us-icon { font-size: 3rem; color: #1a5ca3; margin-bottom: 1rem; }
-
-        /* Testimonios */
-        .testimonial-card { background-color: #fff; border: 1px solid #e9ecef; padding: 25px; border-radius: 8px; }
-        .testimonial-card img { width: 70px; height: 70px; border-radius: 50%; object-fit: cover; margin-bottom: 15px; border: 3px solid #2061a9; }
-        .testimonial-card .quote-icon { font-size: 2rem; color: #2061a9; opacity: 0.6; }
-        
-        /* Acordeón FAQ */
-        .accordion-button:not(.collapsed) { color: #fff; background-color: #2061a9; }
-        .accordion-button:focus { box-shadow: 0 0 0 0.25rem rgba(32, 97, 169, 0.25); }
-        
-        /* Footer */
-        .footer { background-color: #2c3e50; color: #ecf0f1; padding: 4rem 0; }
-        .footer a { color: #ffc107; text-decoration: none; }
-        .footer a:hover { color: #fff; text-decoration: underline; }
-        
-        /* Navbar */
-       /* --- Estilos Responsivos para el Logo --- */
-        /* Tamaño para MÓVIL por defecto */
-        .navbar-brand img {
-          max-height: 40px;
+        .hero-section h1 {
+            font-weight: 800;
+            font-size: clamp(3rem, 6vw, 4.5rem);
+            line-height: 1.2;
+            margin-bottom: 1.5rem;
+            text-shadow: 2px 2px 8px rgba(0, 0, 0, 0.6);
         }
 
-        /* Tamaño para ESCRITORIO (pantallas más grandes que 900px) */
-        @media (min-width: 901px) {
-          .navbar-brand img {
-            max-height: 55px; /* ¡Ajusta este valor si quieres! */
-          }
+        .hero-section .lead {
+            font-size: clamp(1.2rem, 3vw, 1.5rem);
+            font-weight: 400;
+            margin-bottom: 2.5rem;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.5);
         }
-        .navbar { padding-top: 1rem; padding-bottom: 1rem; background-color: #ffffff !important; }
         
-        /* Modal */
-        .modal-header.bg-primary { background-color: #1a5ca3 !important; }
-
-        /* Estilos para la nueva sección de precios */
-        .pricing-hero-offer {
-            position: relative; /* Para posicionar elementos gráficos */
-            overflow: hidden; /* Para que los elementos gráficos no se salgan si son muy grandes */
+        /* --------------------------------------------------- */
+        /* Botones                                             */
+        /* --------------------------------------------------- */
+        .btn {
+            border-radius: var(--border-radius-md);
+            padding: 0.8rem 1.8rem;
+            font-weight: 600;
+            transition: all 0.3s ease-in-out;
+            border-width: 2px;
         }
-        .offer-graphic { /* Clase para tus imágenes de Canva */
-            width: 100px; /* Ajusta según tu imagen */
-            height: auto;
-            position: absolute; 
-            z-index: 1;
+        
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: var(--shadow-md);
         }
-        .offer-graphic.top-left { top: -20px; left: -20px; transform: rotate(-15deg); }
-        .offer-graphic.top-right { top: -20px; right: -20px; transform: rotate(15deg); }
 
+        .btn-primary {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+        .btn-primary:hover {
+            background-color: var(--primary-darker);
+            border-color: var(--primary-darker);
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+            color: #333;
+        }
+        .btn-secondary:hover {
+            background-color: var(--secondary-darker);
+            border-color: var(--secondary-darker);
+            color: #000;
+        }
+        .btn-lg {
+             padding: 1rem 2.5rem;
+             font-size: 1.1rem;
+        }
         .pulse-animation {
             animation: pulse 2s infinite;
         }
@@ -132,378 +200,332 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
             70% { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(255, 193, 7, 0); }
             100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
         }
-        #pricing .table-light th, #pricing .table-light td { background-color: #f8f9fa; } /* Fondo sutil para headers/footers de tabla */
-        #pricing .table { border-radius: .75rem; overflow: hidden; }
-        #pricing th, #pricing td { vertical-align: middle; }
-        #pricing .badge { font-size: 0.8em; padding: 0.4em 0.6em; }
-        #pricing th .badge.bg-warning { margin-top: -0.5rem !important; }
-        #pricing th .badge.bg-danger { font-size: 0.65rem; padding: 0.2em 0.4em; display: block; margin-left: auto; margin-right: auto; max-width: fit-content;}
-        
-        .plan-feature-list { list-style: none; padding-left: 0;}
-        .plan-feature-list li { display: flex; align-items: center; margin-bottom: 0.5rem; font-size: 0.9rem;}
-        .plan-feature-list li .bi { margin-right: 0.5rem; font-size: 1.1rem;}
 
+        /* --------------------------------------------------- */
+        /* Tarjetas (Features, Why Choose Us)                  */
+        /* --------------------------------------------------- */
+        .feature-card {
+            background-color: #fff;
+            border: 1px solid #e9ecef;
+            border-radius: var(--border-radius-lg);
+            padding: 2.5rem 2rem;
+            text-align: center;
+            transition: all 0.3s ease-in-out;
+            box-shadow: var(--shadow-sm);
+        }
+        .feature-card:hover {
+            transform: translateY(-8px);
+            box-shadow: var(--shadow-lg);
+        }
+        .feature-card-icon {
+            font-size: 3rem;
+            color: var(--primary-color);
+            margin-bottom: 1.5rem;
+            display: inline-block;
+        }
+        .feature-card h5 {
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+        }
+        .feature-card p {
+            color: var(--text-muted-color);
+        }
+
+        /* --------------------------------------------------- */
+        /* Sección de Precios                                  */
+        /* --------------------------------------------------- */
+        #pricing {
+            background-color: var(--light-gray);
+        }
+        .pricing-table-container {
+            display: grid;
+            grid-template-columns: repeat(1, 1fr);
+            gap: 2rem;
+        }
+        @media (min-width: 992px) {
+            .pricing-table-container {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+        .pricing-plan {
+            background: #fff;
+            border-radius: var(--border-radius-lg);
+            padding: 2.5rem;
+            border: 2px solid #e9ecef;
+            transition: all 0.3s ease-in-out;
+            box-shadow: var(--shadow-sm);
+        }
+        .pricing-plan.recommended {
+            border-color: var(--secondary-color);
+            transform: scale(1.05);
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            overflow: hidden;
+        }
+        .recommended-badge {
+            position: absolute;
+            top: 15px;
+            right: -45px;
+            background: var(--secondary-color);
+            color: #333;
+            padding: 0.5rem 3rem;
+            transform: rotate(45deg);
+            font-weight: 700;
+            font-size: 0.8rem;
+        }
+
+        .plan-name {
+            font-weight: 700;
+            font-size: 1.5rem;
+        }
+        .plan-price {
+            font-size: 3rem;
+            font-weight: 800;
+            color: var(--primary-color);
+        }
+        .plan-period {
+            font-weight: 500;
+            color: var(--text-muted-color);
+        }
+        .plan-features {
+            list-style: none;
+            padding: 0;
+            margin: 2rem 0;
+        }
+        .plan-features li {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        .plan-features .bi {
+            color: var(--primary-color);
+            font-size: 1.2rem;
+        }
+        .plan-features li.disabled {
+            color: #adb5bd;
+            text-decoration: line-through;
+        }
+        .plan-features li.disabled .bi{
+            color: #adb5bd;
+        }
     </style>
 </head>
 <body>
-  <!-- Google Tag Manager (noscript) -->
-<noscript>
-<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK"
-height="0" width="0" style="display:none;visibility:hidden"></iframe>
-</noscript>
-<!-- End Google Tag Manager (noscript) -->
-
-    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm fixed-top">
+    <noscript>
+        <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK" height="0" width="0" style="display:none;visibility:hidden"></iframe>
+    </noscript>
+    <nav class="navbar navbar-expand-lg fixed-top">
         <div class="container">
-            <a class="navbar-brand" href="index.html">
-                <img src="/icons/favicon.png" alt="Gestión de Hotel Logo" class="me-2">
+            <a class="navbar-brand" href="#">
+                <img src="/icons/favicon.png" alt="Gestión de Hotel Logo">
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Menú">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse justify-content-end" id="navbarNav">
-                <ul class="navbar-nav align-items-center">
-                    <li class="nav-item"><a class="nav-link fw-medium" href="#features">Funcionalidades</a></li>
-                    <li class="nav-item"><a class="nav-link fw-medium" href="#why-choose-us">¿Por Qué Elegirnos?</a></li>
-                    <li class="nav-item"><a class="nav-link fw-medium" href="#pricing">Planes</a></li>
-                    <li class="nav-item"><a class="nav-link fw-medium" href="#testimonials">Testimonios</a></li>
-                    <li class="nav-item"><a class="nav-link fw-medium" href="#faq">FAQ</a></li>
-                    <li class="nav-item"><a class="btn btn-sm btn-custom-warning ms-lg-3 px-3 py-2" data-bs-toggle="modal" data-bs-target="#registroModal"><i class="bi bi-rocket-launch-fill me-1"></i> ¡Prueba TODO GRATIS!</a></li>
-                    <li class="nav-item"><a class="btn btn-sm btn-outline-primary ms-2 px-3 py-2" href="login.html"><i class="bi bi-box-arrow-in-right me-1"></i> Iniciar sesión</a></li>
+                <ul class="navbar-nav align-items-center gap-lg-3">
+                    <li class="nav-item"><a class="nav-link" href="#features">Funcionalidades</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#why-choose-us">¿Por Qué Elegirnos?</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#pricing">Planes</a></li>
+                    <li class="nav-item"><a class="nav-link" href="#faq">FAQ</a></li>
+                    <li class="nav-item ms-lg-3">
+                        <a class="btn btn-secondary" href="#"><i class="bi bi-rocket-launch-fill me-2"></i>Prueba GRATIS</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="btn btn-outline-light" href="login.html"><i class="bi bi-box-arrow-in-right me-2"></i>Login</a>
+                    </li>
                 </ul>
             </div>
         </div>
     </nav>
-
-<header class="hero-slider">
-  <div class="slider-wrapper">
     
-    <div class="slide slide-1 slide-con-imagen">
-      <img src="primer banner.png" alt="Banner de bienvenida">
-    </div>
-
-    <div class="slide slide-2 slide-con-imagen">
-      <img src="segundo banner.png" alt="Banner de funcionalidades">
-    </div>
-
-    <div class="slide slide-3 slide-con-imagen">
-      <img src="banner referidos.png" alt="Banner de referidos">
-    </div>
-
-  </div>
-</header>
-
-    <section id="why-choose-us" class="py-5">
-        <div class="container">
-            <h2 class="text-center section-title">¿Por Qué "Gestión de Hotel" es tu Mejor Aliado?</h2>
-            <p class="text-center section-subtitle">No somos solo otro software. Somos la solución pensada para los desafíos reales de hoteles y moteles en Latinoamérica.</p>
-            <div class="row g-4 text-center">
-                <div class="col-lg-3 col-md-6">
-                    <div class="card h-100 p-4 shadow-sm">
-                        <i class="bi bi-clock-history why-choose-us-icon"></i>
-                        <h5 class="fw-bold">Maximiza Ingresos con Reservas por Horas</h5>
-                        <p class="small">Nuestra especialidad. Atrae un nuevo segmento de clientes y optimiza cada habitación, cada hora del día.</p>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-md-6">
-                    <div class="card h-100 p-4 shadow-sm">
-                        <i class="bi bi-pc-display-horizontal why-choose-us-icon"></i>
-                        <h5 class="fw-bold">Intuitivo y Fácil de Usar (¡De Verdad!)</h5>
-                        <p class="small">Olvídate de sistemas complejos. Empieza a gestionar tu hotel eficientemente desde el primer día, sin necesidad de ser un experto en tecnología.</p>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-md-6">
-                    <div class="card h-100 p-4 shadow-sm">
-                        <i class="bi bi-headset why-choose-us-icon"></i>
-                        <h5 class="fw-bold">Soporte en Español y Cercano</h5>
-                        <p class="small">Estamos aquí para ayudarte a crecer. Recibe asistencia rápida y en tu idioma cuando la necesites.</p>
-                    </div>
-                </div>
-                <div class="col-lg-3 col-md-6">
-                    <div class="card h-100 p-4 shadow-sm">
-                        <i class="bi bi-building-gear why-choose-us-icon"></i>
-                        <h5 class="fw-bold">Adaptado a las Necesidades de tu Hotel o Motel</h5>
-                        <p class="small">Entendemos tu mercado. Funcionalidades pensadas para los requerimientos específicos de hoteles y moteles en la región.</p>
+    <main>
+        <header class="hero-section">
+            <div class="container">
+                <div class="row justify-content-center">
+                    <div class="col-lg-10">
+                        <h1 class="display-3 fw-bolder">Transforma la Gestión de tu Hotel, Hoy Mismo</h1>
+                        <p class="lead">El software todo-en-uno para hoteles y moteles en Latinoamérica. Simplifica tus operaciones, maximiza la ocupación por horas o noches y aumenta tu rentabilidad.</p>
+                        <div class="d-grid gap-3 d-sm-flex justify-content-sm-center">
+                            <a href="#" class="btn btn-secondary btn-lg pulse-animation"><i class="bi bi-rocket-takeoff-fill me-2"></i>Comienza tu Prueba Gratuita de 30 Días</a>
+                            <a href="#features" class="btn btn-outline-light btn-lg">Ver Funcionalidades</a>
+                        </div>
                     </div>
                 </div>
             </div>
-        </div>
-    </section>
+        </header>
 
-    <section id="pricing" class="py-5 bg-light">
-        <div class="container">
-            <div class="text-center mb-5 p-4 p-md-5 bg-primary text-white rounded-3 shadow-lg pricing-hero-offer" style="background: linear-gradient(135deg, #1a5ca3 0%, #3b82f6 100%);">
-                <h1 class="display-4 fw-bolder mb-3" style="color: #ffc107;">¡GRAN LANZAMIENTO!</h1>
-                <h2 class="fs-2 fw-semibold mb-3">Prueba <span style="border-bottom: 3px solid #ffc107;">TODAS LAS FUNCIONALIDADES</span> de nuestro Plan Max</h2>
-                <p class="display-1 fw-bolder text-white mb-3">GRATIS</p>
-                <p class="fs-4 mb-4">Durante 30 Días Completos</p>
-                <p class="lead fw-normal mb-4 px-md-5">
-                    Sin riesgos, sin compromisos, no necesitas tarjeta de crédito. Solo tu deseo de llevar tu hotel al siguiente nivel.
-                </p>
-                <button class="btn btn-warning btn-lg fw-bold px-5 py-3 shadow pulse-animation" data-bs-toggle="modal" data-bs-target="#registroModal" style="font-size: 1.25rem;">
-                    <i class="bi bi-rocket-takeoff-fill me-2"></i> ¡QUIERO MI ACCESO TOTAL GRATIS!
-                </button>
-                <p class="small mt-3 opacity-75">Oferta válida por tiempo limitado para nuevos usuarios.</p>
+        <section id="why-choose-us" class="section-padding">
+            <div class="container">
+                <h2 class="text-center section-title">Tu Aliado Estratégico para Crecer</h2>
+                <p class="text-center section-subtitle">No somos solo un software. Somos la solución diseñada para los desafíos reales de la hotelería en Latinoamérica.</p>
+                <div class="row g-4 text-center">
+                    <div class="col-lg-3 col-md-6">
+                        <div class="feature-card h-100">
+                            <i class="bi bi-clock-history feature-card-icon"></i>
+                            <h5 class="fw-bold">Reservas por Horas: Maximiza Ingresos</h5>
+                            <p class="small">Nuestra especialidad. Atrae un nuevo segmento de clientes y optimiza cada habitación, cada hora del día.</p>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <div class="feature-card h-100">
+                            <i class="bi bi-pc-display-horizontal feature-card-icon"></i>
+                            <h5 class="fw-bold">Intuitivo y Fácil de Usar (De Verdad)</h5>
+                            <p class="small">Empieza a gestionar tu hotel eficientemente desde el primer día, sin necesidad de ser un experto.</p>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <div class="feature-card h-100">
+                            <i class="bi bi-headset feature-card-icon"></i>
+                            <h5 class="fw-bold">Soporte en Español y Cercano</h5>
+                            <p class="small">Estamos aquí para ayudarte a crecer. Recibe asistencia rápida y en tu idioma cuando la necesites.</p>
+                        </div>
+                    </div>
+                    <div class="col-lg-3 col-md-6">
+                        <div class="feature-card h-100">
+                            <i class="bi bi-building-gear feature-card-icon"></i>
+                            <h5 class="fw-bold">Adaptado a Hoteles y Moteles</h5>
+                            <p class="small">Funcionalidades pensadas para los requerimientos específicos de tu negocio en la región.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
+        </section>
 
-            <h2 class="text-center display-6 fw-bold my-5 pt-4">Elige tu Plan Ideal Después de la Prueba</h2>
-            <p class="text-center text-muted mb-5 section-subtitle">
-                Cuando te enamores de la plataforma (¡lo harás!), estos son nuestros planes transparentes y llenos de valor. <br>
-                <strong>¡Ahorra ~17% (equivalente a 2 meses GRATIS) con el pago anual!</strong>
-            </p>
-            <div class="d-flex justify-content-center align-items-center mb-4 gap-3 flex-wrap">
-    <div class="d-flex align-items-center gap-2">
-        <label for="monedaLandingSelector" class="fw-semibold">Moneda:</label>
-        <select id="monedaLandingSelector" class="form-select form-select-sm w-auto">
-            <option value="COP">COP</option>
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-        </select>
-    </div>
-    <div class="d-flex align-items-center gap-2">
-        <label for="periodoLandingSelector" class="fw-semibold">Pago:</label>
-        <select id="periodoLandingSelector" class="form-select form-select-sm w-auto">
-            <option value="mensual">Mensual</option>
-            <option value="anual">Anual (-2 meses gratis)</option>
-        </select>
-    </div>
-</div>
+        <section id="pricing" class="section-padding">
+            <div class="container">
+                <h2 class="text-center section-title">Planes Transparentes y Llenos de Valor</h2>
+                <p class="text-center section-subtitle">Prueba CUALQUIER plan GRATIS por 30 días. Sin tarjeta, sin compromisos. <br><strong>¡Ahorra ~17% (2 meses GRATIS) con el pago anual!</strong></p>
+                
+                <div class="d-flex justify-content-center align-items-center mb-5 gap-3 flex-wrap">
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="monedaLandingSelector" class="fw-semibold">Moneda:</label>
+                        <select id="monedaLandingSelector" class="form-select form-select-sm w-auto">
+                            <option value="COP">COP</option>
+                            <option value="USD">USD</option>
+                            <option value="EUR">EUR</option>
+                        </select>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="periodoLandingSelector" class="fw-semibold">Facturación:</label>
+                        <select id="periodoLandingSelector" class="form-select form-select-sm w-auto">
+                            <option value="mensual">Mensual</option>
+                            <option value="anual">Anual (Ahorra 2 meses)</option>
+                        </select>
+                    </div>
+                </div>
 
+                <div class="pricing-table-container">
+                    <div class="pricing-plan text-center">
+                        <h3 class="plan-name">Lite</h3>
+                        <p class="text-muted">Ideal para pequeños hoteles o startups.</p>
+                        <p class="plan-price" id="precio-lite">$99k</p>
+                        <p class="plan-period" id="unidad-lite">/mes</p>
+                        <a href="#" class="btn btn-outline-primary w-100 mb-4">Empezar Prueba</a>
+                        <ul class="plan-features text-start">
+                            <li><i class="bi bi-check-circle-fill"></i>Hasta 10 habitaciones</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Reservas por horas y noches</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Caja básica y facturación PDF</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Mapa de habitaciones</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Módulos de limpieza y mantenimiento</li>
+                            <li class="disabled"><i class="bi bi-x-circle-fill"></i>Tienda y restaurante (POS)</li>
+                            <li class="disabled"><i class="bi bi-x-circle-fill"></i>Reportes avanzados</li>
+                        </ul>
+                    </div>
 
-            <div class="table-responsive shadow-lg rounded-3">
-                <table class="table table-bordered align-middle text-center bg-white mb-0" style="min-width: 980px;">
-                    <thead class="table-light">
-                        <tr>
-                            <th scope="col" class="text-start p-4" style="width: 280px; vertical-align: middle;">
-                                <h3 class="fs-5 fw-semibold mb-0">Funcionalidades Clave</h3>
-                            </th>
-                            <th scope="col" class="p-3">
-      <h4 class="fs-4 fw-bold text-primary mb-1">Lite</h4>
-      <p class="h3 fw-semibold mb-0" style="color: #007bff;"><span id="precio-lite"></span></p>
-      <p class="text-muted small mb-1" id="unidad-lite"></p>
-      <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;" id="anual-lite"></p>
-    </th>
-    <th scope="col" class="p-3">
-      <h4 class="fs-4 fw-bold text-success mb-1">Pro</h4>
-      <p class="h3 fw-semibold mb-0" style="color: #28a745;"><span id="precio-pro"></span></p>
-      <p class="text-muted small mb-1" id="unidad-pro"></p>
-      <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;" id="anual-pro"></p>
-    </th>
-    <th scope="col" class="p-3 position-relative">
-      <!-- Listón recomendado -->
-      <div class="position-absolute top-0 start-50 translate-middle-x" style="z-index:2;">
-        <span class="badge bg-warning text-dark px-3 py-2" style="font-size:0.75rem; box-shadow:0 2px 6px #0002;">Recomendado</span>
-      </div>
-      <h4 class="fs-4 fw-bold text-warning mb-1 pt-3">Max</h4>
-      <p class="h3 fw-semibold mb-0" style="color: #ffc107;"><span id="precio-max"></span></p>
-      <p class="text-muted small mb-1" id="unidad-max"></p>
-      <p class="badge bg-info-subtle text-info-emphasis p-1" style="font-size:0.7rem;" id="anual-max"></p>
-    </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr class="table-group-divider">
-                            <th colspan="4" class="text-start bg-light py-2 px-4 fw-semibold text-secondary-emphasis small" scope="colgroup">CAPACIDADES FUNDAMENTALES</th>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Límite de habitaciones</td>
-                            <td>10</td>
-                            <td>20</td>
-                            <td class="fw-semibold">Ilimitadas</td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Reservas por horas y noches</td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Caja básica y facturación PDF</td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Mapa de habitaciones interactivo</td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                         <tr>
-                            <td class="text-start px-4 py-3">Módulo de limpieza</td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Módulo de mantenimiento básico</td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
+                    <div class="pricing-plan text-center recommended">
+                        <div class="recommended-badge">Recomendado</div>
+                        <h3 class="plan-name">Max</h3>
+                        <p class="text-muted">La solución completa para crecer sin límites.</p>
+                        <p class="plan-price" id="precio-max" style="color:var(--secondary-darker)">$249k</p>
+                        <p class="plan-period" id="unidad-max">/mes</p>
+                        <a href="#" class="btn btn-secondary w-100 mb-4">Empezar Prueba</a>
+                         <ul class="plan-features text-start">
+                            <li><i class="bi bi-check-circle-fill"></i><strong>Habitaciones ilimitadas</strong></li>
+                            <li><i class="bi bi-check-circle-fill"></i><strong>Todo lo del plan Pro</strong></li>
+                            <li><i class="bi bi-check-circle-fill"></i>Notificaciones y alertas internas</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Descuentos automáticos</li>
+                            <li><i class="bi bi-check-circle-fill"></i><strong>Reportes avanzados y KPIs</strong></li>
+                            <li><i class="bi bi-check-circle-fill"></i>Integración con Calendars y Alegra</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Soporte VIP y consultoría</li>
+                        </ul>
+                    </div>
 
-                        <tr class="table-group-divider">
-                            <th colspan="4" class="text-start bg-light py-2 px-4 fw-semibold text-secondary-emphasis small" scope="colgroup">GESTIÓN Y OPERACIONES AVANZADAS</th>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Tienda y restaurante (POS)</td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Gestión de servicios adicionales</td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Usuarios múltiples y roles</td>
-                            <td><span class="badge bg-secondary">1 Usuario</span></td>
-                            <td><span class="badge bg-info-subtle text-info-emphasis">Hasta 5</span></td>
-                            <td><span class="badge bg-primary-subtle text-primary-emphasis">Hasta 20</span></td>
-                        </tr>
-                         <tr>
-                            <td class="text-start px-4 py-3">Notificaciones internas y alertas</td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Descuentos automáticos</td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                  
-                        <tr>
-                            <td class="text-start px-4 py-3">Reportes y estadísticas</td>
-                             <td><i class="bi bi-check-circle text-muted"></i> <span class="small">(Básicos)</span></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i> <span class="small">(Operativos)</span></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i> <span class="small">(Avanzados y KPIs)</span></td>
-                        </tr>
+                    <div class="pricing-plan text-center">
+                        <h3 class="plan-name">Pro</h3>
+                        <p class="text-muted">Perfecto para hoteles en crecimiento.</p>
+                        <p class="plan-price" id="precio-pro">$169k</p>
+                        <p class="plan-period" id="unidad-pro">/mes</p>
+                        <a href="#" class="btn btn-outline-primary w-100 mb-4">Empezar Prueba</a>
+                        <ul class="plan-features text-start">
+                            <li><i class="bi bi-check-circle-fill"></i>Hasta 20 habitaciones</li>
+                            <li><i class="bi bi-check-circle-fill"></i><strong>Todo lo del plan Lite</strong></li>
+                            <li><i class="bi bi-check-circle-fill"></i>Tienda y restaurante (POS)</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Gestión de servicios adicionales</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Hasta 5 usuarios y roles</li>
+                            <li><i class="bi bi-check-circle-fill"></i>Reportes operativos</li>
+                             <li class="disabled"><i class="bi bi-x-circle-fill"></i>Integraciones y Soporte VIP</li>
+                        </ul>
+                    </div>
+                </div>
 
-                        <tr class="table-group-divider">
-                            <th colspan="4" class="text-start bg-light py-2 px-4 fw-semibold text-secondary-emphasis small" scope="colgroup">AUTOMATIZACIÓN E INTEGRACIONES</th>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Google Calendar y Outlook Calendar</td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Enlaza tu facturador electronico (Solo alegra por ahora.)</td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Ahorra tiempo con horarios automáticos para recepción</td>
-                             <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-x-lg text-danger fs-5"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
-                        
-                         <tr>
-                            <td class="text-start px-4 py-3">Backups automáticos en la nube</td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                        </tr>
+                 <div class="text-center mt-5">
+                     <p class="text-muted">¿Necesitas una solución empresarial a medida? <a href="#contact" class="fw-semibold text-decoration-none">Contáctanos</a>.</p>
+                 </div>
+            </div>
+        </section>
 
-                        <tr class="table-group-divider">
-                            <th colspan="4" class="text-start bg-light py-2 px-4 fw-semibold text-secondary-emphasis small" scope="colgroup">SOPORTE Y BENEFICIOS ADICIONALES</th>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Programa de referidos</td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i></td>
-                            <td><i class="bi bi-check-lg text-success fs-4"></i> <span class="small">(Beneficios autom.)</span></td>
-                        </tr>
-                        <tr>
-                            <td class="text-start px-4 py-3">Soporte técnico</td>
-                            <td><span class="badge bg-light text-dark border">Chatbot IA</span></td>
-                            <td><span class="badge bg-info-subtle text-info-emphasis border">Chatbot + Prioritario</span></td>
-                            <td><span class="badge bg-primary-subtle text-primary-emphasis border">VIP y Consultoría</span></td>
-                        </tr>
-                    </tbody>
-                    <tfoot class="table-light">
-    <tr>
-        <td colspan="4" class="text-center p-4">
-            <div class="d-flex flex-column align-items-center">
-                <h4 class="fw-semibold mb-3">¿Listo para transformar tu hotel?</h4>
-                <button class="btn btn-warning btn-lg fw-bold px-5 py-3 shadow pulse-animation" data-bs-toggle="modal" data-bs-target="#registroModal">
-                    <i class="bi bi-rocket-takeoff-fill me-2"></i>
-                    ¡Comenzar mis 30 Días GRATIS Ahora!
-                </button>
+        <section id="features" class="section-padding">
+            <div class="container">
+                <h2 class="text-center section-title">Herramientas Diseñadas para tu Éxito</h2>
+                <p class="text-center section-subtitle">Funciones poderosas que te devuelven el control de tu tiempo y la rentabilidad de tu hotel.</p>
+                <div class="row g-4">
+                    <div class="col-md-6 col-lg-4">
+                        <div class="feature-card h-100">
+                             <i class="bi bi-calendar3-week feature-card-icon"></i>
+                            <h5 class="fw-bold">Reservas Flexibles</h5>
+                            <p class="small">Gestiona en tiempo real reservas por horas, noches o día completo. Maximiza ocupación con total flexibilidad.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="feature-card h-100">
+                             <i class="bi bi-receipt-cutoff feature-card-icon"></i>
+                            <h5 class="fw-bold">Caja y Facturación Simples</h5>
+                            <p class="small">Control total de caja, ventas, abonos y facturación PDF. Ahorra tiempo y evita errores costosos.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="feature-card h-100">
+                             <i class="bi bi-grid-3x3-gap-fill feature-card-icon"></i>
+                            <h5 class="fw-bold">Mapa de Habitaciones</h5>
+                            <p class="small">Visualiza disponibilidad, limpieza y mantenimiento de un vistazo. Gestión visual e instantánea.</p>
+                        </div>
+                    </div>
+                     <div class="col-md-6 col-lg-4">
+                        <div class="feature-card h-100">
+                             <i class="bi bi-shop feature-card-icon"></i>
+                            <h5 class="fw-bold">Tienda y Puntos de Venta</h5>
+                            <p class="small">Administra la venta de bebidas, snacks y más. Controla el inventario automáticamente e incrementa tus ingresos.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6 col-lg-4">
+                        <div class="feature-card h-100">
+                            <i class="bi bi-people-fill feature-card-icon"></i>
+                            <h5 class="fw-bold">Gestión de Usuarios</h5>
+                            <p class="small">Asigna roles y permisos a tu personal. Controla quién tiene acceso a cada módulo del sistema de forma segura.</p>
+                        </div>
+                    </div>
+                     <div class="col-md-6 col-lg-4">
+                        <div class="feature-card h-100">
+                             <i class="bi bi-graph-up-arrow feature-card-icon"></i>
+                            <h5 class="fw-bold">Reportes Inteligentes</h5>
+                            <p class="small">Analiza ocupación, ingresos y tendencias con reportes claros para tomar decisiones basadas en datos.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </td>
-    </tr>
-</tfoot>
-                </table>
-            </div>
-
-            <div class="text-center mt-4 mb-5">
-                 <p class="small text-muted">
-                    <i class="bi bi-check-lg text-success"></i> Incluido &nbsp;&nbsp;&nbsp;
-                    <i class="bi bi-x-lg text-danger"></i> No incluido &nbsp;&nbsp;&nbsp;
-                    <i class="bi bi-check-circle text-muted"></i> Funcionalidad básica o limitada
-                </p>
-                <p class="mt-4">¿Requieres aún más? <a href="#contact" class="fw-semibold text-decoration-none link-primary">Contáctanos para un plan empresarial a tu medida</a>.</p>
-            </div>
-        </div>
-    </section>
-    <section id="features" class="py-5">
-      <div class="container">
-        <h2 class="text-center section-title">Funcionalidades Diseñadas para tu Éxito Diario</h2>
-        <p class="text-center section-subtitle">Herramientas poderosas y fáciles de usar que te devuelven el control de tu tiempo y la rentabilidad de tu hotel.</p>
-        <div class="row g-4">
-          <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 p-4 text-center shadow-sm">
-                <i class="bi bi-calendar3-week h1 text-success mb-3"></i>
-                <h5 class="fw-bold">Reservas Flexibles (Horas y Noches)</h5>
-                <p class="small">Gestiona reservas en tiempo real, por horas, noches o día completo. Maximiza ocupación e ingresos con total flexibilidad.</p>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 p-4 text-center shadow-sm">
-                <i class="bi bi-calculator-fill h1 text-success mb-3"></i>
-                <h5 class="fw-bold">Caja y Facturación sin Complicaciones</h5>
-                <p class="small">Control total de caja, ventas, abonos y facturación PDF. Ahorra tiempo valioso y evita errores costosos.</p>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 p-4 text-center shadow-sm">
-                <i class="bi bi-map-fill h1 text-success mb-3"></i>
-                <h5 class="fw-bold">Mapa de Habitaciones Interactivo</h5>
-                <p class="small">Visualiza disponibilidad, estado de limpieza y mantenimiento de un vistazo. Gestión visual e instantánea.</p>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 p-4 text-center shadow-sm">
-                <i class="bi bi-shop h1 text-success mb-3"></i>
-                <h5 class="fw-bold">Tienda y Productos Adicionales</h5>
-                <p class="small">Administra venta de bebidas, snacks y más. Controla inventario automáticamente e incrementa tus ingresos.</p>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 p-4 text-center shadow-sm">
-                <i class="bi bi-whatsapp h1 text-success mb-3"></i>
-                <h5 class="fw-bold">WhatsApp y Comunicación Directa</h5>
-                <p class="small">Integra WhatsApp para notificaciones y confirmaciones automáticas. Mejora la comunicación con tus huéspedes (Plan Pro y Max).</p>
-            </div>
-          </div>
-          <div class="col-md-6 col-lg-4 mb-4">
-            <div class="card h-100 p-4 text-center shadow-sm">
-                <i class="bi bi-graph-up-arrow h1 text-success mb-3"></i>
-                <h5 class="fw-bold">Reportes Inteligentes para Decisiones</h5>
-                <p class="small">Analiza ocupación, ingresos y tendencias con reportes claros. Toma decisiones basadas en datos para hacer crecer tu negocio.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+        </section>
 
     <section id="testimonials" class="py-5 bg-light">
         <div class="container">

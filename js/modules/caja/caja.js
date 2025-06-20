@@ -16,7 +16,9 @@ let currentSupabaseInstance = null;
 let currentHotelId = null;
 let currentModuleUser = null;
 let currentContainerEl = null;
+let currentUserRole = null;
 let turnoActivo = null; // Guardará el estado del turno actual
+
 
 const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb44ip8u876";
 
@@ -148,10 +150,13 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
       .eq('hotel_id', currentHotelId)
       .eq('turno_id', turnoActivo.id)
       .order('creado_en', { ascending: false });
-    console.log('Movimientos recibidos de Supabase:', movements);
+
     if (error) throw error;
     let ingresos = 0, egresos = 0;
     tBodyEl.innerHTML = '';
+
+    const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
+
     if (!movements || movements.length === 0) {
       tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">No hay movimientos en este turno.</td></tr>`;
     } else {
@@ -160,74 +165,122 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
         else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
         const tr = document.createElement('tr');
         tr.className = "hover:bg-gray-50";
+
+        // --- INICIO DEL AJUSTE DE CENTRADO ---
+        // En la siguiente línea, se cambió "justify-start" por "justify-center" para centrar el contenido.
         tr.innerHTML = `
           <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
           <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
           <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
           <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
           <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-            ${mv.metodos_pago?.nombre || 'N/A'}
-            <button class="ml-2 text-blue-500 hover:underline" data-edit-metodo="${mv.id}">✏️</button>
+          <td class="px-4 py-2 text-sm text-gray-500">
+            <div class="flex items-center justify-center">
+              <span class="truncate">${mv.metodos_pago?.nombre || 'N/A'}</span>
+              <div class="flex-shrink-0 ml-3 flex items-center space-x-2">
+                <button class="text-blue-500 hover:text-blue-700" title="Editar Método de Pago" data-edit-metodo="${mv.id}">✏️</button>
+                ${isAdmin ?  
+                  `<button class="text-red-500 hover:text-red-700" title="Eliminar Movimiento" data-delete-movimiento="${mv.id}" data-concepto="${mv.concepto || 'N/A'}" data-monto="${formatCurrency(mv.monto)}" data-tipo="${mv.tipo}">🗑️</button>` 
+                  : ''}
+              </div>
+            </div>
           </td>
         `;
+        // --- FIN DEL AJUSTE DE CENTRADO ---
+
         tBodyEl.appendChild(tr);
       });
 
-      // --- Agrega el listener para editar método de pago ---
+      // Listener para editar método de pago
       tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
         btn.onclick = async () => {
           const movimientoId = btn.getAttribute('data-edit-metodo');
-          const { data: metodosPago, error: metError } = await currentSupabaseInstance
-            .from('metodos_pago')
-            .select('id, nombre')
-            .eq('hotel_id', currentHotelId)
-            .eq('activo', true);
-
-          if (metError || !metodosPago || !metodosPago.length) {
-            alert('No hay métodos de pago activos para este hotel.');
+          showGlobalLoading("Cargando métodos de pago...");
+          const { data: metodos, error: errMetodos } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
+          hideGlobalLoading();
+          if (errMetodos || !metodos || metodos.length === 0) {
+            alert("No se pudieron cargar los métodos de pago para editar.");
             return;
           }
-
-          let selectHtml = '<select id="select-nuevo-metodo-pago" class="input px-2 py-1 rounded-md border border-gray-300">';
-          metodosPago.forEach(mp => {
-            selectHtml += `<option value="${mp.id}">${mp.nombre}</option>`;
-          });
-          selectHtml += '</select>';
-
-          const confirmDiv = document.createElement('div');
-          confirmDiv.innerHTML = `
-            <div class="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-[99999]">
-              <div class="bg-white rounded-xl p-6 border-4 border-green-200 shadow-xl w-full max-w-xs text-center">
-                <h4 class="text-lg font-bold mb-3">Cambiar método de pago</h4>
-                ${selectHtml}
-                <div class="mt-4 flex gap-2 justify-center">
-                  <button id="btn-confirm-metodo-pago" class="button button-success px-4 py-2 rounded">Guardar</button>
-                  <button id="btn-cancel-metodo-pago" class="button button-neutral px-4 py-2 rounded">Cancelar</button>
+          const opcionesHTML = metodos.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
+          const editModalDiv = document.createElement('div');
+          editModalDiv.innerHTML = `
+            <div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]">
+              <div class="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm">
+                <h4 class="text-xl font-bold mb-4 text-gray-800">Cambiar Método de Pago</h4>
+                <select id="select-new-metodo" class="form-control w-full">${opcionesHTML}</select>
+                <div class="mt-5 flex gap-3 justify-end">
+                  <button id="btn-confirm-edit" class="button button-accent px-5 py-2 rounded">Guardar</button>
+                  <button id="btn-cancel-edit" class="button button-neutral px-5 py-2 rounded">Cancelar</button>
                 </div>
               </div>
-            </div>
-          `;
-          document.body.appendChild(confirmDiv);
-
-          document.getElementById('btn-cancel-metodo-pago').onclick = () => confirmDiv.remove();
-
-          document.getElementById('btn-confirm-metodo-pago').onclick = async () => {
-            const nuevoMetodoId = document.getElementById('select-nuevo-metodo-pago').value;
-            const { error } = await currentSupabaseInstance
-              .from('caja')
-              .update({ metodo_pago_id: nuevoMetodoId })
-              .eq('id', movimientoId);
-            if (error) {
-              alert('Error actualizando método de pago: ' + error.message);
+            </div>`;
+          document.body.appendChild(editModalDiv);
+          const cleanup = () => editModalDiv.remove();
+          document.getElementById('btn-cancel-edit').onclick = cleanup;
+          document.getElementById('btn-confirm-edit').onclick = async () => {
+            const nuevoMetodoId = document.getElementById('select-new-metodo').value;
+            const confirmBtn = document.getElementById('btn-confirm-edit');
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Guardando...';
+            const { error: updateError } = await currentSupabaseInstance.from('caja').update({ metodo_pago_id: nuevoMetodoId }).eq('id', movimientoId);
+            cleanup();
+            if (updateError) {
+              alert("Error al actualizar el método de pago: " + updateError.message);
             } else {
-              confirmDiv.remove();
+              showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Método de pago actualizado.');
               await loadAndRenderMovements(tBodyEl, summaryEls);
             }
           };
         };
       });
+
+      // Listeners para eliminar movimiento (solo para administradores)
+      if (isAdmin) {
+        tBodyEl.querySelectorAll('button[data-delete-movimiento]').forEach(btn => {
+          btn.onclick = async () => {
+            const movimientoId = btn.dataset.deleteMovimiento;
+            const concepto = btn.dataset.concepto;
+            const monto = btn.dataset.monto;
+            const tipo = btn.dataset.tipo;
+            let warningMessage = `<p>¿Realmente desea eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded text-left"><strong>Concepto:</strong> ${concepto}<br><strong>Monto:</strong> ${monto}</div><p class="font-bold text-red-600">¡Esta acción es irreversible y no se puede deshacer!</p>`;
+            if (tipo === 'apertura') {
+              warningMessage = `<p class="font-bold text-lg text-red-700">¡ADVERTENCIA MÁXIMA!</p><p>Está a punto de eliminar el movimiento de <strong>APERTURA DE TURNO</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded text-left"><strong>Monto:</strong> ${monto}</div><p>Eliminar este registro afectará todos los cálculos de balance del turno. ¿Está absolutamente seguro de continuar?</p>`;
+            }
+            const confirmDiv = document.createElement('div');
+            confirmDiv.innerHTML = `
+              <div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]">
+                <div class="bg-white rounded-xl p-6 border-4 border-red-200 shadow-xl w-full max-w-md text-center">
+                  <h4 class="text-xl font-bold mb-3 text-red-800">Confirmar Eliminación</h4>
+                  <div class="text-gray-700">${warningMessage}</div>
+                  <div class="mt-5 flex gap-3 justify-center">
+                    <button id="btn-confirm-delete" class="button bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded">Sí, Eliminar</button>
+                    <button id="btn-cancel-delete" class="button button-neutral px-5 py-2 rounded">Cancelar</button>
+                  </div>
+                </div>
+              </div>`;
+            document.body.appendChild(confirmDiv);
+            document.getElementById('btn-cancel-delete').onclick = () => confirmDiv.remove();
+            document.getElementById('btn-confirm-delete').onclick = async () => {
+              const confirmBtn = document.getElementById('btn-confirm-delete');
+              confirmBtn.disabled = true;
+              confirmBtn.textContent = 'Eliminando...';
+              const { error } = await currentSupabaseInstance.from('caja').delete().eq('id', movimientoId);
+              if (error) {
+                alert('Error al eliminar el movimiento: ' + error.message);
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = 'Sí, Eliminar';
+              } else {
+                confirmDiv.remove();
+                showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado correctamente.');
+                await loadAndRenderMovements(tBodyEl, summaryEls);
+              }
+            };
+          };
+        });
+      }
     }
+    
     const balance = ingresos - egresos;
     summaryEls.ingresos.textContent = formatCurrency(ingresos);
     summaryEls.egresos.textContent = formatCurrency(egresos);
@@ -237,6 +290,7 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error cargando movimientos: ${err.message}`);
   }
 }
+
 
 // --- UI CON CHECKBOX PARA EGRESO FUERA DE TURNO ---
 
@@ -962,14 +1016,24 @@ async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
 
 // --- MOUNT / UNMOUNT ---
 
+// En el archivo caja.js
+
 export async function mount(container, supabaseInst, user) {
   console.log("MOUNT caja.js llamado");
   unmount();
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
-  const { data: perfil } = await supabaseInst.from('usuarios').select('hotel_id').eq('id', user.id).single();
+
+  const { data: perfil } = await supabaseInst.from('usuarios').select('hotel_id, rol').eq('id', user.id).single();
+  
   currentHotelId = perfil?.hotel_id;
+  currentUserRole = perfil?.rol;
+
+  // --- AÑADE ESTA LÍNEA PARA DEPURAR ---
+  console.log('ROL DEL USUARIO ACTUAL:', currentUserRole); 
+  // ------------------------------------
+
   if (!currentHotelId) {
     container.innerHTML = `<div class="p-4 text-red-600">Error: Hotel no identificado.</div>`;
     return;
@@ -977,6 +1041,7 @@ export async function mount(container, supabaseInst, user) {
   container.innerHTML = `<div class="p-8 text-center">Cargando estado de la caja...</div>`;
   await renderizarUI();
 }
+
 
 export function unmount() {
   // Limpia todos los listeners registrados
