@@ -885,18 +885,27 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module" src="script.js"></script>
-    <script>
+<script>
   document.addEventListener('DOMContentLoaded', () => {
     const navbarToggler = document.querySelector('.navbar-toggler');
     const navbarCollapse = document.getElementById('navbarNav');
     const navLinks = navbarCollapse.querySelectorAll('.nav-link');
 
+    // 1. Cierra el menú al hacer clic en un enlace del menú
     navLinks.forEach(link => {
       link.addEventListener('click', () => {
-        if (navbarToggler.offsetParent !== null) { // solo en móviles
-          new bootstrap.Collapse(navbarCollapse).hide();
-        }
+        const collapseInstance = bootstrap.Collapse.getInstance(navbarCollapse) || new bootstrap.Collapse(navbarCollapse);
+        collapseInstance.hide();
       });
+    });
+
+    // 2. Cierra el menú al hacer clic fuera de él
+    document.addEventListener('click', (event) => {
+      const isClickInside = navbarCollapse.contains(event.target) || navbarToggler.contains(event.target);
+      if (!isClickInside && navbarCollapse.classList.contains('show')) {
+        const collapseInstance = bootstrap.Collapse.getInstance(navbarCollapse) || new bootstrap.Collapse(navbarCollapse);
+        collapseInstance.hide();
+      }
     });
   });
 </script>
