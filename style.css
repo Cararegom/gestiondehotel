@@ -754,8 +754,8 @@ img, svg {
   /* 1. Hacemos que el slider sea menos alto en celulares para que no sea tan invasivo.
      Puedes probar valores como 60vh, 70vh, etc. */
   .hero-slider {
-    height: 45vh; 
-    min-height: 300px; /* Altura mínima para que no sea demasiado pequeño en dispositivos cortos */
+    height: 40vh; 
+    min-height: 200px; /* Altura mínima para que no sea demasiado pequeño en dispositivos cortos */
   }
 
   /* 2. Hacemos que la imagen del banner CUBRA el 100% del espacio.
