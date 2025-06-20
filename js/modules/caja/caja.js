@@ -165,9 +165,6 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
         else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
         const tr = document.createElement('tr');
         tr.className = "hover:bg-gray-50";
-
-        // --- INICIO DEL AJUSTE DE CENTRADO ---
-        // En la siguiente línea, se cambió "justify-start" por "justify-center" para centrar el contenido.
         tr.innerHTML = `
           <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
           <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
@@ -186,8 +183,6 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
             </div>
           </td>
         `;
-        // --- FIN DEL AJUSTE DE CENTRADO ---
-
         tBodyEl.appendChild(tr);
       });
 
@@ -198,23 +193,13 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
           showGlobalLoading("Cargando métodos de pago...");
           const { data: metodos, error: errMetodos } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
           hideGlobalLoading();
-          if (errMetodos || !metodos || metodos.length === 0) {
+          if (errMetodos || !metodos || !metodos.length) {
             alert("No se pudieron cargar los métodos de pago para editar.");
             return;
           }
           const opcionesHTML = metodos.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
           const editModalDiv = document.createElement('div');
-          editModalDiv.innerHTML = `
-            <div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]">
-              <div class="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm">
-                <h4 class="text-xl font-bold mb-4 text-gray-800">Cambiar Método de Pago</h4>
-                <select id="select-new-metodo" class="form-control w-full">${opcionesHTML}</select>
-                <div class="mt-5 flex gap-3 justify-end">
-                  <button id="btn-confirm-edit" class="button button-accent px-5 py-2 rounded">Guardar</button>
-                  <button id="btn-cancel-edit" class="button button-neutral px-5 py-2 rounded">Cancelar</button>
-                </div>
-              </div>
-            </div>`;
+          editModalDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm"><h4 class="text-xl font-bold mb-4 text-gray-800">Cambiar Método de Pago</h4><select id="select-new-metodo" class="form-control w-full">${opcionesHTML}</select><div class="mt-5 flex gap-3 justify-end"><button id="btn-confirm-edit" class="button button-accent px-5 py-2 rounded">Guardar</button><button id="btn-cancel-edit" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
           document.body.appendChild(editModalDiv);
           const cleanup = () => editModalDiv.remove();
           document.getElementById('btn-cancel-edit').onclick = cleanup;
@@ -243,36 +228,45 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
             const concepto = btn.dataset.concepto;
             const monto = btn.dataset.monto;
             const tipo = btn.dataset.tipo;
+            
             let warningMessage = `<p>¿Realmente desea eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded text-left"><strong>Concepto:</strong> ${concepto}<br><strong>Monto:</strong> ${monto}</div><p class="font-bold text-red-600">¡Esta acción es irreversible y no se puede deshacer!</p>`;
             if (tipo === 'apertura') {
               warningMessage = `<p class="font-bold text-lg text-red-700">¡ADVERTENCIA MÁXIMA!</p><p>Está a punto de eliminar el movimiento de <strong>APERTURA DE TURNO</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded text-left"><strong>Monto:</strong> ${monto}</div><p>Eliminar este registro afectará todos los cálculos de balance del turno. ¿Está absolutamente seguro de continuar?</p>`;
             }
+            
             const confirmDiv = document.createElement('div');
-            confirmDiv.innerHTML = `
-              <div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]">
-                <div class="bg-white rounded-xl p-6 border-4 border-red-200 shadow-xl w-full max-w-md text-center">
-                  <h4 class="text-xl font-bold mb-3 text-red-800">Confirmar Eliminación</h4>
-                  <div class="text-gray-700">${warningMessage}</div>
-                  <div class="mt-5 flex gap-3 justify-center">
-                    <button id="btn-confirm-delete" class="button bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded">Sí, Eliminar</button>
-                    <button id="btn-cancel-delete" class="button button-neutral px-5 py-2 rounded">Cancelar</button>
-                  </div>
-                </div>
-              </div>`;
+            confirmDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 border-4 border-red-200 shadow-xl w-full max-w-md text-center"><h4 class="text-xl font-bold mb-3 text-red-800">Confirmar Eliminación</h4><div class="text-gray-700">${warningMessage}</div><div class="mt-5 flex gap-3 justify-center"><button id="btn-confirm-delete" class="button bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded">Sí, Eliminar</button><button id="btn-cancel-delete" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
             document.body.appendChild(confirmDiv);
+            
             document.getElementById('btn-cancel-delete').onclick = () => confirmDiv.remove();
+
             document.getElementById('btn-confirm-delete').onclick = async () => {
               const confirmBtn = document.getElementById('btn-confirm-delete');
               confirmBtn.disabled = true;
-              confirmBtn.textContent = 'Eliminando...';
-              const { error } = await currentSupabaseInstance.from('caja').delete().eq('id', movimientoId);
+              confirmBtn.textContent = 'Procesando...';
+
+              // --- CAMBIO CLAVE: Se elimina la conversión a número ---
+              // Ahora pasamos el ID (que es un UUID en formato texto) directamente.
+              if (!movimientoId) {
+                  alert('Error interno: El ID del movimiento está vacío.');
+                  confirmBtn.disabled = false;
+                  confirmBtn.textContent = 'Sí, Eliminar';
+                  return;
+              }
+
+              const { error } = await currentSupabaseInstance.rpc('registrar_y_eliminar_mov_caja', {
+                movimiento_id_param: movimientoId,
+                eliminado_por_usuario_id_param: currentModuleUser.id
+              });
+              // --- FIN DEL CAMBIO ---
+
               if (error) {
                 alert('Error al eliminar el movimiento: ' + error.message);
                 confirmBtn.disabled = false;
                 confirmBtn.textContent = 'Sí, Eliminar';
               } else {
                 confirmDiv.remove();
-                showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado correctamente.');
+                showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado y registrado en el log.');
                 await loadAndRenderMovements(tBodyEl, summaryEls);
               }
             };
@@ -291,16 +285,21 @@ async function loadAndRenderMovements(tBodyEl, summaryEls) {
   }
 }
 
-
 // --- UI CON CHECKBOX PARA EGRESO FUERA DE TURNO ---
 
 async function renderizarUIAbierta() {
   console.log("renderizarUIAbierta llamado");
+  // Se determina si el usuario es admin al inicio de la función
+  const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
+
   currentContainerEl.innerHTML = `
     <div class="card caja-module shadow-lg rounded-lg">
       <div class="card-header bg-gray-100 p-4 border-b flex justify-between items-center">
         <h2 class="text-xl font-semibold text-gray-800">Turno Activo</h2>
-        <button id="btn-cerrar-turno" class="button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow-sm">Realizar Corte de Caja</button>
+        <div class="flex items-center space-x-2">
+          ${isAdmin ? '<button id="btn-ver-eliminados" class="button button-neutral py-2 px-4 rounded-md shadow-sm">📜 Ver Eliminados</button>' : ''}
+          <button id="btn-cerrar-turno" class="button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow-sm">Realizar Corte de Caja</button>
+        </div>
       </div>
       <div class="card-body p-4 md:p-6">
         <div id="turno-global-feedback" role="status" aria-live="polite" class="feedback-message mb-4"></div>
@@ -379,19 +378,16 @@ async function renderizarUIAbierta() {
   };
   await loadAndRenderMovements(tBodyEl, summaryEls);
 
-  // POPULAR SELECT MÉTODO DE PAGO
   const addFormEl = currentContainerEl.querySelector('#turno-add-form');
   const metodoPagoSelect = addFormEl.elements.metodoPagoId;
   await popularMetodosPagoSelect(metodoPagoSelect);
 
-  // --- SUBMIT DEL FORMULARIO ---
   const submitHandler = async (e) => {
     e.preventDefault();
     const formData = new FormData(addFormEl);
     const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
     let turnoIdToSave = turnoActivo.id;
 
-    // Si tipo es egreso y el checkbox está activo => guardar egreso fuera de turno (turno_id null)
     if (formData.get('tipo') === "egreso" && esEgresoFueraTurno) {
       turnoIdToSave = null;
     }
@@ -431,11 +427,92 @@ async function renderizarUIAbierta() {
   addFormEl.addEventListener('submit', submitHandler);
   moduleListeners.push({ element: addFormEl, type: 'submit', handler: submitHandler });
 
-  // --- Botón de cerrar turno (ahora abre el resumen/modal) ---
   const cerrarTurnoBtn = currentContainerEl.querySelector('#btn-cerrar-turno');
   const resumenCorteHandler = () => mostrarResumenCorteDeCaja();
   cerrarTurnoBtn.addEventListener('click', resumenCorteHandler);
   moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: resumenCorteHandler });
+
+  // Se añade el listener para el nuevo botón, solo si es admin
+  if (isAdmin) {
+    const verEliminadosBtn = currentContainerEl.querySelector('#btn-ver-eliminados');
+    if (verEliminadosBtn) {
+        verEliminadosBtn.addEventListener('click', mostrarLogEliminados);
+        moduleListeners.push({ element: verEliminadosBtn, type: 'click', handler: mostrarLogEliminados });
+    }
+  }
+}
+
+// --- COPIA TODA ESTA FUNCIÓN ---
+async function mostrarLogEliminados() {
+    const modalContainer = document.createElement('div');
+    modalContainer.id = "modal-log-eliminados";
+    modalContainer.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-70 p-4";
+    modalContainer.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl text-center"><p>Cargando historial...</p></div>`;
+    document.body.appendChild(modalContainer);
+
+    try {
+        const { data: logs, error } = await currentSupabaseInstance
+            .from('log_caja_eliminados')
+            .select('creado_en, datos_eliminados, eliminado_por_usuario:usuarios(nombre)')
+            .order('creado_en', { ascending: false })
+            .limit(100); // Limitamos a los 100 más recientes para no sobrecargar
+
+        if (error) throw error;
+
+        let tableRowsHtml = '';
+        if (!logs || logs.length === 0) {
+            tableRowsHtml = '<tr><td colspan="6" class="text-center p-4">No hay movimientos eliminados.</td></tr>';
+        } else {
+            tableRowsHtml = logs.map(log => {
+                const datos = log.datos_eliminados || {};
+                return `
+                    <tr class="hover:bg-gray-50 border-b">
+                        <td class="p-3 text-sm">${formatDateTime(log.creado_en)}</td>
+                        <td class="p-3 text-sm text-red-600 font-medium">${log.eliminado_por_usuario?.nombre || 'Desconocido'}</td>
+                        <td class="p-3 text-sm">${formatDateTime(datos.creado_en)}</td>
+                        <td class="p-3 text-sm font-semibold ${datos.tipo === 'ingreso' ? 'text-green-700' : 'text-orange-700'}">${datos.tipo || 'N/A'}</td>
+                        <td class="p-3 text-sm font-bold">${formatCurrency(datos.monto || 0)}</td>
+                        <td class="p-3 text-sm text-left">${datos.concepto || 'N/A'}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        const modalContent = `
+            <div class="bg-white p-0 rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+                <div class="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-lg">
+                    <h3 class="text-xl font-bold text-gray-700">Historial de Movimientos Eliminados</h3>
+                    <button id="btn-cerrar-log-modal" class="text-gray-500 hover:text-red-600 text-3xl">&times;</button>
+                </div>
+                <div class="overflow-y-auto">
+                    <table class="w-full text-left">
+                        <thead class="bg-gray-100 sticky top-0">
+                            <tr>
+                                <th class="p-3 text-sm font-semibold">Fecha Eliminación</th>
+                                <th class="p-3 text-sm font-semibold">Eliminado Por</th>
+                                <th class="p-3 text-sm font-semibold">Fecha Original</th>
+                                <th class="p-3 text-sm font-semibold">Tipo Original</th>
+                                <th class="p-3 text-sm font-semibold">Monto Original</th>
+                                <th class="p-3 text-sm font-semibold">Concepto Original</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRowsHtml}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        modalContainer.innerHTML = modalContent;
+        modalContainer.querySelector('#btn-cerrar-log-modal').onclick = () => modalContainer.remove();
+
+    } catch (err) {
+        modalContainer.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md text-center">
+            <p class="text-red-600">Error al cargar el historial: ${err.message}</p>
+            <button id="btn-cerrar-log-modal" class="button button-neutral mt-4">Cerrar</button>
+        </div>`;
+        modalContainer.querySelector('#btn-cerrar-log-modal').onclick = () => modalContainer.remove();
+    }
 }
 
 function renderizarUICerrada() {
