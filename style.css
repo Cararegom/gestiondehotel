@@ -751,8 +751,8 @@ img, svg {
 
 @media (max-width: 767px) {
   .hero-slider {
-    height: 60vh; /* Altura más cómoda y atractiva visualmente */
-    min-height: 300px;
+    height: 70vh; /* Altura más cómoda y atractiva visualmente */
+    min-height: 400px;
   }
 
   .slide.slide-con-imagen img {
