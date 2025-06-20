@@ -885,6 +885,21 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module" src="script.js"></script>
-    
+    <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const navbarToggler = document.querySelector('.navbar-toggler');
+    const navbarCollapse = document.getElementById('navbarNav');
+    const navLinks = navbarCollapse.querySelectorAll('.nav-link');
+
+    navLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        if (navbarToggler.offsetParent !== null) { // solo en móviles
+          new bootstrap.Collapse(navbarCollapse).hide();
+        }
+      });
+    });
+  });
+</script>
+
 </body>
 </html>
