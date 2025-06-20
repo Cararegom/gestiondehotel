@@ -728,138 +728,78 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
       </div>
     </div>
 <div id="chat-fab">
-        <i class="bi bi-chat-dots-fill"></i>
+  <i class="bi bi-chat-dots-fill"></i>
+</div>
+<div id="chat-window">
+  <div class="chat-header">
+    <span>Asistente Virtual</span>
+    <button type="button" class="btn-close" id="chat-close-btn" aria-label="Cerrar"></button>
+  </div>
+  <div class="chat-body" id="chat-body">
+    <div class="chat-message bot">
+      ¡Hola! Soy tu asistente experto de "Gestión de Hotel". ¿En qué puedo ayudarte hoy? Puedes preguntarme sobre planes, funcionalidades o reportar un problema.
     </div>
-    <div id="chat-window">
-        <div class="chat-header">
-            <span>Asistente Virtual</span>
-            <button type="button" class="btn-close" id="chat-close-btn" aria-label="Cerrar"></button>
-        </div>
-        <div class="chat-body" id="chat-body">
-            <div class="chat-message bot">
-                ¡Hola! Soy tu asistente experto de "Gestión de Hotel". ¿En qué puedo ayudarte hoy? Puedes preguntarme sobre planes, funcionalidades o reportar un problema.
-            </div>
-        </div>
-        <div class="chat-footer">
-            <input type="text" id="chat-input" placeholder="Escribe tu mensaje...">
-            <button id="chat-send-btn"><i class="bi bi-send-fill"></i></button>
-        </div>
-    </div>
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            // --- Elementos del DOM ---
-            const chatFab = document.getElementById('chat-fab');
-            const chatWindow = document.getElementById('chat-window');
-            const closeBtn = document.getElementById('chat-close-btn');
-            const chatBody = document.getElementById('chat-body');
-            const sendBtn = document.getElementById('chat-send-btn');
-            const chatInput = document.getElementById('chat-input');
+  </div>
+  <div class="chat-footer">
+    <input type="text" id="chat-input" placeholder="Escribe tu mensaje...">
+    <button id="chat-send-btn"><i class="bi bi-send-fill"></i></button>
+  </div>
+</div>
 
-            // --- URL del Webhook de n8n ---
-            const N8N_WEBHOOK_URL = 'https://hook.us2.make.com/g3uvarlsonw4fjqvbtlt64iakapeof43';
+<script>
+  async function sendMessage() {
+    const input = document.getElementById("chat-input");
+    const chat = document.getElementById("chat-body");
+    const userMessage = input.value.trim();
 
-            // --- Funciones auxiliares (Definidas primero) ---
-            const appendMessage = (message, type) => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `chat-message ${type}`;
-                // Para renderizar saltos de línea y otros formatos que envíe el bot
-                messageDiv.innerHTML = message.replace(/\n/g, '<br>');
-                chatBody.appendChild(messageDiv);
-                chatBody.scrollTop = chatBody.scrollHeight;
-            };
-            
-            const showTypingIndicator = () => {
-                const indicatorDiv = document.createElement('div');
-                indicatorDiv.id = 'typing-indicator'; // Usar ID para fácil selección
-                indicatorDiv.className = 'chat-message bot';
-                indicatorDiv.innerHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div>`;
-                chatBody.appendChild(indicatorDiv);
-                chatBody.scrollTop = chatBody.scrollHeight;
-            }
+    if (!userMessage) return;
 
-            const removeTypingIndicator = () => {
-                const indicator = document.getElementById('typing-indicator');
-                if (indicator) {
-                    indicator.remove();
-                }
-            }
+    // Agregar el mensaje del usuario al chat
+    const userBubble = document.createElement("div");
+    userBubble.className = "chat-bubble user";
+    userBubble.textContent = userMessage;
+    chat.appendChild(userBubble);
+    input.value = "";
 
-            // --- Lógica para enviar mensajes (Ahora puede "ver" las funciones de arriba) ---
-            const sendMessage = async () => {
-                const userMessage = chatInput.value.trim();
-                if (userMessage === '') return;
+    try {
+      const res = await fetch("https://hook.us2.make.com/g3uvarlsonw4fjqvbtlt64iakapeof43", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ text: userMessage })
+      });
 
-                appendMessage(userMessage, 'user');
-                chatInput.value = '';
-                showTypingIndicator();
+      const data = await res.json();
 
-                try {
-                    fetch("https://hook.us2.make.com/g3uvarlsonw4fjqvbtlt64iakapeof43", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json"
-  },
-  body: JSON.stringify({
-    text: "¿Qué incluye el Plan Max?"
-  })
-});
+      // Mostrar la respuesta del bot
+      const botBubble = document.createElement("div");
+      botBubble.className = "chat-bubble bot";
+      botBubble.textContent = data.respuesta || "Hubo un problema al procesar tu mensaje.";
+      chat.appendChild(botBubble);
+
+    } catch (error) {
+      console.error("Error al contactar el webhook:", error);
+
+      const errorBubble = document.createElement("div");
+      errorBubble.className = "chat-bubble error";
+      errorBubble.textContent = "Lo sentimos, no pudimos conectar con el asistente. Intenta más tarde.";
+      chat.appendChild(errorBubble);
+    }
+
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  // Agregar eventos al cargar el script
+  document.getElementById("chat-send-btn").addEventListener("click", sendMessage);
+  document.getElementById("chat-input").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") {
+      sendMessage();
+    }
+  });
+</script>
 
 
-                    if (!response.ok) {
-                        throw new Error(`Error del servidor: ${response.status}`);
-                    }
-
-                    const data = await response.json();
-                    
-                    // La respuesta de OpenAI en n8n a veces viene en data.choices[0].text
-                    // o a veces como un JSON que es un string. Hay que manejar ambos casos.
-                    let botReply = '';
-                    if (typeof data === 'string') {
-                        try {
-                            const parsedData = JSON.parse(data);
-                            botReply = parsedData.choices[0].message.content;
-                        } catch (e) {
-                            botReply = data; // Si no es un JSON, usar el texto directamente
-                        }
-                    } else if (data.choices && data.choices[0].message) {
-                         botReply = data.choices[0].message.content;
-                    } else if (data.choices && data.choices[0].text) {
-                        botReply = data.choices[0].text;
-                    }
-                    else {
-                        // Fallback por si la estructura cambia
-                        botReply = JSON.stringify(data);
-                    }
-
-                    removeTypingIndicator();
-                    appendMessage(botReply, 'bot');
-
-                } catch (error) {
-                    console.error('Error al contactar el webhook:', error);
-                    removeTypingIndicator();
-                    const errorMessage = "Lo siento, no pude conectarme con mi cerebro en este momento. Por favor, intenta de nuevo más tarde.";
-                    appendMessage(errorMessage, 'error');
-                }
-            };
-            
-            // --- Abrir y cerrar la ventana de chat ---
-            chatFab.addEventListener('click', () => {
-                chatWindow.classList.toggle('open');
-            });
-
-            closeBtn.addEventListener('click', () => {
-                chatWindow.classList.remove('open');
-            });
-            
-            // --- Event Listeners para el envío ---
-            sendBtn.addEventListener('click', sendMessage);
-            chatInput.addEventListener('keypress', (event) => {
-                if (event.key === 'Enter') {
-                    sendMessage();
-                }
-            });
-        });
-    </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script type="module" src="script.js"></script>
     
