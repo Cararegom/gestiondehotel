@@ -1207,9 +1207,12 @@ function mostrarModalUpgrade(tipoReporte) {
 
 
 // --- Mount / Unmount ---
+// --- COPIA Y PEGA ESTA FUNCIÓN "mount" COMPLETA REEMPLAZANDO LA ANTERIOR ---
+
 export async function mount(container, sbInstance, user) {
   unmount(container); 
-  supabaseClient = sbInstance; currentModuleUser = user;
+  supabaseClient = sbInstance; 
+  currentModuleUser = user;
   
   container.innerHTML = `
     <div class="card reportes-module shadow-lg rounded-lg bg-gray-50/50">
@@ -1259,40 +1262,67 @@ export async function mount(container, sbInstance, user) {
   const loadingEl = container.querySelector('#reportes-loading');
   const resultadoContainerEl = container.querySelector('#reporte-resultado-container');
 
-  const today = new Date(); const thirtyDaysAgo = new Date(); thirtyDaysAgo.setDate(today.getDate() - 30);
+  const today = new Date(); 
+  const thirtyDaysAgo = new Date(); 
+  thirtyDaysAgo.setDate(today.getDate() - 30);
   fechaInicioEl.value = thirtyDaysAgo.toISOString().split('T')[0];
   fechaFinEl.value = today.toISOString().split('T')[0];
 
-  currentHotelId = user?.user_metadata?.hotel_id;
-   if (!currentHotelId && user?.id) {
-    try {
-      const { data: perfil, error: perfilError } = await supabaseClient.from('usuarios').select('hotel_id').eq('id', user.id).single();
-      if (perfilError && perfilError.code !== 'PGRST116') throw perfilError; // PGROST116: "No rows found" - allow this
-      currentHotelId = perfil?.hotel_id;
-    } catch(err) { console.error("Reports: Error fetching hotel_id from profile:", err); }
+  let planActivo = 'lite'; // Valor por defecto
+
+  try {
+    // 1. OBTENER EL HOTEL ID DEL USUARIO
+    let hotelIdTemporal = user?.user_metadata?.hotel_id;
+    if (!hotelIdTemporal && user?.id) {
+        const { data: perfil, error: perfilError } = await supabaseClient
+            .from('usuarios')
+            .select('hotel_id')
+            .eq('id', user.id)
+            .single();
+        if (perfilError) throw new Error(`No se pudo obtener el perfil del usuario: ${perfilError.message}`);
+        hotelIdTemporal = perfil.hotel_id;
+    }
+
+    if (!hotelIdTemporal) {
+        throw new Error('Error crítico: Hotel no identificado para el usuario.');
+    }
+    currentHotelId = hotelIdTemporal;
+
+    // 2. OBTENER EL PLAN DESDE LA TABLA 'hoteles' USANDO EL HOTEL ID
+    const { data: hotelData, error: hotelError } = await supabaseClient
+        .from('hoteles')
+        .select('plan')
+        .eq('id', currentHotelId)
+        .single();
+    
+    if (hotelError) throw new Error(`No se pudo obtener la información del plan del hotel: ${hotelError.message}`);
+    
+    // 3. ESTABLECER EL PLAN ACTIVO
+    planActivo = (hotelData?.plan || 'lite').toLowerCase();
+    console.log(`Plan del hotel ${currentHotelId} es: ${planActivo}`);
+
+  } catch (err) {
+      console.error("Error al inicializar el módulo de reportes:", err);
+      showReportesFeedback(feedbackEl, err.message, 'error-indicator', 0);
+      if (btnGenerarEl) btnGenerarEl.disabled = true;
+      [tipoSelectEl, fechaInicioEl, fechaFinEl, agrupacionPeriodoEl].forEach(el => { if(el) el.disabled = true; });
+      return;
   }
 
-  if (!currentHotelId) {
-    showReportesFeedback(feedbackEl, 'Error crítico: Hotel no identificado.', 'error-indicator', 0);
-    if (btnGenerarEl) btnGenerarEl.disabled = true;
-    [tipoSelectEl, fechaInicioEl, fechaFinEl, agrupacionPeriodoEl].forEach(el => { if(el) el.disabled = true; });
-    return;
-  }
-  const planActivo = (user?.user_metadata?.plan || 'lite').toLowerCase();
-
+  // --- El resto del código continúa usando el 'planActivo' correcto ---
+  
   renderSelectorReportes(planActivo);
   
-   tipoSelectEl.addEventListener('change', function() {
-  const reporteSeleccionado = this.value;
-  const tiposDisponibles = REPORTES_POR_PLAN[planActivo] || REPORTES_POR_PLAN['lite'];
-  // Si selecciona uno bloqueado...
-  if (!tiposDisponibles.includes(reporteSeleccionado) && reporteSeleccionado !== "") {
-    mostrarModalUpgrade(reporteSeleccionado);
-    this.value = "";
-    return;
-  }
-  // Aquí va el código normal que muestra el reporte permitido...
-});
+  tipoSelectEl.addEventListener('change', function() {
+    const reporteSeleccionado = this.value;
+    const tiposDisponibles = REPORTES_POR_PLAN[planActivo] || REPORTES_POR_PLAN['lite'];
+    if (!tiposDisponibles.includes(reporteSeleccionado) && reporteSeleccionado !== "") {
+      mostrarModalUpgrade(reporteSeleccionado);
+      this.value = "";
+      return;
+    }
+  });
+
   if (!window.Chart) {
     const script = document.createElement('script');
     script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js';
@@ -1300,26 +1330,19 @@ export async function mount(container, sbInstance, user) {
     script.onload = () => console.log('Chart.js loaded for reports.');
     script.onerror = () => { console.error('Failed to load Chart.js'); showReportesFeedback(feedbackEl, 'Error al cargar librería de gráficos.', 'error-indicator', 5000);};
     document.head.appendChild(script);
-    moduleListeners.push({ element: script, type: 'remove-on-unmount' }); // Special type to handle script removal
+    moduleListeners.push({ element: script, type: 'remove-on-unmount' });
   }
 
-  // --- Manage visibility of 'Agrupar por' based on report type ---
   const handleTipoReporteChange = () => {
       const tipoReporte = tipoSelectEl.value;
       const reportsRequiringAgrupacion = ['movimientos_financieros_global', 'detalle_ingresos_categoria', 'detalle_egresos_categoria'];
-      // Agrupacion is not relevant for listados, ocupacion (handled internally), or cierres_de_caja
       const isAgrupacionRelevant = reportsRequiringAgrupacion.includes(tipoReporte);
       agrupacionPeriodoEl.disabled = !isAgrupacionRelevant;
       agrupacionPeriodoEl.parentElement.style.display = isAgrupacionRelevant ? 'block' : 'none';
-
-      if (!isAgrupacionRelevant) {
-          // Optional: Reset or set a default if not relevant
-          // agrupacionPeriodoEl.value = 'mensual'; 
-      }
   };
   tipoSelectEl.addEventListener('change', handleTipoReporteChange);
   moduleListeners.push({ element: tipoSelectEl, type: 'change', handler: handleTipoReporteChange });
-  handleTipoReporteChange(); // Initial call to set visibility
+  handleTipoReporteChange();
 
   const handleGenerateClick = async () => {
     const tipoReporte = tipoSelectEl.value;
@@ -1344,7 +1367,7 @@ export async function mount(container, sbInstance, user) {
       if (tipoReporte === 'listado_reservas') await generarReporteListadoReservas(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'ocupacion') await generarReporteOcupacion(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'ingresos_por_habitaciones_periodo') await generarReporteIngresosPorPeriodo(resultadoContainerEl, fechaInicio, fechaFin);
-      else if (tipoReporte === 'cierres_de_caja') await generarReporteCierresDeCaja(resultadoContainerEl, fechaInicio, fechaFin); // --- NEW ---
+      else if (tipoReporte === 'cierres_de_caja') await generarReporteCierresDeCaja(resultadoContainerEl, fechaInicio, fechaFin);
       else if (reportsRequiringAgrupacion.includes(tipoReporte)) await generarReporteFinancieroGlobal(resultadoContainerEl, fechaInicio, fechaFin, agrupacion, tipoReporte);
       else {
         showReportesFeedback(feedbackEl, 'Tipo de reporte no implementado.', 'info-indicator', 3000);
@@ -1364,7 +1387,6 @@ export async function mount(container, sbInstance, user) {
   btnGenerarEl.addEventListener('click', handleGenerateClick);
   moduleListeners.push({ element: btnGenerarEl, type: 'click', handler: handleGenerateClick });
 }
-
 export function unmount(container) {
   Object.keys(currentChartInstances).forEach(destroyChartInstance);
   currentChartInstances = {};
