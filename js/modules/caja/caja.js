@@ -18,11 +18,33 @@ let currentModuleUser = null;
 let currentContainerEl = null;
 let currentUserRole = null;
 let turnoActivo = null; // Guardará el estado del turno actual
+let turnoEnSupervision = null;
 
 
 const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb44ip8u876";
 
 // --- LÓGICA DE TURNOS ---
+// js/modules/caja/caja.js
+
+// ...
+
+// NUEVA FUNCIÓN para entrar en modo supervisión
+async function iniciarModoSupervision(turno) {
+  turnoEnSupervision = turno;
+  // Cerramos el modal de la lista de turnos
+  document.getElementById('modal-turnos-abiertos')?.remove();
+  // Volvemos a renderizar toda la UI, que ahora detectará el modo supervisión
+  await renderizarUI();
+}
+
+// NUEVA FUNCIÓN para salir del modo supervisión
+async function salirModoSupervision() {
+  turnoEnSupervision = null;
+  // Volvemos a renderizar la UI para mostrar la vista normal del admin
+  await renderizarUI();
+}
+
+// ...
 
 async function verificarTurnoActivo() {
   if (!currentModuleUser?.id || !currentHotelId) return null;
@@ -84,246 +106,299 @@ async function abrirTurno() {
   }
 }
 
-// REEMPLAZA TU FUNCIÓN cerrarTurno CON ESTA
-// REEMPLAZA TU FUNCIÓN cerrarTurno CON ESTA
-// Reemplaza tu función actual con esta
-async function cerrarTurno() {
-  if (!turnoActivo) {
+// js/modules/caja/caja.js
+
+// REEMPLAZA TU FUNCIÓN cerrarTurno CON ESTA VERSIÓN REFACTORIZADA
+async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
+  // Determina sobre qué turno y usuario se va a trabajar.
+  // Si se pasan parámetros (cierre forzoso), se usan esos.
+  // Si no, se usan las variables globales (cierre normal del propio turno).
+  const turnoACerrar = turnoExterno || turnoActivo;
+  const usuarioDelTurno = usuarioDelTurnoExterno || currentModuleUser;
+
+  if (!turnoACerrar) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay un turno activo para cerrar.');
     return;
   }
-  showGlobalLoading("Realizando cierre de turno...");
+
+  const esCierreForzoso = !!turnoExterno;
+  const adminNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email;
+  const tituloLoading = esCierreForzoso 
+    ? `Forzando cierre del turno de ${usuarioDelTurno.nombre}...` 
+    : "Realizando cierre de turno...";
+  
+  showGlobalLoading(tituloLoading);
+
   try {
     const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance
       .from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
     if (metodosError) throw metodosError;
 
     const { data: movimientos, error: movError } = await currentSupabaseInstance
-      .from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoActivo.id);
+      .from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoACerrar.id);
     if (movError) throw movError;
-
-    // Usamos la nueva función centralizada aquí también
+    
     const reporte = procesarMovimientosParaReporte(movimientos);
 
-    // El resto de la lógica de cálculo para el balance final
     const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
     const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
     const totalGastos = calcularTotalFila(reporte.gastos);
     const balanceFinalEnCaja = reporte.apertura + totalIngresos - totalGastos;
     
     const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
-    const usuarioNombre = currentModuleUser?.user_metadata?.nombre_completo || currentModuleUser?.email || 'Sistema';
+    const usuarioNombre = usuarioDelTurno?.user_metadata?.nombre_completo || usuarioDelTurno?.email || 'Sistema';
+    
+    let asuntoEmail = `Cierre de Caja - ${usuarioNombre} - ${fechaCierre}`;
+    if (esCierreForzoso) {
+      asuntoEmail += ` (Forzado por ${adminNombre})`;
+    }
 
-    // Generar y enviar el reporte
     const htmlReporte = generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCierre);
     await enviarReporteCierreCaja({
-      asunto: `Cierre de Caja - ${usuarioNombre} - ${fechaCierre}`,
+      asunto: asuntoEmail,
       htmlReporte: htmlReporte,
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
 
-    // Actualizar el estado del turno en la base de datos
     const { error: updateError } = await currentSupabaseInstance.from('turnos').update({
         estado: 'cerrado',
         fecha_cierre: new Date().toISOString(),
-        balance_final: balanceFinalEnCaja
-      }).eq('id', turnoActivo.id);
+        balance_final: balanceFinalEnCaja,
+        // Añadimos un campo para saber si fue forzado y por quién
+        forzado_cierre_por: esCierreForzoso ? currentModuleUser.id : null
+      }).eq('id', turnoACerrar.id);
     if (updateError) throw updateError;
+    
+    // Si el turno que se cerró es el del usuario activo, se limpia la UI
+    if (turnoActivo && turnoACerrar.id === turnoActivo.id) {
+        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno cerrado y reporte enviado!');
+        turnoActivo = null;
+        turnoService.clearActiveTurn();
+        await renderizarUI();
+    } else {
+        // Si fue un cierre forzoso, solo mostramos un mensaje de éxito.
+        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), `¡Turno de ${usuarioNombre} cerrado exitosamente!`);
+    }
 
-    showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno cerrado y reporte enviado!');
-    turnoActivo = null;
-    turnoService.clearActiveTurn();
-    await renderizarUI();
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error en el cierre de turno: ${err.message}`);
+    // Si el cierre era para el turno activo, volvemos a renderizar para mantener el estado
+    if(turnoActivo && turnoACerrar.id === turnoActivo.id) {
+       await renderizarUI();
+    }
   } finally {
     hideGlobalLoading();
   }
-}// --- LÓGICA DE MOVIMIENTOS Y RENDERIZADO ---
-
-async function loadAndRenderMovements(tBodyEl, summaryEls) {
-  tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">Cargando movimientos del turno...</td></tr>`;
-  try {
-    const { data: movements, error } = await currentSupabaseInstance
-      .from('caja')
-      .select('id,tipo,monto,concepto,creado_en,usuario_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre)')
-      .eq('hotel_id', currentHotelId)
-      .eq('turno_id', turnoActivo.id)
-      .order('creado_en', { ascending: false });
-
-    if (error) throw error;
-    let ingresos = 0, egresos = 0;
-    tBodyEl.innerHTML = '';
-
-    const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
-
-    if (!movements || movements.length === 0) {
-      tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">No hay movimientos en este turno.</td></tr>`;
-    } else {
-      movements.forEach(mv => {
-        if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
-        else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
-        const tr = document.createElement('tr');
-        tr.className = "hover:bg-gray-50";
-        tr.innerHTML = `
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="badge ${mv.tipo === 'ingreso' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
-          <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
-          <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
-          <td class="px-4 py-2 text-sm text-gray-500">
-            <div class="flex items-center justify-center">
-              <span class="truncate">${mv.metodos_pago?.nombre || 'N/A'}</span>
-              <div class="flex-shrink-0 ml-3 flex items-center space-x-2">
-                <button class="text-blue-500 hover:text-blue-700" title="Editar Método de Pago" data-edit-metodo="${mv.id}">✏️</button>
-                ${isAdmin ?  
-                  `<button class="text-red-500 hover:text-red-700" title="Eliminar Movimiento" data-delete-movimiento="${mv.id}" data-concepto="${mv.concepto || 'N/A'}" data-monto="${formatCurrency(mv.monto)}" data-tipo="${mv.tipo}">🗑️</button>` 
-                  : ''}
-              </div>
-            </div>
-          </td>
-        `;
-        tBodyEl.appendChild(tr);
-      });
-
-      // Listener para editar método de pago
-      tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
-        btn.onclick = async () => {
-          const movimientoId = btn.getAttribute('data-edit-metodo');
-          showGlobalLoading("Cargando métodos de pago...");
-          const { data: metodos, error: errMetodos } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
-          hideGlobalLoading();
-          if (errMetodos || !metodos || !metodos.length) {
-            alert("No se pudieron cargar los métodos de pago para editar.");
-            return;
-          }
-          const opcionesHTML = metodos.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
-          const editModalDiv = document.createElement('div');
-          editModalDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm"><h4 class="text-xl font-bold mb-4 text-gray-800">Cambiar Método de Pago</h4><select id="select-new-metodo" class="form-control w-full">${opcionesHTML}</select><div class="mt-5 flex gap-3 justify-end"><button id="btn-confirm-edit" class="button button-accent px-5 py-2 rounded">Guardar</button><button id="btn-cancel-edit" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
-          document.body.appendChild(editModalDiv);
-          const cleanup = () => editModalDiv.remove();
-          document.getElementById('btn-cancel-edit').onclick = cleanup;
-          document.getElementById('btn-confirm-edit').onclick = async () => {
-            const nuevoMetodoId = document.getElementById('select-new-metodo').value;
-            const confirmBtn = document.getElementById('btn-confirm-edit');
-            confirmBtn.disabled = true;
-            confirmBtn.textContent = 'Guardando...';
-            const { error: updateError } = await currentSupabaseInstance.from('caja').update({ metodo_pago_id: nuevoMetodoId }).eq('id', movimientoId);
-            cleanup();
-            if (updateError) {
-              alert("Error al actualizar el método de pago: " + updateError.message);
-            } else {
-              showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Método de pago actualizado.');
-              await loadAndRenderMovements(tBodyEl, summaryEls);
-            }
-          };
-        };
-      });
-
-      // Listeners para eliminar movimiento (solo para administradores)
-      if (isAdmin) {
-        tBodyEl.querySelectorAll('button[data-delete-movimiento]').forEach(btn => {
-          btn.onclick = async () => {
-            const movimientoId = btn.dataset.deleteMovimiento;
-            const concepto = btn.dataset.concepto;
-            const monto = btn.dataset.monto;
-            const tipo = btn.dataset.tipo;
-            
-            let warningMessage = `<p>¿Realmente desea eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded text-left"><strong>Concepto:</strong> ${concepto}<br><strong>Monto:</strong> ${monto}</div><p class="font-bold text-red-600">¡Esta acción es irreversible y no se puede deshacer!</p>`;
-            if (tipo === 'apertura') {
-              warningMessage = `<p class="font-bold text-lg text-red-700">¡ADVERTENCIA MÁXIMA!</p><p>Está a punto de eliminar el movimiento de <strong>APERTURA DE TURNO</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded text-left"><strong>Monto:</strong> ${monto}</div><p>Eliminar este registro afectará todos los cálculos de balance del turno. ¿Está absolutamente seguro de continuar?</p>`;
-            }
-            
-            const confirmDiv = document.createElement('div');
-            confirmDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 border-4 border-red-200 shadow-xl w-full max-w-md text-center"><h4 class="text-xl font-bold mb-3 text-red-800">Confirmar Eliminación</h4><div class="text-gray-700">${warningMessage}</div><div class="mt-5 flex gap-3 justify-center"><button id="btn-confirm-delete" class="button bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded">Sí, Eliminar</button><button id="btn-cancel-delete" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
-            document.body.appendChild(confirmDiv);
-            
-            document.getElementById('btn-cancel-delete').onclick = () => confirmDiv.remove();
-
-            document.getElementById('btn-confirm-delete').onclick = async () => {
-              const confirmBtn = document.getElementById('btn-confirm-delete');
-              confirmBtn.disabled = true;
-              confirmBtn.textContent = 'Procesando...';
-
-              // --- CAMBIO CLAVE: Se elimina la conversión a número ---
-              // Ahora pasamos el ID (que es un UUID en formato texto) directamente.
-              if (!movimientoId) {
-                  alert('Error interno: El ID del movimiento está vacío.');
-                  confirmBtn.disabled = false;
-                  confirmBtn.textContent = 'Sí, Eliminar';
-                  return;
-              }
-
-              const { error } = await currentSupabaseInstance.rpc('registrar_y_eliminar_mov_caja', {
-                movimiento_id_param: movimientoId,
-                eliminado_por_usuario_id_param: currentModuleUser.id
-              });
-              // --- FIN DEL CAMBIO ---
-
-              if (error) {
-                alert('Error al eliminar el movimiento: ' + error.message);
-                confirmBtn.disabled = false;
-                confirmBtn.textContent = 'Sí, Eliminar';
-              } else {
-                confirmDiv.remove();
-                showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado y registrado en el log.');
-                await loadAndRenderMovements(tBodyEl, summaryEls);
-              }
-            };
-          };
-        });
-      }
-    }
-    
-    const balance = ingresos - egresos;
-    summaryEls.ingresos.textContent = formatCurrency(ingresos);
-    summaryEls.egresos.textContent = formatCurrency(egresos);
-    summaryEls.balance.textContent = formatCurrency(balance);
-    summaryEls.balance.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
-  } catch (err) {
-    showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error cargando movimientos: ${err.message}`);
-  }
 }
 
-// --- UI CON CHECKBOX PARA EGRESO FUERA DE TURNO ---
 
+
+
+
+// REEMPLAZA TU FUNCIÓN CON ESTA VERSIÓN COMPLETA Y FINAL
+async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId) {
+    if (!turnoId) {
+        tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4 text-red-500">Error: No se ha especificado un turno para cargar.</td></tr>`;
+        return;
+    }
+    tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">Cargando movimientos del turno...</td></tr>`;
+    try {
+        const { data: movements, error } = await currentSupabaseInstance
+            .from('caja')
+            .select('id,tipo,monto,concepto,creado_en,usuario_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre)')
+            .eq('hotel_id', currentHotelId)
+            .eq('turno_id', turnoId)
+            .order('creado_en', { ascending: false });
+
+        if (error) throw error;
+        
+        let ingresos = 0;
+        let egresos = 0;
+        const apertura = Number(movements.find(m => m.tipo === 'apertura')?.monto || 0);
+
+        tBodyEl.innerHTML = '';
+        const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
+
+        if (!movements || movements.length === 0) {
+            tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">No hay movimientos en este turno.</td></tr>`;
+        } else {
+            movements.forEach(mv => {
+                if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
+                else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50";
+                
+                let tipoBadge = '';
+                if (mv.tipo === 'ingreso') {
+                    tipoBadge = `<span class="badge bg-green-100 text-green-800">${mv.tipo}</span>`;
+                } else if (mv.tipo === 'egreso') {
+                    tipoBadge = `<span class="badge bg-red-100 text-red-800">${mv.tipo}</span>`;
+                } else {
+                    tipoBadge = `<span class="badge bg-blue-100 text-blue-800">${mv.tipo}</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm">${tipoBadge}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
+                    <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">${mv.concepto || 'N/A'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
+                    <td class="px-4 py-2 text-sm text-gray-500">
+                        <div class="flex items-center justify-center">
+                            <span class="truncate">${mv.metodos_pago?.nombre || 'N/A'}</span>
+                            <div class="flex-shrink-0 ml-3 flex items-center space-x-2">
+                                <button class="text-blue-500 hover:text-blue-700" title="Editar Método de Pago" data-edit-metodo="${mv.id}">✏️</button>
+                                ${isAdmin ? `<button class="text-red-500 hover:text-red-700" title="Eliminar Movimiento" data-delete-movimiento="${mv.id}" data-concepto="${mv.concepto || 'N/A'}" data-monto="${formatCurrency(mv.monto)}" data-tipo="${mv.tipo}">🗑️</button>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                `;
+                tBodyEl.appendChild(tr);
+            });
+
+            // --- SECCIÓN DE CÓDIGO RESTAURADA Y CORREGIDA ---
+            
+            // Listener para editar método de pago
+            tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
+                btn.onclick = async () => {
+                    const movimientoId = btn.getAttribute('data-edit-metodo');
+                    showGlobalLoading("Cargando métodos de pago...");
+                    const { data: metodos, error: errMetodos } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
+                    hideGlobalLoading();
+                    if (errMetodos || !metodos || !metodos.length) {
+                        alert("No se pudieron cargar los métodos de pago para editar.");
+                        return;
+                    }
+                    const opcionesHTML = metodos.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('');
+                    const editModalDiv = document.createElement('div');
+                    editModalDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm"><h4 class="text-xl font-bold mb-4 text-gray-800">Cambiar Método de Pago</h4><select id="select-new-metodo" class="form-control w-full">${opcionesHTML}</select><div class="mt-5 flex gap-3 justify-end"><button id="btn-confirm-edit" class="button button-accent px-5 py-2 rounded">Guardar</button><button id="btn-cancel-edit" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
+                    document.body.appendChild(editModalDiv);
+                    const cleanup = () => editModalDiv.remove();
+                    document.getElementById('btn-cancel-edit').onclick = cleanup;
+                    document.getElementById('btn-confirm-edit').onclick = async () => {
+                        const nuevoMetodoId = document.getElementById('select-new-metodo').value;
+                        await currentSupabaseInstance.from('caja').update({ metodo_pago_id: nuevoMetodoId }).eq('id', movimientoId);
+                        cleanup();
+                        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Método de pago actualizado.');
+                        await loadAndRenderMovements(tBodyEl, summaryEls, turnoId);
+                    };
+                };
+            });
+
+            // Listeners para eliminar movimiento (solo para administradores)
+            if (isAdmin) {
+                tBodyEl.querySelectorAll('button[data-delete-movimiento]').forEach(btn => {
+                    btn.onclick = async () => {
+                        const movimientoId = btn.dataset.deleteMovimiento;
+                        const concepto = btn.dataset.concepto;
+                        const monto = btn.dataset.monto;
+                        const tipo = btn.dataset.tipo;
+                        
+                        let warningMessage = `<p>¿Realmente desea eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded text-left"><strong>Concepto:</strong> ${concepto}<br><strong>Monto:</strong> ${monto}</div><p class="font-bold text-red-600">¡Esta acción es irreversible!</p>`;
+                        if (tipo === 'apertura') {
+                          warningMessage = `<p class="font-bold text-lg text-red-700">¡ADVERTENCIA MÁXIMA!</p><p>Está a punto de eliminar el movimiento de <strong>APERTURA DE TURNO</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded text-left"><strong>Monto:</strong> ${monto}</div><p>Eliminar esto afectará todos los cálculos. ¿Está seguro?</p>`;
+                        }
+                        
+                        const confirmDiv = document.createElement('div');
+                        confirmDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 border-4 border-red-200 shadow-xl w-full max-w-md text-center"><h4 class="text-xl font-bold mb-3 text-red-800">Confirmar Eliminación</h4><div class="text-gray-700">${warningMessage}</div><div class="mt-5 flex gap-3 justify-center"><button id="btn-confirm-delete" class="button bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded">Sí, Eliminar</button><button id="btn-cancel-delete" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
+                        document.body.appendChild(confirmDiv);
+                        
+                        document.getElementById('btn-cancel-delete').onclick = () => confirmDiv.remove();
+            
+                        document.getElementById('btn-confirm-delete').onclick = async () => {
+                            const confirmBtn = document.getElementById('btn-confirm-delete');
+                            confirmBtn.disabled = true;
+                            confirmBtn.textContent = 'Procesando...';
+            
+                            const { error: rpcError } = await currentSupabaseInstance.rpc('registrar_y_eliminar_mov_caja', {
+                                movimiento_id_param: movimientoId,
+                                eliminado_por_usuario_id_param: currentModuleUser.id
+                            });
+            
+                            if (rpcError) {
+                                alert('Error al eliminar el movimiento: ' + rpcError.message);
+                                confirmBtn.disabled = false;
+                                confirmBtn.textContent = 'Sí, Eliminar';
+                            } else {
+                                confirmDiv.remove();
+                                showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado y registrado.');
+                                await loadAndRenderMovements(tBodyEl, summaryEls, turnoId);
+                            }
+                        };
+                    };
+                });
+            }
+             // --- FIN DE LA SECCIÓN RESTAURADA ---
+        }
+        
+        const balance = apertura + ingresos - egresos;
+        summaryEls.ingresos.textContent = formatCurrency(ingresos);
+        summaryEls.egresos.textContent = formatCurrency(egresos);
+        summaryEls.balance.textContent = formatCurrency(balance);
+        summaryEls.balance.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
+
+    } catch (err) {
+        showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error cargando movimientos: ${err.message}`);
+        console.error("Error en loadAndRenderMovements:", err);
+    }
+}
+
+
+
+
+
+// REEMPLAZA ESTA FUNCIÓN EN TU ARCHIVO
 async function renderizarUIAbierta() {
-  console.log("renderizarUIAbierta llamado");
-  // Se determina si el usuario es admin al inicio de la función
-  const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
+    console.log("renderizarUIAbierta llamado");
 
-  currentContainerEl.innerHTML = `
+    const esModoSupervision = !!turnoEnSupervision;
+    const turnoParaMostrar = turnoEnSupervision || turnoActivo;
+    
+    if (!turnoParaMostrar) {
+        console.error("Se intentó renderizar UI abierta sin un turno válido.");
+        renderizarUICerrada();
+        return;
+    }
+
+    const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
+    
+    const supervisionBannerHtml = esModoSupervision
+        ? `
+        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4 rounded-md flex justify-between items-center" role="alert">
+            <div>
+                <p class="font-bold">Modo Supervisión</p>
+                <p>Estás gestionando el turno de: <strong>${turnoParaMostrar.usuarios?.nombre || 'Usuario'}</strong> (Inició: ${formatDateTime(turnoParaMostrar.fecha_apertura)})</p>
+            </div>
+            <button id="btn-salir-supervision" class="button bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded">Salir de Supervisión</button>
+        </div>`
+        : '';
+
+    currentContainerEl.innerHTML = `
     <div class="card caja-module shadow-lg rounded-lg">
       <div class="card-header bg-gray-100 p-4 border-b flex justify-between items-center">
-        <h2 class="text-xl font-semibold text-gray-800">Turno Activo</h2>
+        <h2 class="text-xl font-semibold text-gray-800">${esModoSupervision ? 'Gestionando Turno Ajeno' : 'Turno Activo'}</h2>
         <div class="flex items-center space-x-2">
-          ${isAdmin ? '<button id="btn-ver-eliminados" class="button button-neutral py-2 px-4 rounded-md shadow-sm">📜 Ver Eliminados</button>' : ''}
-          <button id="btn-cerrar-turno" class="button bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-md shadow-sm">Realizar Corte de Caja</button>
+          ${isAdmin ? `
+            <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2 px-4 rounded-md shadow-sm">👥 Ver Turnos Abiertos</button>
+            <button id="btn-ver-eliminados" class="button button-neutral py-2 px-4 rounded-md shadow-sm">📜 Ver Eliminados</button>
+          ` : ''}
+          <button id="btn-cerrar-turno" class="button ${esModoSupervision ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white font-bold py-2 px-4 rounded-md shadow-sm">
+            ${esModoSupervision ? 'Forzar Cierre de este Turno' : 'Realizar Corte de Caja'}
+          </button>
         </div>
       </div>
       <div class="card-body p-4 md:p-6">
+        ${supervisionBannerHtml} 
         <div id="turno-global-feedback" role="status" aria-live="polite" class="feedback-message mb-4"></div>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
-          <div class="p-3 bg-green-50 rounded-md shadow">
-            <span class="block text-sm text-gray-500">Ingresos del Turno</span>
-            <span id="turno-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span>
-          </div>
-          <div class="p-3 bg-red-50 rounded-md shadow">
-            <span class="block text-sm text-gray-500">Egresos del Turno</span>
-            <span id="turno-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span>
-          </div>
-          <div class="p-3 bg-blue-50 rounded-md shadow">
-            <span class="block text-sm text-gray-500">Balance del Turno</span>
-            <span id="turno-balance" class="text-2xl font-bold text-blue-600">$0.00</span>
-          </div>
+          <div class="p-3 bg-green-50 rounded-md shadow"><span class="block text-sm text-gray-500">Ingresos del Turno</span><span id="turno-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span></div>
+          <div class="p-3 bg-red-50 rounded-md shadow"><span class="block text-sm text-gray-500">Egresos del Turno</span><span id="turno-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span></div>
+          <div class="p-3 bg-blue-50 rounded-md shadow"><span class="block text-sm text-gray-500">Balance del Turno</span><span id="turno-balance" class="text-2xl font-bold text-blue-600">$0.00</span></div>
         </div>
         <div class="table-container overflow-x-auto mb-6">
           <table class="tabla-estilizada w-full">
-            <thead class="bg-gray-50">
-              <tr>
-                <th>Fecha</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Usuario</th><th>Método Pago</th>
-              </tr>
-            </thead>
+            <thead class="bg-gray-50"><tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Usuario</th><th>Método Pago</th></tr></thead>
             <tbody id="turno-movements-body"></tbody>
           </table>
         </div>
@@ -331,116 +406,123 @@ async function renderizarUIAbierta() {
         <h3 class="text-lg font-semibold text-gray-700 mb-3">Agregar Nuevo Movimiento</h3>
         <form id="turno-add-form" class="form p-4 border rounded-md bg-gray-50 shadow-sm">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-            <div>
-              <label>Tipo *</label>
-              <select name="tipo" class="form-control" required>
-                <option value="">-- Seleccione --</option>
-                <option value="ingreso">Ingreso</option>
-                <option value="egreso">Egreso</option>
-              </select>
-            </div>
-            <div>
-              <label>Monto *</label>
-              <input type="number" name="monto" class="form-control" step="0.01" min="0.01" required />
-            </div>
-            <div>
-              <label>Método de Pago *</label>
-              <select name="metodoPagoId" class="form-control" required>
-                <option value="">Cargando...</option>
-              </select>
-            </div>
+            <div><label>Tipo *</label><select name="tipo" class="form-control" required><option value="">-- Seleccione --</option><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+            <div><label>Monto *</label><input type="number" name="monto" class="form-control" step="0.01" min="0.01" required /></div>
+            <div><label>Método de Pago *</label><select name="metodoPagoId" class="form-control" required><option value="">Cargando...</option></select></div>
           </div>
-          <div class="mb-4">
-            <label>Concepto/Descripción *</label>
-            <input type="text" name="concepto" class="form-control" required minlength="3" />
-          </div>
-          <div class="mb-4" style="display:flex;align-items:center;gap:7px;">
-            <input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" style="transform:scale(1.3);">
-            <label for="egreso-fuera-turno" style="margin:0;">Registrar egreso fuera del turno/caja</label>
-          </div>
+          <div class="mb-4"><label>Concepto/Descripción *</label><input type="text" name="concepto" class="form-control" required minlength="3" /></div>
+          <div class="mb-4" style="display:flex;align-items:center;gap:7px;"><input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" style="transform:scale(1.3);"><label for="egreso-fuera-turno" style="margin:0;">Registrar egreso fuera del turno/caja</label></div>
           <button type="submit" class="button button-accent">＋ Agregar Movimiento</button>
           <div id="turno-add-feedback" class="feedback-message mt-3"></div>
         </form>
       </div>
     </div>`;
 
-  // --- Limpieza previa de listeners anteriores (si existiera) ---
-  moduleListeners.forEach(({ element, type, handler }) => {
-    element?.removeEventListener(type, handler);
-  });
-  moduleListeners = [];
+    moduleListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
+    moduleListeners = [];
 
-  const tBodyEl = currentContainerEl.querySelector('#turno-movements-body');
-  const summaryEls = {
-    ingresos: currentContainerEl.querySelector('#turno-total-ingresos'),
-    egresos: currentContainerEl.querySelector('#turno-total-egresos'),
-    balance: currentContainerEl.querySelector('#turno-balance')
-  };
-  await loadAndRenderMovements(tBodyEl, summaryEls);
+    const tBodyEl = currentContainerEl.querySelector('#turno-movements-body');
+    const summaryEls = {
+        ingresos: currentContainerEl.querySelector('#turno-total-ingresos'),
+        egresos: currentContainerEl.querySelector('#turno-total-egresos'),
+        balance: currentContainerEl.querySelector('#turno-balance')
+    };
+    
+    await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
 
-  const addFormEl = currentContainerEl.querySelector('#turno-add-form');
-  const metodoPagoSelect = addFormEl.elements.metodoPagoId;
-  await popularMetodosPagoSelect(metodoPagoSelect);
-
-  const submitHandler = async (e) => {
-    e.preventDefault();
-    const formData = new FormData(addFormEl);
-    const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
-    let turnoIdToSave = turnoActivo.id;
-
-    if (formData.get('tipo') === "egreso" && esEgresoFueraTurno) {
-      turnoIdToSave = null;
+    // --- LISTENERS ESPECÍFICOS DE LA UI ---
+    
+    // Listener para salir de supervisión
+    if (esModoSupervision) {
+        const salirBtn = currentContainerEl.querySelector('#btn-salir-supervision');
+        if(salirBtn) {
+            const handler = () => salirModoSupervision();
+            salirBtn.addEventListener('click', handler);
+            moduleListeners.push({ element: salirBtn, type: 'click', handler });
+        }
     }
 
-    const newMovement = {
-      tipo: formData.get('tipo'),
-      monto: parseFloat(formData.get('monto')),
-      concepto: (formData.get('concepto') || '').trim(),
-      metodo_pago_id: formData.get('metodoPagoId'),
-      usuario_id: currentModuleUser.id,
-      hotel_id: currentHotelId,
-      turno_id: turnoIdToSave
+    // Listeners de admin
+    if (isAdmin) {
+    const verTurnosBtn = currentContainerEl.querySelector('#btn-ver-turnos-abiertos');
+    if(verTurnosBtn) {
+        const handler = (event) => mostrarTurnosAbiertos(event); // <-- LÍNEA CORREGIDA
+        verTurnosBtn.addEventListener('click', handler);
+        moduleListeners.push({ element: verTurnosBtn, type: 'click', handler });
+    }
+        const verEliminadosBtn = currentContainerEl.querySelector('#btn-ver-eliminados');
+        if (verEliminadosBtn) {
+            const handler = () => mostrarLogEliminados();
+            verEliminadosBtn.addEventListener('click', handler);
+            moduleListeners.push({ element: verEliminadosBtn, type: 'click', handler: handler });
+        }
+    }
+    
+    // Listener para el botón principal de cierre
+    const cerrarTurnoBtn = currentContainerEl.querySelector('#btn-cerrar-turno');
+    const cerrarHandler = () => {
+        if (esModoSupervision) {
+            const usuarioDelTurno = turnoParaMostrar.usuarios || { email: 'desconocido' };
+            cerrarTurno(turnoParaMostrar, usuarioDelTurno);
+        } else {
+            cerrarTurno();
+        }
+    };
+    cerrarTurnoBtn.addEventListener('click', cerrarHandler);
+    moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: cerrarHandler });
+    
+    // Listener para el formulario de agregar movimiento
+    const addFormEl = currentContainerEl.querySelector('#turno-add-form');
+    const metodoPagoSelect = addFormEl.elements.metodoPagoId;
+    await popularMetodosPagoSelect(metodoPagoSelect);
+
+    const submitHandler = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(addFormEl);
+        const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
+        
+        // El movimiento se asocia al turno que se está mostrando
+        let turnoIdToSave = turnoParaMostrar.id;
+
+        if (formData.get('tipo') === "egreso" && esEgresoFueraTurno) {
+            turnoIdToSave = null;
+        }
+
+        const newMovement = {
+            tipo: formData.get('tipo'),
+            monto: parseFloat(formData.get('monto')),
+            concepto: (formData.get('concepto') || '').trim(),
+            metodo_pago_id: formData.get('metodoPagoId'),
+            usuario_id: currentModuleUser.id, // El movimiento lo registra el admin
+            hotel_id: currentHotelId,
+            turno_id: turnoIdToSave
+        };
+
+        const feedbackEl = addFormEl.querySelector('#turno-add-feedback');
+        setFormLoadingState(addFormEl, true);
+
+        if (!(newMovement.monto > 0) || !newMovement.concepto || !newMovement.metodo_pago_id || !newMovement.tipo) {
+            showError(feedbackEl, 'Todos los campos son obligatorios.');
+            setFormLoadingState(addFormEl, false);
+            return;
+        }
+
+        const { error } = await currentSupabaseInstance.from('caja').insert(newMovement);
+        if (error) {
+            showError(feedbackEl, `Error: ${error.message}`);
+        } else {
+            showSuccess(feedbackEl, 'Movimiento agregado.');
+            addFormEl.reset();
+            // Recargamos los movimientos del turno actual
+            await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
+        }
+        setFormLoadingState(addFormEl, false);
     };
 
-    setFormLoadingState(addFormEl, true);
-    addFormEl.querySelector('button[type="submit"]').disabled = true;
-
-    if (!(newMovement.monto > 0) || !newMovement.concepto || !newMovement.metodo_pago_id || !newMovement.tipo) {
-      showError(addFormEl.querySelector('#turno-add-feedback'), 'Todos los campos son obligatorios.');
-      setFormLoadingState(addFormEl, false);
-      addFormEl.querySelector('button[type="submit"]').disabled = false;
-      return;
-    }
-
-    const { error } = await currentSupabaseInstance.from('caja').insert(newMovement);
-    if (error) {
-      showError(addFormEl.querySelector('#turno-add-feedback'), `Error: ${error.message}`);
-    } else {
-      showSuccess(addFormEl.querySelector('#turno-add-feedback'), 'Movimiento agregado.');
-      addFormEl.reset();
-      await loadAndRenderMovements(tBodyEl, summaryEls);
-    }
-    setFormLoadingState(addFormEl, false);
-    addFormEl.querySelector('button[type="submit"]').disabled = false;
-  };
-
-  addFormEl.addEventListener('submit', submitHandler);
-  moduleListeners.push({ element: addFormEl, type: 'submit', handler: submitHandler });
-
-  const cerrarTurnoBtn = currentContainerEl.querySelector('#btn-cerrar-turno');
-  const resumenCorteHandler = () => mostrarResumenCorteDeCaja();
-  cerrarTurnoBtn.addEventListener('click', resumenCorteHandler);
-  moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: resumenCorteHandler });
-
-  // Se añade el listener para el nuevo botón, solo si es admin
-  if (isAdmin) {
-    const verEliminadosBtn = currentContainerEl.querySelector('#btn-ver-eliminados');
-    if (verEliminadosBtn) {
-        verEliminadosBtn.addEventListener('click', mostrarLogEliminados);
-        moduleListeners.push({ element: verEliminadosBtn, type: 'click', handler: mostrarLogEliminados });
-    }
-  }
+    addFormEl.addEventListener('submit', submitHandler);
+    moduleListeners.push({ element: addFormEl, type: 'submit', handler: submitHandler });
 }
+
 
 // --- COPIA TODA ESTA FUNCIÓN ---
 async function mostrarLogEliminados() {
@@ -515,6 +597,112 @@ async function mostrarLogEliminados() {
     }
 }
 
+
+
+// Reemplaza tu función mostrarTurnosAbiertos con esta versión
+// REEMPLAZA TU FUNCIÓN ACTUAL CON ESTA VERSIÓN MEJORADA
+async function mostrarTurnosAbiertos(event) {
+    // 1. Prevenir duplicados: Si el modal ya existe, no hacemos nada.
+    if (document.getElementById('modal-turnos-abiertos')) {
+        return;
+    }
+
+    // --- Lógica de posicionamiento ---
+    const boton = event.currentTarget;
+    const rect = boton.getBoundingClientRect();
+    const top = rect.bottom + window.scrollY + 5; // 5px debajo del botón
+    const right = window.innerWidth - rect.right; // Alineado a la derecha del botón
+
+    const modalContainer = document.createElement('div');
+    modalContainer.id = "modal-turnos-abiertos";
+    // --- 2. Estilos para que sea un popover flotante ---
+    modalContainer.style.position = 'absolute';
+    modalContainer.style.top = `${top}px`;
+    modalContainer.style.right = `${right}px`;
+    modalContainer.style.zIndex = '1000'; // Asegura que esté por encima de otros elementos
+    modalContainer.className = "bg-white rounded-lg shadow-xl border w-full max-w-sm text-center";
+    modalContainer.innerHTML = `<div class="p-4"><p>Buscando turnos abiertos...</p></div>`;
+    document.body.appendChild(modalContainer);
+
+    // --- 3. Lógica para cerrar el modal al hacer clic fuera ---
+    const closeOnClickOutside = (e) => {
+        if (!modalContainer.contains(e.target) && e.target !== boton) {
+            modalContainer.remove();
+            document.removeEventListener('click', closeOnClickOutside);
+        }
+    };
+    // Añadimos el listener un instante después para evitar que se cierre con el mismo clic que lo abrió
+    setTimeout(() => document.addEventListener('click', closeOnClickOutside), 0);
+    
+    try {
+        const { data: turnos, error } = await currentSupabaseInstance
+            .from('turnos')
+            .select('*, usuarios(*)')
+            .eq('estado', 'abierto')
+            .eq('hotel_id', currentHotelId)
+            .order('fecha_apertura', { ascending: true });
+
+        if (error) throw error;
+
+        let tableRowsHtml = '';
+        if (!turnos || turnos.length === 0) {
+            tableRowsHtml = '<tr><td class="text-center p-4">¡Excelente! No hay turnos abiertos.</td></tr>';
+        } else {
+            tableRowsHtml = turnos.map(turno => {
+                const nombreUsuario = turno.usuarios?.nombre || turno.usuarios?.email || 'Usuario Desconocido';
+                const esMiTurno = turno.usuario_id === currentModuleUser.id;
+
+                const botonGestion = esMiTurno
+                    ? `<span class="text-gray-400 italic">Es tu turno actual</span>`
+                    : `<button class="button bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded" data-turno-json='${JSON.stringify(turno)}'>Gestionar Turno</button>`;
+
+                return `
+                    <tr class="hover:bg-gray-50 border-b">
+                        <td class="p-3 text-sm text-left">${nombreUsuario}</td>
+                        <td class="p-3 text-sm text-left">${formatDateTime(turno.fecha_apertura)}</td>
+                        <td class="p-3 text-sm text-center">${botonGestion}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        const modalContent = `
+            <div class="flex justify-between items-center p-3 border-b bg-gray-50 rounded-t-lg">
+                <h3 class="text-md font-bold text-gray-700">Turnos Abiertos</h3>
+                <button id="btn-cerrar-turnos-modal" class="text-gray-500 hover:text-red-600 text-xl">&times;</button>
+            </div>
+            <div class="overflow-y-auto">
+                <table class="w-full text-left">
+                    <tbody>
+                        ${tableRowsHtml}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        modalContainer.innerHTML = modalContent;
+        
+        // El botón 'X' también debe cerrar el popover y el listener
+        modalContainer.querySelector('#btn-cerrar-turnos-modal').onclick = () => {
+            modalContainer.remove();
+            document.removeEventListener('click', closeOnClickOutside);
+        };
+        
+        modalContainer.querySelectorAll('button[data-turno-json]').forEach(btn => {
+            btn.onclick = async (e) => {
+                const turnoData = JSON.parse(e.target.dataset.turnoJson);
+                document.removeEventListener('click', closeOnClickOutside); // Limpiar listener antes de cambiar de vista
+                await iniciarModoSupervision(turnoData);
+            };
+        });
+
+    } catch (err) {
+        modalContainer.innerHTML = `<div class="p-4 text-red-600">Error: ${err.message}</div>`;
+    }
+}
+
+
+
+
 function renderizarUICerrada() {
   currentContainerEl.innerHTML = `
     <div class="card shadow-lg rounded-lg">
@@ -530,16 +718,25 @@ function renderizarUICerrada() {
   moduleListeners.push({ element: abrirTurnoBtn, type: 'click', handler: abrirTurnoBtn });
 }
 
+// Reemplaza tu función renderizarUI con esta
 async function renderizarUI() {
-  console.log("renderizarUI llamado");
-  turnoActivo = await verificarTurnoActivo();
-  if (turnoActivo) {
-    await renderizarUIAbierta();
-  } else {
-    renderizarUICerrada();
-  }
+    console.log("renderizarUI llamado");
+  
+    // Si estamos en modo supervisión, no necesitamos verificar el turno del admin.
+    // Usaremos el que ya tenemos guardado en `turnoEnSupervision`.
+    if (turnoEnSupervision) {
+        await renderizarUIAbierta();
+        return;
+    }
+  
+    // Si no, procedemos con la lógica normal
+    turnoActivo = await verificarTurnoActivo();
+    if (turnoActivo) {
+        await renderizarUIAbierta();
+    } else {
+        renderizarUICerrada();
+    }
 }
-
 // --- MODAL DE RESUMEN DE CAJA ANTES DE CORTE (CON IMPRESIÓN ADAPTABLE) ---
 
 // Reemplaza tu función mostrarResumenCorteDeCaja existente con esta versión final.

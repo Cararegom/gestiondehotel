@@ -407,19 +407,30 @@ if (currentUser && currentUser.id && currentHotelId) {
 }
 
 // Renderizador principal con pestañas visuales
+// REEMPLAZA ESTA FUNCIÓN EN TU ARCHIVO tienda.js
 function renderTiendaTabs(tab) {
   currentContainerEl.innerHTML = `
-    <div style="border-bottom:1px solid #ddd;margin-bottom:10px;display:flex;gap:6px;">
+    <div style="
+      border-bottom: 1px solid #ddd;
+      margin-bottom: 10px;
+      display: flex;
+      gap: 6px;
+      overflow-x: auto; /* <-- AÑADIDO: Permite el scroll horizontal */
+      white-space: nowrap; /* <-- AÑADIDO: Evita que los botones salten de línea */
+      -webkit-overflow-scrolling: touch; /* Para un scroll más suave en iOS */
+      padding-bottom: 5px; /* Pequeño espacio para la barra de scroll */
+    ">
       ${['POS','Inventario','Categorías','Proveedores','Lista de Compras','Compras', 'Compras Pendientes'].map(t =>
         `<button onclick="onTabTiendaClick('${t}')" style="
-          padding:7px 16px;
-          background:${t===tab?'#337ab7':'#f7f7f7'};
-          color:${t===tab?'#fff':'#333'};
-          border:none;
-          border-bottom:${t===tab?'2px solid #337ab7':'none'};
-          border-radius:4px 4px 0 0;
-          font-weight:${t===tab?'bold':'normal'};
-          cursor:pointer;
+          padding: 7px 16px;
+          background: ${t===tab?'#337ab7':'#f7f7f7'};
+          color: ${t===tab?'#fff':'#333'};
+          border: none;
+          border-bottom: ${t===tab?'2px solid #337ab7':'none'};
+          border-radius: 4px 4px 0 0;
+          font-weight: ${t===tab?'bold':'normal'};
+          cursor: pointer;
+          flex-shrink: 0; /* <-- AÑADIDO: Evita que los botones se encojan */
         ">${t}</button>`
       ).join('')}
     </div>
@@ -432,8 +443,9 @@ function renderTiendaTabs(tab) {
   if(tab === 'Lista de Compras') renderListaCompras();
   if(tab === 'Compras') renderModuloCompras();
   if(tab === 'Compras Pendientes') renderComprasPendientes();
-
 }
+
+
 // ==== FUNCIONES UTILITARIAS PARA TIENDA.JS ====
 
 // Formatea un número a moneda local (COP)
