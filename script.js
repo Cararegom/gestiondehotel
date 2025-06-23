@@ -1,5 +1,5 @@
 // ====================================================================
-// ============ SCRIPT.JS - VERSIÓN FINAL CON REGISTRO DE REFERIDOS ====
+// ============ SCRIPT.JS - VERSIÓN FINAL Y FUNCIONAL =================
 // ====================================================================
 
 // --- CAPTURA DE REFERIDO (SE EJECUTA AL CARGAR LA PÁGINA) ---
@@ -9,60 +9,16 @@ if (refId) {
   localStorage.setItem('referido_id', refId);
 }
 // ----------------------------------------------------------------
-document.addEventListener('DOMContentLoaded', () => {
-  const sliderWrapper = document.querySelector('.slider-wrapper');
-  if (!sliderWrapper) return;
-
-  let slides = sliderWrapper.querySelectorAll('.slide');
-  if (slides.length === 0) return;
-
-  let currentSlide = 0;
-  let isTransitioning = false;
-
-  // Clonar el primer slide al final
-  const firstSlideClone = slides[0].cloneNode(true);
-  sliderWrapper.appendChild(firstSlideClone);
-
-  // Recalcular slides luego de clonar
-  slides = sliderWrapper.querySelectorAll('.slide');
-  const totalSlides = slides.length;
-
-  // Establecer el ancho del wrapper según la cantidad de slides
-  sliderWrapper.style.width = `${totalSlides * 100}%`;
-
-
-  function goToNextSlide() {
-    if (isTransitioning) return;
-    isTransitioning = true;
-    currentSlide++;
-
-    sliderWrapper.style.transition = 'transform 0.8s ease-in-out';
-    sliderWrapper.style.transform = `translateX(-${currentSlide * 100 / totalSlides}%)`;
-
-  }
-
-  // Cuando termina la transición
-  sliderWrapper.addEventListener('transitionend', () => {
-    // Si está en el slide clonado
-    if (currentSlide === totalSlides - 1) {
-      sliderWrapper.style.transition = 'none';
-      currentSlide = 0;
-      sliderWrapper.style.transform = `translateX(0vw)`;
-    }
-    isTransitioning = false;
-  });
-
-  // Iniciar carrusel automático
-  setInterval(goToNextSlide, 6000); // Más tiempo para que se lea bien el contenido
-});
 
 // Importaciones y constantes globales
-import { supabase } from '/js/supabaseClient.js'; // Ajusta la ruta si es necesario
+import { supabase } from '/js/supabaseClient.js';
 
 // Debes poner aquí el rol_id real de "Administrador" en tu tabla "roles"
 const ADMIN_ROL_ID = '76b034c3-e70d-44a1-98ee-9c6eabde6f2b';
 
-// ---- FUNCIONES DE UTILERÍA ----
+// ===================================================================
+// ========= INICIO: FUNCIONES DE UTILIDAD (NECESARIAS) =========
+// ===================================================================
 function showAlert(element, message, type = 'info', duration = 0) {
     if (!element) return;
     element.className = `alert alert-${type} mt-3`;
@@ -78,12 +34,13 @@ function showAlert(element, message, type = 'info', duration = 0) {
 function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).toLowerCase());
 }
+// ===================================================================
+// ========= FIN: FUNCIONES DE UTILIDAD (NECESARIAS) ==========
+// ===================================================================
+
 
 // ---- LÓGICA DE LA PÁGINA ----
 document.addEventListener('DOMContentLoaded', () => {
-    // =========================================================================
-    // ========= INICIO DEL BLOQUE DE CÓDIGO MODIFICADO Y CORREGIDO =========
-    // =========================================================================
     
     // --- MANEJO DE MODALES Y REGISTRO ---
     const registroModalElement = document.getElementById('registroModal');
@@ -111,19 +68,15 @@ document.addEventListener('DOMContentLoaded', () => {
         registroExitosoModalInstance = new bootstrap.Modal(registroExitosoModalElement);
     }
     
-    // ===================================================================
-    // ========= CÓDIGO AÑADIDO PARA ABRIR MODAL DESDE URL =========
-    // ===================================================================
+    // --- CÓDIGO PARA ABRIR MODAL DESDE URL ---
     const urlParamsForModal = new URLSearchParams(window.location.search);
     if (urlParamsForModal.get('modal') === 'registro') {
         if (registroModalInstance) {
             registroModalInstance.show();
         }
     }
-    // ===================================================================
-    // ===================== FIN DEL CÓDIGO AÑADIDO ======================
-    // ===================================================================
 
+    // --- LÓGICA PARA LOS BOTONES DE PLANES ---
     const planButtons = document.querySelectorAll('#pricing .plan-button-select');
     planButtons.forEach(button => {
         button.addEventListener('click', () => {
@@ -203,57 +156,4 @@ document.addEventListener('DOMContentLoaded', () => {
             window.location.href = '/login.html';
         });
     }
-
-    // =========================================================================
-    // ========= FIN DEL BLOQUE DE CÓDIGO MODIFICADO Y CORREGIDO ===========
-    // =========================================================================
 });
-// --- PRECIOS FIJOS ---
-// Si quieres puedes extraer esto a un archivo config
-const PLANES_LANDING = [
-    { id: 'lite', nombre: 'Lite', cop: 99000, usd: 30, eur: 30 },
-    { id: 'pro',  nombre: 'Pro',  cop: 149000, usd: 45, eur: 45 },
-    { id: 'max',  nombre: 'Max',  cop: 199000, usd: 60, eur: 60 }
-];
-
-function formatMonedaLanding(valor, moneda) {
-    if (moneda === 'USD') {
-        return '$' + valor.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    }
-    if (moneda === 'EUR') {
-        return '€' + valor.toLocaleString('de-DE', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-    }
-    // COP
-    return '$' + valor.toLocaleString('es-CO', { maximumFractionDigits: 0 });
-}
-
-function actualizarPreciosLanding() {
-    const moneda = document.getElementById('monedaLandingSelector')?.value || 'COP';
-    const periodo = document.getElementById('periodoLandingSelector')?.value || 'mensual';
-    PLANES_LANDING.forEach(plan => {
-        // Obtiene el precio según la moneda seleccionada
-        let precio = plan[moneda.toLowerCase()];
-        let labelUnidad = (moneda === 'USD' ? 'USD' : (moneda === 'EUR' ? 'EUR' : 'COP')) + '/' + (periodo === 'anual' ? 'año' : 'mes');
-        let precioAnual = plan[moneda.toLowerCase()] * 10;
-        let badgeAhorro = `Anual: ${formatMonedaLanding(precioAnual, moneda)} (Ahorra ${formatMonedaLanding(precio*2, moneda)})`;
-
-        // Si es anual, multiplicar precio * 10 (2 meses gratis)
-        let mostrarPrecio = periodo === 'anual' ? precio * 10 : precio;
-        let unidad = (moneda === 'USD' ? 'USD' : (moneda === 'EUR' ? 'EUR' : 'COP')) + '/' + (periodo === 'anual' ? 'año' : 'mes');
-        
-        document.getElementById('precio-' + plan.id).textContent = formatMonedaLanding(mostrarPrecio, moneda);
-        document.getElementById('unidad-' + plan.id).textContent = unidad;
-        document.getElementById('anual-' + plan.id).textContent = badgeAhorro;
-
-        // Opcional: Cambia texto del botón para mostrar precio seleccionado
-        const btn = document.getElementById('btn-' + plan.id);
-        if(btn) btn.innerHTML = `Suscribirme a ${plan.nombre} <span class="fw-bold">(${formatMonedaLanding(mostrarPrecio, moneda)})</span>`;
-    });
-}
-
-// Listeners para cambiar moneda y periodo
-document.getElementById('monedaLandingSelector')?.addEventListener('change', actualizarPreciosLanding);
-document.getElementById('periodoLandingSelector')?.addEventListener('change', actualizarPreciosLanding);
-
-// Al cargar la página
-document.addEventListener('DOMContentLoaded', actualizarPreciosLanding);
