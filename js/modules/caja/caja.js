@@ -108,11 +108,8 @@ async function abrirTurno() {
 
 // js/modules/caja/caja.js
 
-// REEMPLAZA TU FUNCIÓN cerrarTurno CON ESTA VERSIÓN REFACTORIZADA
+// REEMPLAZA ESTA FUNCIÓN EN caja.js
 async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
-  // Determina sobre qué turno y usuario se va a trabajar.
-  // Si se pasan parámetros (cierre forzoso), se usan esos.
-  // Si no, se usan las variables globales (cierre normal del propio turno).
   const turnoACerrar = turnoExterno || turnoActivo;
   const usuarioDelTurno = usuarioDelTurnoExterno || currentModuleUser;
 
@@ -139,7 +136,6 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
     if (movError) throw movError;
     
     const reporte = procesarMovimientosParaReporte(movimientos);
-
     const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
     const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
     const totalGastos = calcularTotalFila(reporte.gastos);
@@ -160,29 +156,32 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
 
+    // ▼▼▼ CORRECCIÓN AQUÍ ▼▼▼
+    // Se elimina la línea 'forzado_cierre_por' para que coincida con tu base de datos
     const { error: updateError } = await currentSupabaseInstance.from('turnos').update({
         estado: 'cerrado',
         fecha_cierre: new Date().toISOString(),
         balance_final: balanceFinalEnCaja,
-        // Añadimos un campo para saber si fue forzado y por quién
-        forzado_cierre_por: esCierreForzoso ? currentModuleUser.id : null
       }).eq('id', turnoACerrar.id);
+    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
+
     if (updateError) throw updateError;
     
-    // Si el turno que se cerró es el del usuario activo, se limpia la UI
+    // El resto de la función no cambia...
     if (turnoActivo && turnoACerrar.id === turnoActivo.id) {
         showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno cerrado y reporte enviado!');
         turnoActivo = null;
+        turnoEnSupervision = null; // Limpiar también el turno en supervisión si es el caso
         turnoService.clearActiveTurn();
         await renderizarUI();
-    } else {
-        // Si fue un cierre forzoso, solo mostramos un mensaje de éxito.
-        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), `¡Turno de ${usuarioNombre} cerrado exitosamente!`);
+    } else if (esCierreForzoso) {
+        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), `¡Turno de ${usuarioDelTurno.nombre || 'usuario'} cerrado exitosamente!`);
+        turnoEnSupervision = null; // Limpiar el estado de supervisión
+        await renderizarUI(); // Volver a renderizar para salir del modo supervisión
     }
 
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error en el cierre de turno: ${err.message}`);
-    // Si el cierre era para el turno activo, volvemos a renderizar para mantener el estado
     if(turnoActivo && turnoACerrar.id === turnoActivo.id) {
        await renderizarUI();
     }
@@ -190,7 +189,6 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
     hideGlobalLoading();
   }
 }
-
 
 
 
@@ -348,10 +346,11 @@ async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId) {
 
 
 
-// REEMPLAZA ESTA FUNCIÓN EN TU ARCHIVO
+
 async function renderizarUIAbierta() {
     console.log("renderizarUIAbierta llamado");
 
+    // 1. DETERMINAR QUÉ TURNO MOSTRAR (EL PROPIO O EL SUPERVISADO)
     const esModoSupervision = !!turnoEnSupervision;
     const turnoParaMostrar = turnoEnSupervision || turnoActivo;
     
@@ -363,6 +362,7 @@ async function renderizarUIAbierta() {
 
     const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
     
+    // 2. CONSTRUIR EL HTML DE LA INTERFAZ
     const supervisionBannerHtml = esModoSupervision
         ? `
         <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4 rounded-md flex justify-between items-center" role="alert">
@@ -418,6 +418,7 @@ async function renderizarUIAbierta() {
       </div>
     </div>`;
 
+    // 3. LIMPIAR Y ASIGNAR LISTENERS
     moduleListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
     moduleListeners = [];
 
@@ -428,10 +429,9 @@ async function renderizarUIAbierta() {
         balance: currentContainerEl.querySelector('#turno-balance')
     };
     
+    // Llamada a la función para cargar los movimientos del turno correcto
     await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
 
-    // --- LISTENERS ESPECÍFICOS DE LA UI ---
-    
     // Listener para salir de supervisión
     if (esModoSupervision) {
         const salirBtn = currentContainerEl.querySelector('#btn-salir-supervision');
@@ -444,12 +444,12 @@ async function renderizarUIAbierta() {
 
     // Listeners de admin
     if (isAdmin) {
-    const verTurnosBtn = currentContainerEl.querySelector('#btn-ver-turnos-abiertos');
-    if(verTurnosBtn) {
-        const handler = (event) => mostrarTurnosAbiertos(event); // <-- LÍNEA CORREGIDA
-        verTurnosBtn.addEventListener('click', handler);
-        moduleListeners.push({ element: verTurnosBtn, type: 'click', handler });
-    }
+        const verTurnosBtn = currentContainerEl.querySelector('#btn-ver-turnos-abiertos');
+        if(verTurnosBtn) {
+            const handler = (event) => mostrarTurnosAbiertos(event);
+            verTurnosBtn.addEventListener('click', handler);
+            moduleListeners.push({ element: verTurnosBtn, type: 'click', handler });
+        }
         const verEliminadosBtn = currentContainerEl.querySelector('#btn-ver-eliminados');
         if (verEliminadosBtn) {
             const handler = () => mostrarLogEliminados();
@@ -458,18 +458,11 @@ async function renderizarUIAbierta() {
         }
     }
     
-    // Listener para el botón principal de cierre
+    // Listener para el botón principal de cierre, que AHORA llama al resumen
     const cerrarTurnoBtn = currentContainerEl.querySelector('#btn-cerrar-turno');
-    const cerrarHandler = () => {
-        if (esModoSupervision) {
-            const usuarioDelTurno = turnoParaMostrar.usuarios || { email: 'desconocido' };
-            cerrarTurno(turnoParaMostrar, usuarioDelTurno);
-        } else {
-            cerrarTurno();
-        }
-    };
-    cerrarTurnoBtn.addEventListener('click', cerrarHandler);
-    moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: cerrarHandler });
+    const resumenHandler = () => mostrarResumenCorteDeCaja();
+    cerrarTurnoBtn.addEventListener('click', resumenHandler);
+    moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: resumenHandler });
     
     // Listener para el formulario de agregar movimiento
     const addFormEl = currentContainerEl.querySelector('#turno-add-form');
@@ -480,9 +473,7 @@ async function renderizarUIAbierta() {
         e.preventDefault();
         const formData = new FormData(addFormEl);
         const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
-        
-        // El movimiento se asocia al turno que se está mostrando
-        let turnoIdToSave = turnoParaMostrar.id;
+        let turnoIdToSave = turnoParaMostrar.id; // Asigna al turno que se está mostrando
 
         if (formData.get('tipo') === "egreso" && esEgresoFueraTurno) {
             turnoIdToSave = null;
@@ -493,7 +484,7 @@ async function renderizarUIAbierta() {
             monto: parseFloat(formData.get('monto')),
             concepto: (formData.get('concepto') || '').trim(),
             metodo_pago_id: formData.get('metodoPagoId'),
-            usuario_id: currentModuleUser.id, // El movimiento lo registra el admin
+            usuario_id: currentModuleUser.id,
             hotel_id: currentHotelId,
             turno_id: turnoIdToSave
         };
@@ -513,16 +504,13 @@ async function renderizarUIAbierta() {
         } else {
             showSuccess(feedbackEl, 'Movimiento agregado.');
             addFormEl.reset();
-            // Recargamos los movimientos del turno actual
             await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
         }
         setFormLoadingState(addFormEl, false);
     };
-
     addFormEl.addEventListener('submit', submitHandler);
     moduleListeners.push({ element: addFormEl, type: 'submit', handler: submitHandler });
 }
-
 
 // --- COPIA TODA ESTA FUNCIÓN ---
 async function mostrarLogEliminados() {
@@ -807,19 +795,28 @@ function procesarMovimientosParaReporte(movimientos) {
 
   return reporte;
 }
-// Reemplaza tu función actual con esta
-// En caja.js, reemplaza tu función mostrarResumenCorteDeCaja con esta versión completa:
 
+
+
+
+// REEMPLAZA TU FUNCIÓN CON ESTA VERSIÓN 100% COMPLETA
 async function mostrarResumenCorteDeCaja() {
+  const turnoParaResumir = turnoEnSupervision || turnoActivo;
+  const esCierreForzoso = !!turnoEnSupervision;
+
+  if (!turnoParaResumir) {
+    alert("Error: No hay ningún turno activo para generar un resumen.");
+    return;
+  }
+
   showGlobalLoading('Cargando resumen del turno...');
   try {
-    // 1. OBTENCIÓN DE DATOS (Esta parte es correcta)
     const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre', { ascending: true });
     if (metodosError) throw new Error("No se encontraron métodos de pago activos.");
 
     const { data: configHotel } = await currentSupabaseInstance.from('configuracion_hotel').select('logo_url, nombre_hotel, direccion_fiscal, nit_rut, razon_social, tipo_impresora, tamano_papel, encabezado_ticket, pie_ticket, mostrar_logo').eq('hotel_id', currentHotelId).maybeSingle();
-    
-    const { data: movimientos, error: movError } = await currentSupabaseInstance.from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoActivo.id).order('creado_en', { ascending: true });
+
+    const { data: movimientos, error: movError } = await currentSupabaseInstance.from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoParaResumir.id).order('creado_en', { ascending: true });
     if (movError) throw movError;
     if (!movimientos || movimientos.length === 0) {
       showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay movimientos para generar un resumen.');
@@ -827,9 +824,7 @@ async function mostrarResumenCorteDeCaja() {
       return;
     }
 
-    // 2. PROCESAMIENTO DE DATOS (Esta parte también es correcta)
     const reporte = procesarMovimientosParaReporte(movimientos);
-
     const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
     const totalesPorMetodo = {};
     metodosDePago.forEach(metodo => {
@@ -842,18 +837,16 @@ async function mostrarResumenCorteDeCaja() {
     const totalGastos = calcularTotalFila(reporte.gastos);
     const balanceFinal = totalIngresos - totalGastos;
     
-    // Preparación de celdas para la tabla HTML
+    // --- HTML COMPLETO DEL MODAL RESTAURADO ---
     const thMetodos = metodosDePago.map(m => `<th class="px-3 py-2 text-right">${m.nombre}</th>`).join('');
     const generarCeldasFila = (fila) => metodosDePago.map(m => `<td class="px-3 py-2 text-right">${formatCurrency(fila.pagos[m.nombre] || 0)}</td>`).join('');
     const tdTotalesIngresos = metodosDePago.map(m => `<td class="px-3 py-2 text-right">${formatCurrency(totalesPorMetodo[m.nombre].ingreso)}</td>`).join('');
     const tdTotalesGastos = metodosDePago.map(m => `<td class="px-3 py-2 text-right text-red-700">(${formatCurrency(totalesPorMetodo[m.nombre].gasto)})</td>`).join('');
     const tdTotalesBalance = metodosDePago.map(m => `<td class="px-3 py-2 text-right text-blue-800">${formatCurrency(totalesPorMetodo[m.nombre].balance)}</td>`).join('');
     
-    // 3. GENERACIÓN DEL HTML DEL MODAL (Esta era la parte que faltaba)
     const modalHtml = `
       <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-fit mx-auto border border-slate-200 relative animate-fade-in-down">
         <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-blue-100 to-green-100 flex items-center gap-3">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M15 21v-1.5a.5.5 0 00-.5-.5H9.5a.5.5 0 00-.5.5V21M6 10.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zm9 0a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" /></svg>
           <h2 class="text-2xl font-bold text-slate-800 ml-2">Resumen de Corte de Caja</h2>
         </div>
         <div class="p-4 md:p-6 space-y-3">
@@ -878,28 +871,32 @@ async function mostrarResumenCorteDeCaja() {
             </table>
           </div>
           <div class="flex flex-col md:flex-row justify-end gap-3 mt-6">
-            <button id="btn-imprimir-corte-caja" class="px-4 py-2 rounded-lg bg-slate-100 hover:bg-blue-100 text-blue-800 font-semibold transition order-2 md:order-1">🖨️ Imprimir</button>
-            <button id="btn-cancelar-corte-caja" class="px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition order-1 md:order-2">Cancelar</button>
-            <button id="btn-confirmar-corte-caja" class="px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-700 text-white font-bold shadow transition order-3">Confirmar Corte y Enviar</button>
+            <button id="btn-imprimir-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-slate-100 hover:bg-blue-100 text-blue-800 font-semibold transition order-2 md:order-1">🖨️ Imprimir</button>
+            <button id="btn-cancelar-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition order-1 md:order-2">Cancelar</button>
+            <button id="btn-confirmar-corte-caja" class="button button-primary px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-700 text-white font-bold shadow transition order-3">Confirmar Corte y Enviar</button>
           </div>
         </div>
       </div>
     `;
 
-    // 4. RENDERIZADO DEL MODAL Y EVENTOS
+    // MOSTRAR EL MODAL Y ASIGNAR LISTENERS
     const modal = document.createElement('div');
     modal.id = "modal-corte-caja";
     modal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50 p-4";
     modal.innerHTML = modalHtml;
     document.body.appendChild(modal);
+    hideGlobalLoading();
 
-    hideGlobalLoading(); // Se oculta el loader porque el modal ya se mostró
-
+    // Ahora los querySelector encontrarán los botones porque el HTML está completo
     modal.querySelector('#btn-cancelar-corte-caja').onclick = () => modal.remove();
     
     modal.querySelector('#btn-confirmar-corte-caja').onclick = async () => {
       modal.remove();
-      await cerrarTurno(); // Llama a la función de cierre que ya tiene la lógica correcta
+      if (esCierreForzoso) {
+        await cerrarTurno(turnoParaResumir, turnoParaResumir.usuarios);
+      } else {
+        await cerrarTurno();
+      }
     };
 
     modal.querySelector('#btn-imprimir-corte-caja').onclick = () => {
@@ -907,16 +904,20 @@ async function mostrarResumenCorteDeCaja() {
         metodosDePago.forEach(m => { ingresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.ingreso || 0 });
         const egresosPorMetodo = {};
         metodosDePago.forEach(m => { egresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.gasto || 0 });
-      
+        
         imprimirCorteCajaAdaptable(configHotel, movimientos, totalIngresos, totalGastos, balanceFinal, ingresosPorMetodo, egresosPorMetodo);
     };
     
   } catch (e) {
-    hideGlobalLoading(); // Importantísimo ocultar el loader si hay un error
+    hideGlobalLoading();
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error generando el resumen: ${e.message}`);
     console.error('Error en mostrarResumenCorteDeCaja:', e);
   }
 }
+
+
+
+
 
 // --- IMPRESIÓN ADAPTABLE POR TIPO DE IMPRESORA ---
 function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo) {

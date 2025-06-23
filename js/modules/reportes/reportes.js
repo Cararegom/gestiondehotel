@@ -992,16 +992,33 @@ async function generarReporteKPIsAvanzados(resultsContainerEl, fechaInicioInput,
         const fechaFin = `${fechaFinInput}T23:59:59.999Z`;
 
         // 1. OBTENER TODOS LOS DATOS NECESARIOS DE FORMA EFICIENTE
-        const [reservasResult, ingresosResult, habitacionesResult, ventasTiendaResult, ventasRestauranteResult, serviciosResult] = await Promise.all([
-            supabaseClient.from('reservas').select(`id, fecha_inicio, fecha_fin, monto_total, estado, habitaciones (nombre)`).eq('hotel_id', currentHotelId).gte('fecha_inicio', fechaInicio).lte('fecha_inicio', fechaFin),
-            supabaseClient.from('caja').select('fecha_movimiento, monto').eq('hotel_id', currentHotelId).eq('tipo', 'ingreso').gte('fecha_movimiento', fechaInicio).lte('fecha_movimiento', fechaFin),
+        const [
+            reservasResult, 
+            ingresosResult, 
+            habitacionesResult, 
+            ventasTiendaResult, 
+            ventasRestauranteResult, 
+            serviciosResult
+        ] = await Promise.all([
+            // Consulta de Reservas con datos de cliente y habitación
+            supabaseClient.from('reservas').select(`id, fecha_inicio, fecha_fin, monto_total, estado, cliente_id, clientes (nombre), habitaciones (nombre)`)
+                .eq('hotel_id', currentHotelId).gte('fecha_inicio', fechaInicio).lte('fecha_inicio', fechaFin),
+            // Ingresos de Caja para cálculo de día menos movido
+            supabaseClient.from('caja').select('fecha_movimiento, monto').eq('hotel_id', currentHotelId).eq('tipo', 'ingreso')
+                .gte('fecha_movimiento', fechaInicio).lte('fecha_movimiento', fechaFin),
+            // Conteo de Habitaciones
             supabaseClient.from('habitaciones').select('*', { count: 'exact', head: true }).eq('hotel_id', currentHotelId).eq('activo', true),
-            supabaseClient.from('detalle_ventas_tienda').select(`cantidad, producto:productos_tienda!detalle_ventas_tienda_producto_id_fkey(nombre)`).eq('hotel_id', currentHotelId).gte('creado_en', fechaInicio).lte('creado_en', fechaFin),
+            // Ventas de Tienda (con la corrección de la relación)
+            supabaseClient.from('detalle_ventas_tienda').select(`cantidad, producto:productos_tienda!detalle_ventas_tienda_producto_id_fkey(nombre)`)
+                .eq('hotel_id', currentHotelId).gte('creado_en', fechaInicio).lte('creado_en', fechaFin),
+            // Ventas de Restaurante
             supabaseClient.from('ventas_restaurante_items').select(`cantidad, platos (nombre)`).gte('creado_en', fechaInicio).lte('creado_en', fechaFin),
-            supabaseClient.from('servicios_x_reserva').select(`cantidad, precio_cobrado, servicio:servicios_adicionales(nombre)`).eq('hotel_id', currentHotelId).gte('creado_en', fechaInicio).lte('creado_en', fechaFin)
+            // Ventas de Servicios Adicionales
+            supabaseClient.from('servicios_x_reserva').select(`cantidad, precio_cobrado, servicio:servicios_adicionales(nombre)`)
+                .eq('hotel_id', currentHotelId).gte('creado_en', fechaInicio).lte('creado_en', fechaFin)
         ]);
 
-        // Manejo de errores de las consultas
+        // Manejo centralizado de errores de las consultas
         if (reservasResult.error) throw reservasResult.error;
         if (ingresosResult.error) throw ingresosResult.error;
         if (habitacionesResult.error) throw habitacionesResult.error;
@@ -1029,24 +1046,27 @@ async function generarReporteKPIsAvanzados(resultsContainerEl, fechaInicioInput,
         const totalIngresosHabitaciones = reservasValidas.reduce((sum, r) => sum + Number(r.monto_total || 0), 0);
         
         const duracionPromedio = reservasValidas.length > 0 ? totalNoches / reservasValidas.length : 0;
+        const adr = totalNoches > 0 ? totalIngresosHabitaciones / totalNoches : 0;
+        const diasEnPeriodo = (new Date(fechaFin) - new Date(fechaInicio)) / (1000 * 60 * 60 * 24) + 1;
+        const totalNochesDisponibles = totalHabitaciones * diasEnPeriodo;
+        const revpar = totalNochesDisponibles > 0 ? totalIngresosHabitaciones / totalNochesDisponibles : 0;
+        const totalNochesVendidas = totalNoches;
+
         const ingresosPorHabitacion = reservasValidas.reduce((acc, r) => {
             const nombreHab = r.habitaciones?.nombre || 'Habitación Eliminada';
             acc[nombreHab] = (acc[nombreHab] || 0) + Number(r.monto_total || 0);
             return acc;
         }, {});
         const [habitacionTop, ingresosTop] = Object.entries(ingresosPorHabitacion).sort(([,a],[,b]) => b-a)[0] || ["N/A", 0];
+
         const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
         const demandaPorDia = new Array(7).fill(0);
         reservasValidas.forEach(r => { demandaPorDia[new Date(r.fecha_inicio).getUTCDay()]++; });
         const maxDemanda = Math.max(...demandaPorDia);
         const diasTop = diasSemana.filter((_, i) => demandaPorDia[i] === maxDemanda).join(', ') || "N/A";
+
         const canceladas = reservas.filter(r => r.estado === 'cancelada' || r.estado === 'no_show').length;
         const tasaCancelacion = reservas.length > 0 ? (canceladas / reservas.length) * 100 : 0;
-        const adr = totalNoches > 0 ? totalIngresosHabitaciones / totalNoches : 0;
-        const totalNochesVendidas = totalNoches;
-        const diasEnPeriodo = (new Date(fechaFin) - new Date(fechaInicio)) / (1000 * 60 * 60 * 24) + 1;
-        const totalNochesDisponibles = totalHabitaciones * diasEnPeriodo;
-        const revpar = totalNochesDisponibles > 0 ? totalIngresosHabitaciones / totalNochesDisponibles : 0;
         
         const ingresosPorDiaSemana = new Array(7).fill(0);
         const conteoDeDiasEnRango = new Array(7).fill(0);
@@ -1068,7 +1088,17 @@ async function generarReporteKPIsAvanzados(resultsContainerEl, fechaInicioInput,
             }
         }
 
-        // B. KPIs de Puntos de Venta
+        // B. KPI Mejor Cliente
+        const ingresosPorCliente = reservasValidas.reduce((acc, r) => {
+            if (r.cliente_id && r.monto_total > 0) {
+                const nombreCliente = r.clientes?.nombre || 'Cliente Anónimo';
+                acc[nombreCliente] = (acc[nombreCliente] || 0) + Number(r.monto_total);
+            }
+            return acc;
+        }, {});
+        const [mejorClienteNombre, mejorClienteIngresos] = Object.entries(ingresosPorCliente).sort(([,a],[,b]) => b-a)[0] || ["N/A", 0];
+
+        // C. KPIs de Puntos de Venta
         const conteoProductosTienda = (detallesVentasTienda || []).reduce((acc, item) => {
             const nombre = item.producto?.nombre || 'Producto Desconocido';
             acc[nombre] = (acc[nombre] || 0) + item.cantidad;
@@ -1087,7 +1117,7 @@ async function generarReporteKPIsAvanzados(resultsContainerEl, fechaInicioInput,
         const platoRestauranteTop = platosRestauranteOrdenados.length > 0 ? platosRestauranteOrdenados[0][0] : "N/A";
         const platoRestauranteBottom = platosRestauranteOrdenados.length > 0 ? platosRestauranteOrdenados[platosRestauranteOrdenados.length - 1][0] : "N/A";
 
-        // C. KPIs de Servicios Adicionales
+        // D. KPIs de Servicios Adicionales
         const totalIngresosServicios = (serviciosVendidos || []).reduce((sum, s) => sum + Number(s.precio_cobrado || 0), 0);
         const conteoServicios = (serviciosVendidos || []).reduce((acc, item) => {
             const nombre = item.servicio?.nombre || 'Servicio Desconocido';
@@ -1099,53 +1129,33 @@ async function generarReporteKPIsAvanzados(resultsContainerEl, fechaInicioInput,
         
         // --- 3. RENDERIZAR RESULTADOS ---
         const crearKpiCard = (titulo, valor, subtitulo, colorClase, tooltipTexto) => {
-            return `
-                <div class="kpi-card bg-white p-5 rounded-xl shadow-lg border border-gray-200 text-center relative">
-                    <div class="kpi-tooltip-container"><span class="kpi-info-icon">i</span><div class="kpi-tooltip-content">${tooltipTexto}</div></div>
-                    <h5 class="font-semibold text-gray-600 mb-2">${titulo}</h5>
-                    <p class="text-4xl font-bold ${colorClase}">${valor}</p>
-                    ${subtitulo ? `<p class="text-sm text-gray-500 mt-1">${subtitulo}</p>` : ''}
-                </div>`;
+            return `<div class="kpi-card bg-white p-5 rounded-xl shadow-lg border border-gray-200 text-center relative"><div class="kpi-tooltip-container"><span class="kpi-info-icon">i</span><div class="kpi-tooltip-content">${tooltipTexto}</div></div><h5 class="font-semibold text-gray-600 mb-2">${titulo}</h5><p class="text-4xl font-bold ${colorClase}">${valor}</p>${subtitulo ? `<p class="text-sm text-gray-500 mt-1">${subtitulo}</p>` : ''}</div>`;
         };
 
         resultsContainerEl.innerHTML = `
-            <style>
-                .kpi-tooltip-container{position:absolute;top:12px;right:12px;}
-                .kpi-info-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background-color:#cbd5e1;color:white;font-weight:bold;font-style:italic;font-family:serif;cursor:help;user-select:none;font-size:14px;line-height:20px;}
-                .kpi-tooltip-content{visibility:hidden;width:220px;background-color:#2d3748;color:#fff;text-align:center;border-radius:6px;padding:10px;font-size:12px;position:absolute;z-index:10;bottom:140%;left:50%;margin-left:-110px;opacity:0;transition:opacity 0.3s;pointer-events:none;}
-                .kpi-tooltip-content::after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border-width:5px;border-style:solid;border-color:#2d3748 transparent transparent transparent;}
-                .kpi-tooltip-container:hover .kpi-tooltip-content{visibility:visible;opacity:1;}
-            </style>
+            <style>.kpi-tooltip-container{position:absolute;top:12px;right:12px}.kpi-info-icon{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background-color:#cbd5e1;color:white;font-weight:bold;font-style:italic;font-family:serif;cursor:help;user-select:none;font-size:14px;line-height:20px}.kpi-tooltip-content{visibility:hidden;width:220px;background-color:#2d3748;color:#fff;text-align:center;border-radius:6px;padding:10px;font-size:12px;position:absolute;z-index:10;bottom:140%;left:50%;margin-left:-110px;opacity:0;transition:opacity .3s;pointer-events:none}.kpi-tooltip-content::after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border-width:5px;border-style:solid;border-color:#2d3748 transparent transparent transparent}.kpi-tooltip-container:hover .kpi-tooltip-content{visibility:visible;opacity:1}</style>
             
             <h4 class="text-xl font-semibold mb-4 text-gray-800">KPIs de Rendimiento del Hotel</h4>
             <p class="text-sm text-gray-600 mb-6">Período analizado: ${formatDateLocal(fechaInicioInput, {dateStyle:'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle:'medium'})}</p>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                ${crearKpiCard('Duración Promedio', `${duracionPromedio.toFixed(1)} <span class="text-2xl font-medium text-gray-500">noches</span>`, '', 'text-indigo-600', 'Número promedio de noches que los huéspedes se quedan por reserva.')}
-                ${crearKpiCard('Habitación Top', `${habitacionTop}`, `${formatCurrencyLocal(ingresosTop)}`, 'text-green-600', 'La habitación que ha generado la mayor cantidad de ingresos en el período.')}
-                ${crearKpiCard('Día de Mayor Demanda', `${diasTop}`, 'Basado en el día de check-in', 'text-purple-600', 'El día de la semana en que se inician más reservas.')}
-                ${crearKpiCard('Tasa de Cancelación', `${tasaCancelacion.toFixed(1)}%`, `(${canceladas} de ${reservas.length} reservas)`, 'text-red-500', 'Porcentaje de reservas que fueron canceladas o marcadas como no presentadas.')}
-                ${crearKpiCard('ADR', `${formatCurrencyLocal(adr)}`, 'Tarifa Diaria Promedio', 'text-cyan-600', 'Precio promedio pagado por cada habitación ocupada.')}
-                ${crearKpiCard('Noches Vendidas', `${Math.round(totalNochesVendidas)}`, `En ${reservasValidas.length} estancias`, 'text-blue-600', 'Suma total de todas las noches de todas las estancias válidas.')}
+                ${crearKpiCard('Mejor Cliente del Período', `${mejorClienteNombre}`, `${formatCurrencyLocal(mejorClienteIngresos)}`, 'text-amber-500', 'El cliente que ha generado más ingresos a través de reservas en el período seleccionado.')}
                 ${crearKpiCard('RevPAR', `${formatCurrencyLocal(revpar)}`, 'Ingreso por Hab. Disponible', 'text-teal-600', 'El KPI más importante. Mide el ingreso generado por cada habitación disponible, ocupada o no.')}
+                ${crearKpiCard('ADR', `${formatCurrencyLocal(adr)}`, 'Tarifa Diaria Promedio', 'text-cyan-600', 'Precio promedio pagado por cada habitación ocupada.')}
                 ${crearKpiCard('Día de Menor Ingreso', `${diaMenosMovido}`, 'Ideal para lanzar promociones', 'text-orange-500', 'El día de la semana que, en promedio, genera menos ingresos totales. Una oportunidad para ofertas.')}
+                ${crearKpiCard('Día de Mayor Demanda', `${diasTop}`, 'Basado en el día de check-in', 'text-purple-600', 'El día de la semana en que se inician más reservas.')}
+                ${crearKpiCard('Duración Promedio', `${duracionPromedio.toFixed(1)} <span class="text-2xl">noches</span>`, '', 'text-indigo-600', 'Número promedio de noches que los huéspedes se quedan por reserva.')}
+                ${crearKpiCard('Noches Vendidas', `${Math.round(totalNochesVendidas)}`, `En ${reservasValidas.length} estancias`, 'text-blue-600', 'Suma total de todas las noches de todas las estancias válidas.')}
+                ${crearKpiCard('Tasa de Cancelación', `${tasaCancelacion.toFixed(1)}%`, `(${canceladas} de ${reservas.length} reservas)`, 'text-red-500', 'Porcentaje de reservas que fueron canceladas o marcadas como no presentadas.')}
             </div>
 
             <hr class="my-8 border-t-2 border-gray-200">
 
-            <h4 class="text-xl font-semibold mb-4 text-gray-800">Rendimiento de Puntos de Venta</h4>
+            <h4 class="text-xl font-semibold mb-4 text-gray-800">Rendimiento de Puntos de Venta y Servicios</h4>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 ${crearKpiCard('Top Producto Tienda', productoTiendaTop, `(${conteoProductosTienda[productoTiendaTop] || 0} unid.)`, 'text-sky-600', 'El artículo de la tienda con el mayor número de unidades vendidas.')}
-                ${crearKpiCard('Menos Vendido Tienda', productoTiendaBottom, `(${conteoProductosTienda[productoTiendaBottom] || 0} unid.)`, 'text-amber-700', 'El artículo de la tienda con el menor número de unidades vendidas.')}
                 ${crearKpiCard('Top Plato Restaurante', platoRestauranteTop, `(${conteoPlatosRestaurante[platoRestauranteTop] || 0} unid.)`, 'text-lime-600', 'El plato del restaurante con el mayor número de unidades vendidas.')}
-                ${crearKpiCard('Menos Vendido Restaurante', platoRestauranteBottom, `(${conteoPlatosRestaurante[platoRestauranteBottom] || 0} unid.)`, 'text-rose-700', 'El plato del restaurante con el menor número de unidades vendidas.')}
-            </div>
-
-            <hr class="my-8 border-t-2 border-gray-200">
-
-            <h4 class="text-xl font-semibold mb-4 text-gray-800">Rendimiento de Servicios Adicionales</h4>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                ${crearKpiCard('Ingresos por Servicios Adic.', `${formatCurrencyLocal(totalIngresosServicios)}`, 'Total facturado en servicios extra', 'text-fuchsia-600', 'Suma de todos los ingresos generados por la venta de servicios adicionales como tours, lavandería, etc.')}
-                ${crearKpiCard('Servicio Adicional Más Vendido', servicioTop, `(${conteoServicios[servicioTop] || 0} contrataciones)`, 'text-pink-600', 'El servicio adicional que ha sido vendido más veces en el período seleccionado.')}
+                ${crearKpiCard('Top Servicio Adicional', servicioTop, `(${conteoServicios[servicioTop] || 0} contrataciones)`, 'text-pink-600', 'El servicio adicional que ha sido vendido más veces en el período seleccionado.')}
+                ${crearKpiCard('Ingresos por Servicios', `${formatCurrencyLocal(totalIngresosServicios)}`, 'Total facturado en servicios extra', 'text-fuchsia-600', 'Suma de todos los ingresos generados por la venta de servicios adicionales.')}
             </div>
         `;
 
@@ -1154,6 +1164,7 @@ async function generarReporteKPIsAvanzados(resultsContainerEl, fechaInicioInput,
         resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar KPIs: ${err.message}</p>`;
     }
 }
+
 
 
 // --- Función de impresión específica para el detalle del cierre de caja ---

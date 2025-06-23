@@ -93,11 +93,12 @@ function formatCurrency(amount) {
  * @param {string} hotelId El ID del hotel actualmente autenticado.
  * @param {object} opts Parámetros opcionales.
  */
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN clientes.js
 export async function mount(container, supabase, user, hotelId, opts = {}) {
     logDebug('Montando módulo de clientes...', { container, user, hotelId, opts });
     hotelIdActual = hotelId;
-    supabaseInstance = supabase; // Se recibe la instancia de Supabase desde main.js
-    console.log("DEBUG: supabaseInstance en clientes.js mount:", supabaseInstance); // Para depuración
+    supabaseInstance = supabase; 
+    console.log("DEBUG: supabaseInstance en clientes.js mount:", supabaseInstance); 
 
     // Limpia el contenedor y renderiza la estructura base del módulo
     container.innerHTML = `
@@ -117,10 +118,19 @@ export async function mount(container, supabase, user, hotelId, opts = {}) {
                 </div>
                 <div id="clientes-feedback" class="mb-4 text-center"></div>
                 <div id="clientes-table-wrapper" class="overflow-x-auto">
-                    </div>
+                </div>
             </div>
         </div>
-        <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 hidden"></div>
+        <div id="modal-container" style="
+            display: none; /* Inicialmente oculto */
+            position: fixed;
+            top: 0; right: 0; bottom: 0; left: 0; /* Ocupa toda la pantalla */
+            background-color: rgba(0, 0, 0, 0.5); /* Fondo semitransparente */
+            align-items: center; /* Centrado vertical */
+            justify-content: center; /* Centrado horizontal */
+            padding: 1rem;
+            z-index: 50; /* Por encima de otros elementos */
+        "></div>
     `;
 
     // Cargar y renderizar la lista inicial de clientes
@@ -131,7 +141,6 @@ export async function mount(container, supabase, user, hotelId, opts = {}) {
     clearFeedback(container.querySelector('#clientes-feedback'));
     logDebug('Módulo de clientes montado exitosamente.');
 }
-
 /**
  * Limpia el módulo cuando es desmontado.
  * Destruye la instancia del gráfico si existe para evitar fugas de memoria.
@@ -419,6 +428,7 @@ async function filtrarTabla(texto, dateRange) {
 
 // js/modules/clientes/clientes.js
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN clientes.js
 export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, opts = {}) {
     logDebug('Mostrando formulario de cliente para ID:', clienteId);
 
@@ -428,22 +438,15 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         return;
     }
 
-    // Se cambió 'const' por 'let' para permitir reasignación en caso de fallback.
-    let modal = document.getElementById('modal-container-secondary');
-    
+    // Usar siempre el contenedor de modal principal para consistencia
+    const modal = document.getElementById('modal-container');
     if (!modal) {
-        console.error("ADVERTENCIA: #modal-container-secondary no fue encontrado. Usando fallback a #modal-container.");
-        // Si el contenedor secundario no existe, intenta usar el primario como respaldo.
-        modal = document.getElementById('modal-container');
-    }
-
-    if (!modal) {
-        // Si ninguno de los dos existe, detenemos la ejecución.
-        console.error("Error crítico: No se encontró ningún contenedor de modal (#modal-container o #modal-container-secondary).");
-        alert("Error: No se puede mostrar el formulario porque falta el contenedor del modal.");
+        console.error("Error crítico: No se encontró el contenedor de modal #modal-container.");
+        alert("Error: No se puede mostrar el formulario.");
         return;
     }
     
+    // Busca el cliente en los datos ya cargados si es una edición
     const cliente = clienteId ? clientesData.find(c => c.id === clienteId) : {};
     
     modal.innerHTML = `
@@ -499,7 +502,6 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
     modal.querySelector('.modal-content').onclick = (e) => e.stopPropagation();
     modal.onclick = (e) => { if (e.target === modal) closeModal(); };
 
-
     modal.querySelector('#form-cliente').onsubmit = async (e) => {
         e.preventDefault();
         const form = e.target;
@@ -513,18 +515,38 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         try {
             let resp;
             if (clienteId) {
+                // Lógica para ACTUALIZAR un cliente existente
                 resp = await supabase.from('clientes').update(data).eq('id', clienteId).select().single();
             } else {
+                // Lógica para CREAR un nuevo cliente, con validación de duplicados
+                if (data.documento && data.documento.trim() !== '') {
+                    const { data: clienteExistente, error: checkError } = await supabase
+                        .from('clientes')
+                        .select('id, nombre')
+                        .eq('documento', data.documento)
+                        .eq('hotel_id', hotelId)
+                        .maybeSingle();
+
+                    if (checkError) throw checkError;
+
+                    if (clienteExistente) {
+                        throw new Error(`Ya existe un cliente (${clienteExistente.nombre}) con ese número de documento.`);
+                    }
+                }
+                // Si pasa la validación, inserta el nuevo cliente
                 resp = await supabase.from('clientes').insert([{ ...data, hotel_id: hotelId }]).select().single();
             }
+
             if (resp.error) throw resp.error;
 
             showSuccess(feedback, "Cliente guardado exitosamente.");
             
+            // Si la tabla principal de clientes está visible, la recarga
             if (document.getElementById('clientes-table-wrapper')) {
                 await cargarYRenderizarClientes();
             }
             
+            // Cierra el modal y ejecuta el callback después de un breve momento
             setTimeout(() => {
                 closeModal();
                 afterSaveCallback(resp.data);
@@ -536,7 +558,6 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         }
     };
 }
-
 // --- VISTA DETALLADA DEL CLIENTE (PESTAÑAS, HISTORIAL, CRM, GRÁFICOS) ---
 
 /**
