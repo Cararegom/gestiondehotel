@@ -2121,7 +2121,7 @@ async function showConsumosYFacturarModal(roomContext, supabase, currentUser, ho
         return;
     }
 
-    // (Toda la lógica de obtención de datos permanece igual que en la corrección anterior...)
+    // --- Toda la lógica inicial para obtener los datos permanece sin cambios ---
     const { data: reserva, error: errRes } = await supabase.from('reservas').select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id, metodo_pago_id').eq('habitacion_id', roomContext.id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).order('fecha_inicio', { ascending: false }).limit(1).single();
     if (errRes || !reserva) {
         mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos", [], modalContainerConsumos);
@@ -2180,7 +2180,6 @@ async function showConsumosYFacturarModal(roomContext, supabase, currentUser, ho
         });
     }
     
-    // El resto de la lógica de cálculo y renderizado no cambia, excepto la línea de la tabla...
     let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosRest, ...cargosServiciosYExtensiones].filter(c => c.id === 'hab' || c.subtotal !== 0);
     const totalPagadoCalculado = Number(reserva.monto_pagado) || 0;
     todosLosCargos.sort((a, b) => { if (a.id === 'hab') return -1; if (b.id === 'hab') return 1; return new Date(a.fecha || 0) - new Date(b.fecha || 0); });
@@ -2189,8 +2188,7 @@ async function showConsumosYFacturarModal(roomContext, supabase, currentUser, ho
     const totalDeTodosLosCargos = todosLosCargos.reduce((sum, c) => sum + Number(c.subtotal), 0);
     const saldoPendienteFinal = Math.max(0, totalDeTodosLosCargos - totalPagadoCalculado);
     
-    // ========= INICIO DE LA CORRECCIÓN CLAVE =========
-    // Se agrega "aplicado" al mapa de colores
+    // --- El HTML del modal principal no cambia ---
     let htmlConsumos = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:auto;" class="bg-white p-6 rounded-xl">
         <div class="flex justify-between items-center mb-3"><h3 style="font-size:1.3em;font-weight:bold;color:#1459ae;">🧾 Consumos: Hab. ${roomContext.nombre}</h3><button id="btn-cerrar-modal-consumos-X" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
@@ -2212,101 +2210,187 @@ async function showConsumosYFacturarModal(roomContext, supabase, currentUser, ho
             <button id="btn-cerrar-modal-consumos" class="button button-danger py-2.5 px-5 text-sm">Cerrar</button>
         </div>
     </div>`;
-    // ========= FIN DE LA CORRECCIÓN CLAVE =========
 
     modalContainerConsumos.innerHTML = htmlConsumos;
     modalContainerConsumos.style.display = "flex";
     
-    // (La lógica de los listeners que sigue no cambia)
     setTimeout(() => {
         const modalDialogActual = modalContainerConsumos.querySelector('.bg-white');
         if (!modalDialogActual) { return; }
-        
-        const cerrarDesdeModal = () => { modalContainerConsumos.style.display = "none"; modalContainerConsumos.innerHTML = ''; };
+
+        const cerrarDesdeModal = () => { 
+            modalContainerConsumos.style.display = "none"; 
+            modalContainerConsumos.innerHTML = ''; 
+        };
         modalDialogActual.querySelector('#btn-cerrar-modal-consumos-X').onclick = cerrarDesdeModal;
         modalDialogActual.querySelector('#btn-cerrar-modal-consumos').onclick = cerrarDesdeModal;
         
+        // ========= INICIO DE LA MODIFICACIÓN: LÓGICA DE FACTURACIÓN DIRECTA A POS =========
         const btnFacturar = modalDialogActual.querySelector('#btn-facturar');
         if (btnFacturar) {
-            btnFacturar.onclick = () => {
+            btnFacturar.onclick = async () => {
+                // 1. Validar que no haya saldo pendiente
                 if (saldoPendienteFinal > 0) {
                     mostrarInfoModalGlobal(`No se puede facturar porque hay un saldo pendiente de <strong>${formatCurrency(saldoPendienteFinal)}</strong>.`, "Saldo Pendiente", [], modalContainerConsumos);
                     return;
                 }
-                mostrarInfoModalGlobal(
-                    '<p class="text-center text-lg">¿Qué tipo de documento desea generar?</p>',
-                    'Seleccionar Tipo de Factura',
-                    [{
-                        texto: 'Factura POS',
-                        clase: 'button-neutral py-2 px-5',
-                        accion: async () => {
-                            const consumosParaTicket = todosLosCargos.map(c => ({ nombre: c.nombre, cantidad: c.cantidad, precio: c.cantidad > 0 ? (c.subtotal / c.cantidad) : c.subtotal, total: c.subtotal }));
-                            const datosParaTicketCompleto = { habitacion: roomContext.nombre, cliente: reserva.cliente_nombre, fechaIngreso: reserva.fecha_inicio, fechaSalida: reserva.fecha_fin, consumos: consumosParaTicket, totalConsumo: totalDeTodosLosCargos, otrosDatos: `Atendido por: ${currentUser?.email || 'Sistema'}<br>Total Pagado: ${formatCurrency(totalPagadoCalculado)}` };
-                            await imprimirTicketHabitacion({ supabase: supabase, hotelId: reserva.hotel_id, datosTicket: datosParaTicketCompleto, tipoDocumento: 'Factura POS' });
-                        }
-                    }, {
-                        texto: 'Factura Electrónica',
-                        clase: 'button-success py-2 px-5',
-                        noCerrar: true,
-                        accion: async () => {
-                            if (confirm("¿Está seguro de que desea generar la factura electrónica?")) {
-                                await facturarElectronicaYMostrarResultado({ supabase: supabase, hotelId: reserva.hotel_id, reserva, consumosTienda: cargosTienda, consumosRest: cargosRest, consumosServicios: cargosServiciosYExtensiones, metodoPagoIdLocal: reserva.metodo_pago_id });
-                            }
-                        }
-                    }],
-                    modalContainerConsumos
-                );
+                
+                // 2. Ejecutar directamente la lógica para imprimir la Factura POS
+                try {
+                    btnFacturar.disabled = true;
+                    btnFacturar.textContent = "Generando...";
+
+                    const consumosParaTicket = todosLosCargos.map(c => ({ nombre: c.nombre, cantidad: c.cantidad, precio: c.cantidad > 0 ? (c.subtotal / c.cantidad) : c.subtotal, total: c.subtotal }));
+                    const datosParaTicketCompleto = { habitacion: roomContext.nombre, cliente: reserva.cliente_nombre, fechaIngreso: reserva.fecha_inicio, fechaSalida: reserva.fecha_fin, consumos: consumosParaTicket, totalConsumo: totalDeTodosLosCargos, otrosDatos: `Atendido por: ${currentUser?.email || 'Sistema'}<br>Total Pagado: ${formatCurrency(totalPagadoCalculado)}` };
+                    
+                    await imprimirTicketHabitacion({ 
+                        supabase: supabase, 
+                        hotelId: reserva.hotel_id, 
+                        datosTicket: datosParaTicketCompleto, 
+                        tipoDocumento: 'Factura POS' 
+                    });
+
+                } catch (error) {
+                    console.error("Error al generar factura POS:", error);
+                    mostrarInfoModalGlobal(`Ocurrió un error al generar la factura: ${error.message}`, "Error", [], modalContainerConsumos);
+                } finally {
+                    btnFacturar.disabled = false;
+                    btnFacturar.textContent = "Facturar";
+                }
             };
         }
+        // ========= FIN DE LA MODIFICACIÓN =========
 
         const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
         if (btnCobrarConsumosPend) {
             btnCobrarConsumosPend.onclick = async () => {
                 const { data: metodosPagoDB } = await supabase.from('metodos_pago').select('id, nombre').eq('hotel_id', reserva.hotel_id).eq('activo', true);
                 let opcionesPagoHTML = metodosPagoDB?.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('') || '';
-                
+
+                // La lógica de Pago Mixto permanece aquí sin cambios
                 modalDialogActual.innerHTML = `
-                  <div style="font-family:'Segoe UI',Arial,sans-serif; padding:10px;">
-                    <div class="flex justify-between items-center mb-4"><h4 style="font-size:1.2em;font-weight:bold;color:#1e3a8a;">💳 Registrar Pago de Saldo</h4><button id="btn-cerrar-cobro-saldo-X-submodal" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
-                    <div style="margin-bottom:12px; text-align:center;">Saldo pendiente: <strong style="color:#c2410c; font-size:1.1em;">${formatCurrency(saldoPendienteFinal)}</strong></div>
-                    <div class="space-y-3">
-                        <div><label for="montoPagoPendienteModal" class="block text-sm font-medium text-gray-700 mb-1">Monto a pagar:</label><input type="number" id="montoPagoPendienteModal" min="0.01" max="${saldoPendienteFinal.toFixed(2)}" value="${saldoPendienteFinal.toFixed(2)}" step="0.01" class="form-control mt-0"></div>
-                        <div><label for="pagoMetodoPendModal" class="block text-sm font-medium text-gray-700 mb-1">Método de pago:</label><select id="pagoMetodoPendModal" class="form-control mt-0"> <option value="">-- Seleccione --</option> ${opcionesPagoHTML} </select></div>
+                <div style="font-family:'Segoe UI',Arial,sans-serif; padding:10px 20px;">
+                    <div class="flex justify-between items-center mb-3">
+                        <h4 style="font-size:1.2em;font-weight:bold;color:#1e3a8a;">💳 Registrar Pago de Saldo</h4>
+                        <button id="btn-cerrar-cobro-saldo-X-submodal" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button>
+                    </div>
+                    <div style="margin-bottom:15px; text-align:center; font-size:1.1em;">Saldo Total: <strong style="color:#c2410c; font-size:1.2em;">${formatCurrency(saldoPendienteFinal)}</strong></div>
+                    <div id="pagos-mixtos-container" class="space-y-3 mb-4 pr-2 max-h-[40vh] overflow-y-auto"></div>
+                    <button id="btn-agregar-pago-mixto" class="text-sm text-blue-600 hover:text-blue-800 font-semibold mb-4 flex items-center gap-1">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        Agregar Método de Pago
+                    </button>
+                    <div class="text-right font-bold text-lg space-y-1 p-2 bg-gray-50 rounded-md">
+                        <div>Total Ingresado: <span id="total-ingresado-mixto" class="text-gray-800"></span></div>
+                        <div class="text-red-700">Restante: <span id="restante-pago-mixto"></span></div>
                     </div>
                     <div class="mt-5 flex flex-col sm:flex-row gap-3 justify-center">
-                        <button id="btn-registrar-pago-confirmado-saldo" class="button button-success flex-1 py-2.5 text-base">Registrar Pago</button>
+                        <button id="btn-registrar-pago-confirmado-saldo" class="button button-success flex-1 py-2.5 text-base" disabled>Registrar Pago</button>
                         <button type="button" id="cancelar-pago-modal-saldo" class="button button-neutral flex-1 py-2.5 text-base">Cancelar</button>
-                    </div></div>`;
+                    </div>
+                </div>`;
                 
+                const pagosContainer = modalDialogActual.querySelector('#pagos-mixtos-container');
+                const btnAgregarPago = modalDialogActual.querySelector('#btn-agregar-pago-mixto');
+                const totalIngresadoSpan = modalDialogActual.querySelector('#total-ingresado-mixto');
+                const restanteSpan = modalDialogActual.querySelector('#restante-pago-mixto');
+                const btnConfirmarPago = modalDialogActual.querySelector('#btn-registrar-pago-confirmado-saldo');
+
+                const updateTotalesPagoMixto = () => {
+                    const lineas = pagosContainer.querySelectorAll('.pago-mixto-linea');
+                    let totalIngresado = 0;
+                    lineas.forEach(linea => {
+                        const montoInput = linea.querySelector('input[type="number"]');
+                        totalIngresado += parseFloat(montoInput.value) || 0;
+                    });
+                    const restante = saldoPendienteFinal - totalIngresado;
+                    totalIngresadoSpan.textContent = formatCurrency(totalIngresado);
+                    restanteSpan.textContent = formatCurrency(restante);
+                    if (Math.abs(restante) < 0.01) {
+                         btnConfirmarPago.disabled = false;
+                         restanteSpan.parentElement.classList.remove('text-red-700');
+                         restanteSpan.parentElement.classList.add('text-green-700');
+                    } else {
+                         btnConfirmarPago.disabled = true;
+                         restanteSpan.parentElement.classList.remove('text-green-700');
+                         restanteSpan.parentElement.classList.add('text-red-700');
+                    }
+                };
+
+                const agregarNuevaLineaDePago = (esPrimeraLinea = false) => {
+                    const lineaId = `linea-${Date.now()}`;
+                    const div = document.createElement('div');
+                    div.className = 'pago-mixto-linea flex items-center gap-2';
+                    div.id = lineaId;
+                    div.innerHTML = `
+                        <select class="form-control mt-0 flex-grow" required>
+                            <option value="">-- Método --</option>
+                            ${opcionesPagoHTML}
+                        </select>
+                        <input type="number" class="form-control mt-0 w-36" placeholder="Monto" min="0.01" step="0.01" required>
+                        ${!esPrimeraLinea ? `<button data-linea-id="${lineaId}" class="p-1 rounded-full hover:bg-red-100"><svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"></path></svg></button>` : '<div class="w-7"></div>'}
+                    `;
+                    pagosContainer.appendChild(div);
+                    if (!esPrimeraLinea) {
+                        div.querySelector('button').addEventListener('click', (e) => {
+                            document.getElementById(e.currentTarget.dataset.lineaId).remove();
+                            updateTotalesPagoMixto();
+                        });
+                    }
+                };
+
+                pagosContainer.addEventListener('input', updateTotalesPagoMixto);
+                btnAgregarPago.onclick = () => agregarNuevaLineaDePago(false);
+                agregarNuevaLineaDePago(true);
+                const primerInputMonto = pagosContainer.querySelector('input[type="number"]');
+                if(primerInputMonto) {
+                    primerInputMonto.value = saldoPendienteFinal.toFixed(2);
+                }
+                updateTotalesPagoMixto();
+
                 const cerrarSubmodalCobro = () => {
                     showConsumosYFacturarModal(roomContext, supabase, currentUser, hotelId, mainAppContainer, initialButtonTrigger);
                 };
                 modalDialogActual.querySelector('#btn-cerrar-cobro-saldo-X-submodal').onclick = cerrarSubmodalCobro;
                 modalDialogActual.querySelector('#cancelar-pago-modal-saldo').onclick = cerrarSubmodalCobro;
-
-                const btnRegPagoConfirmadoSaldo = modalDialogActual.querySelector('#btn-registrar-pago-confirmado-saldo');
-                if (btnRegPagoConfirmadoSaldo) {
-                    btnRegPagoConfirmadoSaldo.onclick = async () => {
-                        btnRegPagoConfirmadoSaldo.disabled = true; btnRegPagoConfirmadoSaldo.textContent = 'Procesando...';
-                        const montoPagar = Number(modalDialogActual.querySelector('#montoPagoPendienteModal')?.value);
-                        const metodoPagoId = modalDialogActual.querySelector('#pagoMetodoPendModal')?.value;
-                        if (!montoPagar || montoPagar <= 0 || !metodoPagoId) { alert("Monto y método de pago son requeridos."); btnRegPagoConfirmadoSaldo.disabled = false; btnRegPagoConfirmadoSaldo.textContent = 'Registrar Pago'; return; }
-                        
+                
+                if (btnConfirmarPago) {
+                    btnConfirmarPago.onclick = async () => {
+                        btnConfirmarPago.disabled = true;
+                        btnConfirmarPago.textContent = 'Procesando...';
+                        const lineasDePago = pagosContainer.querySelectorAll('.pago-mixto-linea');
+                        const pagosARegistrar = [];
+                        for (const linea of lineasDePago) {
+                            const monto = parseFloat(linea.querySelector('input[type="number"]').value);
+                            const metodoPagoId = linea.querySelector('select').value;
+                            if (monto > 0 && metodoPagoId) {
+                                pagosARegistrar.push({ monto, metodoPagoId });
+                            }
+                        }
+                        if (pagosARegistrar.length === 0) {
+                            alert("No hay pagos válidos para registrar.");
+                            btnConfirmarPago.disabled = false;
+                            btnConfirmarPago.textContent = 'Registrar Pago';
+                            return;
+                        }
                         try {
-                            const { data: pagoData, error: errPago } = await supabase.from('pagos_reserva').insert([{ hotel_id: reserva.hotel_id, reserva_id: reserva.id, monto: montoPagar, fecha_pago: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUser?.id, concepto: `Pago Saldo Hab. ${roomContext.nombre}` }]).select().single();
-                            if (errPago) throw new Error(`Error registrando el pago: ${errPago.message}`);
-                            
                             const turnoIdActual = turnoService.getActiveTurnId();
-                            if (!turnoIdActual) throw new Error("No hay un turno de caja activo para registrar este pago.");
-                            
-                            await supabase.from('caja').insert([{ hotel_id: reserva.hotel_id, tipo: 'ingreso', monto: montoPagar, concepto: `[COBRO SALDO] Hab. ${roomContext.nombre}`, fecha_movimiento: new Date().toISOString(), metodo_pago_id: metodoPagoId, usuario_id: currentUser?.id, reserva_id: reserva.id, pago_reserva_id: pagoData.id, turno_id: turnoIdActual }]);
-                            await supabase.from('reservas').update({ monto_pagado: totalPagadoCalculado + montoPagar }).eq('id', reserva.id);
-                            
-                            mostrarInfoModalGlobal(`Pago de ${formatCurrency(montoPagar)} registrado.`, "Pago Exitoso", [{ texto: "Entendido", accion: cerrarSubmodalCobro }], modalContainerConsumos);
+                            if (!turnoIdActual) throw new Error("No hay un turno de caja activo para registrar los pagos.");
+                            let montoTotalRegistrado = 0;
+                            for (const pago of pagosARegistrar) {
+                                const { data: pagoData, error: errPago } = await supabase.from('pagos_reserva')
+                                    .insert([{ hotel_id: reserva.hotel_id, reserva_id: reserva.id, monto: pago.monto, fecha_pago: new Date().toISOString(), metodo_pago_id: pago.metodoPagoId, usuario_id: currentUser?.id, concepto: `Pago Saldo Hab. ${roomContext.nombre}` }])
+                                    .select().single();
+                                if (errPago) throw new Error(`Error registrando un pago de ${formatCurrency(pago.monto)}: ${errPago.message}`);
+                                await supabase.from('caja').insert([{ hotel_id: reserva.hotel_id, tipo: 'ingreso', monto: pago.monto, concepto: `[COBRO SALDO] Hab. ${roomContext.nombre}`, fecha_movimiento: new Date().toISOString(), metodo_pago_id: pago.metodoPagoId, usuario_id: currentUser?.id, reserva_id: reserva.id, pago_reserva_id: pagoData.id, turno_id: turnoIdActual }]);
+                                montoTotalRegistrado += pago.monto;
+                            }
+                            await supabase.from('reservas').update({ monto_pagado: totalPagadoCalculado + montoTotalRegistrado }).eq('id', reserva.id);
+                            mostrarInfoModalGlobal(`Pagos por un total de ${formatCurrency(montoTotalRegistrado)} registrados correctamente.`, "Pago Exitoso", [{ texto: "Entendido", accion: cerrarSubmodalCobro }], modalContainerConsumos);
                         } catch (error) {
                             mostrarInfoModalGlobal(error.message, "Error en Pago de Saldo", [{ texto: "Cerrar", accion: cerrarSubmodalCobro }], modalContainerConsumos);
                         } finally {
-                           if(btnRegPagoConfirmadoSaldo) { btnRegPagoConfirmadoSaldo.disabled = false; btnRegPagoConfirmadoSaldo.textContent = 'Registrar Pago'; }
+                            if(btnConfirmarPago) { btnConfirmarPago.disabled = false; btnConfirmarPago.textContent = 'Registrar Pago'; }
                         }
                     };
                 }
@@ -2314,6 +2398,7 @@ async function showConsumosYFacturarModal(roomContext, supabase, currentUser, ho
         }
     }, 100);
 }
+
 // Este es el listener original, ahora simplificado para llamar a la nueva función.
 setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
     // Las variables globales/de módulo se pasan aquí a la función principal

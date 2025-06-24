@@ -383,12 +383,11 @@ async function generarFacturaPruebaAlegra(feedbackEl, buttonEl) {
 
 export async function mount(container, sbInstance, user) {
   console.log('[Integraciones.js] Montando el módulo de integraciones...');
-  // Limpia los listeners existentes al desmontar/remontar el módulo
-  unmount(); 
+  unmount();
 
   supabaseInstance = sbInstance;
   userObject = user;
-  currentHotelId = null; // Reinicia hotelId al montar
+  currentHotelId = null;
 
   container.innerHTML = `
     <div class="card">
@@ -438,36 +437,44 @@ export async function mount(container, sbInstance, user) {
                 <ul id="outlook-lista-eventos" class="mt-4 text-sm space-y-1"></ul>
             </div>
         </fieldset>
-        <form id="form-alegra" novalidate class="space-y-6 mt-6">
-          <fieldset class="config-section p-4 border rounded-md">
-            <legend class="text-lg font-medium text-gray-900 px-2">Alegra (Facturación Electrónica)</legend>
-            <p class="text-sm text-gray-500 px-2 mb-3">Configura tus credenciales de Alegra.</p>
-            <div class="form-group mt-2">
-              <label for="alegra_usuario" class="block text-sm font-medium text-gray-700">Usuario de Alegra (correo)</label>
-              <input type="email" id="alegra_usuario" name="alegra_usuario" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" autocomplete="username" />
-            </div>
-            <div class="form-group mt-4">
-              <label for="alegra_token" class="block text-sm font-medium text-gray-700">Token API de Alegra</label>
-              <input type="password" id="alegra_token" name="alegra_token" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" autocomplete="new-password" />
-              <small class="form-text text-gray-500 mt-1">Ingresa el token si deseas cambiarlo. Se mostrará '********' si ya está configurado.</small>
-            </div>
-            <div id="alegra-config-feedback" role="alert" aria-live="assertive" style="display:none;" class="mt-2"></div>
-            <div class="form-actions mt-6 flex items-center gap-4">
-              <button type="submit" id="btnGuardarAlegra" class="button button-primary py-2 px-4 rounded-md">Guardar Configuración Alegra</button>
-            </div>
-          </fieldset>
-        </form>
-        <div class="mt-6 p-4 border rounded-md">
-            <h3 class="text-md font-medium text-gray-900 px-2 mb-3">Acciones Alegra</h3>
-            <div class="flex items-center gap-2 mt-4">
-                <button type="button" id="btnProbarAlegra" class="button button-secondary px-4 py-2 rounded-md">Probar Conexión con Alegra</button>
-                <div id="alegra-test-feedback" class="ml-2 text-sm"></div>
-            </div>
-            <div class="flex items-center gap-2 mt-4">
-                <button type="button" id="btnFacturaPruebaAlegra" class="button button-accent px-4 py-2 rounded-md">Generar Factura de Prueba (Alegra)</button>
-                <div id="alegra-invoice-feedback" class="ml-2 text-sm"></div>
-            </div>
-        </div>
+        <!-- Aquí va la NUEVA integración Zapier/Alegra -->
+        <fieldset class="config-section p-4 border rounded-md mt-8">
+          <legend class="text-lg font-medium text-gray-900 px-2 flex items-center gap-2">
+            Alegra (Facturación Electrónica vía Zapier)
+            <img src="https://static.alegra.com/assets/img/icon-alegra.svg" alt="Alegra" style="width:22px;height:22px;vertical-align:middle;" />
+          </legend>
+          <p class="text-sm text-gray-500 px-2 mb-3">
+            Conecta tu sistema con Alegra para emitir facturas electrónicas automáticas en tu cuenta de hotel.<br>
+            <b>¿Cómo funciona?</b><br>
+            Cada hotel puede conectar su propia cuenta de Alegra vía <a href="https://zapier.com" target="_blank" class="text-blue-700 underline">Zapier</a>.<br>
+            Solo debes pegar el enlace de tu Webhook personalizado (debe empezar por <code>https://hooks.zapier.com/</code>).
+          </p>
+          <ol class="list-decimal ml-6 mb-3 text-gray-700 text-sm">
+            <li>Crea una cuenta gratuita en <a href="https://zapier.com" target="_blank" class="text-blue-700 underline">Zapier</a> y conecta tu cuenta de Alegra.</li>
+            <li>Crea un Zap: selecciona "Webhooks by Zapier" (Catch Hook) y copia la URL.</li>
+            <li>Pega aquí la URL de tu Webhook:</li>
+          </ol>
+          <input type="url" id="alegra-webhook-url" class="form-control my-2" placeholder="https://hooks.zapier.com/..." autocomplete="off" />
+          <button class="button button-primary mb-2" id="guardar-alegra-webhook">Guardar Webhook</button>
+          <div id="alegra-feedback" class="my-2 text-sm"></div>
+          <details class="mt-4 mb-1 bg-blue-50 p-3 rounded">
+            <summary class="font-semibold text-blue-700 cursor-pointer">¿Qué datos se envían?</summary>
+            <pre class="bg-gray-100 rounded p-2 text-xs mt-2 overflow-x-auto">
+{
+  "cliente": { "nombre": "Juan Pérez", "documento": "123456789" },
+  "productos": [
+    { "nombre": "Habitación 101", "cantidad": 1, "precio": 40000 },
+    { "nombre": "Mini Bar", "cantidad": 2, "precio": 9000 }
+  ],
+  "total": 58000,
+  "fecha": "2025-06-23T10:50:00Z"
+}
+            </pre>
+            <span class="block mt-2 text-blue-800">
+              En tu Zap solo tienes que mapear los campos (cliente, productos, total, fecha) en la acción de Alegra.
+            </span>
+          </details>
+        </fieldset>
       </div>
     </div>
   `;
@@ -512,9 +519,8 @@ export async function mount(container, sbInstance, user) {
         disconnectBtn: container.querySelector('#btn-disconnect-outlook'),
         testForm: container.querySelector('#outlook-test-form'),
         testFeedbackEl: container.querySelector('#outlook-test-feedback'),
-        // NUEVAS REFERENCIAS PARA OUTLOOK
-        listarBtn: container.querySelector('#btn-listar-outlook'), // ¡Añadir esta línea!
-        listaEventosEl: container.querySelector('#outlook-lista-eventos') // ¡Añadir esta línea!
+        listarBtn: container.querySelector('#btn-listar-outlook'),
+        listaEventosEl: container.querySelector('#outlook-lista-eventos')
       },
   };
 
@@ -526,8 +532,6 @@ export async function mount(container, sbInstance, user) {
   addEvt(calendarUiElements.outlook.connectBtn, 'click', () => iniciarConexionCalendario('outlook', calendarUiElements.outlook.statusEl));
   addEvt(calendarUiElements.outlook.disconnectBtn, 'click', (e) => desconectarCalendario('outlook', e.target, calendarUiElements.outlook.statusEl, calendarUiElements));
   addEvt(calendarUiElements.outlook.testForm, 'submit', (e) => { e.preventDefault(); crearEventoDePrueba('outlook', e.target, e.target.querySelector('button'), calendarUiElements.outlook.testFeedbackEl, calendarUiElements); });
-  
-  // ¡NUEVA LÍNEA para el botón de listar de Outlook!
   addEvt(calendarUiElements.outlook.listarBtn, 'click', () => listarEventosOutlook(null, calendarUiElements));
 
   const urlParams = new URLSearchParams(window.location.search);
@@ -536,53 +540,48 @@ export async function mount(container, sbInstance, user) {
     const provider = urlParams.get('provider');
     const message = urlParams.get('message') || '';
     showFeedback(calendarUiElements.mainFeedback, status === 'success' ? `Conexión con ${provider} exitosa.` : `Falló la autorización con ${provider}: ${message}`, status !== 'success', 5000);
-    // Limpia los parámetros de la URL para evitar que se muestre el mensaje cada vez que se recarga la página.
     window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
   }
-  // Verificar el estado inicial de conexión de ambos calendarios al cargar el módulo
   await verificarEstadoCalendarios(calendarUiElements);
 
-  // --- Lógica y Listeners de Alegra ---
-  const formAlegraEl = container.querySelector('#form-alegra');
-  const alegraConfigFeedbackEl = container.querySelector('#alegra-config-feedback');
-  const btnGuardarAlegraEl = container.querySelector('#btnGuardarAlegra');
-  const btnProbarAlegraEl = container.querySelector('#btnProbarAlegra');
-  const alegraTestFeedbackEl = container.querySelector('#alegra-test-feedback');
-  const btnFacturaPruebaAlegraEl = container.querySelector('#btnFacturaPruebaAlegra');
-  const alegraInvoiceFeedbackEl = container.querySelector('#alegra-invoice-feedback');
+  // --- Zapier/Alegra: lógica de carga y guardado del webhook ---
+  const alegraWebhookInput = container.querySelector("#alegra-webhook-url");
+  const alegraSaveBtn = container.querySelector("#guardar-alegra-webhook");
+  const alegraFeedback = container.querySelector("#alegra-feedback");
+  let { data: alegraData } = await supabaseInstance
+    .from("hoteles")
+    .select("alegra_webhook_url")
+    .eq("id", currentHotelId)
+    .single();
+  if (alegraData?.alegra_webhook_url) alegraWebhookInput.value = alegraData.alegra_webhook_url;
 
-  async function cargarConfiguracionAlegraExistente() {
-    if (!formAlegraEl) return;
-    setLoading(formAlegraEl, true, btnGuardarAlegraEl, 'Cargando...');
-    try {
-      const { data, error } = await supabaseInstance.from('integraciones_hotel').select('facturador_usuario, facturador_api_key').eq('hotel_id', currentHotelId).eq('facturador_nombre', 'Alegra').maybeSingle();
-      if (error) throw error;
-      if (data) {
-        if (formAlegraEl.elements.alegra_usuario) formAlegraEl.elements.alegra_usuario.value = data.facturador_usuario || '';
-        if (formAlegraEl.elements.alegra_token) {
-          if (data.facturador_api_key) {
-            formAlegraEl.elements.alegra_token.value = '********';
-            formAlegraEl.elements.alegra_token.dataset.realValue = data.facturador_api_key;
-          } else { 
-            formAlegraEl.elements.alegra_token.value = ''; 
-            delete formAlegraEl.elements.alegra_token.dataset.realValue;
-          }
-        }
-      }
-    } catch (err) {
-      if(alegraConfigFeedbackEl) showFeedback(alegraConfigFeedbackEl, `Error al cargar config de Alegra: ${err.message}`, true, 0);
-    } finally {
-      setLoading(formAlegraEl, false, btnGuardarAlegraEl, 'Guardar Configuración Alegra');
+  alegraSaveBtn.onclick = async () => {
+    const url = alegraWebhookInput.value.trim();
+    alegraFeedback.textContent = "";
+    alegraFeedback.className = "my-2 text-sm";
+    if (!url.startsWith("https://hooks.zapier.com/")) {
+      alegraFeedback.textContent = "URL inválida de Zapier. Debe empezar por https://hooks.zapier.com/";
+      alegraFeedback.classList.add("text-red-600");
+      return;
     }
-  }
-  
-  if (formAlegraEl) {
-    await cargarConfiguracionAlegraExistente();
-    addEvt(formAlegraEl, 'submit', (e) => { e.preventDefault(); guardarConfiguracionAlegra(formAlegraEl, alegraConfigFeedbackEl, btnGuardarAlegraEl); });
-    addEvt(btnProbarAlegraEl, 'click', () => probarConexionAlegra(alegraTestFeedbackEl, btnProbarAlegraEl));
-    addEvt(btnFacturaPruebaAlegraEl, 'click', () => generarFacturaPruebaAlegra(alegraInvoiceFeedbackEl, btnFacturaPruebaAlegraEl));
-  }
+    alegraFeedback.textContent = "Guardando...";
+    alegraFeedback.classList.add("text-gray-600");
+    const { error } = await supabaseInstance
+      .from("hoteles")
+      .update({ alegra_webhook_url: url })
+      .eq("id", currentHotelId);
+    if (error) {
+      alegraFeedback.textContent = "Error al guardar. Intenta de nuevo.";
+      alegraFeedback.classList.add("text-red-600");
+    } else {
+      alegraFeedback.textContent = "¡Webhook guardado! Ahora puedes facturar automáticamente con tu Zap.";
+      alegraFeedback.classList.add("text-green-600");
+    }
+  };
 }
+
+
+
 export function unmount() {
   moduleListeners.forEach(({ element, type, handler }) => {
     element?.removeEventListener(type, handler);
