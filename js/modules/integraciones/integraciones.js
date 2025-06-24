@@ -437,44 +437,7 @@ export async function mount(container, sbInstance, user) {
                 <ul id="outlook-lista-eventos" class="mt-4 text-sm space-y-1"></ul>
             </div>
         </fieldset>
-        <!-- Aquí va la NUEVA integración Zapier/Alegra -->
-        <fieldset class="config-section p-4 border rounded-md mt-8">
-          <legend class="text-lg font-medium text-gray-900 px-2 flex items-center gap-2">
-            Alegra (Facturación Electrónica vía Zapier)
-            <img src="https://static.alegra.com/assets/img/icon-alegra.svg" alt="Alegra" style="width:22px;height:22px;vertical-align:middle;" />
-          </legend>
-          <p class="text-sm text-gray-500 px-2 mb-3">
-            Conecta tu sistema con Alegra para emitir facturas electrónicas automáticas en tu cuenta de hotel.<br>
-            <b>¿Cómo funciona?</b><br>
-            Cada hotel puede conectar su propia cuenta de Alegra vía <a href="https://zapier.com" target="_blank" class="text-blue-700 underline">Zapier</a>.<br>
-            Solo debes pegar el enlace de tu Webhook personalizado (debe empezar por <code>https://hooks.zapier.com/</code>).
-          </p>
-          <ol class="list-decimal ml-6 mb-3 text-gray-700 text-sm">
-            <li>Crea una cuenta gratuita en <a href="https://zapier.com" target="_blank" class="text-blue-700 underline">Zapier</a> y conecta tu cuenta de Alegra.</li>
-            <li>Crea un Zap: selecciona "Webhooks by Zapier" (Catch Hook) y copia la URL.</li>
-            <li>Pega aquí la URL de tu Webhook:</li>
-          </ol>
-          <input type="url" id="alegra-webhook-url" class="form-control my-2" placeholder="https://hooks.zapier.com/..." autocomplete="off" />
-          <button class="button button-primary mb-2" id="guardar-alegra-webhook">Guardar Webhook</button>
-          <div id="alegra-feedback" class="my-2 text-sm"></div>
-          <details class="mt-4 mb-1 bg-blue-50 p-3 rounded">
-            <summary class="font-semibold text-blue-700 cursor-pointer">¿Qué datos se envían?</summary>
-            <pre class="bg-gray-100 rounded p-2 text-xs mt-2 overflow-x-auto">
-{
-  "cliente": { "nombre": "Juan Pérez", "documento": "123456789" },
-  "productos": [
-    { "nombre": "Habitación 101", "cantidad": 1, "precio": 40000 },
-    { "nombre": "Mini Bar", "cantidad": 2, "precio": 9000 }
-  ],
-  "total": 58000,
-  "fecha": "2025-06-23T10:50:00Z"
-}
-            </pre>
-            <span class="block mt-2 text-blue-800">
-              En tu Zap solo tienes que mapear los campos (cliente, productos, total, fecha) en la acción de Alegra.
-            </span>
-          </details>
-        </fieldset>
+       
       </div>
     </div>
   `;
@@ -544,42 +507,7 @@ export async function mount(container, sbInstance, user) {
   }
   await verificarEstadoCalendarios(calendarUiElements);
 
-  // --- Zapier/Alegra: lógica de carga y guardado del webhook ---
-  const alegraWebhookInput = container.querySelector("#alegra-webhook-url");
-  const alegraSaveBtn = container.querySelector("#guardar-alegra-webhook");
-  const alegraFeedback = container.querySelector("#alegra-feedback");
-  let { data: alegraData } = await supabaseInstance
-    .from("hoteles")
-    .select("alegra_webhook_url")
-    .eq("id", currentHotelId)
-    .single();
-  if (alegraData?.alegra_webhook_url) alegraWebhookInput.value = alegraData.alegra_webhook_url;
-
-  alegraSaveBtn.onclick = async () => {
-    const url = alegraWebhookInput.value.trim();
-    alegraFeedback.textContent = "";
-    alegraFeedback.className = "my-2 text-sm";
-    if (!url.startsWith("https://hooks.zapier.com/")) {
-      alegraFeedback.textContent = "URL inválida de Zapier. Debe empezar por https://hooks.zapier.com/";
-      alegraFeedback.classList.add("text-red-600");
-      return;
-    }
-    alegraFeedback.textContent = "Guardando...";
-    alegraFeedback.classList.add("text-gray-600");
-    const { error } = await supabaseInstance
-      .from("hoteles")
-      .update({ alegra_webhook_url: url })
-      .eq("id", currentHotelId);
-    if (error) {
-      alegraFeedback.textContent = "Error al guardar. Intenta de nuevo.";
-      alegraFeedback.classList.add("text-red-600");
-    } else {
-      alegraFeedback.textContent = "¡Webhook guardado! Ahora puedes facturar automáticamente con tu Zap.";
-      alegraFeedback.classList.add("text-green-600");
-    }
-  };
 }
-
 
 
 export function unmount() {

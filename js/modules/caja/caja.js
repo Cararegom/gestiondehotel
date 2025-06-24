@@ -108,89 +108,66 @@ async function abrirTurno() {
 
 // js/modules/caja/caja.js
 
-// REEMPLAZA ESTA FUNCIÓN EN caja.js
-// REEMPLAZA ESTA FUNCIÓN EN caja.js
-async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
-  // --- LOG 1: Inicio de la función y parámetros recibidos ---
-  console.log('🔵 [CERRAR TURNO] 1. Función iniciada.');
-  console.log('   - Turno a cerrar (externo):', turnoExterno);
-  console.log('   - Usuario del turno (externo):', usuarioDelTurnoExterno);
 
+async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
   const turnoACerrar = turnoExterno || turnoActivo;
   const usuarioDelTurno = usuarioDelTurnoExterno || currentModuleUser;
 
   if (!turnoACerrar) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay un turno activo para cerrar.');
-    console.error('🔵 [CERRAR TURNO] ERROR: No se encontró un turno para cerrar (turnoACerrar es null).');
     return;
   }
 
   const esCierreForzoso = !!turnoExterno;
-  console.log(`🔵 [CERRAR TURNO] 2. Modo de cierre forzoso: ${esCierreForzoso}`);
-
   const adminNombre = currentModuleUser?.email;
   const tituloLoading = esCierreForzoso 
-    ? `Forzando cierre del turno de ${usuarioDelTurno?.nombre || 'usuario'}...` 
+    ? `Forzando cierre del turno de ${usuarioDelTurno.nombre}...` 
     : "Realizando cierre de turno...";
   
   showGlobalLoading(tituloLoading);
 
   try {
+    // ... (El resto de la lógica para obtener movimientos y generar el reporte no cambia) ...
+    const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance
+      .from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
+    if (metodosError) throw metodosError;
+
     const { data: movimientos, error: movError } = await currentSupabaseInstance
       .from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoACerrar.id);
     if (movError) throw movError;
     
-    console.log('🔵 [CERRAR TURNO] 3. Movimientos del turno obtenidos exitosamente.', movimientos);
-
-    // ... (El resto de la lógica de procesamiento de reporte no cambia)
-    const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
-    if (metodosError) throw metodosError;
     const reporte = procesarMovimientosParaReporte(movimientos);
     const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
     const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
     const totalGastos = calcularTotalFila(reporte.gastos);
     const balanceFinalEnCaja = reporte.apertura + totalIngresos - totalGastos;
     
-    // Preparando el payload para la actualización
-    const updatePayload = {
+    const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
+    const usuarioNombre = usuarioDelTurno?.nombre || usuarioDelTurno?.email || 'Sistema';
+    
+    let asuntoEmail = `Cierre de Caja - ${usuarioNombre} - ${fechaCierre}`;
+    if (esCierreForzoso) {
+      asuntoEmail += ` (Forzado por ${adminNombre})`;
+    }
+
+    const htmlReporte = generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCierre);
+    await enviarReporteCierreCaja({
+      asunto: asuntoEmail,
+      htmlReporte: htmlReporte,
+      feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
+    });
+
+    // ▼▼▼ CORRECCIÓN CLAVE AQUÍ ▼▼▼
+    // Se elimina la línea 'forzado_cierre_por' para que el código coincida con tu base de datos.
+    const { error: updateError } = await currentSupabaseInstance.from('turnos').update({
         estado: 'cerrado',
         fecha_cierre: new Date().toISOString(),
         balance_final: balanceFinalEnCaja,
-    };
+      }).eq('id', turnoACerrar.id);
+    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
 
-    console.log('🔵 [CERRAR TURNO] 4. Intentando actualizar la base de datos con:', updatePayload, 'para el ID:', turnoACerrar.id);
-
-    // --- MODIFICACIÓN CLAVE PARA OBTENER MÁS INFORMACIÓN ---
-    // Añadimos .select() para que Supabase nos devuelva qué actualizó y el conteo.
-    const { data: updateData, error: updateError, count: updateCount } = await currentSupabaseInstance
-      .from('turnos')
-      .update(updatePayload)
-      .eq('id', turnoACerrar.id)
-      .select('*', { count: 'exact' });
-
-    // --- LOG 5: El resultado de la operación de guardado ---
-    console.log('🔵 [CERRAR TURNO] 5. Resultado de la actualización:', { updateData, updateError, updateCount });
-
-    if (updateError) {
-        // Si hay un error explícito, lo lanzamos para que lo capture el catch.
-        throw updateError;
-    }
+    if (updateError) throw updateError;
     
-    // Si no hubo error pero no se actualizó ninguna fila (por RLS), lo forzamos a error.
-    if (updateCount === 0) {
-        throw new Error("La base de datos no actualizó el turno. Verifique los permisos RLS (Row Level Security).");
-    }
-
-    // --- Si la actualización fue exitosa, el resto del código se ejecuta ---
-    const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
-    const usuarioNombre = usuarioDelTurno?.nombre || usuarioDelTurno?.email || 'Sistema';
-    let asuntoEmail = `Cierre de Caja - ${usuarioNombre} - ${fechaCierre}`;
-    if (esCierreForzoso) asuntoEmail += ` (Forzado por ${adminNombre})`;
-    const htmlReporte = generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCierre);
-    await enviarReporteCierreCaja({asunto: asuntoEmail, htmlReporte, feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')});
-
-    console.log('🔵 [CERRAR TURNO] 6. La actualización y el envío de correo parecen haber sido exitosos.');
-
     if (turnoActivo && turnoACerrar.id === turnoActivo.id) {
         showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno cerrado y reporte enviado!');
         turnoActivo = null;
@@ -198,20 +175,20 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
         turnoService.clearActiveTurn();
         await renderizarUI();
     } else if (esCierreForzoso) {
-        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), `¡Turno de ${usuarioNombre} cerrado exitosamente!`);
+        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), `¡Turno de ${usuarioDelTurno.nombre || 'usuario'} cerrado exitosamente!`);
         turnoEnSupervision = null;
         await renderizarUI();
     }
 
   } catch (err) {
-    // --- LOG 7: Captura de cualquier error que ocurra ---
-    console.error('🔴 [CERRAR TURNO] ERROR CAPTURADO:', err);
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error en el cierre de turno: ${err.message}`);
+    if(turnoActivo && turnoACerrar.id === turnoActivo.id) {
+       await renderizarUI();
+    }
   } finally {
     hideGlobalLoading();
   }
 }
-
 
 
 // REEMPLAZA TU FUNCIÓN CON ESTA VERSIÓN COMPLETA Y FINAL
