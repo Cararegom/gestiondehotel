@@ -415,8 +415,11 @@ export async function mount(container, supabase, user, hotelId) {
           botonHTML = `<button class="btn-elegir-plan group w-full mt-2 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-green-500 to-emerald-600 font-semibold transition-all duration-300 shadow-md hover:shadow-lg hover:scale-[1.03]" data-plan-id="${plan.id}" data-tipo-cambio="upgrade">
               <span class="flex items-center justify-center gap-2">Mejorar Plan <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></span>
           </button>`;
-      } else if (esDowngrade) {
-          botonHTML = `<button class="w-full mt-2 py-2.5 px-4 rounded-lg text-gray-500 bg-gray-200 font-semibold cursor-not-allowed" disabled title="El cambio a un plan inferior se aplica al final del ciclo actual.">Bajar de Plan</button>`;
+       } else if (esDowngrade) {
+          // AHORA: Botón activo con estilo y atributos para downgrade
+          botonHTML = `<button class="btn-elegir-plan group w-full mt-2 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-orange-500 to-red-500 font-semibold transition-all duration-300 shadow-md hover:shadow-lg hover:scale-[1.03]" data-plan-id="${plan.id}" data-tipo-cambio="downgrade">
+              <span class="flex items-center justify-center gap-2">Bajar de Plan <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 13l-5 5m0 0l-5-5m5 5V6" /></svg></span>
+          </button>`;
       }
 
       planesList.innerHTML += `
@@ -445,53 +448,112 @@ export async function mount(container, supabase, user, hotelId) {
     });
   }
   
-  function procesarCambioDePlan(planSeleccionado, tipo) {
-      if (tipo !== 'upgrade') return;
-  
-      const fechaInicioCiclo = new Date(hotel.suscripcion_inicio || hotel.trial_inicio);
-      const diasCicloTotal = Math.ceil((fechaFin - fechaInicioCiclo) / (1000 * 60 * 60 * 24));
-      const diasCicloSeguro = Math.max(1, diasCicloTotal);
-      const diasRestantesSeguro = Math.max(0, diasRestantes);
-  
-      const costoDiarioActualCOP = (planActivo.precio_mensual || 0) / diasCicloSeguro;
-      const costoDiarioNuevoCOP = planSeleccionado.precio_mensual / diasCicloSeguro;
-      const creditoNoUsadoCOP = costoDiarioActualCOP * diasRestantesSeguro;
-      const costoNuevoRestanteCOP = costoDiarioNuevoCOP * diasRestantesSeguro;
-      const montoProrrateadoCOP = Math.max(0, costoNuevoRestanteCOP - creditoNoUsadoCOP);
-  
-      const precioActualUSD = USD_PRICES[planActivo.nombre.toLowerCase()] || 0;
-      const precioNuevoUSD = USD_PRICES[planSeleccionado.nombre.toLowerCase()] || 0;
-      const costoDiarioActualUSD = precioActualUSD / diasCicloSeguro;
-      const costoDiarioNuevoUSD = precioNuevoUSD / diasCicloSeguro;
-      const creditoNoUsadoUSD = costoDiarioActualUSD * diasRestantesSeguro;
-      const costoNuevoRestanteUSD = costoDiarioNuevoUSD * diasRestantesSeguro;
-      const montoProrrateadoUSD = Math.max(0, costoNuevoRestanteUSD - creditoNoUsadoUSD);
-      
-      const modal = container.querySelector('#modalUpgrade');
-      modal.querySelector('#modalPlanName').innerHTML = `De <b>${planActivo.nombre}</b> a <b class="text-green-600">${planSeleccionado.nombre}</b>`;
-  
-      const montoMostar = monedaActual === 'USD' ? montoProrrateadoUSD : montoProrrateadoCOP;
-      const creditoMostrar = monedaActual === 'USD' ? creditoNoUsadoUSD : creditoNoUsadoCOP;
-      const costoRestanteMostrar = monedaActual === 'USD' ? costoNuevoRestanteUSD : costoNuevoRestanteCOP;
+// Reemplaza toda tu función 'procesarCambioDePlan' con esta versión actualizada:
 
-      const detalleHTML = `
-          <ul class="text-sm space-y-2"><li class="flex justify-between items-center"><span>Costo de ${planSeleccionado.nombre} (${diasRestantesSeguro} días)</span><span class="font-semibold">${formatMoneda(costoRestanteMostrar, monedaActual)}</span></li><li class="flex justify-between items-center text-green-600"><span>(-) Crédito plan ${planActivo.nombre}</span><span class="font-semibold">${formatMoneda(creditoMostrar, monedaActual)}</span></li></ul>
-          <hr class="my-3 border-dashed">
-          <div class="text-lg font-bold flex justify-between items-center"><span>Total a pagar hoy:</span><span class="text-green-700">${formatMoneda(montoMostar, monedaActual)}</span></div>
-      `;
-      modal.querySelector('#prorrateoDetalle').innerHTML = detalleHTML;
-      
-      const btnConfirmar = modal.querySelector('#confirmUpgrade');
-      const newBtn = btnConfirmar.cloneNode(true);
-      btnConfirmar.parentNode.replaceChild(newBtn, btnConfirmar);
-      
-      newBtn.addEventListener('click', () => {
-          iniciarProcesoDePago(planSeleccionado, 'upgrade', montoProrrateadoCOP, montoProrrateadoUSD);
-          modal.classList.add('hidden');
-      });
-  
-      modal.classList.remove('hidden');
-  }
+// Reemplaza toda tu función 'procesarCambioDePlan' con esta versión definitiva:
+
+function procesarCambioDePlan(planSeleccionado, tipo) {
+    const modal = container.querySelector('#modalUpgrade');
+    
+    // --- LÓGICA DE UPGRADE (Se mantiene igual) ---
+    if (tipo === 'upgrade') {
+        // ... (el código de upgrade no cambia, se deja como estaba)
+        const fechaInicioCiclo = new Date(hotel.suscripcion_inicio || hotel.trial_inicio);
+        const diasCicloTotal = Math.ceil((fechaFin - fechaInicioCiclo) / (1000 * 60 * 60 * 24));
+        const diasCicloSeguro = Math.max(1, diasCicloTotal);
+        const diasRestantesSeguro = Math.max(0, diasRestantes);
+
+        const costoDiarioActualCOP = (planActivo.precio_mensual || 0) / diasCicloSeguro;
+        const costoDiarioNuevoCOP = planSeleccionado.precio_mensual / diasCicloSeguro;
+        const creditoNoUsadoCOP = costoDiarioActualCOP * diasRestantesSeguro;
+        const costoNuevoRestanteCOP = costoDiarioNuevoCOP * diasRestantesSeguro;
+        const montoProrrateadoCOP = Math.max(0, costoNuevoRestanteCOP - creditoNoUsadoCOP);
+
+        const precioActualUSD = USD_PRICES[planActivo.nombre.toLowerCase()] || 0;
+        const precioNuevoUSD = USD_PRICES[planSeleccionado.nombre.toLowerCase()] || 0;
+        const costoDiarioActualUSD = precioActualUSD / diasCicloSeguro;
+        const costoDiarioNuevoUSD = precioNuevoUSD / diasCicloSeguro;
+        const creditoNoUsadoUSD = costoDiarioActualUSD * diasRestantesSeguro;
+        const costoNuevoRestanteUSD = costoDiarioNuevoUSD * diasRestantesSeguro;
+        const montoProrrateadoUSD = Math.max(0, costoNuevoRestanteUSD - creditoNoUsadoUSD);
+        
+        modal.querySelector('#modalPlanName').innerHTML = `De <b>${planActivo.nombre}</b> a <b class="text-green-600">${planSeleccionado.nombre}</b>`;
+        modal.querySelector('.text-blue-700').textContent = 'Confirmar mejora de plan';
+
+        const montoMostar = monedaActual === 'USD' ? montoProrrateadoUSD : montoProrrateadoCOP;
+        const creditoMostrar = monedaActual === 'USD' ? creditoNoUsadoUSD : creditoNoUsadoCOP;
+        const costoRestanteMostrar = monedaActual === 'USD' ? costoNuevoRestanteUSD : costoNuevoRestanteCOP;
+
+        const detalleHTML = `
+            <ul class="text-sm space-y-2"><li class="flex justify-between items-center"><span>Costo de ${planSeleccionado.nombre} (${diasRestantesSeguro} días)</span><span class="font-semibold">${formatMoneda(costoRestanteMostrar, monedaActual)}</span></li><li class="flex justify-between items-center text-green-600"><span>(-) Crédito plan ${planActivo.nombre}</span><span class="font-semibold">${formatMoneda(creditoMostrar, monedaActual)}</span></li></ul>
+            <hr class="my-3 border-dashed">
+            <div class="text-lg font-bold flex justify-between items-center"><span>Total a pagar hoy:</span><span class="text-green-700">${formatMoneda(montoMostar, monedaActual)}</span></div>
+        `;
+        modal.querySelector('#prorrateoDetalle').innerHTML = detalleHTML;
+        
+        const btnConfirmar = modal.querySelector('#confirmUpgrade');
+        const newBtn = btnConfirmar.cloneNode(true);
+        newBtn.querySelector('.btn-text').textContent = 'Pagar y cambiar plan';
+        newBtn.classList.remove('from-orange-500', 'to-red-500');
+        newBtn.classList.add('from-green-500', 'to-emerald-600');
+        btnConfirmar.parentNode.replaceChild(newBtn, btnConfirmar);
+        
+        newBtn.addEventListener('click', () => {
+            iniciarProcesoDePago(planSeleccionado, 'upgrade', montoProrrateadoCOP, montoProrrateadoUSD);
+            modal.classList.add('hidden');
+        });
+
+    // --- NUEVA LÓGICA DE DOWNGRADE (Cobro inmediato, activación futura) ---
+    } else if (tipo === 'downgrade') {
+        
+        // 1. Calcular el precio COMPLETO del nuevo plan para el siguiente ciclo.
+        let planKey = planSeleccionado.nombre.trim().toLowerCase();
+        let precioRenovacionCOP = periodoActual === 'anual' ? planSeleccionado.precio_mensual * 10 : planSeleccionado.precio_mensual;
+        let precioRenovacionUSD = USD_PRICES[planKey] || 0;
+        if (periodoActual === 'anual') {
+            precioRenovacionUSD *= 10;
+        }
+        
+        const montoAPagar = monedaActual === 'USD' ? precioRenovacionUSD : precioRenovacionCOP;
+        const periodoLabel = periodoActual === 'anual' ? 'año' : 'mes';
+
+        // 2. Configurar el modal para informar del cobro inmediato y la activación futura.
+        modal.querySelector('#modalPlanName').innerHTML = `De <b>${planActivo.nombre}</b> a <b class="text-orange-600">${planSeleccionado.nombre}</b>`;
+        modal.querySelector('.text-blue-700').textContent = 'Confirmar pago para próximo ciclo';
+
+        const detalleHTML = `
+          <div class="text-sm text-gray-700 space-y-3">
+            <p>Vas a pagar hoy por tu próximo ciclo para asegurar un precio más bajo.</p>
+            <div class="text-lg font-bold flex justify-between items-center">
+              <span>Total a pagar ahora:</span>
+              <span class="text-green-700">${formatMoneda(montoAPagar, monedaActual)}</span>
+            </div>
+            <div class="p-3 bg-blue-50 border-l-4 border-blue-500 text-blue-800 rounded">
+              <p>Tu plan actual <b class="font-semibold">${planActivo.nombre}</b> seguirá activo hasta el <b class="font-semibold">${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>.</p>
+              <p class="mt-1">El nuevo plan <b class="font-semibold">${planSeleccionado.nombre}</b> se activará automáticamente después de esa fecha.</p>
+            </div>
+          </div>
+        `;
+        modal.querySelector('#prorrateoDetalle').innerHTML = detalleHTML;
+
+        // 3. Configurar el botón para que inicie el pago.
+        const btnConfirmar = modal.querySelector('#confirmUpgrade');
+        const newBtn = btnConfirmar.cloneNode(true);
+        newBtn.querySelector('.btn-text').textContent = 'Pagar próximo ciclo ahora';
+        newBtn.classList.remove('from-green-500', 'to-emerald-600');
+        newBtn.classList.add('from-orange-500', 'to-red-500');
+        btnConfirmar.parentNode.replaceChild(newBtn, btnConfirmar);
+
+        newBtn.addEventListener('click', () => {
+            // El backend debe registrar este pago y asociarlo al hotel para el siguiente ciclo.
+            iniciarProcesoDePago(planSeleccionado, 'renew-downgrade', precioRenovacionCOP, precioRenovacionUSD);
+            modal.classList.add('hidden');
+        });
+    }
+
+    modal.classList.remove('hidden');
+}
+
 
   await renderPlanes();
 
