@@ -317,113 +317,118 @@ function populateTiemposEstanciaSelect(selectEl, selectedIds = []) {
 }
 
 // --- Lógica para Habitaciones ---
+// js/modules/habitaciones/habitaciones.js
+
 async function renderHabitaciones(habitacionesContainer, feedbackEl) {
-  if (!habitacionesContainer) {
-    if (feedbackEl) showHabitacionesFeedback(feedbackEl, "Error interno: Contenedor de habitaciones no disponible.", "error");
-    return;
-  }
-  if (!currentHotelId) {
-    habitacionesContainer.innerHTML = `<div class="col-span-full text-red-600 text-center p-4">Error: Hotel no identificado.</div>`;
-    if (feedbackEl) showHabitacionesFeedback(feedbackEl, "Error: Hotel no identificado.", "error");
-    return;
-  }
-  habitacionesContainer.innerHTML = `<div class="col-span-full text-center p-4 text-gray-500">Cargando habitaciones...</div>`;
-  if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
-
-  try {
-    const { data: habitaciones, error } = await currentSupabaseInstance
-      .from('habitaciones')
-      .select(`
-        id, nombre, tipo, precio, estado, activo, amenidades, piso,
-        capacidad_base, capacidad_maxima, precio_huesped_adicional,
-        habitacion_tiempos_permitidos (
-          tiempo_estancia_id,
-          tiempos_estancia (id, nombre, minutos, precio)
-        )
-      `)
-      .eq('hotel_id', currentHotelId)
-      .order('nombre', { ascending: true });
-
-    if (error) throw error;
-    habitacionesContainer.innerHTML = '';
-
-    habitaciones.sort((a, b) => {
-      const getNumber = nombre => {
-        const match = String(nombre || '').match(/\d+/);
-        return match ? parseInt(match[0], 10) : Infinity;
-      };
-      return getNumber(a.nombre) - getNumber(b.nombre);
-    });
-
-    if (!habitaciones || habitaciones.length === 0) {
-      habitacionesContainer.innerHTML = `<div class="col-span-full text-center p-4 text-gray-500">No hay habitaciones registradas.</div>`;
-      return;
+    if (!habitacionesContainer) {
+        if (feedbackEl) showHabitacionesFeedback(feedbackEl, "Error interno: Contenedor de habitaciones no disponible.", "error");
+        return;
     }
+    if (!currentHotelId) {
+        habitacionesContainer.innerHTML = `<div class="col-span-full text-red-600 text-center p-4">Error: Hotel no identificado.</div>`;
+        return;
+    }
+    habitacionesContainer.innerHTML = `<div class="col-span-full text-center p-4 text-gray-500">Cargando habitaciones...</div>`;
+    if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
 
-    habitaciones.forEach(h => {
-      const card = document.createElement('div');
-      card.className = `habitacion-card card p-4 rounded-lg shadow-md bg-white border-l-4 estado-border-${h.estado || 'desconocido'} ${h.activo ? 'opacity-100' : 'opacity-60'}`;
-      card.dataset.habitacionId = h.id;
+    try {
+        // --- INICIO DE LA MODIFICACIÓN: Añadir nuevos campos al SELECT ---
+        const { data: habitaciones, error } = await currentSupabaseInstance
+            .from('habitaciones')
+            .select(`
+                id, nombre, tipo, estado, activo, amenidades, piso,
+                capacidad_maxima, precio_huesped_adicional,
+                precio_1_persona, precio_2_personas 
+            `)
+            .eq('hotel_id', currentHotelId)
+            .order('nombre', { ascending: true });
+        // --- FIN DE LA MODIFICACIÓN ---
 
-      const estadoDisplay = h.estado ? h.estado.charAt(0).toUpperCase() + h.estado.slice(1) : 'Desconocido';
-      const nombresTiemposEstancia = h.habitacion_tiempos_permitidos && h.habitacion_tiempos_permitidos.length > 0
-        ? h.habitacion_tiempos_permitidos.map(htp => htp.tiempos_estancia?.nombre || 'Tiempo desc.').join(', ')
-        : 'No asignados';
+        if (error) throw error;
+        habitacionesContainer.innerHTML = '';
 
-      card.innerHTML = `
-        <div class="card-body">
-          <div class="flex justify-between items-start mb-2">
-            <h4 class="text-md font-semibold text-gray-800 habitacion-nombre">${h.nombre} <span class="text-sm text-gray-500">(${h.tipo || 'N/A'})</span></h4>
-            <span class="badge estado-badge-${h.estado || 'desconocido'} text-xs px-2.5 py-0.5 rounded-full font-medium">${estadoDisplay}${h.activo ? '' : ' (Inactiva)'}</span>
-          </div>
-          <p class="text-sm text-gray-600"><strong>Precio Base (Noche):</strong> ${h.precio ? formatCurrency(h.precio) : 'N/D'}</p>
-          <p class="text-xs text-gray-500"><strong>Piso:</strong> ${h.piso || 'N/A'}</p>
-          <p class="text-xs text-gray-500"><strong>Capacidad:</strong> ${h.capacidad_base || 1}-${h.capacidad_maxima || h.capacidad_base || 1} pers.</p>
-          <p class="text-xs text-gray-500"><strong>Precio Adic./Huésped:</strong> ${formatCurrency(h.precio_huesped_adicional)}</p>
-          <p class="text-xs text-gray-500"><strong>Amenidades:</strong> ${h.amenidades && h.amenidades.length > 0 ? h.amenidades.join(', ') : 'Ninguna'}</p>
-          <p class="text-xs text-gray-500 mt-1"><strong>Tiempos Permitidos:</strong> ${nombresTiemposEstancia}</p>
-          <div class="habitacion-acciones mt-3 flex gap-2 flex-wrap">
-            <button data-accion="editar-habitacion" data-id="${h.id}" class="button button-outline button-small text-xs">Editar</button>
-            <button data-accion="eliminar-habitacion" data-id="${h.id}" class="button button-danger button-small text-xs">Eliminar</button>
-          </div>
-        </div>
-      `;
-      habitacionesContainer.appendChild(card);
-    });
-  } catch (err) {
-    console.error('Error loading rooms:', err);
-    habitacionesContainer.innerHTML = `<div class="col-span-full text-red-600 text-center p-4">Error al cargar habitaciones: ${err.message}</div>`;
-    if (feedbackEl) showHabitacionesFeedback(feedbackEl, `Error al cargar habitaciones: ${err.message}`, 'error');
-  }
+        habitaciones.sort((a, b) => {
+            const getNumber = nombre => {
+                const match = String(nombre || '').match(/\d+/);
+                return match ? parseInt(match[0], 10) : Infinity;
+            };
+            return getNumber(a.nombre) - getNumber(b.nombre);
+        });
+
+        if (!habitaciones || habitaciones.length === 0) {
+            habitacionesContainer.innerHTML = `<div class="col-span-full text-center p-4 text-gray-500">No hay habitaciones registradas.</div>`;
+            return;
+        }
+
+        habitaciones.forEach(h => {
+            const card = document.createElement('div');
+            card.className = `habitacion-card card p-4 rounded-lg shadow-md bg-white border-l-4 estado-border-${h.estado || 'desconocido'} ${h.activo ? 'opacity-100' : 'opacity-60'}`;
+            card.dataset.habitacionId = h.id;
+
+            const estadoDisplay = h.estado ? h.estado.charAt(0).toUpperCase() + h.estado.slice(1) : 'Desconocido';
+            
+            // --- INICIO DE LA MODIFICACIÓN: Nuevo HTML para la tarjeta ---
+            card.innerHTML = `
+                <div class="card-body">
+                    <div class="flex justify-between items-start mb-2">
+                        <h4 class="text-md font-semibold text-gray-800 habitacion-nombre">${h.nombre} <span class="text-sm text-gray-500">(${h.tipo || 'N/A'})</span></h4>
+                        <span class="badge estado-badge-${h.estado || 'desconocido'} text-xs px-2.5 py-0.5 rounded-full font-medium">${estadoDisplay}${h.activo ? '' : ' (Inactiva)'}</span>
+                    </div>
+                    
+                    <div class="text-sm text-gray-600 space-y-1 my-2">
+                        <p><strong>Precio 1 pers (noche):</strong> ${formatCurrency(h.precio_1_persona)}</p>
+                        <p><strong>Precio 2 pers (noche):</strong> ${formatCurrency(h.precio_2_personas)}</p>
+                        <p><strong>Precio Adic/pers (3+):</strong> ${formatCurrency(h.precio_huesped_adicional)}</p>
+                    </div>
+
+                    <p class="text-xs text-gray-500 mt-2"><strong>Capacidad Máx:</strong> ${h.capacidad_maxima || 'N/A'} pers.</p>
+                    <p class="text-xs text-gray-500"><strong>Piso:</strong> ${h.piso || 'N/A'}</p>
+                    <p class="text-xs text-gray-500"><strong>Amenidades:</strong> ${h.amenidades && h.amenidades.length > 0 ? h.amenidades.join(', ') : 'Ninguna'}</p>
+                    
+                    <div class="habitacion-acciones mt-3 flex gap-2 flex-wrap">
+                        <button data-accion="editar-habitacion" data-id="${h.id}" class="button button-outline button-small text-xs">Editar</button>
+                        <button data-accion="eliminar-habitacion" data-id="${h.id}" class="button button-danger button-small text-xs">Eliminar</button>
+                    </div>
+                </div>
+            `;
+            // --- FIN DE LA MODIFICACIÓN ---
+            habitacionesContainer.appendChild(card);
+        });
+    } catch (err) {
+        console.error('Error loading rooms:', err);
+        habitacionesContainer.innerHTML = `<div class="col-span-full text-red-600 text-center p-4">Error al cargar habitaciones: ${err.message}</div>`;
+        if (feedbackEl) showHabitacionesFeedback(feedbackEl, `Error al cargar habitaciones: ${err.message}`, 'error');
+    }
 }
+
+
+// js/modules/habitaciones/habitaciones.js
 
 function populateFormHabitacion(formEl, selectTiemposEl, habitacionData, btnCancelarEl, btnGuardarEl, formTitleEl) {
-  if (!formEl) return;
-  formEl.reset();
-  formEl.elements.habitacionIdEdit.value = habitacionData.id;
-  if(formTitleEl) formTitleEl.textContent = `Editando Habitación: ${habitacionData.nombre}`;
-  
-  formEl.elements.nombre.value = habitacionData.nombre || '';
-  formEl.elements.tipo.value = habitacionData.tipo || '';
-  formEl.elements.precio.value = habitacionData.precio || '';
-  formEl.elements.piso.value = habitacionData.piso || '';
-  formEl.elements.capacidad_base.value = habitacionData.capacidad_base || 1;
-  formEl.elements.capacidad_maxima.value = habitacionData.capacidad_maxima || habitacionData.capacidad_base || 1;
-  formEl.elements.precio_huesped_adicional.value = habitacionData.precio_huesped_adicional || 0;
-  // Ya no tenemos estos campos en el formulario:
-  // formEl.elements.permite_reservas_por_horas.checked = habitacionData.permite_reservas_por_horas || false;
-  // formEl.elements.precio_base_hora.value = habitacionData.precio_base_hora || 0;
-  formEl.elements.estado.value = habitacionData.estado || 'libre';
-  formEl.elements.amenidades.value = habitacionData.amenidades?.join(', ') || '';
-  formEl.elements.activo.checked = habitacionData.activo === undefined ? true : habitacionData.activo;
+    if (!formEl) return;
+    formEl.reset();
+    formEl.elements.habitacionIdEdit.value = habitacionData.id;
+    if(formTitleEl) formTitleEl.textContent = `Editando Habitación: ${habitacionData.nombre}`;
+    
+    formEl.elements.nombre.value = habitacionData.nombre || '';
+    formEl.elements.tipo.value = habitacionData.tipo || '';
+    formEl.elements.piso.value = habitacionData.piso || '';
+    formEl.elements.capacidad_maxima.value = habitacionData.capacidad_maxima || 2;
+    formEl.elements.precio_huesped_adicional.value = habitacionData.precio_huesped_adicional || 0;
+    formEl.elements.estado.value = habitacionData.estado || 'libre';
+    formEl.elements.amenidades.value = habitacionData.amenidades?.join(', ') || '';
+    formEl.elements.activo.checked = habitacionData.activo === undefined ? true : habitacionData.activo;
 
-  const selectedTiempoIds = habitacionData.habitacion_tiempos_permitidos?.map(htp => htp.tiempo_estancia_id.toString()) || [];
-  populateTiemposEstanciaSelect(selectTiemposEl, selectedTiempoIds);
+    // --- INICIO DE LA MODIFICACIÓN: Poblar nuevos campos de precio ---
+    formEl.elements.precio_1_persona.value = habitacionData.precio_1_persona || 0;
+    formEl.elements.precio_2_personas.value = habitacionData.precio_2_personas || 0;
+    // --- FIN DE LA MODIFICACIÓN ---
 
-  if (btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
-  if (btnGuardarEl) btnGuardarEl.textContent = 'Actualizar Habitación';
-  formEl.elements.nombre.focus();
+    if (btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
+    if (btnGuardarEl) btnGuardarEl.textContent = 'Actualizar Habitación';
+    formEl.elements.nombre.focus();
 }
+
 
 function resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEl, btnGuardarEl, formTitleEl) {
   if (!formEl) return;
@@ -438,95 +443,65 @@ function resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEl, btnGuardarE
   formEl.elements.nombre.focus();
 }
 
+
 // js/modules/habitaciones/habitaciones.js
 
-// ... (otras funciones) ...
-
-async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaContainerEl, feedbackEl, btnGuardarEl, btnCancelarEl, formTitleEl) {
+async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaContainerEl, feedbackEl, btnGuardarEl, btnCancelarEdicionHabitacionEl, formTitleEl) {
     event.preventDefault();
     if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
     
     const formData = new FormData(formEl);
     const editId = formData.get('habitacionIdEdit');
 
-    // --- INICIO DE VALIDACIÓN DE LÍMITE DE HABITACIONES (SOLO AL CREAR) ---
-    if (!editId) {
-        if (!activePlanDetails || !activePlanDetails.funcionalidades) {
-            console.error("handleHabitacionSubmit: No se pueden verificar los límites del plan: activePlanDetails no está cargado.");
-            showHabitacionesFeedback(feedbackEl, "Error: No se pudo verificar la información de tu plan. Intenta recargar.", "error", 0);
+    if (!editId && activePlanDetails) {
+        const limiteHabitaciones = activePlanDetails.funcionalidades.limite_habitaciones;
+        const { data: conteo, error: errConteo } = await currentSupabaseInstance
+            .from('habitaciones')
+            .select('id', { count: 'exact', head: true })
+            .eq('hotel_id', currentHotelId);
+        
+        if (errConteo) {
+            showHabitacionesFeedback(feedbackEl, `Error verificando el límite: ${errConteo.message}`, 'error');
             return;
         }
-
-        const limiteHabitacionesDelPlan = activePlanDetails.funcionalidades.limite_habitaciones;
-        const nombreDelPlanActual = activePlanDetails.nombre;
-        const textoBotonOriginal = '＋ Crear Habitación'; // Guardamos el texto original esperado
-
-        if (typeof limiteHabitacionesDelPlan === 'number') {
-            try {
-                setFormLoadingState(formEl, true, btnGuardarEl, textoBotonOriginal, 'Verificando plan...');
-                
-                const { count: numeroActualHabitaciones, error: countError } = await currentSupabaseInstance
-                    .from('habitaciones')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('hotel_id', currentHotelId);
-
-                if (countError) {
-                    // Si el error es por token expirado, dar un mensaje más claro
-                    if (countError.message.includes("JWT expired")) {
-                        throw new Error("Tu sesión ha expirado. Por favor, cierra sesión y vuelve a ingresar.");
-                    }
-                    throw countError;
-                }
-
-                if (numeroActualHabitaciones >= limiteHabitacionesDelPlan) {
-                    mostrarModalUpgradeHabitaciones(limiteHabitacionesDelPlan, nombreDelPlanActual);
-                    setFormLoadingState(formEl, false, btnGuardarEl, textoBotonOriginal);
-                    return;
-                }
-                
-                // Si la verificación es exitosa, restauramos el botón para continuar con el guardado
-                setFormLoadingState(formEl, false, btnGuardarEl, textoBotonOriginal);
-
-            } catch (error) {
-                console.error("Error verificando el límite de habitaciones:", error);
-                showHabitacionesFeedback(feedbackEl, `Error al verificar plan: ${error.message}`, 'error', 0);
-                setFormLoadingState(formEl, false, btnGuardarEl, textoBotonOriginal); // CORREGIDO: Usar el texto original
-                return;
-            }
+        if (conteo >= limiteHabitaciones) {
+            mostrarModalUpgradeHabitaciones(limiteHabitaciones, activePlanDetails.nombre);
+            return;
         }
     }
-    // --- FIN DE VALIDACIÓN DE LÍMITE DE HABITACIONES ---
-
+    
     const nombreHabitacion = formData.get('nombre')?.trim();
     if (!nombreHabitacion) {
-        if (feedbackEl) showHabitacionesFeedback(feedbackEl, 'El nombre de la habitación es obligatorio.', 'error');
+        showHabitacionesFeedback(feedbackEl, 'El nombre de la habitación es obligatorio.', 'error');
         formEl.elements.nombre.focus();
         return;
     }
     
-    const precioInput = formData.get('precio');
-    const precioHabitacion = precioInput !== '' && !isNaN(parseFloat(precioInput)) ? parseFloat(precioInput) : null;
-    if (precioHabitacion === null || precioHabitacion < 0) {
-        if (feedbackEl) showHabitacionesFeedback(feedbackEl, 'El precio base debe ser un número válido y no negativo.', 'error');
-        formEl.elements.precio.focus();
+    const precio1Persona = parseFloat(formData.get('precio_1_persona'));
+    const precio2Personas = parseFloat(formData.get('precio_2_personas'));
+    if (isNaN(precio1Persona) || isNaN(precio2Personas) || precio1Persona < 0 || precio2Personas < 0) {
+        showHabitacionesFeedback(feedbackEl, 'Los precios para 1 y 2 personas deben ser números válidos y no negativos.', 'error');
         return;
     }
-
+    
     const habitacionPayload = {
       nombre: nombreHabitacion,
       tipo: formData.get('tipo')?.trim() || null,
-      precio: precioHabitacion,
       piso: parseInt(formData.get('piso')) || null,
-      capacidad_base: parseInt(formData.get('capacidad_base')) || 1,
-      capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || parseInt(formData.get('capacidad_base')) || 1,
+      capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || 2,
       precio_huesped_adicional: parseFloat(formData.get('precio_huesped_adicional')) || 0,
-      estado: formData.get('estado'),
       amenidades: formData.get('amenidades')?.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) || null,
       hotel_id: currentHotelId,
-      activo: formEl.elements.activo.checked
+      activo: formEl.elements.activo.checked,
+      precio_1_persona: precio1Persona,
+      precio_2_personas: precio2Personas,
+      capacidad_base: 2 
     };
 
-    const selectedTiempoIds = Array.from(selectTiemposEl.selectedOptions).map(o => o.value);
+    if (!editId) {
+        habitacionPayload.estado = formData.get('estado');
+    }
+    
     const textoBotonGuardar = editId ? 'Actualizar Habitación' : '＋ Crear Habitación';
     setFormLoadingState(formEl, true, btnGuardarEl, textoBotonGuardar, 'Guardando...');
     
@@ -541,38 +516,35 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
           .select('id').single();
         if (error) throw error;
         savedRoomId = data.id;
-        if (feedbackEl) showHabitacionesFeedback(feedbackEl, 'Habitación actualizada.', 'success');
+        showHabitacionesFeedback(feedbackEl, 'Habitación actualizada.', 'success');
         accionBitacora = 'ACTUALIZAR_HABITACION';
         detallesBitacora = { habitacion_id: savedRoomId, nombre: nombreHabitacion };
       } else {
         const { data, error } = await currentSupabaseInstance.from('habitaciones')
           .insert(habitacionPayload).select('id').single();
-        if (error) throw error;
+        if (error) throw error; 
         savedRoomId = data.id;
-        if (feedbackEl) showHabitacionesFeedback(feedbackEl, 'Habitación creada.', 'success');
+        showHabitacionesFeedback(feedbackEl, 'Habitación creada.', 'success');
         accionBitacora = 'CREAR_HABITACION';
         detallesBitacora = { habitacion_id: savedRoomId, nombre: nombreHabitacion };
       }
 
-      if (savedRoomId) {
-        await currentSupabaseInstance.from('habitacion_tiempos_permitidos').delete().eq('habitacion_id', savedRoomId);
-        if (selectedTiempoIds.length > 0) {
-          const tiemposToInsert = selectedTiempoIds.map(tiempoId => ({
-            habitacion_id: savedRoomId, tiempo_estancia_id: tiempoId, hotel_id: currentHotelId
-          }));
-          await currentSupabaseInstance.from('habitacion_tiempos_permitidos').insert(tiemposToInsert);
-        }
-      }
       await registrarEnBitacora({ supabase: currentSupabaseInstance, hotel_id: currentHotelId, usuario_id: currentModuleUser.id, modulo: 'Habitaciones', accion: accionBitacora, detalles: detallesBitacora });
-      resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEl, btnGuardarEl, formTitleEl);
+      
+      // --- CORRECCIÓN CLAVE ---
+      // La llamada a resetFormHabitacion ahora usa la variable correcta que sí existe en su scope.
+      resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarEl, formTitleEl);
+      
       await renderHabitaciones(listaContainerEl, feedbackEl);
+
     } catch (err) {
-      console.error('Error saving room:', err);
-      if (feedbackEl) showHabitacionesFeedback(feedbackEl, `Error al guardar habitación: ${err.message}`, 'error', 0);
+      console.error('Error guardando habitación:', err); 
+      showHabitacionesFeedback(feedbackEl, `Error al guardar habitación: ${err.message}`, 'error', 0);
     } finally {
       setFormLoadingState(formEl, false, btnGuardarEl, textoBotonGuardar);
     }
-}// --- Main Module Mount Function ---
+}
+// --- Main Module Mount Function ---
 export async function mount(container, supabaseInst, user, hotelId, planDetails) { // <--- AÑADIDO planDetails
   console.log("[Habitaciones/mount] Iniciando montaje...");
   unmount(); 
@@ -643,7 +615,7 @@ export async function mount(container, supabaseInst, user, hotelId, planDetails)
   //  dentro del formulario de habitaciones, ya que ahora se leen de la configuración)
 
   // --- HTML del módulo (Abreviado para no repetir todo, usar el de la versión anterior) ---
-  container.innerHTML = `
+container.innerHTML = `
     <div class="card habitaciones-module shadow-lg rounded-2xl overflow-hidden">
       <div class="card-header bg-gradient-to-tr from-blue-600 to-indigo-700 p-5 border-b border-indigo-800">
         <h2 class="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
@@ -711,25 +683,40 @@ export async function mount(container, supabaseInst, user, hotelId, planDetails)
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               <div><label for="hab-nombre" class="form-label text-indigo-800">Nombre/Número Habitación *</label><input type="text" name="nombre" id="hab-nombre" class="form-control" required /></div>
               <div><label for="hab-tipo" class="form-label text-indigo-800">Tipo</label><input type="text" name="tipo" id="hab-tipo" class="form-control" placeholder="Ej: Sencilla, Doble, Suite"/></div>
-              <div><label for="hab-precio" class="form-label text-indigo-800">Precio Base (Noche) *</label><input type="number" name="precio" id="hab-precio" class="form-control" min="0" step="any" required placeholder="0.00"/></div>
               <div><label for="hab-piso" class="form-label text-indigo-800">Piso</label><input type="number" name="piso" id="hab-piso" class="form-control" min="0" /></div>
-              <div><label for="hab-capacidad-base" class="form-label text-indigo-800">Capacidad Base (pers.)</label><input type="number" name="capacidad_base" id="hab-capacidad-base" class="form-control" min="1" value="1"/></div>
-              <div><label for="hab-capacidad-maxima" class="form-label text-indigo-800">Capacidad Máxima (pers.)</label><input type="number" name="capacidad_maxima" id="hab-capacidad-maxima" class="form-control" min="1"/></div>
-              <div class="md:col-span-1"><label for="hab-precio-huesped-adicional" class="form-label text-indigo-800">Precio Huésped Adicional</label><input type="number" name="precio_huesped_adicional" id="hab-precio-huesped-adicional" class="form-control" min="0" step="any" value="0"/></div>
             </div>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+            <fieldset class="border border-green-300 p-4 rounded-lg mt-4">
+                <legend class="text-md font-semibold text-green-800 px-2">Configuración de Precios por Ocupación</legend>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-5 mt-2">
+                    <div>
+                        <label for="hab-precio-1-persona" class="form-label text-green-700">Precio 1 Persona (Noche)*</label>
+                        <input type="number" name="precio_1_persona" id="hab-precio-1-persona" class="form-control" min="0" step="any" required placeholder="0.00"/>
+                    </div>
+                    <div>
+                        <label for="hab-precio-2-personas" class="form-label text-green-700">Precio 2 Personas (Noche)*</label>
+                        <input type="number" name="precio_2_personas" id="hab-precio-2-personas" class="form-control" min="0" step="any" required placeholder="0.00"/>
+                    </div>
+                    <div>
+                        <label for="hab-precio-huesped-adicional" class="form-label text-green-700">Precio Huésped Adicional (3+)</label>
+                        <input type="number" name="precio_huesped_adicional" id="hab-precio-huesped-adicional" class="form-control" min="0" step="any" value="0"/>
+                    </div>
+                </div>
+                <p class="text-xs text-green-600 mt-2">El precio de "Huésped Adicional" se suma por cada persona a partir de la tercera.</p>
+            </fieldset>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
+              <div>
+                <label for="hab-capacidad-maxima" class="form-label text-indigo-800">Capacidad Máxima (pers.)</label>
+                <input type="number" name="capacidad_maxima" id="hab-capacidad-maxima" class="form-control" min="1"/>
+              </div>
               <div>
                 <label for="hab-estado" class="form-label text-indigo-800">Estado Inicial *</label>
                 <select name="estado" id="hab-estado" class="form-control" required><option value="libre">Libre</option><option value="limpieza">En Limpieza</option><option value="mantenimiento">En Mantenimiento</option><option value="bloqueada">Bloqueada</option></select>
               </div>
-              <div><label for="hab-amenidades" class="form-label text-indigo-800">Amenidades (separadas por coma)</label><input type="text" name="amenidades" id="hab-amenidades" class="form-control" placeholder="Ej: Wifi, TV, AC" /></div>
+               <div><label for="hab-amenidades" class="form-label text-indigo-800">Amenidades (separadas por coma)</label><input type="text" name="amenidades" id="hab-amenidades" class="form-control" placeholder="Ej: Wifi, TV, AC" /></div>
             </div>
-            <div>
-              <label for="habitacion-tiempos-estancia" class="form-label text-indigo-800">Tiempos de Estancia Permitidos para esta Habitación</label>
-              <select multiple name="tiempos_estancia_ids_select" id="habitacion-tiempos-estancia" class="form-control" size="5"></select>
-              <small class="text-xs text-indigo-700">Mantén Ctrl (o Cmd en Mac) para seleccionar múltiples.</small>
-            </div>
-            <div class="flex items-center mb-3 space-x-2">
+            
+            <div class="flex items-center mb-3 space-x-2 mt-4">
               <input type="checkbox" id="hab-activo" name="activo" class="form-check-input h-5 w-5 text-indigo-600" checked />
               <label for="hab-activo" class="form-label text-indigo-800 mb-0">Activa</label>
             </div>
@@ -745,7 +732,6 @@ export async function mount(container, supabaseInst, user, hotelId, planDetails)
       </div>
     </div>
   `;
-
 
   // --- Obtención de elementos del DOM y asignación de listeners ---
   // (Similar a la versión anterior, pero asegurándose de que todos los IDs coincidan)
