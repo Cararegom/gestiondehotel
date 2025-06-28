@@ -15,8 +15,10 @@ import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
 // --- MÓDULO DE ESTADO GLOBAL ---
 const state = {
+    isModuleMounted: false,
     isEditMode: false,
     editingReservaId: null,
+    editingOriginalHabitacionId: null,
     descuentoAplicado: null,
     tiemposEstanciaDisponibles: [],
     currentUser: null,
@@ -1044,6 +1046,8 @@ async function createBooking(payload) {
     return reservaInsertada;
 }
 
+// js/modules/reservas/reservas.js
+
 async function updateBooking(payload) {
     const { datosReserva } = payload;
     delete datosReserva.hotel_id;
@@ -1066,26 +1070,47 @@ async function updateBooking(payload) {
 
     if (error) throw new Error(`Error actualizando reserva: ${error.message}`);
     
-    // --- INICIO DE LA LÓGICA AÑADIDA ---
-    // Si la reserva actualizada tiene un descuento, incrementamos su uso.
-    // Esto es importante si el descuento se añadió durante la edición.
-    if (updatedReserva.descuento_aplicado_id) {
-        // NOTA: Esta lógica asume que el descuento no se puede cambiar una vez aplicado,
-        // solo se puede añadir. Si se pudiera cambiar, necesitaríamos una lógica más compleja
-        // para decrementar el uso del descuento anterior.
-       if (updatedReserva.descuento_aplicado_id) {
-    const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
-        descuento_id_param: updatedReserva.descuento_aplicado_id
-    });
-    if (rpcError) {
-        console.error("Advertencia: No se pudo incrementar el uso del descuento al actualizar la reserva.", rpcError);
+    // --- INICIO DE LA LÓGICA DE CORRECCIÓN ---
+    const nuevaHabitacionId = updatedReserva.habitacion_id;
+    const originalHabitacionId = state.editingOriginalHabitacionId;
+
+    // Si la habitación original existe y es diferente a la nueva, actualizamos los estados.
+    if (originalHabitacionId && nuevaHabitacionId !== originalHabitacionId) {
+        console.log(`[Reservas] Se detectó cambio de habitación de ${originalHabitacionId} a ${nuevaHabitacionId}. Actualizando estados.`);
+
+        // Liberar la habitación original
+        const { error: errOldHab } = await state.supabase
+            .from('habitaciones')
+            .update({ estado: 'libre' })
+            .eq('id', originalHabitacionId);
+
+        if (errOldHab) console.error("Error al liberar la habitación original:", errOldHab);
+
+        // Ocupar la nueva habitación
+        const { error: errNewHab } = await state.supabase
+            .from('habitaciones')
+            .update({ estado: 'reservada' }) // O el estado que corresponda
+            .eq('id', nuevaHabitacionId);
+
+        if (errNewHab) console.error("Error al reservar la nueva habitación:", errNewHab);
     }
+    // --- FIN DE LA LÓGICA DE CORRECCIÓN ---
+
+    // Lógica de descuento (ya existente)
+    if (updatedReserva.descuento_aplicado_id) {
+       const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
+           descuento_id_param: updatedReserva.descuento_aplicado_id
+       });
+       if (rpcError) {
+           console.error("Advertencia: No se pudo incrementar el uso del descuento al actualizar la reserva.", rpcError);
        }
     }
-    // --- FIN DE LA LÓGICA AÑADIDA ---
 
     return updatedReserva;
 }
+
+
+// js/modules/reservas/reservas.js
 
 async function prepareEditReserva(reservaId) {
     if (ui.feedbackDiv) clearFeedback(ui.feedbackDiv);
@@ -1102,6 +1127,10 @@ async function prepareEditReserva(reservaId) {
         console.error("Error cargando reserva para editar:", error);
         throw new Error(`No se pudo cargar la reserva (ID: ${reservaId.substring(0,8)}). Puede que ya no exista o haya un error de red.`);
     }
+
+    // <-- LÍNEA AÑADIDA: Guardamos el ID de la habitación original en el estado global del módulo.
+    state.editingOriginalHabitacionId = r.habitacion_id;
+
     ui.form.elements.cliente_nombre.value = r.cliente_nombre || '';
     ui.form.elements.cedula.value = r.cedula || '';
     ui.form.elements.telefono.value = r.telefono || '';
@@ -1292,6 +1321,10 @@ async function puedeHacerCheckIn(reservaId) {
 
 // MODIFICADO: renderReservas para mostrar solo 'reservada', 'confirmada', 'activa'
 async function renderReservas() {
+     if (!state.isModuleMounted) {
+        console.log("[Reservas] renderReservas abortado porque el módulo ya no está montado.");
+        return; 
+    }
     if (!ui.reservasListEl) {
         console.error("[Reservas] reservasListEl no encontrado en UI para renderizar.");
         return;
@@ -1610,7 +1643,7 @@ function configureFechaEntrada(fechaEntradaInput) {
     fechaEntradaInput.min = `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
-// REEMPLAZA ESTA FUNCIÓN COMPLETA
+
 function resetFormToCreateMode() {
     if (ui.form) {
         ui.form.reset();
@@ -1639,6 +1672,7 @@ function resetFormToCreateMode() {
 
     state.isEditMode = false;
     state.editingReservaId = null;
+    state.editingOriginalHabitacionId = null; // <-- LÍNEA AÑADIDA: Limpia el ID de la habitación original.
     state.currentBookingTotal = 0;
     state.descuentoAplicado = null;
 
@@ -1653,7 +1687,6 @@ function resetFormToCreateMode() {
     ui.updateTotalDisplay();
     actualizarVisibilidadPago();
 }
-
 
 function getBorderColorForEstado(e) {
     const c = {
@@ -1890,9 +1923,11 @@ function actualizarVisibilidadPago() {
 
 export async function mount(container, supabaseClient, user, hotelId) {
     // --- 1. CONFIGURACIÓN INICIAL DEL ESTADO ---
+    state.isModuleMounted = true;
     state.supabase = supabaseClient;
     state.currentUser = user;
     state.hotelId = hotelId;
+    
 
     if (!user || !user.id) {
         container.innerHTML = `<p class="error-box">Usuario no autenticado. Acceso denegado.</p>`;
@@ -2195,6 +2230,8 @@ await loadInitialData();
 
 
 export function unmount(container) {
+     state.isModuleMounted = false;
+    console.log("Modulo Reservas desmontado.");
     console.log("Modulo Reservas desmontado.");
     if (ui.form && typeof handleFormSubmit === 'function') {
         ui.form.removeEventListener('submit', handleFormSubmit);

@@ -3741,139 +3741,107 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
         }
     }
 }
-// ===================== BLOQUE CRONÓMETRO (VISUAL MEJORADO) =====================
+
+
+// ===================== BLOQUE CRONÓMETRO (VERSIÓN OPTIMIZADA) =====================
 function startCronometro(room, supabase, hotelId, listEl) {
+    // 1. OBTENER LA FECHA FIN UNA SOLA VEZ
+    // Esta es la única consulta a la base de datos al inicio del cronómetro.
     supabase.from('reservas')
-        .select('id, fecha_fin, fecha_inicio')
+        .select('id, fecha_fin')
         .eq('habitacion_id', room.id)
         .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
         .order('fecha_inicio', { ascending: false })
         .limit(1)
-        .then(async ({ data: reservasActivas, error: reservaError }) => {
+        .single()
+        .then(({ data: reservaActiva, error: reservaError }) => {
             const cronometroDiv = listEl.querySelector(`#cronometro-${room.id}`);
-
-            if (reservaError && reservaError.code !== 'PGRST116') {
-                console.warn(`Error buscando reserva para cronómetro Hab ${room.id}: ${reservaError.message}`);
-                if (cronometroDiv) cronometroDiv.innerHTML = `<span class="text-sm text-slate-400 italic">Error</span>`;
-                return;
-            }
-
-            const reservaActual = reservasActivas && reservasActivas.length > 0 ? reservasActivas[0] : null;
-            if (!reservaActual) {
+            if (reservaError || !reservaActiva) {
                 if (cronometroDiv) cronometroDiv.innerHTML = `<span class="text-sm text-slate-400 italic">No activo</span>`;
                 return;
             }
-            if (!cronometroDiv) return;
 
+            const fechaFin = new Date(reservaActiva.fecha_fin);
             const cronometroId = `cronometro-${room.id}`;
-            if (cronometrosInterval[cronometroId]) clearInterval(cronometrosInterval[cronometroId]);
+            let tiempoAgotadoNotificado = room.estado === "tiempo agotado";
 
-            // Necesitamos este flag para que el sonido solo suene una vez por "tiempo agotado"
-            let tiempoAgotadoFlagInterna = room.estado === "tiempo agotado";
+            if (cronometrosInterval[cronometroId]) {
+                clearInterval(cronometrosInterval[cronometroId]);
+            }
 
-            async function updateCronoDisplay() {
-                const now = new Date();
-                let fechaFinDefinitiva;
-
-                // Consulta el cronómetro activo, o usa fecha_fin de reserva como fallback
-                const { data: cronoActivoArr, error: cronoError } = await supabase.from('cronometros')
-                    .select('fecha_fin')
-                    .eq('reserva_id', reservaActual.id)
-                    .eq('activo', true)
-                    .limit(1);
-
-                if (cronoError) {
-                    console.warn(`Error consultando cronómetro para reserva ${reservaActual.id}: ${cronoError.message}`);
-                    fechaFinDefinitiva = new Date(reservaActual.fecha_fin);
-                } else if (cronoActivoArr && cronoActivoArr.length > 0 && cronoActivoArr[0].fecha_fin) {
-                    fechaFinDefinitiva = new Date(cronoActivoArr[0].fecha_fin);
-                } else {
-                    fechaFinDefinitiva = new Date(reservaActual.fecha_fin);
+            function updateCronoDisplay() {
+                if (!cronometroDiv) {
+                    clearInterval(cronometrosInterval[cronometroId]);
+                    return;
                 }
 
-                let diff = fechaFinDefinitiva - now;
+                const now = new Date();
+                const diff = fechaFin - now;
                 const cardElement = cronometroDiv.closest('.room-card');
-                const badgeElement = cardElement?.querySelector('span.badge');
-
-                cronometroDiv.className = 'cronometro-display mt-auto text-right font-mono text-xl flex items-center justify-end pt-4 border-t border-slate-200 group-hover:border-blue-200 transition-colors duration-200';
-                if (cardElement) cardElement.classList.remove('animate-pulse-fast', 'ring-4', 'ring-opacity-50', 'ring-red-500', 'ring-yellow-500');
-
-                // ---- TIEMPO AGOTADO (EXCEDIDO) ----
+                
                 if (diff <= 0) {
-                    if (!tiempoAgotadoFlagInterna) {
-                        tiempoAgotadoFlagInterna = true;
-                        const currentRoomInMap = currentRooms.find(r => r.id === room.id);
-                        if (currentRoomInMap && currentRoomInMap.estado !== "tiempo agotado" && currentRoomInMap.estado !== "mantenimiento" && currentRoomInMap.estado !== "limpieza") {
-                            await supabase.from('habitaciones').update({ estado: 'tiempo agotado' }).eq('id', room.id);
-                            if (cardElement) {
-                                cardElement.classList.remove('border-yellow-500', 'bg-yellow-50', 'border-green-500', 'bg-white');
-                                cardElement.classList.add('border-red-600', 'bg-red-50');
-                            }
-                            if (badgeElement) {
-                                badgeElement.innerHTML = `${estadoColores['tiempo agotado'].icon} <span class="ml-1">TIEMPO AGOTADO</span>`;
-                                badgeElement.className = `badge ${estadoColores['tiempo agotado'].badge} px-2.5 py-1.5 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm`;
-                            }
-                            currentRoomInMap.estado = 'tiempo agotado';
-                            // ---- SONIDO ALERTA SOLO UNA VEZ ----
-                            playPopSound && playPopSound();
-                        }
+                    if (!tiempoAgotadoNotificado) {
+                        tiempoAgotadoNotificado = true;
+                        console.log(`⚡️ Notificando a Supabase: Habitación ${room.id} ha agotado su tiempo.`);
+                        supabase.from('habitaciones')
+                            .update({ estado: 'tiempo agotado' })
+                            .eq('id', room.id)
+                            .then(({ error }) => {
+                                if (error) {
+                                    console.error("Error al actualizar habitación a 'tiempo agotado':", error);
+                                } else {
+                                    playPopSound && playPopSound();
+                                }
+                            });
                     }
-                    let diffPos = Math.abs(diff);
+
+                    // Actualización visual inmediata
+                    const diffPos = Math.abs(diff);
                     const h = String(Math.floor(diffPos / 3600000)).padStart(2, '0');
                     const m = String(Math.floor((diffPos % 3600000) / 60000)).padStart(2, '0');
+                    // CAMBIO 1: Añadir segundos al cálculo y al texto
                     const s = String(Math.floor((diffPos % 60000) / 1000)).padStart(2, '0');
-                    cronometroDiv.innerHTML = `
-        <svg ...></svg>
-        <span class="font-bold text-red-500 animate-pulse">⏰ Excedido: -${h}:${m}</span>
-    `;
+                    cronometroDiv.innerHTML = `<span class="font-bold text-red-500 animate-pulse">⏰ Excedido: -${h}:${m}:${s}</span>`;
+                    
                     if (cardElement) {
-                        cardElement.classList.add('animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-opacity-50');
+                        cardElement.classList.add('animate-pulse-fast', 'ring-4', 'ring-red-500');
+                        cardElement.classList.remove('ring-yellow-500');
                     }
+
                 } else {
-                    // ---- NORMAL, FALTANDO ----
-                    tiempoAgotadoFlagInterna = false;
+                    // CAMBIO 1 (cont.): Añadir segundos al cálculo y al texto
                     const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
                     const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
                     const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
 
                     let textColor = 'text-green-600';
-                    let iconColor = 'text-green-500';
-                    if (diff < 10 * 60 * 1000) {
+                    let iconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+                    
+                    if (cardElement) cardElement.classList.remove('animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-yellow-500');
+                    
+                    if (diff < 10 * 60 * 1000) { // Menos de 10 min
                         textColor = 'text-yellow-600 font-semibold';
-                        iconColor = 'text-yellow-500';
-                        if (cardElement) cardElement.classList.add('ring-4', 'ring-yellow-500', 'ring-opacity-50');
-                    } else if (diff < 30 * 60 * 1000) {
+                        iconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+                        if (cardElement) cardElement.classList.add('ring-4', 'ring-yellow-500');
+                    } else if (diff < 30 * 60 * 1000) { // Menos de 30 min
                         textColor = 'text-orange-500';
-                        iconColor = 'text-orange-500';
+                        iconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
                     }
-
-                    cronometroDiv.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-1.5 inline ${iconColor}" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg><span class="${textColor}">${h}:${m}</span>`;
-
-                    // Si por error quedó como "tiempo agotado" pero ya está en tiempo normal, reestablece estado
-                    const currentRoomInMap = currentRooms.find(r => r.id === room.id);
-                    if (currentRoomInMap && currentRoomInMap.estado === "tiempo agotado") {
-                        await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
-                        if (cardElement) {
-                            cardElement.classList.remove('border-red-600', 'bg-red-50', 'animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-opacity-50');
-                            cardElement.classList.add('border-yellow-500', 'bg-yellow-50');
-                        }
-                        if (badgeElement) {
-                            badgeElement.innerHTML = `${estadoColores['ocupada'].icon} <span class="ml-1">OCUPADA</span>`;
-                            badgeElement.className = `badge ${estadoColores['ocupada'].badge} px-2.5 py-1.5 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm`;
-                        }
-                        currentRoomInMap.estado = 'ocupada';
-                    }
+                    
+                    // Se añade la variable 's' para los segundos
+                    cronometroDiv.innerHTML = `${iconSVG}<span class="${textColor}">${h}:${m}:${s}</span>`;
                 }
             }
-            await updateCronoDisplay();
-            cronometrosInterval[cronometroId] = setInterval(updateCronoDisplay, 60000);
+            
+            updateCronoDisplay();
+
+            // CAMBIO 2: El intervalo ahora se ejecuta cada segundo (1000ms)
+            cronometrosInterval[cronometroId] = setInterval(updateCronoDisplay, 1000); 
         })
         .catch(err => {
             if (err.code !== 'PGRST116') {
                 console.error(`Error iniciando cronómetro para hab ${room.id}:`, err.message);
             }
-            const cronometroDiv = listEl.querySelector(`#cronometro-${room.id}`);
-            if (cronometroDiv) cronometroDiv.innerHTML = `<span class="text-sm text-slate-400 italic">N/A</span>`;
         });
 }
 
