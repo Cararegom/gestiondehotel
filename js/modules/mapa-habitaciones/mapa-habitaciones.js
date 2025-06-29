@@ -473,6 +473,48 @@ function formatDateTime(dateStr, locale = 'es-CO', options = { dateStyle: 'mediu
     return isNaN(date.getTime()) ? 'Fecha Inválida' : date.toLocaleString(locale, options);
 }
 
+// js/modules/mapa_habitaciones/mapa_habitaciones.js
+
+// js/modules/mapa_habitaciones/mapa_habitaciones.js
+
+function renderFloorFilters(allRooms, containerEl, gridEl, supabase, currentUser, hotelId) {
+    if (!containerEl) return;
+
+    const floors = [...new Set(allRooms.map(r => r.piso).filter(p => p != null))].sort((a, b) => a - b);
+
+    let filtersHTML = `<button class="floor-filter-btn active" data-floor="all">Todos</button>`;
+    floors.forEach(floor => {
+        filtersHTML += `<button class="floor-filter-btn" data-floor="${floor}">Piso ${floor}</button>`;
+    });
+    containerEl.innerHTML = filtersHTML;
+
+    containerEl.addEventListener('click', (e) => {
+        const target = e.target;
+        if (!target.matches('.floor-filter-btn')) return;
+
+        containerEl.querySelectorAll('.floor-filter-btn').forEach(btn => btn.classList.remove('active'));
+        target.classList.add('active');
+
+        const selectedFloor = target.dataset.floor;
+        const roomsToRender = selectedFloor === 'all'
+            ? allRooms
+            : allRooms.filter(room => String(room.piso) === selectedFloor);
+        
+        gridEl.innerHTML = '';
+        const mainAppContainer = gridEl; // El contenedor sigue siendo el grid
+
+        roomsToRender.forEach(room => {
+            // --- CORRECCIÓN AQUÍ ---
+            // Se pasa 'mainAppContainer' (que es gridEl) a la función roomCard.
+            gridEl.appendChild(roomCard(room, supabase, currentUser, hotelId, mainAppContainer));
+            if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
+                startCronometro(room, supabase, hotelId, gridEl);
+            }
+        });
+    });
+}
+
+
 // ======================= LÓGICA DE DATOS (Supabase) ===========================
 async function getHorariosHotel(supabase, hotelId) {
     // Ya tenemos la configuración cargada en hotelConfigGlobal al inicio del módulo
@@ -655,18 +697,22 @@ export async function mount(container, supabase, currentUser, hotelId) {
     if (!hayTurno) return; // No sigas si no hay turno abierto
 
     // Pinta el HTML base primero
-    container.innerHTML = `
+   container.innerHTML = `
         <div class="mb-8 px-4 md:px-0">
             <h2 class="text-3xl font-bold text-gray-800 flex items-center">
                 Mapa de Habitaciones
             </h2>
         </div>
+
+        <div id="floor-filter-container" class="flex flex-wrap items-center gap-2 mb-6 pb-4 border-b border-slate-200 px-4 md:px-0">
+            </div>
+
         <div id="room-map-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 px-4 md:px-0"></div>
         
-        <div id="modal-container" class="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto" style="display:none;"></div>
+        <div id="modal-container" class="fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto" style="display:none;"></div>
         
-        <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4" style="display:none;"></div>
-    `;
+        <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-start justify-center bg-black/60 p-4 pt-8 overflow-y-auto" style="display:none;"></div>
+        `;
     // Selecciona el contenedor de habitaciones después de inyectar el HTML
     const roomsListEl = container.querySelector("#room-map-list");
     if (!roomsListEl) {
@@ -679,55 +725,61 @@ export async function mount(container, supabase, currentUser, hotelId) {
 }
 
 
-// js/modules/mapa_habitaciones/mapa_habitaciones.js
 
-// js/modules/mapa_habitaciones/mapa_habitaciones.js
 
-async function renderRooms(listEl, supabase, currentUser, hotelId) {
-    if (!listEl) {
-        console.error("renderRooms: listEl es null o indefinido.");
+async function renderRooms(gridEl, supabase, currentUser, hotelId) {
+    if (!gridEl) {
+        console.error("renderRooms: gridEl es null o indefinido.");
         return;
     }
+    const filterContainer = document.getElementById('floor-filter-container');
 
     Object.values(cronometrosInterval).forEach(clearInterval);
     cronometrosInterval = {};
+    gridEl.innerHTML = `<div class="col-span-full text-center text-slate-500 p-6">Cargando habitaciones...</div>`;
 
-    // --- CAMBIO CLAVE: Se añade la consulta de reservas asociadas ---
     const { data: habitaciones, error } = await supabase
         .from('habitaciones')
-        .select('*, reservas(estado, fecha_inicio)') // <-- ¡MODIFICACIÓN IMPORTANTE!
+        .select('*, reservas(estado, fecha_inicio)')
         .eq('hotel_id', hotelId)
         .order('nombre', { ascending: true });
 
     if (error) {
-        listEl.innerHTML = `<div class="col-span-full text-red-600 p-4 bg-red-100 rounded-md">Error cargando habitaciones: ${error.message}</div>`;
+        gridEl.innerHTML = `<div class="col-span-full text-red-600 p-4 bg-red-100 rounded-md">Error: ${error.message}</div>`;
         return;
     }
 
     currentRooms = habitaciones;
-    listEl.innerHTML = ''; 
-
-    if (!habitaciones || habitaciones.length === 0) {
-        listEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones configuradas.</div>`;
+    
+    // El contenedor principal para refrescar es el grid de las habitaciones (gridEl)
+    const mainAppContainer = gridEl;
+    
+    renderFloorFilters(currentRooms, filterContainer, gridEl, supabase, currentUser, hotelId);
+    
+    gridEl.innerHTML = ''; 
+    if (!currentRooms || currentRooms.length === 0) {
+        gridEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones.</div>`;
         return;
     }
     
-    // El resto de la función (sort, forEach, etc.) no cambia...
-    habitaciones.sort((a, b) => {
+    currentRooms.sort((a, b) => {
         const getNumber = nombre => {
-            const match = nombre.match(/\d+/);
-            return match ? parseInt(match[0], 10) : 0;
+            const match = String(nombre || '').match(/\d+/);
+            return match ? parseInt(match[0], 10) : Infinity;
         };
         return getNumber(a.nombre) - getNumber(b.nombre);
     });
-    
-    habitaciones.forEach(room => {
-        listEl.appendChild(roomCard(room, supabase, currentUser, hotelId, listEl));
+
+    currentRooms.forEach(room => {
+        // --- CORRECCIÓN AQUÍ ---
+        // Se pasa 'mainAppContainer' (que ahora es gridEl) a la función roomCard.
+        gridEl.appendChild(roomCard(room, supabase, currentUser, hotelId, mainAppContainer));
         if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
-            startCronometro(room, supabase, hotelId, listEl);
+            startCronometro(room, supabase, hotelId, gridEl);
         }
     });
 }
+
 // Añade esta función en: js/modules/mapa_habitaciones/mapa_habitaciones.js
 
 // Añade esta función en: js/modules/mapa_habitaciones/mapa_habitaciones.js
@@ -829,7 +881,8 @@ function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
         </div>
     `;
 
-    card.onclick = () => showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer);
+ card.onclick = () => showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer);
+    
     return card;
 }
 function updateClienteFields(cliente) {

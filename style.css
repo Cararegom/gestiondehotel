@@ -1033,4 +1033,27 @@ img, svg {
      margin-top: auto;
 }
 
-/* --- FIN: Reemplaza estos estilos en tu CSS --- */
+/* Estilos para los botones de filtro de piso */
+.floor-filter-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 9999px; /* Botón tipo píldora */
+  font-weight: 500;
+  font-size: 0.875rem; /* 14px */
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  background-color: #f1f5f9; /* bg-slate-100 */
+  color: #475569; /* text-slate-600 */
+  border: 1px solid transparent;
+}
+
+.floor-filter-btn:hover {
+  background-color: #e2e8f0; /* bg-slate-200 */
+  color: #1e293b; /* text-slate-800 */
+}
+
+/* Estilo para el botón ACTIVO */
+.floor-filter-btn.active {
+  background-color: #0ea5e9; /* bg-cyan-500 */
+  color: white;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
