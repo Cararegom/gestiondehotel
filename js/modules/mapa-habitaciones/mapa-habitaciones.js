@@ -48,47 +48,7 @@ function waitForButtonAndBind(id, fn) {
   }
   tryBind();
 }
-// Añade esta nueva función completa en: tienda.js
 
-/**
- * Inyecta los estilos CSS necesarios para que el módulo de tienda sea responsivo.
- * Se asegura de no inyectar los estilos más de una vez.
- */
-function injectTiendaStyles() {
-    const styleId = 'tienda-module-styles';
-    // Si la etiqueta de estilos ya existe, no hacemos nada.
-    if (document.getElementById(styleId)) {
-        return;
-    }
-
-    // Crea el elemento <style>
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.type = 'text/css';
-
-    // El mismo CSS de la vez anterior, pero ahora se inyecta con JavaScript.
-    const css = `
-        @media (max-width: 768px) {
-            /* Apila el título y los botones en la cabecera del inventario */
-            #inventario-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 1rem;
-            }
-            /* Permite que el grupo de botones pase a la siguiente línea si no cabe */
-            .inventario-actions {
-                flex-wrap: wrap;
-                justify-content: flex-start;
-            }
-        }
-    `;
-
-    // Añade el CSS a la etiqueta <style>
-    style.appendChild(document.createTextNode(css));
-
-    // Añade la etiqueta <style> al <head> del documento
-    document.head.appendChild(style);
-}
 function cerrarModalGlobal() {
     const container = document.getElementById('modal-global');
     if (container) {
