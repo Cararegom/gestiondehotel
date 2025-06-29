@@ -448,47 +448,53 @@ function renderTiendaTabs(tab) {
 
 
 // ==== FUNCIONES UTILITARIAS PARA TIENDA.JS ====
-// Añade esta nueva función completa en: tienda.js
 
-/**
- * Inyecta los estilos CSS necesarios para que el módulo de tienda sea responsivo.
- * Se asegura de no inyectar los estilos más de una vez.
- */
+
+
 function injectTiendaStyles() {
     const styleId = 'tienda-module-styles';
-    // Si la etiqueta de estilos ya existe, no hacemos nada.
     if (document.getElementById(styleId)) {
         return;
     }
 
-    // Crea el elemento <style>
     const style = document.createElement('style');
     style.id = styleId;
     style.type = 'text/css';
 
-    // El mismo CSS de la vez anterior, pero ahora se inyecta con JavaScript.
+    // Se añade la nueva regla para #inventario-filters
     const css = `
         @media (max-width: 768px) {
-            /* Apila el título y los botones en la cabecera del inventario */
+            /* Regla para los botones (ya existente) */
             #inventario-header {
                 flex-direction: column;
                 align-items: flex-start;
                 gap: 1rem;
             }
-            /* Permite que el grupo de botones pase a la siguiente línea si no cabe */
             .inventario-actions {
                 flex-wrap: wrap;
                 justify-content: flex-start;
             }
+
+            /* --- INICIO DE LA NUEVA REGLA --- */
+            /* Apila el buscador y el selector de categorías en celulares */
+            #inventario-filters {
+                flex-direction: column;
+                align-items: stretch; /* Ocupan todo el ancho disponible */
+            }
+
+            #inventario-filters > input,
+            #inventario-filters > select {
+                max-width: none; /* Quitamos el max-width en celulares */
+                width: 100%;
+            }
+            /* --- FIN DE LA NUEVA REGLA --- */
         }
     `;
 
-    // Añade el CSS a la etiqueta <style>
     style.appendChild(document.createTextNode(css));
-
-    // Añade la etiqueta <style> al <head> del documento
     document.head.appendChild(style);
 }
+
 // Formatea un número a moneda local (COP)
 function formatCurrency(num) {
   return '$' + Number(num || 0).toLocaleString('es-CO', { minimumFractionDigits: 0 });
@@ -1359,6 +1365,7 @@ let inventarioProductos = [];
 // Reemplaza esta función completa en tu archivo
 
 // Reemplaza esta función completa en tu archivo tienda.js
+// Reemplaza esta función completa en tu archivo tienda.js
 async function renderInventario() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `
@@ -1368,35 +1375,26 @@ async function renderInventario() {
         Inventario de Productos
       </h2>
       <div class="inventario-actions" style="display:flex; gap:10px;">
-        <button id="btnHojaConteo"
-          style="background: #fff; color: #4b5563; border: 1.5px solid #d1d5db;
-                 padding: 9px 22px; border-radius: 6px; font-size: 1em; font-weight: 600;
-                 transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
+        <button id="btnHojaConteo" style="background: #fff; color: #4b5563; border: 1.5px solid #d1d5db; padding: 9px 22px; border-radius: 6px; font-size: 1em; font-weight: 600; display: flex; align-items: center; gap: 8px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect><path d="m14 14-2-2-2 2"></path><path d="m10 18 2 2 2-2"></path></svg>
           Hoja de Conteo
         </button>
-        <button id="btnDescargarInventario"
-          style="background: #fff; color: #1d4ed8; border: 1.5px solid #1d4ed8;
-                 padding: 9px 22px; border-radius: 6px; font-size: 1em; font-weight: 600;
-                 transition: all 0.2s; display: flex; align-items: center; gap: 8px;">
+        <button id="btnDescargarInventario" style="background: #fff; color: #1d4ed8; border: 1.5px solid #1d4ed8; padding: 9px 22px; border-radius: 6px; font-size: 1em; font-weight: 600; display: flex; align-items: center; gap: 8px;">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
           Descargar
         </button>
-        <button id="btnVerMovimientos"
-          style="background:linear-gradient(90deg,#60a5fa,#3b82f6);color:#fff;
-                 padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">
+        <button id="btnVerMovimientos" style="background:linear-gradient(90deg,#60a5fa,#3b82f6);color:#fff; padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">
           Historial
         </button>
-        <button id="btnNuevoProducto" 
-          style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;
-                 padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">
+        <button id="btnNuevoProducto" style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff; padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">
           + Agregar Producto
         </button>
       </div>
     </div>
-    <div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+
+    <div id="inventario-filters" style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
       <input id="buscarInventario" placeholder="Buscar por nombre, código, categoría..." style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
-      <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;"><option value="">Todas las Categorías</option></select>
+      <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;"><option value="">Todas las categorías</option></select>
     </div>
     <div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 8px #0001;">
       <table style="width:100%;font-size:14px;border-collapse:collapse;">
@@ -1407,7 +1405,7 @@ async function renderInventario() {
     <div id="modalContainer" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#00000080;display:none;align-items:center;justify-content:center;z-index:1000;"></div>
   `;
   
-  // Asignamos los eventos a los botones
+  // El resto de la función (asignación de eventos, etc.) no cambia.
   document.getElementById('btnHojaConteo').onclick = () => imprimirHojaDeConteo();
   document.getElementById('btnDescargarInventario').onclick = () => mostrarModalDescarga();
   document.getElementById('btnNuevoProducto').onclick = () => showModalProducto();
@@ -1427,7 +1425,6 @@ async function renderInventario() {
 
   renderTablaInventario('');
 }
-
 // Agrega estas TRES nuevas funciones al final de tu módulo
 
 /**
