@@ -662,10 +662,7 @@ document.getElementById('btnRemoverDescuento').onclick = removerDescuentoPOS;
 }
 
 
-// AÑADE ESTA FUNCIÓN en tienda.js
-// REEMPLAZA esta función en tienda.js
-// REEMPLAZA esta función en tu archivo tienda.js
-// REEMPLAZA esta función en tu archivo tienda.js
+
 async function renderHistorialCompras() {
     const container = document.getElementById('historial-compras-container');
     if (!container) return;
@@ -680,8 +677,7 @@ async function renderHistorialCompras() {
                 creador:usuarios!compras_tienda_usuario_id_fkey(nombre)
             `)
             .eq('hotel_id', currentHotelId)
-            // ▼▼▼ CORRECCIÓN AQUÍ ▼▼▼
-            .order('fecha', { ascending: false }) // Se cambió de 'fecha_compra' a 'fecha'
+            .order('fecha', { ascending: false })
             .limit(50);
 
         if (error) throw error;
@@ -690,9 +686,11 @@ async function renderHistorialCompras() {
             return;
         }
 
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se envuelve la tabla en un div con 'overflow-x: auto;' para permitir el scroll horizontal.
         container.innerHTML = `
-            <div class="table-responsive-sm mt-4 border rounded-lg shadow-sm">
-                <table class="table table-sm table-hover">
+            <div class="table-responsive-sm mt-4 border rounded-lg shadow-sm" style="overflow-x: auto;">
+                <table class="table table-sm table-hover" style="min-width: 600px;">
                     <thead class="bg-gray-100">
                         <tr>
                             <th>Fecha Creación</th>
@@ -715,22 +713,19 @@ async function renderHistorialCompras() {
                     </tbody>
                 </table>
             </div>`;
+        // --- FIN DE LA CORRECCIÓN ---
+        
     } catch (err) {
-        // La consulta fallará aquí y mostrará el mensaje que viste
         container.innerHTML = `<p class="text-red-500">Error al cargar el historial: ${err.message}</p>`;
     }
 }
-
-// REEMPLAZA esta función en tu archivo tienda.js
-
+// Reemplaza esta función en tu archivo tienda.js
 async function renderHistorialRecibidos() {
     const container = document.getElementById('historial-recibidos-container');
     if (!container) return;
 
     container.innerHTML = `<p style="color:#666;">Cargando historial...</p>`;
     try {
-        // ▼▼▼ INICIA CORRECCIÓN EN LA CONSULTA .select() ▼▼▼
-        // Se cambia la forma de obtener los nombres para que sea más robusta.
         const { data, error } = await currentSupabase
             .from('compras_tienda')
             .select(`
@@ -743,7 +738,6 @@ async function renderHistorialRecibidos() {
             .in('estado', ['recibido', 'recibido_parcial'])
             .order('fecha_recepcion', { ascending: false })
             .limit(50);
-        // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
 
         if (error) throw error;
         
@@ -752,48 +746,46 @@ async function renderHistorialRecibidos() {
             return;
         }
         
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se envuelve la tabla en un div con 'overflow-x: auto;' para permitir el scroll horizontal.
         container.innerHTML = `
-            <table style="width:100%; border-collapse:collapse; font-size:0.95em;">
-                <thead>
-                    <tr style="text-align:left; background:#f1f5f9;">
-                        <th style="padding:10px;">Fecha Recepción</th>
-                        <th style="padding:10px;">Proveedor</th>
-                        <th style="padding:10px;">Estado</th>
-                        <th style="padding:10px;">Creado por</th>
-                        <th style="padding:10px;">Recibido por</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${data.map(compra => {
-                        // Lógica para dar estilo y texto legible al estado
-                        const esParcial = compra.estado === 'recibido_parcial';
-                        const estadoStyle = `
-                            background: ${esParcial ? '#fef3c7' : '#dcfce7'};
-                            color: ${esParcial ? '#b45309' : '#166534'};
-                            font-weight: 600; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;
-                        `;
-                        const estadoTexto = esParcial ? 'Recibido Parcial' : 'Recibido';
+            <div style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
+                <table style="width:100%; min-width: 600px; border-collapse:collapse; font-size:0.95em;">
+                    <thead>
+                        <tr style="text-align:left; background:#f1f5f9;">
+                            <th style="padding:10px;">Fecha Recepción</th>
+                            <th style="padding:10px;">Proveedor</th>
+                            <th style="padding:10px;">Estado</th>
+                            <th style="padding:10px;">Creado por</th>
+                            <th style="padding:10px;">Recibido por</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.map(compra => {
+                            const esParcial = compra.estado === 'recibido_parcial';
+                            const estadoStyle = `background: ${esParcial ? '#fef3c7' : '#dcfce7'}; color: ${esParcial ? '#b45309' : '#166534'}; font-weight: 600; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;`;
+                            const estadoTexto = esParcial ? 'Recibido Parcial' : 'Recibido';
 
-                        return `
-                            <tr style="border-bottom: 1px solid #e5e7eb;">
-                                <td style="padding:8px 10px;">${new Date(compra.fecha_recepcion).toLocaleString()}</td>
-                                <td style="padding:8px 10px;">${compra.proveedor?.nombre || 'N/A'}</td>
-                                <td style="padding:8px 10px;"><span style="${estadoStyle}">${estadoTexto}</span></td>
-                                <td style="padding:8px 10px;">${compra.creador?.nombre || 'N/A'}</td>
-                                <td style="padding:8px 10px;">${compra.receptor?.nombre || 'N/A'}</td>
-                            </tr>
-                        `;
-                    }).join('')}
-                </tbody>
-            </table>`;
+                            return `
+                                <tr style="border-bottom: 1px solid #e5e7eb;">
+                                    <td style="padding:8px 10px;">${new Date(compra.fecha_recepcion).toLocaleString()}</td>
+                                    <td style="padding:8px 10px;">${compra.proveedor?.nombre || 'N/A'}</td>
+                                    <td style="padding:8px 10px;"><span style="${estadoStyle}">${estadoTexto}</span></td>
+                                    <td style="padding:8px 10px;">${compra.creador?.nombre || 'N/A'}</td>
+                                    <td style="padding:8px 10px;">${compra.receptor?.nombre || 'N/A'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            </div>`;
+        // --- FIN DE LA CORRECCIÓN ---
+
     } catch (err) {
         console.error("Error al cargar historial de recibidos:", err);
         container.innerHTML = `<p style="color:red;">Error al cargar el historial: ${err.message}</p>`;
     }
 }
-
-// --- INICIA BLOQUE DE LÓGICA DE DESCUENTOS ---
-
 
 /**
  * Valida si los productos del carrito son elegibles para un descuento específico.
