@@ -2360,6 +2360,8 @@ function crearOpcionesHoras(tiempos) {
 
 // Reemplaza esta función completa en: js/modules/mapa_habitaciones/mapa_habitaciones.js
 
+// Reemplaza esta función completa en: js/modules/mapa_habitaciones/mapa_habitaciones.js
+
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
     let finAt;
     let montoEstanciaBaseBruto = 0;
@@ -2374,21 +2376,18 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
 
     const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
     const precioLibreValor = parseFloat(dataForm.precio_libre_valor);
-    
-    // --- INICIO DE LA LÓGICA DE CÁLCULO DE FECHAS Y PRECIOS (CORREGIDA) ---
+
     if (nochesSeleccionadas > 0) {
         tipoCalculo = 'noches';
         cantidadCalculo = nochesSeleccionadas;
         descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''}`;
 
-        // --- Lógica de fecha de salida simplificada y corregida ---
         let fechaSalida = new Date(inicioAt);
-        fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas); // 1. Suma el número total de noches a la fecha actual.
+        fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
         const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
-        fechaSalida.setHours(checkoutH, checkoutM, 0, 0); // 2. Establece la hora de checkout en esa fecha futura.
+        fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
         finAt = fechaSalida;
         
-        // --- Lógica de precios por ocupación (ya estaba correcta) ---
         if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
             montoEstanciaBaseBruto = precioLibreValor;
         } else {
@@ -2420,14 +2419,20 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     } else {
         finAt = new Date(inicioAt);
     }
-    // --- FIN DE LA LÓGICA DE CÁLCULO ---
 
-    // El resto de la función para descuentos e impuestos no cambia...
     const totalAntesDeDescuento = montoEstanciaBaseBruto;
-    let montoDescontado = 0;
+    
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Se declara la variable 'montoDescuento' antes de usarla.
+    let montoDescuento = 0;
+    // --- FIN DE LA CORRECCIÓN ---
+
     if (descuentoAplicado) {
-        if (descuentoAplicado.tipo === 'fijo') montoDescontado = parseFloat(descuentoAplicado.valor);
-        else if (descuentoAplicado.tipo === 'porcentaje') montoDescontado = totalAntesDeDescuento * (parseFloat(descuentoAplicado.valor) / 100);
+        if (descuentoAplicado.tipo === 'fijo') {
+            montoDescuento = parseFloat(descuentoAplicado.valor);
+        } else if (descuentoAplicado.tipo === 'porcentaje') {
+            montoDescuento = totalAntesDeDescuento * (parseFloat(descuentoAplicado.valor) / 100);
+        }
     }
     montoDescuento = Math.min(totalAntesDeDescuento, montoDescuento);
     const subtotalConDescuento = totalAntesDeDescuento - montoDescuento;
@@ -2458,6 +2463,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         descuentoAplicado
     };
 }
+
 // === FUNCIÓN DEFINITIVA PARA FACTURACIÓN ELECTRÓNICA CON ALEGRA (MAPA DE HABITACIONES) ===
 // =========================================================================================
 async function facturarElectronicaYMostrarResultado({
@@ -2758,9 +2764,9 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         return;
     }
     modalContainer.style.display = "flex";
-    modalContainer.innerHTML = ""; // Limpiar modal
+    modalContainer.innerHTML = "";
 
-    // --- 1. OBTENCIÓN DE DATOS INICIALES ---
+    // 1. OBTENCIÓN DE DATOS INICIALES
     let descuentoAplicado = null;
     let horarios, tiempos, metodosPagoDisponibles;
     try {
@@ -2774,12 +2780,11 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         return;
     }
     
-    // Añadimos la opción de pago mixto al principio de la lista
     metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, room);
     const opcionesHoras = crearOpcionesHoras(tiempos);
 
-    // --- 2. CREACIÓN DEL CONTENIDO HTML DEL MODAL ---
+    // 2. CREACIÓN DEL CONTENIDO HTML DEL MODAL
     const modalContent = document.createElement('div');
     modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-auto animate-fade-in-up overflow-hidden";
     
@@ -2838,10 +2843,9 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     </div>`;
     modalContainer.appendChild(modalContent);
     
-    const formEl = modalContent.querySelector('#alquilar-form-pos');
-    
     // --- 3. FUNCIÓN INTERNA PARA RECALCULAR TOTALES ---
-    const recalcularYActualizarTotalAlquiler = async () => {
+    const formEl = modalContent.querySelector('#alquilar-form-pos');
+    const recalcularYActualizarTotalAlquiler = () => {
         const formData = Object.fromEntries(new FormData(formEl));
         const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado);
         
@@ -2858,55 +2862,56 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         ticketTotalEl.textContent = formatCurrency(detalles.precioTotal);
     };
 
-    // --- 4. ASIGNACIÓN DE TODOS LOS EVENT LISTENERS ---
+    // --- 4. ASIGNACIÓN DE TODOS LOS EVENT LISTENERS (VERSIÓN CORREGIDA Y EXPLÍCITA) ---
+    
+    // Botón de cerrar modal
     modalContent.querySelector('#close-modal-alquilar').onclick = () => {
         modalContainer.style.display = "none";
         modalContainer.innerHTML = '';
     };
 
-    // Listener para buscar clientes
-    const btnBuscarCliente = modalContent.querySelector('#btn-buscar-cliente-alquiler');
-    if (btnBuscarCliente) {
-        btnBuscarCliente.onclick = () => {
-            showClienteSelectorModal(supabase, hotelId, {
-                onSelect: (cliente) => {
-                    const nombreInput = modalContent.querySelector('#cliente_nombre');
-                    const cedulaInput = modalContent.querySelector('#cedula');
-                    const telefonoInput = modalContent.querySelector('#telefono');
-                    const clienteIdInput = modalContent.querySelector('#cliente_id_alquiler');
+    // Botón de búsqueda de cliente (FUNCIONAL)
+    modalContent.querySelector('#btn-buscar-cliente-alquiler').onclick = () => {
+        showClienteSelectorModal(supabase, hotelId, {
+            onSelect: (cliente) => {
+                formEl.elements.cliente_nombre.value = cliente.nombre;
+                formEl.elements.cedula.value = cliente.documento || '';
+                formEl.elements.telefono.value = cliente.telefono || '';
+                formEl.elements.cliente_id.value = cliente.id;
+            }
+        });
+    };
 
-                    if (nombreInput) nombreInput.value = cliente.nombre;
-                    if (cedulaInput) cedulaInput.value = cliente.documento || '';
-                    if (telefonoInput) telefonoInput.value = cliente.telefono || '';
-                    if (clienteIdInput) clienteIdInput.value = cliente.id;
-                }
-            });
-        };
-    }
-
-    // Listener unificado para todos los cambios que afectan el precio
-    formEl.addEventListener('input', recalcularYActualizarTotalAlquiler);
-    formEl.addEventListener('change', recalcularYActualizarTotalAlquiler);
-
-    // Listeners para excluir Noches/Horas
+    // Listeners que afectan el precio
     const selectNochesEl = modalContent.querySelector('#select-noches');
     const selectHorasEl = modalContent.querySelector('#select-horas');
-    selectNochesEl.addEventListener('change', () => { if (selectNochesEl.value) selectHorasEl.value = ''; });
-    selectHorasEl.addEventListener('change', () => { if (selectHorasEl.value) selectNochesEl.value = ''; });
+    
+    selectNochesEl.addEventListener('change', () => {
+        if (selectNochesEl.value) selectHorasEl.value = '';
+        recalcularYActualizarTotalAlquiler();
+    });
+    
+    selectHorasEl.addEventListener('change', () => {
+        if (selectHorasEl.value) selectNochesEl.value = '';
+        recalcularYActualizarTotalAlquiler();
+    });
 
-    // Listener para el formulario al hacer submit
+    formEl.querySelector('#cantidad_huespedes').addEventListener('input', recalcularYActualizarTotalAlquiler);
+    formEl.querySelector('#precio_libre_toggle_alquiler').addEventListener('change', recalcularYActualizarTotalAlquiler);
+    formEl.querySelector('#precio_libre_valor_alquiler').addEventListener('input', recalcularYActualizarTotalAlquiler);
+    // Listener de descuento y otros botones se pueden añadir aquí si es necesario
+
+    // Lógica del submit final
     formEl.onsubmit = async (e) => {
         e.preventDefault();
         const submitBtn = formEl.querySelector('#btn-alquilar-hab');
         submitBtn.disabled = true;
         submitBtn.textContent = "Procesando...";
-
         try {
             const formData = Object.fromEntries(new FormData(formEl));
             const detallesFinales = calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado);
             if (!formData.cliente_nombre.trim()) throw new Error("El nombre del huésped es obligatorio.");
             if (detallesFinales.tipoCalculo === null && formData.precio_libre_toggle !== 'on') throw new Error("Debe seleccionar una duración válida.");
-            if (formData.precio_libre_toggle === 'on' && (!parseFloat(formData.precio_libre_valor) || parseFloat(formData.precio_libre_valor) <= 0)) throw new Error("Si asigna precio manual, debe ser un valor mayor a cero.");
 
             if (formData.metodo_pago_id === "mixto") {
                 showPagoMixtoModal(detallesFinales.precioTotal, metodosPagoDisponibles, async (pagosMixtos) => {
@@ -2932,6 +2937,9 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     // --- 5. LLAMADA INICIAL PARA MOSTRAR ESTADO BASE ---
     recalcularYActualizarTotalAlquiler();
 }
+
+
+
 /**
  * Muestra un modal para dividir el pago en varios métodos.
  * @param {number} totalAPagar - El monto total que se debe cubrir.
