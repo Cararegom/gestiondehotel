@@ -4,6 +4,7 @@
 let currentSupabaseInstance = null;
 let currentHotelId = null;
 let currentUser = null;
+let metodosPagoCache = [];
 
 /**
  * Monta el módulo de configuración en el contenedor especificado.
@@ -48,6 +49,7 @@ export async function mount(container, supabase, user, hotelId) {
             <div><label for="correo_reportes" class="form-label">Correo para Reportes</label><input name="correo_reportes" id="correo_reportes" type="email" class="form-control" placeholder="reportes@hotel.com" /></div>
           </div>
         </fieldset>
+
         <fieldset class="border-2 border-orange-200 p-6 rounded-xl shadow-md bg-orange-50/30">
           <legend class="text-xl font-semibold text-orange-700 px-3 py-1 bg-white border-2 border-orange-200 rounded-lg shadow-sm">
             <span class="mr-2">🍴</span>Impuestos Específicos del Restaurante
@@ -71,6 +73,34 @@ export async function mount(container, supabase, user, hotelId) {
             </div>
           </div>
         </fieldset>
+
+        <fieldset class="border-2 border-green-200 p-6 rounded-xl shadow-md bg-green-50/30">
+          <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-sm">
+            <span class="mr-2">💳</span>Métodos de Pago
+          </legend>
+          <div class="mt-4">
+            <div style="display:flex; justify-content:flex-end; margin-bottom: 1rem;">
+                <button type="button" id="btnNuevoMetodoPago" class="button button-success">
+                    + Agregar Método de Pago
+                </button>
+            </div>
+            <div style="overflow-x:auto; background:#fff; border-radius:10px; border: 1px solid #e2e8f0;">
+                <table style="width:100%; font-size:1em; border-collapse:collapse;">
+                    <thead style="background:#f8fafc;">
+                        <tr style="border-bottom: 1px solid #e2e8f0;">
+                            <th style="padding:12px; text-align:left; color: #475569;">Nombre del Método</th>
+                            <th style="padding:12px; text-align:center; color: #475569;">Estado</th>
+                            <th style="padding:12px; text-align:center; color: #475569;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bodyMetodosPago">
+                        <tr><td colspan="3" style="padding: 1rem; text-align: center; color: #6b7280;">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+          </div>
+        </fieldset>
+        <fieldset class="border-2 border-indigo-200 p-6 rounded-xl shadow-md bg-indigo-50/30">
 
         <fieldset class="border-2 border-green-200 p-6 rounded-xl shadow-md bg-green-50/30">
           <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-sm">
@@ -206,6 +236,12 @@ export async function mount(container, supabase, user, hotelId) {
 
   await cargarConfiguracionHotel();
   await cargarIntegracionFE();
+  await cargarMetodosPago();
+  renderTablaMetodosPago();
+  const btnNuevoMetodo = document.getElementById('btnNuevoMetodoPago');
+  if (btnNuevoMetodo) {
+    btnNuevoMetodo.onclick = () => showModalMetodoPago();
+  }
 
   const logoUploadInput = document.getElementById('logo_upload');
   const logoPreview = document.getElementById('logo-preview');
@@ -535,4 +571,159 @@ async function guardarConfiguracionHotel() {
         feedbackEl.className = 'text-center mt-8 text-lg font-semibold min-h-[30px]';
     }
   }, 3500);
+}
+// EN: configuracion.js (Pegar al final de todo el archivo)
+
+/**
+ * Carga los métodos de pago desde la base de datos y los guarda en el caché.
+ */
+async function cargarMetodosPago() {
+    try {
+        let { data, error } = await currentSupabaseInstance
+            .from('metodos_pago')
+            .select('*')
+            .eq('hotel_id', currentHotelId)
+            .order('nombre', { ascending: true });
+
+        if (error) throw error;
+        metodosPagoCache = data || [];
+    } catch (err) {
+        console.error("Error cargando métodos de pago:", err);
+        const tbody = document.getElementById('bodyMetodosPago');
+        if (tbody) tbody.innerHTML = `<tr><td colspan="3" class="text-center text-red-500 p-4">Error al cargar métodos de pago.</td></tr>`;
+    }
+}
+
+/**
+ * Dibuja la tabla con los datos del caché.
+ */
+function renderTablaMetodosPago() {
+    let tbody = document.getElementById('bodyMetodosPago');
+    if (!tbody) return;
+
+    if (metodosPagoCache.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" style="padding: 1rem; text-align: center; color: #6b7280;">No hay métodos de pago creados.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = '';
+    metodosPagoCache.forEach(metodo => {
+        let tr = document.createElement('tr');
+        tr.style.borderTop = '1px solid #f1f5f9';
+        tr.innerHTML = `
+            <td style="padding:12px 14px; font-weight:600; color:#1e293b;">
+                ${metodo.nombre}
+            </td>
+            <td style="padding:12px 14px; text-align:center;">
+                <span style="display:inline-block; padding:5px 16px; border-radius:9999px; font-size:0.8rem; font-weight:700;
+                    ${metodo.activo ? 'background:#dcfce7; color:#15803d;' : 'background:#fee2e2; color:#b91c1c;'}">
+                    ${metodo.activo ? 'Activo' : 'Inactivo'}
+                </span>
+            </td>
+            <td style="padding:12px 14px; text-align:center;">
+                <button onclick="showModalMetodoPago('${metodo.id}')" title="Editar" class="button-icon bg-blue-100 text-blue-700 hover:bg-blue-200">
+                    ✏️
+                </button>
+                <button onclick="toggleEstadoMetodoPago('${metodo.id}', ${!metodo.activo})" title="${metodo.activo ? 'Desactivar' : 'Activar'}" class="button-icon ${metodo.activo ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
+                    ${metodo.activo ? '❌' : '✅'}
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+/**
+ * Muestra el modal para crear o editar un método de pago.
+ */
+function showModalMetodoPago(metodoId = null) {
+    const metodo = metodoId ? metodosPagoCache.find(m => m.id === metodoId) : null;
+    const esEdicion = metodoId ? true : false;
+
+    const modalContainer = document.createElement('div');
+    modalContainer.id = 'dynamic-modal-container';
+    modalContainer.className = "fixed inset-0 z-[1001] flex items-center justify-center bg-black/60 p-4";
+
+    modalContainer.innerHTML = `
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 m-auto relative animate-fade-in-up">
+            <h3 class="text-xl font-bold mb-5 text-blue-700 text-center">${esEdicion ? 'Editar' : 'Nuevo'} Método de Pago</h3>
+            <form id="form-metodo-pago">
+                <div>
+                    <label for="metodoNombreInput" class="form-label">Nombre del Método*</label>
+                    <input id="metodoNombreInput" class="form-control" placeholder="Ej: Nequi, Tarjeta de Crédito" value="${metodo?.nombre || ''}" required>
+                </div>
+                <div class="flex gap-3 mt-6">
+                    <button type="button" id="btn-cancelar-modal" class="button button-neutral flex-1">Cancelar</button>
+                    <button type="submit" class="button button-success flex-1">${esEdicion ? 'Actualizar' : 'Crear'}</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modalContainer);
+
+    const form = modalContainer.querySelector('#form-metodo-pago');
+    const closeModal = () => document.body.removeChild(modalContainer);
+
+    modalContainer.querySelector('#btn-cancelar-modal').onclick = closeModal;
+    modalContainer.addEventListener('click', (e) => {
+        if (e.target === modalContainer) closeModal();
+    });
+
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        await saveMetodoPago(metodoId, form.querySelector('#metodoNombreInput').value);
+        closeModal();
+    };
+}
+
+/**
+ * Guarda los cambios en la base de datos.
+ */
+async function saveMetodoPago(metodoId, nombre) {
+    const nombreLimpio = nombre.trim();
+    if (!nombreLimpio) {
+        alert("El nombre del método de pago es obligatorio.");
+        return;
+    }
+
+    const datos = {
+        hotel_id: currentHotelId,
+        nombre: nombreLimpio,
+        actualizado_en: new Date().toISOString(),
+    };
+
+    try {
+        if (metodoId) {
+            const { error } = await currentSupabaseInstance.from('metodos_pago').update(datos).eq('id', metodoId);
+            if (error) throw error;
+        } else {
+            datos.creado_en = new Date().toISOString();
+            datos.activo = true;
+            const { error } = await currentSupabaseInstance.from('metodos_pago').insert([datos]);
+            if (error) throw error;
+        }
+        await cargarMetodosPago();
+        renderTablaMetodosPago();
+    } catch (error) {
+        console.error("Error guardando método de pago:", error);
+        alert("Error al guardar el método de pago: " + error.message);
+    }
+}
+
+/**
+ * Cambia el estado (activo/inactivo) de un método de pago.
+ */
+async function toggleEstadoMetodoPago(id, nuevoEstado) {
+    try {
+        const { error } = await currentSupabaseInstance
+            .from('metodos_pago')
+            .update({ activo: nuevoEstado, actualizado_en: new Date().toISOString() })
+            .eq('id', id);
+        if (error) throw error;
+        await cargarMetodosPago();
+        renderTablaMetodosPago();
+    } catch (error) {
+        console.error("Error cambiando estado del método de pago:", error);
+        alert("No se pudo cambiar el estado: " + error.message);
+    }
 }

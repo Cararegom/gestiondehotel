@@ -2845,6 +2845,15 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     
     // --- 3. FUNCIÓN INTERNA PARA RECALCULAR TOTALES ---
     const formEl = modalContent.querySelector('#alquilar-form-pos');
+     const togglePrecioLibreEl = modalContent.querySelector('#precio_libre_toggle_alquiler');
+    const containerPrecioLibreEl = modalContent.querySelector('#precio_libre_container_alquiler');
+    
+    if (togglePrecioLibreEl && containerPrecioLibreEl) {
+        togglePrecioLibreEl.addEventListener('change', () => {
+            // Si el checkbox está marcado, muestra el contenedor; si no, lo oculta.
+            containerPrecioLibreEl.style.display = togglePrecioLibreEl.checked ? 'block' : 'none';
+        });
+    }
     const recalcularYActualizarTotalAlquiler = () => {
         const formData = Object.fromEntries(new FormData(formEl));
         const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado);
