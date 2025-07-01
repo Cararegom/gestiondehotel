@@ -1771,6 +1771,14 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
           <label>Nombre</label>
           <input id="prodNombre" required value="${prod?.nombre||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
+
+    
+        <div style="grid-column:1/3;">
+          <label>Código de Barras</label>
+          <input id="prodCodigoBarras" value="${prod?.codigo_barras||''}" placeholder="Escanear o digitar código" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+      
+
         <div>
           <label>Categoría</label>
           <select id="prodCategoria" required style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
@@ -1844,6 +1852,8 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
   }
 }
 
+
+
 // REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO tienda.js
 async function saveProductoInv(productoId) {
   const btnSubmit = document.querySelector('#formProductoInv button[type="submit"]');
@@ -1856,7 +1866,6 @@ async function saveProductoInv(productoId) {
     const archivoInput = document.getElementById('prodImagenArchivo');
     const archivo = archivoInput?.files[0];
 
-    // --- CAPTURAR PROVEEDOR ---
     const proveedorId = document.getElementById('prodProveedor').value || null;
 
     if (archivo) {
@@ -1873,6 +1882,9 @@ async function saveProductoInv(productoId) {
       let datosUpdate = {
         hotel_id: currentHotelId,
         nombre: document.getElementById('prodNombre').value,
+        // --- INICIO DE LA CORRECCIÓN ---
+        codigo_barras: document.getElementById('prodCodigoBarras').value,
+        // --- FIN DE LA CORRECCIÓN ---
         categoria_id: document.getElementById('prodCategoria').value,
         precio: Number(document.getElementById('prodPrecio').value) || 0,
         precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
@@ -1880,7 +1892,6 @@ async function saveProductoInv(productoId) {
         stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
         imagen_url: imagenUrl,
         actualizado_en: new Date().toISOString(),
-        // --- GUARDAR PROVEEDOR ---
         proveedor_id: proveedorId,
       };
       const { error } = await currentSupabase.from('productos_tienda').update(datosUpdate).eq('id', productoId);
@@ -1892,6 +1903,9 @@ async function saveProductoInv(productoId) {
       let datosInsert = {
         hotel_id: currentHotelId,
         nombre: document.getElementById('prodNombre').value,
+        // --- INICIO DE LA CORRECCIÓN ---
+        codigo_barras: document.getElementById('prodCodigoBarras').value,
+        // --- FIN DE LA CORRECCIÓN ---
         categoria_id: document.getElementById('prodCategoria').value,
         precio: Number(document.getElementById('prodPrecio').value) || 0,
         precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
@@ -1902,7 +1916,6 @@ async function saveProductoInv(productoId) {
         creado_en: new Date().toISOString(),
         actualizado_en: new Date().toISOString(),
         activo: true,
-        // --- GUARDAR PROVEEDOR ---
         proveedor_id: proveedorId
       };
       const { data: nuevoProducto, error } = await currentSupabase.from('productos_tienda').insert([datosInsert]).select();
@@ -1938,7 +1951,6 @@ async function saveProductoInv(productoId) {
     btnSubmit.textContent = originalText;
   }
 }
-
 
 window.showModalHistorial = async (productoId = null) => {
     const modalContainer = document.getElementById('modalContainer');

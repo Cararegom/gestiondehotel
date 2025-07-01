@@ -2464,7 +2464,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     };
 }
 
-// === FUNCIÓN DEFINITIVA PARA FACTURACIÓN ELECTRÓNICA CON ALEGRA (MAPA DE HABITACIONES) ===
+
 // =========================================================================================
 async function facturarElectronicaYMostrarResultado({
     supabase,           // Instancia del cliente Supabase

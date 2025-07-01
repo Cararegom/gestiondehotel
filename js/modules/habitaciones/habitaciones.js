@@ -453,22 +453,33 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
     const formData = new FormData(formEl);
     const editId = formData.get('habitacionIdEdit');
 
+    // ▼▼▼ INICIO DE LA CORRECCIÓN ▼▼▼
     if (!editId && activePlanDetails) {
         const limiteHabitaciones = activePlanDetails.funcionalidades.limite_habitaciones;
-        const { data: conteo, error: errConteo } = await currentSupabaseInstance
-            .from('habitaciones')
-            .select('id', { count: 'exact', head: true })
-            .eq('hotel_id', currentHotelId);
         
-        if (errConteo) {
-            showHabitacionesFeedback(feedbackEl, `Error verificando el límite: ${errConteo.message}`, 'error');
-            return;
-        }
-        if (conteo >= limiteHabitaciones) {
-            mostrarModalUpgradeHabitaciones(limiteHabitaciones, activePlanDetails.nombre);
-            return;
+        // Condición Clave: Verificamos si 'limiteHabitaciones' es un número.
+        // Si es null, undefined, o cualquier otro valor, lo tratamos como ilimitado y no hacemos la verificación.
+        const debeVerificarLimite = typeof limiteHabitaciones === 'number';
+
+        if (debeVerificarLimite) {
+            const { data: conteo, error: errConteo } = await currentSupabaseInstance
+                .from('habitaciones')
+                .select('id', { count: 'exact', head: true })
+                .eq('hotel_id', currentHotelId);
+            
+            if (errConteo) {
+                showHabitacionesFeedback(feedbackEl, `Error verificando el límite: ${errConteo.message}`, 'error');
+                return;
+            }
+
+            // Esta comparación ahora solo se ejecuta si hay un límite numérico definido.
+            if (conteo >= limiteHabitaciones) {
+                mostrarModalUpgradeHabitaciones(limiteHabitaciones, activePlanDetails.nombre);
+                return;
+            }
         }
     }
+    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
     
     const nombreHabitacion = formData.get('nombre')?.trim();
     if (!nombreHabitacion) {
@@ -531,8 +542,6 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
 
       await registrarEnBitacora({ supabase: currentSupabaseInstance, hotel_id: currentHotelId, usuario_id: currentModuleUser.id, modulo: 'Habitaciones', accion: accionBitacora, detalles: detallesBitacora });
       
-      // --- CORRECCIÓN CLAVE ---
-      // La llamada a resetFormHabitacion ahora usa la variable correcta que sí existe en su scope.
       resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarEl, formTitleEl);
       
       await renderHabitaciones(listaContainerEl, feedbackEl);
@@ -544,6 +553,8 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
       setFormLoadingState(formEl, false, btnGuardarEl, textoBotonGuardar);
     }
 }
+
+
 // --- Main Module Mount Function ---
 export async function mount(container, supabaseInst, user, hotelId, planDetails) { // <--- AÑADIDO planDetails
   console.log("[Habitaciones/mount] Iniciando montaje...");

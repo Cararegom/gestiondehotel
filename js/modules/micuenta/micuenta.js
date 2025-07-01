@@ -92,47 +92,66 @@ export async function mount(container, supabase, user, hotelId) {
   const { data: hotel } = await supabase.from('hoteles').select('*').eq('id', hotelId).single();
   const { data: plans } = await supabase.from('planes').select('*').order('precio_mensual', { ascending: true });
   const { data: pagos = [] } = await supabase.from('pagos').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false });
+  const pagosSafe = Array.isArray(pagos) ? pagos : [];
   const { data: cambiosPlan = [] } = await supabase.from('cambios_plan').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false });
+  const cambiosPlanSafe = Array.isArray(cambiosPlan) ? cambiosPlan : [];
+
 
   let referidosSafe = [];
-  try {
-    const { data: referidosRaw, error: errorReferidos } = await supabase
-      .from('hoteles')
-      .select('nombre, creado_en, estado_suscripcion')
-      .eq('referido_por', user.id)
-      .order('creado_en', { ascending: false });
 
-    if (errorReferidos) {
-      console.error("❌ Error consultando referidos:", errorReferidos.message);
-    } else {
-      referidosSafe = Array.isArray(referidosRaw) ? referidosRaw : [];
-    }
-    
-    if (referidosSafe.length === 0) {
-      referidosSafe.push({
-        nombre: "Hotel de Ejemplo",
-        creado_en: new Date(),
-        estado_suscripcion: "trial"
-      });
-    }
-  } catch (err) {
-    console.error("❌ Excepción al cargar referidos:", err);
+// ✅ Mostramos qué hotelId se está usando
+console.log("📦 hotelId recibido en Mi Cuenta:", hotelId);
+
+try {
+  // ✅ Ejecutamos la consulta corregida
+  const { data: referidosRaw, error: errorReferidos } = await supabase
+    .from('referidos')
+    .select('nombre_hotel_referido, fecha_registro, estado, recompensa_otorgada') // Campo corregido
+    .eq('referidor_id', hotelId)
+    .order('fecha_registro', { ascending: false }); // Campo corregido
+
+  // ✅ Mostramos lo que devuelve la base de datos
+  console.log("🔍 Resultado referidosRaw:", referidosRaw);
+
+  // ✅ Validamos si hubo error o si vino vacío
+  if (errorReferidos) {
+    console.error("❌ Error al consultar referidos:", errorReferidos.message);
+  } else if (!referidosRaw || referidosRaw.length === 0) {
+    console.warn("⚠️ Consulta ejecutada correctamente pero no devolvió ningún referido.");
   }
 
-  const pagosSafe = Array.isArray(pagos) ? pagos : [];
-  const cambiosPlanSafe = Array.isArray(cambiosPlan) ? cambiosPlan : [];
+  // ✅ Guardamos los datos si vinieron bien
+  referidosSafe = Array.isArray(referidosRaw) ? referidosRaw : [];
+
+} catch (err) {
+  console.error("❌ Excepción al cargar referidos:", err);
+}
+
+
+  const { count: conteoHabitaciones, error: errHabitaciones } = await supabase
+      .from('habitaciones')
+      .select('id', { count: 'exact', head: true })
+      .eq('hotel_id', hotelId);
+
+  const { count: conteoUsuarios, error: errUsuarios } = await supabase
+      .from('usuarios')
+      .select('id', { count: 'exact', head: true })
+      .eq('hotel_id', hotelId);
+  
+  if (errHabitaciones || errUsuarios) {
+      console.error("Error obteniendo conteo de recursos:", errHabitaciones, errUsuarios);
+      showSnackbar(container, 'Error al verificar uso actual del hotel.', 'error');
+  }
 
   const esSuperAdmin = (userProfile.rol === 'admin' || userProfile.rol === 'superadmin' || (hotel.creado_por && userProfile.id === hotel.creado_por));
   if (!esSuperAdmin) {
     container.innerHTML = `<div class="flex flex-col justify-center items-center min-h-[60vh]"><span class="text-5xl mb-3">🔒</span><div class="text-2xl font-bold mb-2 text-red-600">Acceso restringido</div><div class="text-gray-500 text-lg text-center">Esta sección solo está disponible para el creador de la cuenta o superadministrador.<br>Si necesitas cambiar tu plan o tus datos de cuenta, contacta al responsable de tu hotel.</div></div>`;
     return;
   }
-
+  
   const planActivo = plans?.find(p => p.nombre?.toLowerCase() === hotel.plan?.toLowerCase() || p.id === hotel.plan_id);
-  const fechaInicio = new Date(hotel.suscripcion_inicio || hotel.trial_inicio);
   const fechaFin = new Date(hotel.suscripcion_fin || hotel.trial_fin);
   const hoy = new Date();
-  const diasCiclo = Math.ceil((fechaFin - fechaInicio) / (1000 * 60 * 60 * 24));
   let diasRestantes = Math.ceil((fechaFin - hoy) / (1000 * 60 * 60 * 24));
   const DIAS_GRACIA = 2;
   let enGracia = false;
@@ -216,7 +235,7 @@ export async function mount(container, supabase, user, hotelId) {
             <table class="w-full text-xs">
               <thead><tr class="text-left text-gray-600 border-b"><th class="py-2">Fecha</th><th>Plan</th><th>Monto</th><th>Método</th></tr></thead>
               <tbody>
-                ${pagosSafe.length === 0 ? `<tr><td colspan="4" class="text-gray-400 py-3 text-center">Sin pagos registrados</td></tr>` : pagosSafe.map(p => `<tr><td>${new Date(p.fecha).toLocaleDateString('es-CO')}</td><td>${p.plan}</td><td>$${p.monto.toLocaleString('es-CO')}</td><td>${p.metodo_pago}</td></tr>`).join('')}
+                ${pagosSafe.length === 0 ? `<tr><td colspan="4" class="text-gray-400 py-3 text-center">Sin pagos registrados</td></tr>` : pagosSafe.map(p => `<tr><td>${new Date(p.fecha).toLocaleDateString('es-CO')}</td><td>${p.plan}</td><td>${formatMoneda(p.monto, p.moneda)}</td><td>${p.metodo_pago}</td></tr>`).join('')}
               </tbody>
             </table>
           </div>
@@ -250,19 +269,20 @@ export async function mount(container, supabase, user, hotelId) {
                 <th>Recompensa</th>
               </tr>
             </thead>
+            console.log("🧾 Renderizando referidos en tabla:", referidosSafe);
             <tbody>
               ${referidosSafe.length === 0 ? `
                 <tr><td colspan="4" class="text-gray-400 py-3 text-center">Aún no tienes hoteles referidos. ¡Comparte tu enlace!</td></tr>
               ` : referidosSafe.map(r => `
                 <tr>
-                  <td>${r.nombre || '-'}</td>
+                  <td>${r.nombre_hotel_referido || '-'}</td>
                   <td><span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
-                      r.estado_suscripcion === 'activo' ? 'bg-green-100 text-green-700' :
-                      r.estado_suscripcion === 'trial' ? 'bg-yellow-100 text-yellow-800' :
+                      r.estado === 'activo' ? 'bg-green-100 text-green-700' :
+                      r.estado === 'trial' ? 'bg-yellow-100 text-yellow-800' :
                       'bg-red-100 text-red-700'
-                  }">${r.estado_suscripcion || '-'}</span></td>
-                  <td>${r.creado_en ? new Date(r.creado_en).toLocaleDateString('es-CO') : '-'}</td>
-                  <td>${r.estado_suscripcion === 'activo' ? '✔️ Otorgada' : '⏳ Pendiente de pago'}</td>
+                  }">${r.estado || '-'}</span></td>
+<td>${r.fecha_registro ? new Date(r.fecha_registro).toLocaleDateString('es-CO') : '-'}</td>
+                  <td>${r.recompensa_otorgada ? '✔️ Otorgada' : '⏳ Pendiente de pago'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -314,9 +334,9 @@ export async function mount(container, supabase, user, hotelId) {
     </div>
   `;
 
-  // =======================================================================
-  // ===================== LÓGICA DE PAGO CENTRALIZADA =====================
-  // =======================================================================
+  const monedaSelector = container.querySelector('#monedaSelector');
+  const tipoPagoSelector = container.querySelector('#tipoPagoSelector');
+  const planesList = container.querySelector('#planes-list');
 
   async function iniciarProcesoDePago(plan, tipo, montoPagarCOP, montoPagarUSD) {
     if (monedaActual === 'USD') {
@@ -371,95 +391,12 @@ export async function mount(container, supabase, user, hotelId) {
     }
   }
 
-  // =======================================================================
-  // ==================== FUNCIONES DE UI Y EVENTOS ========================
-  // =======================================================================
-
-  const monedaSelector = container.querySelector('#monedaSelector');
-  const tipoPagoSelector = container.querySelector('#tipoPagoSelector');
-  const planesList = container.querySelector('#planes-list');
-
-  monedaSelector.addEventListener('change', (e) => {
-    monedaActual = e.target.value;
-    renderPlanes();
-  });
-  tipoPagoSelector.addEventListener('change', (e) => {
-    periodoActual = e.target.value;
-    renderPlanes();
-  });
-
-  async function renderPlanes() {
-    planesList.innerHTML = '';
-    (plans || []).forEach(plan => {
-      let planKey = plan.nombre.trim().toLowerCase();
-      let price = 0;
-      let label = '';
-      if (monedaActual === 'USD') {
-        let priceUSD = USD_PRICES[planKey] !== undefined ? USD_PRICES[planKey] : 30;
-        price = periodoActual === 'anual' ? priceUSD * 10 : priceUSD;
-        label = periodoActual === 'anual' ? 'año' : 'mes';
-      } else {
-        price = plan.precio_mensual;
-        if (periodoActual === 'anual') price = plan.precio_mensual * 10;
-        label = periodoActual === 'anual' ? 'año' : 'mes';
-      }
-      
-      const esPlanActual = plan.id === planActivo?.id;
-      const esUpgrade = !esPlanActual && plan.precio_mensual > (planActivo?.precio_mensual || 0);
-      const esDowngrade = !esPlanActual && plan.precio_mensual < (planActivo?.precio_mensual || 0);
-      
-      let botonHTML = '';
-      if (esPlanActual) {
-          botonHTML = `<button class="w-full mt-2 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-blue-500 to-blue-600 font-semibold cursor-not-allowed" disabled>Tu plan actual</button>`;
-      } else if (esUpgrade) {
-          botonHTML = `<button class="btn-elegir-plan group w-full mt-2 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-green-500 to-emerald-600 font-semibold transition-all duration-300 shadow-md hover:shadow-lg hover:scale-[1.03]" data-plan-id="${plan.id}" data-tipo-cambio="upgrade">
-              <span class="flex items-center justify-center gap-2">Mejorar Plan <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></span>
-          </button>`;
-       } else if (esDowngrade) {
-          // AHORA: Botón activo con estilo y atributos para downgrade
-          botonHTML = `<button class="btn-elegir-plan group w-full mt-2 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-orange-500 to-red-500 font-semibold transition-all duration-300 shadow-md hover:shadow-lg hover:scale-[1.03]" data-plan-id="${plan.id}" data-tipo-cambio="downgrade">
-              <span class="flex items-center justify-center gap-2">Bajar de Plan <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 13l-5 5m0 0l-5-5m5 5V6" /></svg></span>
-          </button>`;
-      }
-
-      planesList.innerHTML += `
-        <div class="rounded-xl border shadow-sm p-4 flex flex-col justify-between ${esPlanActual ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200'}">
-          <div>
-            <div class="font-bold text-blue-700 text-lg mb-2 flex items-center gap-1">${plan.nombre.charAt(0).toUpperCase() + plan.nombre.slice(1).toLowerCase()} ${esPlanActual ? '<span class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-600 text-xs font-semibold rounded">Actual</span>' : ''}</div>
-            <div class="text-gray-600 text-sm mb-2">${plan.descripcion || ''}</div>
-            <div class="text-xl font-bold text-green-600 mb-2">${formatMoneda(price, monedaActual)} <span class="text-sm text-gray-400 font-normal">/${label}</span></div>
-            <ul class="list-disc pl-4 text-gray-500 text-xs mb-3">${(plan.funcionalidades?.descripcion_features || []).map(f => `<li>${f}</li>`).join('')}</ul>
-          </div>
-          ${botonHTML}
-        </div>
-      `;
-    });
-
-    container.querySelectorAll('.btn-elegir-plan').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const planId = btn.getAttribute('data-plan-id');
-        const tipoCambio = btn.getAttribute('data-tipo-cambio');
-        const planSeleccionado = plans.find(p => p.id == planId);
-        
-        if (planSeleccionado) {
-          procesarCambioDePlan(planSeleccionado, tipoCambio);
-        }
-      });
-    });
-  }
-  
-// Reemplaza toda tu función 'procesarCambioDePlan' con esta versión actualizada:
-
-// Reemplaza toda tu función 'procesarCambioDePlan' con esta versión definitiva:
-
-function procesarCambioDePlan(planSeleccionado, tipo) {
+  function procesarCambioDePlan(planSeleccionado, tipo) {
     const modal = container.querySelector('#modalUpgrade');
     
-    // --- LÓGICA DE UPGRADE (Se mantiene igual) ---
     if (tipo === 'upgrade') {
-        // ... (el código de upgrade no cambia, se deja como estaba)
         const fechaInicioCiclo = new Date(hotel.suscripcion_inicio || hotel.trial_inicio);
-        const diasCicloTotal = Math.ceil((fechaFin - fechaInicioCiclo) / (1000 * 60 * 60 * 24));
+        const diasCicloTotal = Math.ceil((new Date(hotel.suscripcion_fin || hotel.trial_fin) - fechaInicioCiclo) / (1000 * 60 * 60 * 24));
         const diasCicloSeguro = Math.max(1, diasCicloTotal);
         const diasRestantesSeguro = Math.max(0, diasRestantes);
 
@@ -502,11 +439,7 @@ function procesarCambioDePlan(planSeleccionado, tipo) {
             iniciarProcesoDePago(planSeleccionado, 'upgrade', montoProrrateadoCOP, montoProrrateadoUSD);
             modal.classList.add('hidden');
         });
-
-    // --- NUEVA LÓGICA DE DOWNGRADE (Cobro inmediato, activación futura) ---
     } else if (tipo === 'downgrade') {
-        
-        // 1. Calcular el precio COMPLETO del nuevo plan para el siguiente ciclo.
         let planKey = planSeleccionado.nombre.trim().toLowerCase();
         let precioRenovacionCOP = periodoActual === 'anual' ? planSeleccionado.precio_mensual * 10 : planSeleccionado.precio_mensual;
         let precioRenovacionUSD = USD_PRICES[planKey] || 0;
@@ -515,9 +448,7 @@ function procesarCambioDePlan(planSeleccionado, tipo) {
         }
         
         const montoAPagar = monedaActual === 'USD' ? precioRenovacionUSD : precioRenovacionCOP;
-        const periodoLabel = periodoActual === 'anual' ? 'año' : 'mes';
 
-        // 2. Configurar el modal para informar del cobro inmediato y la activación futura.
         modal.querySelector('#modalPlanName').innerHTML = `De <b>${planActivo.nombre}</b> a <b class="text-orange-600">${planSeleccionado.nombre}</b>`;
         modal.querySelector('.text-blue-700').textContent = 'Confirmar pago para próximo ciclo';
 
@@ -536,7 +467,6 @@ function procesarCambioDePlan(planSeleccionado, tipo) {
         `;
         modal.querySelector('#prorrateoDetalle').innerHTML = detalleHTML;
 
-        // 3. Configurar el botón para que inicie el pago.
         const btnConfirmar = modal.querySelector('#confirmUpgrade');
         const newBtn = btnConfirmar.cloneNode(true);
         newBtn.querySelector('.btn-text').textContent = 'Pagar próximo ciclo ahora';
@@ -545,17 +475,98 @@ function procesarCambioDePlan(planSeleccionado, tipo) {
         btnConfirmar.parentNode.replaceChild(newBtn, btnConfirmar);
 
         newBtn.addEventListener('click', () => {
-            // El backend debe registrar este pago y asociarlo al hotel para el siguiente ciclo.
             iniciarProcesoDePago(planSeleccionado, 'renew-downgrade', precioRenovacionCOP, precioRenovacionUSD);
             modal.classList.add('hidden');
         });
     }
 
     modal.classList.remove('hidden');
-}
+  }
+  
+  async function renderPlanes(conteoHabitacionesActual, conteoUsuariosActual) {
+    planesList.innerHTML = '';
+    
+    (plans || []).forEach(plan => {
+        let planKey = plan.nombre.trim().toLowerCase();
+        let price = 0;
+        let label = '';
 
+        if (monedaActual === 'USD') {
+            let priceUSD = USD_PRICES[planKey] || 30;
+            price = periodoActual === 'anual' ? priceUSD * 10 : priceUSD;
+            label = periodoActual === 'anual' ? 'año' : 'mes';
+        } else {
+            price = plan.precio_mensual;
+            if (periodoActual === 'anual') price *= 10;
+            label = periodoActual === 'anual' ? 'año' : 'mes';
+        }
 
-  await renderPlanes();
+        const esPlanActual = plan.id === planActivo?.id;
+        
+        const limiteHabitaciones = plan.funcionalidades.limite_habitaciones;
+        const limiteUsuarios = plan.funcionalidades.limite_usuarios;
+        let motivoDeshabilitado = '';
+
+        if (typeof limiteHabitaciones === 'number' && conteoHabitacionesActual > limiteHabitaciones) {
+            motivoDeshabilitado = `Excedes el límite de ${limiteHabitaciones} habitaciones.`;
+        }
+        else if (typeof limiteUsuarios === 'number' && conteoUsuariosActual > limiteUsuarios) {
+            motivoDeshabilitado = `Excedes el límite de ${limiteUsuarios} usuarios.`;
+        }
+        
+        const puedeElegirPlan = !motivoDeshabilitado;
+
+        let botonHTML = '';
+        if (esPlanActual) {
+            botonHTML = `<button class="w-full mt-4 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-blue-500 to-blue-600 font-semibold cursor-not-allowed" disabled>Tu plan actual</button>`;
+        } else if (puedeElegirPlan) {
+            const tipoCambio = !esPlanActual && plan.precio_mensual < (planActivo?.precio_mensual || 0) ? 'downgrade' : 'upgrade';
+            botonHTML = `<button class="btn-elegir-plan group w-full mt-4 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-green-500 to-emerald-600 font-semibold transition-all duration-300 shadow-md hover:shadow-lg hover:scale-[1.03]" data-plan-id="${plan.id}" data-tipo-cambio="${tipoCambio}">
+                <span class="flex items-center justify-center gap-2">Elegir este Plan <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" /></svg></span>
+            </button>`;
+        } else {
+            botonHTML = `<div class="mt-4">
+                <button class="w-full py-2.5 px-4 rounded-lg text-white bg-gray-400 font-semibold cursor-not-allowed" disabled>No elegible</button>
+                <p class="text-xs text-center text-red-600 mt-2 font-medium">${motivoDeshabilitado}</p>
+            </div>`;
+        }
+
+        planesList.innerHTML += `
+            <div class="rounded-xl border shadow-sm p-4 flex flex-col justify-between ${esPlanActual ? 'border-blue-500 ring-2 ring-blue-300' : 'border-gray-200'} ${!puedeElegirPlan && !esPlanActual ? 'bg-gray-50 opacity-70' : ''}">
+                <div>
+                    <div class="font-bold text-blue-700 text-lg mb-2 flex items-center gap-1">${plan.nombre.charAt(0).toUpperCase() + plan.nombre.slice(1).toLowerCase()} ${esPlanActual ? '<span class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-600 text-xs font-semibold rounded">Actual</span>' : ''}</div>
+                    <div class="text-gray-600 text-sm mb-2">${plan.descripcion || ''}</div>
+                    <div class="text-xl font-bold text-green-600 mb-2">${formatMoneda(price, monedaActual)} <span class="text-sm text-gray-400 font-normal">/${label}</span></div>
+                    <ul class="list-disc pl-4 text-gray-500 text-xs mb-3 space-y-1">${(plan.funcionalidades?.descripcion_features || []).map(f => `<li>${f}</li>`).join('')}</ul>
+                </div>
+                ${botonHTML}
+            </div>
+        `;
+    });
+
+    container.querySelectorAll('.btn-elegir-plan').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const planId = btn.getAttribute('data-plan-id');
+            const tipoCambio = btn.getAttribute('data-tipo-cambio');
+            const planSeleccionado = plans.find(p => p.id == planId);
+            
+            if (planSeleccionado) {
+                procesarCambioDePlan(planSeleccionado, tipoCambio);
+            }
+        });
+    });
+  }
+
+  monedaSelector.addEventListener('change', (e) => {
+    monedaActual = e.target.value;
+    renderPlanes(conteoHabitaciones || 0, conteoUsuarios || 0);
+  });
+  tipoPagoSelector.addEventListener('change', (e) => {
+    periodoActual = e.target.value;
+    renderPlanes(conteoHabitaciones || 0, conteoUsuarios || 0);
+  });
+
+  await renderPlanes(conteoHabitaciones || 0, conteoUsuarios || 0);
 
   container.querySelector('#btnCopyRefLink')?.addEventListener('click', () => {
     const input = container.querySelector('#refLinkInput');
