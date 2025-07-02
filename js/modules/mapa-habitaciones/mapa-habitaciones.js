@@ -1916,6 +1916,11 @@ setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' s
   modalCambioContent.querySelector('#btnCancelarCambioHabitacion').onclick = cerrarModalDeCambio;
 
   // Confirmar cambio
+// En el archivo: js/modules/mapa_habitaciones/mapa_habitaciones.js
+// Dentro de la función showHabitacionOpcionesModal...
+// Reemplaza el listener del botón de confirmar cambio por este:
+
+  // Confirmar cambio
   modalCambioContent.querySelector('#btnConfirmarCambioHabitacion').onclick = async () => {
     const selectNuevaHabitacionEl = modalCambioContent.querySelector('#selectNuevaHabitacion');
     const motivoCambioEl = modalCambioContent.querySelector('#motivoCambio');
@@ -1923,6 +1928,10 @@ setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' s
 
     const habitacionDestinoId = selectNuevaHabitacionEl.value;
     const motivo = motivoCambioEl.value.trim();
+
+    // ▼▼▼ CÓDIGO AÑADIDO: Obtenemos el nombre de la habitación destino ▼▼▼
+    const habitacionDestinoNombre = selectNuevaHabitacionEl.options[selectNuevaHabitacionEl.selectedIndex].text;
+    // ▲▲▲ FIN DEL CÓDIGO AÑADIDO ▲▲▲
 
     if (!habitacionDestinoId) {
       alert("Debes seleccionar una habitación destino.");
@@ -1944,7 +1953,7 @@ setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' s
         .from('reservas')
         .select('id')
         .eq('habitacion_id', room.id) // room.id es la habitación origen
-        .in('estado', ['activa', 'ocupada', 'tiempo agotado']) // Incluir tiempo agotado por si acaso
+        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
         .order('fecha_inicio', { ascending: false })
         .limit(1)
         .single();
@@ -1959,6 +1968,18 @@ setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' s
         .update({ habitacion_id: habitacionDestinoId })
         .eq('id', reservaIdActual);
       if (errUpdateReserva) throw new Error("Error actualizando la reserva: " + errUpdateReserva.message);
+
+      // ▼▼▼ CÓDIGO AÑADIDO: Llamada a la función de la base de datos para actualizar la caja ▼▼▼
+      const { error: errUpdateCaja } = await supabaseGlobal.rpc('actualizar_concepto_caja_por_cambio_habitacion', {
+        p_reserva_id: reservaIdActual,
+        p_nombre_antiguo: room.nombre,
+        p_nombre_nuevo: habitacionDestinoNombre
+      });
+      if (errUpdateCaja) {
+        // No detenemos el flujo, pero registramos la advertencia
+        console.warn("Advertencia: No se pudo actualizar el concepto en la caja.", errUpdateCaja.message);
+      }
+      // ▲▲▲ FIN DEL CÓDIGO AÑADIDO ▲▲▲
 
       // Actualiza el cronómetro asociado a la reserva si existe y está activo
       const { error: errUpdateCrono } = await supabaseGlobal.from('cronometros')
@@ -1985,31 +2006,27 @@ setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' s
         habitacion_origen_id: room.id,
         habitacion_destino_id: habitacionDestinoId,
         motivo: motivo,
-        usuario_id: currentUserGlobal.id, // Usar currentUserGlobal
+        usuario_id: currentUserGlobal.id,
         fecha: new Date().toISOString()
       }]);
       if (errLogCambio) console.warn("Advertencia al registrar el cambio de habitación en bitácora:", errLogCambio.message);
 
-      // El modal de cambio ya está en modalContainerPrincipal, se reemplazará por el de éxito.
+      // Muestra el modal de éxito
       mostrarInfoModalGlobal(
         "¡El cambio de habitación fue realizado exitosamente!",
         "Cambio Exitoso",
-        [{ // Definimos un botón "Entendido" para el modal de éxito
+        [{
             texto: "Entendido",
-            clase: "button-primary", // O la clase que prefieras
+            clase: "button-primary",
             accion: async () => {
-                // La función closeAndClean de mostrarInfoModalGlobal se encargará de cerrar este modal de éxito.
-                // Luego recargamos las habitaciones.
                 await renderRooms(mainAppContainer, supabaseGlobal, currentUserGlobal, hotelIdGlobal);
             }
         }],
-        modalContainerPrincipal // Usamos el mismo contenedor principal para el mensaje de éxito
+        modalContainerPrincipal
       );
 
     } catch (error) {
       console.error("Error en el proceso de cambio de habitación:", error);
-      // El modal de cambio sigue visible, mostramos el error en un nuevo modal de información
-      // que reemplazará al de cambio si usamos el mismo modalContainerPrincipal.
       mostrarInfoModalGlobal(
         "Error al realizar el cambio de habitación: " + error.message,
         "Error en Cambio",
@@ -2022,7 +2039,7 @@ setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' s
         btnConfirmarEl.textContent = "Confirmar Cambio";
       }
     }
-  }; // Fin onclick btnConfirmarCambioHabitacion
+  };
 }); // Fin setupButtonListener btn-cambiar-habitacion
 /**
  * Consulta todos los cargos pendientes de la reserva/habitación.
@@ -2360,8 +2377,6 @@ function crearOpcionesHoras(tiempos) {
 
 // Reemplaza esta función completa en: js/modules/mapa_habitaciones/mapa_habitaciones.js
 
-// Reemplaza esta función completa en: js/modules/mapa_habitaciones/mapa_habitaciones.js
-
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
     let finAt;
     let montoEstanciaBaseBruto = 0;
@@ -2391,14 +2406,15 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
             montoEstanciaBaseBruto = precioLibreValor;
         } else {
-            let precioBasePorNoche = 0;
-            if (cantidadPersonas <= 1) {
-                precioBasePorNoche = room.precio_1_persona || 0;
-            } else if (cantidadPersonas === 2) {
-                precioBasePorNoche = room.precio_2_personas || 0;
-            } else {
-                const huespedesAdicionales = cantidadPersonas - 2;
-                precioBasePorNoche = (room.precio_2_personas || 0) + (huespedesAdicionales * (room.precio_huesped_adicional || 0));
+            // --- LÓGICA DE PRECIOS CORREGIDA ---
+            // Se usa 'room.precio' como base, que es un esquema más común y robusto.
+            // Se suma 'precio_huesped_adicional' si se excede la ocupación base (ej. 2 personas).
+            let precioBasePorNoche = room.precio || 0; // Usar el precio base genérico de la habitación
+            const ocupacionBase = 2; // El precio base suele cubrir hasta 2 huéspedes
+
+            if (cantidadPersonas > ocupacionBase) {
+                const huespedesAdicionales = cantidadPersonas - ocupacionBase;
+                precioBasePorNoche += huespedesAdicionales * (room.precio_huesped_adicional || 0);
             }
             montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
         }
@@ -2422,10 +2438,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
 
     const totalAntesDeDescuento = montoEstanciaBaseBruto;
     
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Se declara la variable 'montoDescuento' antes de usarla.
     let montoDescuento = 0;
-    // --- FIN DE LA CORRECCIÓN ---
 
     if (descuentoAplicado) {
         if (descuentoAplicado.tipo === 'fijo') {
@@ -2463,7 +2476,6 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         descuentoAplicado
     };
 }
-
 
 // =========================================================================================
 async function facturarElectronicaYMostrarResultado({
@@ -3157,6 +3169,7 @@ async function registrarReservaYMovimientosCaja({ formData, detallesEstancia, pa
 }
 
 // ===================== MODAL EXTENDER TIEMPO (POS STYLE - COMPLETO) =====================
+
 async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
     if (!modalContainer) {
@@ -3201,8 +3214,8 @@ async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mai
             getMetodosPago(supabase, hotelId)
         ]);
 
-const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('noche'));
-        const precioNocheHabitacionExt = room.precio || 0; // Precio base de la habitación por noche como fallback
+        const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('noche'));
+        const precioNocheHabitacionExt = room.precio || 0;
 
         const opcionesNochesExt = crearOpcionesNochesConPersonalizada(horarios, 5, reservaActiva.fecha_fin, tarifaNocheUnicaExt, room);
         const opcionesHorasExt = crearOpcionesHoras(tiempos);
@@ -3215,7 +3228,6 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
         const tiempoRestanteMs = fechaFinActual - ahora;
         let tiempoRestanteStr = tiempoRestanteMs > 0 ? `Tiempo restante: ${formatHorasMin(Math.floor(tiempoRestanteMs / 60000))}` : `Tiempo excedido: ${formatHorasMin(Math.floor(Math.abs(tiempoRestanteMs) / 60000))}`;
 
-        // Usar la clase button-custom-purple para el botón de confirmar
         modalContent.innerHTML = `
             <div class="flex flex-col md:flex-row">
                 <div class="w-full md:w-3/5 p-6 md:p-8 space-y-5">
@@ -3280,7 +3292,6 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
             </div>
         `;
         modalContainer.appendChild(modalContent);
-        
 
         const formExtEl = modalContent.querySelector('#extender-form-pos');
         const selectNochesExtEl = modalContent.querySelector('#select-noches-ext');
@@ -3293,33 +3304,49 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
         const nuevaSalidaEstimadaEl = modalContent.querySelector('#nueva-salida-estimada');
 
         function actualizarResumenTicketExtension() {
-            // ... (lógica existente para actualizar el resumen, no la cambio)
             const formDataExt = Object.fromEntries(new FormData(formExtEl));
             let precioExtra = 0; let descExtra = "Seleccione duración"; let nuevaFechaFinExt = new Date(reservaActiva.fecha_fin);
             const nochesSelExtInput = formDataExt.noches_personalizada_ext ? formDataExt.noches_personalizada_ext : formDataExt.noches_extender;
             const nochesSelExt = nochesSelExtInput && nochesSelExtInput !== "personalizada" ? parseInt(nochesSelExtInput) : 0;
             const minutosSelExt = formDataExt.horas_extender ? parseInt(formDataExt.horas_extender) : 0;
+            
             if (nochesSelExt > 0) {
                 let fechaCalculo = new Date(reservaActiva.fecha_fin); const [checkoutH, checkoutM] = horarios.checkout.split(':').map(Number);
                 fechaCalculo.setHours(checkoutH, checkoutM, 0, 0); if (new Date(reservaActiva.fecha_fin) >= fechaCalculo) fechaCalculo.setDate(fechaCalculo.getDate() + 1);
                 fechaCalculo.setDate(fechaCalculo.getDate() + (nochesSelExt - 1)); nuevaFechaFinExt = fechaCalculo;
-                if (tarifaNocheUnicaExt && typeof tarifaNocheUnicaExt.precio === 'number') precioExtra = tarifaNocheUnicaExt.precio * nochesSelExt; else precioExtra = precioNocheHabitacionExt * nochesSelExt;
+                precioExtra = (tarifaNocheUnicaExt?.precio || precioNocheHabitacionExt) * nochesSelExt;
                 descExtra = `${nochesSelExt} noche${nochesSelExt > 1 ? 's' : ''} adicional${nochesSelExt > 1 ? 'es' : ''}`;
             } else if (minutosSelExt > 0) {
                 nuevaFechaFinExt = new Date(new Date(reservaActiva.fecha_fin).getTime() + minutosSelExt * 60 * 1000);
                 const tiempoSelExt = tiempos.find(t => t.minutos === minutosSelExt && t.tipo_unidad !== 'noche');
-                let precioHorasExt = 0; if (tiempoSelExt) precioHorasExt = (tiempoSelExt.precio === null || tiempoSelExt.precio === 0) && (typeof tiempoSelExt.precio_adicional === 'number') ? tiempoSelExt.precio_adicional : (typeof tiempoSelExt.precio === 'number' ? tiempoSelExt.precio : 0);
-                if (precioHorasExt > 0) { precioExtra = precioHorasExt; descExtra = `${formatHorasMin(minutosSelExt)} adicionales`; }
-                else { precioExtra = 0; descExtra = `${formatHorasMin(minutosSelExt)} adicionales - Precio no definido`; }
+                
+                // Lógica de precio simplificada y robusta
+                let precioHorasExt = 0;
+                if (tiempoSelExt) {
+                    precioHorasExt = (typeof tiempoSelExt.precio_adicional === 'number' && tiempoSelExt.precio_adicional > 0)
+                        ? tiempoSelExt.precio_adicional
+                        : (typeof tiempoSelExt.precio === 'number' ? tiempoSelExt.precio : 0);
+                }
+
+                if (precioHorasExt > 0) { 
+                    precioExtra = precioHorasExt; 
+                    descExtra = `${formatHorasMin(minutosSelExt)} adicionales`; 
+                } else { 
+                    precioExtra = 0; 
+                    descExtra = `${formatHorasMin(minutosSelExt)} adicionales - Precio no definido`; 
+                }
             }
-            ticketExtDescEl.textContent = descExtra; ticketExtPriceEl.textContent = formatCurrency(precioExtra);
-            ticketExtTotalEl.textContent = formatCurrency(precioExtra); nuevaSalidaEstimadaEl.textContent = formatDateTime(nuevaFechaFinExt);
+            
+            ticketExtDescEl.textContent = descExtra; 
+            ticketExtPriceEl.textContent = formatCurrency(precioExtra);
+            ticketExtTotalEl.textContent = formatCurrency(precioExtra); 
+            nuevaSalidaEstimadaEl.textContent = formatDateTime(nuevaFechaFinExt);
         }
 
         selectNochesExtEl.onchange = () => { if (selectNochesExtEl.value === "personalizada") { containerNochesPersExtEl.style.display = "block"; inputNochesPersExtEl.required = true; inputNochesPersExtEl.focus(); } else { containerNochesPersExtEl.style.display = "none"; inputNochesPersExtEl.required = false; inputNochesPersExtEl.value = ''; } if (selectNochesExtEl.value) selectHorasExtEl.value = ""; actualizarResumenTicketExtension(); };
         inputNochesPersExtEl.oninput = actualizarResumenTicketExtension;
         selectHorasExtEl.onchange = () => { if (selectHorasExtEl.value) { selectNochesExtEl.value = ""; containerNochesPersExtEl.style.display = "none"; inputNochesPersExtEl.required = false; inputNochesPersExtEl.value = ''; } actualizarResumenTicketExtension(); };
-        actualizarResumenTicketExtension(); // Llamada inicial
+        actualizarResumenTicketExtension();
 
         modalContent.querySelector('#close-modal-extender').onclick = () => { modalContainer.style.display = "none"; modalContainer.innerHTML = ''; };
 
@@ -3337,7 +3364,10 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
 
             const nochesExtSubmitInput = formDataExt.noches_personalizada_ext ? formDataExt.noches_personalizada_ext : formDataExt.noches_extender;
             const nochesExtSubmit = nochesExtSubmitInput && nochesExtSubmitInput !== "personalizada" ? parseInt(nochesExtSubmitInput) : 0;
+            
+            // ▼▼▼ CORRECCIÓN DEL TYPO ▼▼▼
             const minutosExtSubmit = formDataExt.horas_extender ? parseInt(formDataExt.horas_extender) : 0;
+            // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
 
             if (nochesExtSubmit > 0) {
                 let fechaBaseExt = new Date(reservaActiva.fecha_fin); const [checkoutH, checkoutM] = horarios.checkout.split(':').map(Number);
@@ -3349,8 +3379,14 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
             } else if (minutosExtSubmit > 0) {
                 nuevaFechaFinSubmit = new Date(new Date(reservaActiva.fecha_fin).getTime() + minutosExtSubmit * 60 * 1000);
                 const tiempoSelExt = tiempos.find(t => t.minutos === minutosExtSubmit && t.tipo_unidad !== 'noche');
-                let precioHorasExtSubmit = 0; if(tiempoSelExt) precioHorasExtSubmit = (tiempoSelExt.precio === null || tiempoSelExt.precio === 0) && (typeof tiempoSelExt.precio_adicional === 'number') ? tiempoSelExt.precio_adicional : (typeof tiempoSelExt.precio === 'number' ? tiempoSelExt.precio : 0);
-                precioExtraSubmit = precioHorasExtSubmit; descExtraSubmit = `${formatHorasMin(minutosExtSubmit)} adicionales`;
+                
+                // Lógica de precio simplificada y consistente
+                if (tiempoSelExt) {
+                     precioExtraSubmit = (typeof tiempoSelExt.precio_adicional === 'number' && tiempoSelExt.precio_adicional > 0)
+                        ? tiempoSelExt.precio_adicional
+                        : (typeof tiempoSelExt.precio === 'number' ? tiempoSelExt.precio : 0);
+                }
+                descExtraSubmit = `${formatHorasMin(minutosExtSubmit)} adicionales`;
             } else { 
                 alert('Debe seleccionar noches o horas para extender.'); 
                 submitButton.disabled = false; submitButton.textContent = "Confirmar Extensión";
@@ -3370,14 +3406,12 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
             
             const turnoId = turnoService.getActiveTurnId();
             if (precioExtraSubmit > 0 && !turnoId) {
-                mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No se puede registrar el pago de la extensión en caja porque no hay un turno activo.", "Turno Requerido", modalContainer);
+                mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No se puede registrar el pago de la extensión en caja porque no hay un turno activo.", "Turno Requerido", [], modalContainer);
                 submitButton.disabled = false; submitButton.textContent = "Confirmar Extensión";
                 return; 
             }
 
-            // ========= INICIO LÓGICA DE PAGO Y ACTUALIZACIÓN =========
-            if (precioExtraSubmit > 0) { // Solo si hay costo, se procesa pago y se guarda en servicios_x_reserva
-                // 1. Registrar el pago en pagos_reserva
+            if (precioExtraSubmit > 0) {
                 const { data: pagoData, error: errPagoReserva } = await supabase
                     .from('pagos_reserva')
                     .insert({
@@ -3388,9 +3422,7 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
                         metodo_pago_id: formDataExt.metodo_pago_ext_id,
                         usuario_id: currentUser?.id,
                         concepto: `Pago por extensión: ${descExtraSubmit}`
-                    })
-                    .select('id') // Solo necesitamos el ID
-                    .single();
+                    }).select('id').single();
 
                 if (errPagoReserva) {
                     alert('Error registrando el pago de la extensión: ' + errPagoReserva.message);
@@ -3399,42 +3431,26 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
                 }
                 pagoReservaExtensionId = pagoData.id;
 
-                // 2. Registrar la extensión como un ítem en servicios_x_reserva
-                const { error: errServicioExt } = await supabase
-                    .from('servicios_x_reserva')
-                    .insert({
-                        hotel_id: hotelId,
-                        reserva_id: reservaActiva.id,
-                        descripcion_manual: `Extensión: ${descExtraSubmit}`,
-                        cantidad: 1,
-                        precio_cobrado: Math.round(precioExtraSubmit),
-                        estado_pago: 'pagado', // Se pagó ahora
-                        pago_reserva_id: pagoReservaExtensionId, // Vincular al pago
-                        fecha_servicio: new Date().toISOString()
-                    });
+                await supabase.from('servicios_x_reserva').insert({
+                    hotel_id: hotelId, reserva_id: reservaActiva.id,
+                    descripcion_manual: `Extensión: ${descExtraSubmit}`, cantidad: 1,
+                    precio_cobrado: Math.round(precioExtraSubmit), estado_pago: 'pagado',
+                    pago_reserva_id: pagoReservaExtensionId, fecha_servicio: new Date().toISOString()
+                });
 
-                if (errServicioExt) {
-                    console.warn("Advertencia: No se pudo registrar el detalle de la extensión como servicio:", errServicioExt.message);
-                    // No es fatal, pero se podría notificar o registrar internamente
-                }
-
-                // 3. Actualizar la reserva: SOLO fecha_fin y monto_pagado. NO monto_total.
                 const nuevoMontoPagadoReserva = (reservaActiva.monto_pagado || 0) + Math.round(precioExtraSubmit);
                 const { error: errUpdRes } = await supabase.from('reservas').update({
                     fecha_fin: nuevaFechaFinSubmit.toISOString(),
                     monto_pagado: nuevoMontoPagadoReserva,
-                    // NO SE ACTUALIZA monto_total aquí
                     estado: 'activa'
                 }).eq('id', reservaActiva.id);
 
                 if (errUpdRes) {
                     alert('Error actualizando la reserva: ' + errUpdRes.message);
-                     // Considerar revertir el pago en pagos_reserva si la actualización de reserva falla
                     submitButton.disabled = false; submitButton.textContent = "Confirmar Extensión";
                     return;
                 }
 
-                // 4. Registrar en caja
                 const movimientoCajaExtension = {
                     hotel_id: hotelId, tipo: 'ingreso', monto: Math.round(precioExtraSubmit),
                     concepto: `Extensión Hab. ${room.nombre} (${descExtraSubmit}) - ${reservaActiva.cliente_nombre || 'N/A'}`,
@@ -3445,22 +3461,18 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
                 const { error: errorCajaExtension } = await supabase.from('caja').insert(movimientoCajaExtension);
                 if (errorCajaExtension) {
                     console.error("Error registrando extensión en caja:", errorCajaExtension);
-                    mostrarInfoModalGlobal(`Error al registrar el pago en caja: ${errorCajaExtension.message}. La extensión se aplicó pero el pago en caja falló. Revise manualmente.`, "Error en Caja", modalContainer);
-                    // No detenemos el flujo, pero el usuario debe saber que hubo un problema en caja
+                    mostrarInfoModalGlobal(`Error al registrar el pago en caja: ${errorCajaExtension.message}. La extensión se aplicó pero el pago en caja falló. Revise manualmente.`, "Error en Caja", [], modalContainer);
                 }
-
-            } else { // Extensión sin costo o con costo cero
+            } else {
                 const { error: errUpdRes } = await supabase.from('reservas').update({
-                    fecha_fin: nuevaFechaFinSubmit.toISOString(),
-                    estado: 'activa'
+                    fecha_fin: nuevaFechaFinSubmit.toISOString(), estado: 'activa'
                 }).eq('id', reservaActiva.id);
                 if (errUpdRes) {
                     alert('Error actualizando la reserva (extensión sin costo): ' + errUpdRes.message);
                     submitButton.disabled = false; submitButton.textContent = "Confirmar Extensión";
                     return;
                 }
-                // Opcional: Registrar la extensión sin costo en servicios_x_reserva
-                if (nochesExtSubmit > 0 || minutosExtSubmit > 0) { // Solo si se seleccionó alguna duración
+                if (nochesExtSubmit > 0 || minutosExtSubmit > 0) {
                     await supabase.from('servicios_x_reserva').insert({
                         hotel_id: hotelId, reserva_id: reservaActiva.id,
                         descripcion_manual: `Extensión: ${descExtraSubmit} (Sin costo)`,
@@ -3469,15 +3481,11 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
                     });
                 }
             }
-            // ========= FIN LÓGICA DE PAGO Y ACTUALIZACIÓN =========
 
-            // Actualizar cronómetro (esto es común para extensiones con o sin costo)
             const { data: cronoAct } = await supabase.from('cronometros').select('id').eq('reserva_id', reservaActiva.id).eq('activo', true).limit(1).single();
             if (cronoAct) {
                 await supabase.from('cronometros').update({ fecha_fin: nuevaFechaFinSubmit.toISOString(), actualizado_en: new Date().toISOString() }).eq('id', cronoAct.id);
             } else {
-                // Si no hay cronómetro activo para la reserva, pero la reserva está activa, se crea uno.
-                // Esto podría pasar si el cronómetro se detuvo manualmente o por un error.
                  await supabase.from('cronometros').insert([{
                     hotel_id: hotelId, reserva_id: reservaActiva.id, habitacion_id: room.id,
                     fecha_inicio: reservaActiva.fecha_inicio, 
@@ -3491,20 +3499,18 @@ const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('n
 
             modalContainer.style.display = "none";
             modalContainer.innerHTML = '';
-            await renderRooms(mainAppContainer, supabase, currentUser, hotelId); // mainAppContainer es el contenedor de la lista de habitaciones
+            await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
 
-        }; // Fin onsubmit
+        };
     } catch (err) {
         console.error("Error preparando modal de extensión:", err);
         mostrarInfoModalGlobal("Error al preparar el modal de extensión: " + (err.message || "Error desconocido"), "Error Crítico", [], modalContainer);
-        // Si el modal ya estaba parcialmente renderizado y falla, limpiarlo para no dejarlo a medias
         if (modalContainer.style.display === "flex" && !modalContainer.querySelector('#extender-form-pos')) {
             modalContainer.style.display = "none";
             modalContainer.innerHTML = '';
         }
     }
 }
-
 
 // ===================== BLOQUE CRONÓMETRO (VERSIÓN OPTIMIZADA) =====================
 function startCronometro(room, supabase, hotelId, listEl) {
