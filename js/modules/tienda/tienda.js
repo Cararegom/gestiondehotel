@@ -1790,8 +1790,9 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
 
   modalContainer.style.display = 'flex';
   
+  // --- CORRECCIÓN AQUÍ: Se añaden las propiedades 'max-height' y 'overflow-y' al estilo del div principal del modal ---
   modalContainer.innerHTML = `
-  <div style="background:#fff;border-radius:18px;box-shadow:0 8px 40px #1d4ed828;max-width:430px;width:95vw;margin:auto;padding:34px 26px 22px 26px;position:relative;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+  <div style="background:#fff;border-radius:18px;box-shadow:0 8px 40px #1d4ed828;max-width:430px;width:95vw;margin:auto;padding:34px 26px 22px 26px;position:relative;font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; max-height: 90vh; overflow-y: auto;">
     <button onclick="window.closeModal()" style="position:absolute;right:14px;top:10px;background:none;border:none;font-size:25px;color:#64748b;cursor:pointer;" title="Cerrar">&times;</button>
     <h2 style="margin-bottom:19px;text-align:center;font-size:1.22rem;font-weight:700;color:#1d4ed8;">
       ${esEdicion ? 'Editar' : 'Nuevo'} Producto
@@ -1882,7 +1883,6 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
     };
   }
 }
-
 
 
 // REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO tienda.js
