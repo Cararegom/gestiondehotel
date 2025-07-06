@@ -160,8 +160,10 @@ function renderTarjetaCompraPendiente(compra) {
 
 
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO tienda.js
+
 /**
- * Lógica para recibir el pedido. Simplificada para recibir todo lo que hay en la orden.
+ * Lógica para recibir el pedido. Ahora con la opción de registrar el pago fuera de turno.
  */
 window.recibirPedido = async function(compraId) {
     showGlobalLoading("Cargando orden...");
@@ -175,28 +177,53 @@ window.recibirPedido = async function(compraId) {
             throw new Error('No se encontraron los detalles de la compra para recibir.');
         }
 
-        // Lógica corregida: Se calcula el total a pagar en base a los datos actuales de la compra.
         const recibidoTotalMonto = detallesCompra.reduce((sum, det) => sum + (det.cantidad * det.precio_unitario), 0);
         
-        const turnoId = turnoService.getActiveTurnId();
-        if (!turnoId) throw new Error("ACCIÓN BLOQUEADA: No hay un turno de caja activo.");
-        
+        // --- CAMBIO 1: Se elimina la comprobación estricta del turno aquí. ---
+        // La comprobación se hará ahora después, dependiendo de la selección del usuario.
+
         const { data: metodosPago } = await currentSupabase.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true);
         const inputOptions = new Map(metodosPago.map(mp => [mp.id, mp.nombre]));
         
         hideGlobalLoading();
-
-        const { value: metodoPagoId, isDismissed } = await Swal.fire({
+        
+        // --- CAMBIO 2: Se añade el checkbox al HTML del diálogo de confirmación. ---
+        const { value: metodoPagoId, isConfirmed } = await Swal.fire({
             title: 'Confirmar Recepción y Pago',
-            html: `Se dará ingreso al inventario y se registrará un egreso de <b>${formatCurrency(recibidoTotalMonto)}</b>.<br>Selecciona el método de pago:`,
-            input: 'select', inputOptions, inputPlaceholder: '-- Selecciona método --',
-            confirmButtonText: 'Confirmar y Registrar', showCancelButton: true, cancelButtonText: 'Cancelar',
+            html: `
+                <p>Se dará ingreso al inventario y se registrará un egreso de <strong>${formatCurrency(recibidoTotalMonto)}</strong>.</p>
+                <p>Selecciona el método de pago:</p>
+                <div style="margin-top: 20px; text-align: left; font-size: 0.95em; padding: 10px; border: 1px solid #eee; border-radius: 8px;">
+                    <input type="checkbox" id="registrar-pago-fuera-turno" style="margin-right: 8px; vertical-align: middle;">
+                    <label for="registrar-pago-fuera-turno" style="vertical-align: middle;">Registrar pago por fuera del turno de caja</label>
+                </div>
+            `,
+            input: 'select', 
+            inputOptions, 
+            inputPlaceholder: '-- Selecciona método --',
+            confirmButtonText: 'Confirmar y Registrar', 
+            showCancelButton: true, 
+            cancelButtonText: 'Cancelar',
             inputValidator: (v) => !v && 'Debes seleccionar un método de pago'
         });
 
-        if (isDismissed || !metodoPagoId) return;
+        if (!isConfirmed || !metodoPagoId) return;
 
         showGlobalLoading("Procesando recepción...");
+        
+        // --- CAMBIO 3: Se añade la lógica para determinar el turno_id a usar. ---
+        const esEgresoFueraTurno = document.getElementById('registrar-pago-fuera-turno')?.checked || false;
+        let turnoIdParaGuardar = null;
+
+        if (!esEgresoFueraTurno) {
+            // Si NO se marca el checkbox, se exige un turno activo.
+            const turnoActivoId = turnoService.getActiveTurnId();
+            if (!turnoActivoId) {
+                throw new Error("ACCIÓN BLOQUEADA: Para registrar el pago en el turno, debe haber un turno de caja activo.");
+            }
+            turnoIdParaGuardar = turnoActivoId;
+        }
+        // Si el checkbox SÍ se marca, turnoIdParaGuardar permanecerá como null.
 
         for (const det of detallesCompra) {
             await currentSupabase.rpc('ajustar_stock_producto', {
@@ -216,11 +243,16 @@ window.recibirPedido = async function(compraId) {
         
         const { data: compraData } = await currentSupabase.from('compras_tienda').select('proveedor:proveedores(nombre)').eq('id', compraId).single();
         
+        // --- CAMBIO 4: Se utiliza la variable `turnoIdParaGuardar` en la inserción. ---
         await currentSupabase.from('caja').insert({
-            hotel_id: currentHotelId, tipo: 'egreso', monto: recibidoTotalMonto,
+            hotel_id: currentHotelId, 
+            tipo: 'egreso', 
+            monto: recibidoTotalMonto,
             concepto: `Pago Compra a ${compraData.proveedor?.nombre || 'N/A'}`,
-            usuario_id: currentUser.id, compra_tienda_id: compraId,
-            turno_id: turnoId, metodo_pago_id: metodoPagoId
+            usuario_id: currentUser.id, 
+            compra_tienda_id: compraId,
+            turno_id: turnoIdParaGuardar, // <-- AQUÍ ESTÁ LA MAGIA
+            metodo_pago_id: metodoPagoId
         });
         
         hideGlobalLoading();
@@ -231,7 +263,6 @@ window.recibirPedido = async function(compraId) {
         console.error("Error en recibirPedido:", err);
         await Swal.fire('Error', 'No se pudo procesar la recepción: ' + err.message, 'error');
     } finally {
-        // Al final, siempre se hace una recarga completa de la lista.
         await renderComprasPendientes();
     }
 };
