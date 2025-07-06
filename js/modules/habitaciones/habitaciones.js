@@ -402,6 +402,120 @@ async function renderHabitaciones(habitacionesContainer, feedbackEl) {
 }
 
 
+// AÑADE ESTA NUEVA FUNCIÓN A: js/modules/habitaciones/habitaciones.js
+
+/**
+ * Crea y muestra un modal flotante para editar una habitación específica.
+ * @param {string} habitacionId - El ID de la habitación a editar.
+ */
+async function showEditHabitacionModal(habitacionId) {
+    const feedbackEl = currentContainerEl.querySelector('#habitaciones-global-feedback');
+    const listaContainerEl = currentContainerEl.querySelector('#habitaciones-lista-container');
+    
+    // Crear el contenedor del modal si no existe
+    let modalContainer = document.getElementById('habitacion-edit-modal-container');
+    if (!modalContainer) {
+        modalContainer = document.createElement('div');
+        modalContainer.id = 'habitacion-edit-modal-container';
+        modalContainer.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4";
+        document.body.appendChild(modalContainer);
+    }
+    
+    modalContainer.innerHTML = `<div class="text-white text-lg">Cargando datos de la habitación...</div>`;
+    modalContainer.style.display = 'flex';
+
+    try {
+        // 1. Obtener los datos de la habitación a editar
+        const { data: habitacionData, error } = await currentSupabaseInstance
+            .from('habitaciones').select('*').eq('id', habitacionId).single();
+        if (error) throw error;
+
+        // 2. Crear el HTML del formulario dentro del modal
+        modalContainer.innerHTML = `
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg animate-fade-in-up">
+                <form id="form-edit-habitacion" class="p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+                    <input type="hidden" name="habitacionIdEdit" value="${habitacionData.id}">
+                    <h3 class="text-xl font-semibold text-indigo-700">Editando Habitación: ${habitacionData.nombre}</h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div><label class="form-label">Nombre/Número*</label><input type="text" name="nombre" class="form-control" value="${habitacionData.nombre || ''}" required></div>
+                        <div><label class="form-label">Tipo</label><input type="text" name="tipo" class="form-control" value="${habitacionData.tipo || ''}"></div>
+                        <div><label class="form-label">Piso</label><input type="number" name="piso" class="form-control" value="${habitacionData.piso || ''}"></div>
+                    </div>
+                    
+                    <fieldset class="border border-green-300 p-3 rounded-lg">
+                        <legend class="text-md font-semibold text-green-800 px-2">Precios</legend>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div><label class="form-label text-sm">Precio 1 Persona*</label><input type="number" name="precio_1_persona" class="form-control" value="${habitacionData.precio_1_persona || 0}" required></div>
+                            <div><label class="form-label text-sm">Precio 2 Personas*</label><input type="number" name="precio_2_personas" class="form-control" value="${habitacionData.precio_2_personas || 0}" required></div>
+                            <div><label class="form-label text-sm">Precio Adicional</label><input type="number" name="precio_huesped_adicional" class="form-control" value="${habitacionData.precio_huesped_adicional || 0}"></div>
+                        </div>
+                    </fieldset>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div><label class="form-label">Capacidad Máxima</label><input type="number" name="capacidad_maxima" class="form-control" value="${habitacionData.capacidad_maxima || 2}"></div>
+                        <div class="md:col-span-1"><label class="form-label">Amenidades (separado por coma)</label><input type="text" name="amenidades" class="form-control" value="${habitacionData.amenidades?.join(', ') || ''}"></div>
+                    </div>
+
+                    <div class="flex items-center space-x-2">
+                        <input type="checkbox" name="activo" id="hab-activo-edit" class="form-check-input h-5 w-5 text-indigo-600" ${habitacionData.activo ? 'checked' : ''}>
+                        <label for="hab-activo-edit" class="form-label mb-0">Activa</label>
+                    </div>
+
+                    <div id="modal-edit-feedback" class="feedback-message text-sm"></div>
+
+                    <div class="flex justify-end gap-3 pt-3 border-t">
+                        <button type="button" id="btn-cancelar-modal" class="button button-neutral">Cancelar</button>
+                        <button type="submit" id="btn-guardar-modal" class="button button-primary">Guardar Cambios</button>
+                    </div>
+                </form>
+            </div>
+        `;
+
+        // 3. Lógica para guardar los cambios
+        const formEditEl = modalContainer.querySelector('#form-edit-habitacion');
+        formEditEl.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btnGuardar = formEditEl.querySelector('#btn-guardar-modal');
+            const modalFeedbackEl = formEditEl.querySelector('#modal-edit-feedback');
+            
+            setFormLoadingState(formEditEl, true, btnGuardar, 'Guardar Cambios', 'Guardando...');
+
+            const formData = new FormData(formEditEl);
+            const payload = {
+                nombre: formData.get('nombre').trim(),
+                tipo: formData.get('tipo').trim(),
+                piso: parseInt(formData.get('piso')) || null,
+                precio_1_persona: parseFloat(formData.get('precio_1_persona')) || 0,
+                precio_2_personas: parseFloat(formData.get('precio_2_personas')) || 0,
+                precio_huesped_adicional: parseFloat(formData.get('precio_huesped_adicional')) || 0,
+                capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || 2,
+                amenidades: formData.get('amenidades').split(',').map(s => s.trim()).filter(Boolean),
+                activo: formEditEl.querySelector('[name="activo"]').checked
+            };
+
+            const { error: updateError } = await currentSupabaseInstance
+                .from('habitaciones').update(payload).eq('id', habitacionId);
+
+            if (updateError) {
+                showHabitacionesFeedback(modalFeedbackEl, `Error: ${updateError.message}`, 'error');
+            } else {
+                showHabitacionesFeedback(feedbackEl, 'Habitación actualizada con éxito.', 'success');
+                modalContainer.style.display = 'none'; // Ocultar modal
+                await renderHabitaciones(listaContainerEl, feedbackEl); // Refrescar la lista de habitaciones
+            }
+            setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+        });
+        
+        // Lógica para cancelar
+        modalContainer.querySelector('#btn-cancelar-modal').addEventListener('click', () => {
+            modalContainer.style.display = 'none';
+        });
+
+    } catch (err) {
+        modalContainer.innerHTML = `<div class="bg-red-100 text-red-700 p-6 rounded-lg">Error al cargar la habitación: ${err.message}</div>`;
+    }
+}
 // js/modules/habitaciones/habitaciones.js
 
 function populateFormHabitacion(formEl, selectTiemposEl, habitacionData, btnCancelarEl, btnGuardarEl, formTitleEl) {
@@ -510,7 +624,7 @@ async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaConta
     };
 
     if (!editId) {
-        habitacionPayload.estado = formData.get('estado');
+        habitacionPayload.estado = 'libre';
     }
     
     const textoBotonGuardar = editId ? 'Actualizar Habitación' : '＋ Crear Habitación';
@@ -720,12 +834,13 @@ container.innerHTML = `
                 <label for="hab-capacidad-maxima" class="form-label text-indigo-800">Capacidad Máxima (pers.)</label>
                 <input type="number" name="capacidad_maxima" id="hab-capacidad-maxima" class="form-control" min="1"/>
               </div>
-              <div>
-                <label for="hab-estado" class="form-label text-indigo-800">Estado Inicial *</label>
-                <select name="estado" id="hab-estado" class="form-control" required><option value="libre">Libre</option><option value="limpieza">En Limpieza</option><option value="mantenimiento">En Mantenimiento</option><option value="bloqueada">Bloqueada</option></select>
+
+              <div class="md:col-span-2">
+                <label for="hab-amenidades" class="form-label text-indigo-800">Amenidades (separadas por coma)</label>
+                <input type="text" name="amenidades" id="hab-amenidades" class="form-control" placeholder="Ej: Wifi, TV, AC" />
               </div>
-               <div><label for="hab-amenidades" class="form-label text-indigo-800">Amenidades (separadas por coma)</label><input type="text" name="amenidades" id="hab-amenidades" class="form-control" placeholder="Ej: Wifi, TV, AC" /></div>
             </div>
+
             
             <div class="flex items-center mb-3 space-x-2 mt-4">
               <input type="checkbox" id="hab-activo" name="activo" class="form-check-input h-5 w-5 text-indigo-600" checked />
@@ -835,51 +950,57 @@ container.innerHTML = `
   btnCancelarEdicionHabitacionEl.addEventListener('click', cancelHabitacionHandler);
   moduleListeners.push({ element: btnCancelarEdicionHabitacionEl, type: 'click', handler: cancelHabitacionHandler });
 
+// REEMPLAZA ESTA FUNCIÓN DENTRO DE mount EN: js/modules/habitaciones/habitaciones.js
+
   const listaHabitacionesClickHandler = async (e) => {
     const button = e.target.closest('button[data-accion]');
     if (!button) return;
+    
     const habitacionId = button.dataset.id;
     const accion = button.dataset.accion;
     if (feedbackGlobalEl) clearHabitacionesFeedbackLocal(feedbackGlobalEl);
 
     const originalButtonText = button.textContent;
-    button.disabled = true; button.textContent = '...';
+    button.disabled = true;
+    button.textContent = '...';
 
     try {
         if (accion === 'editar-habitacion') {
-          showLoading(feedbackGlobalEl, 'Cargando datos de la habitación...');
-          const { data: habitacionData, error } = await currentSupabaseInstance
-            .from('habitaciones')
-            .select('*, habitacion_tiempos_permitidos(tiempo_estancia_id)')
-            .eq('id', habitacionId).eq('hotel_id', currentHotelId).single();
-          clearFeedback(feedbackGlobalEl);
-          if (error) throw error;
-          if (habitacionData) {
-            populateFormHabitacion(formHabitacionEl, selectHabitacionTiemposEl, habitacionData, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl, formHabitacionTitleEl);
-            window.scrollTo({ top: formHabitacionEl.offsetTop - 20, behavior: 'smooth' });
-          } else { showHabitacionesFeedback(feedbackGlobalEl, 'Habitación no encontrada.', 'error'); }
+            // ▼▼▼ CAMBIO PRINCIPAL AQUÍ ▼▼▼
+            // En lugar de poblar el formulario de arriba, llamamos a nuestro nuevo modal.
+            await showEditHabitacionModal(habitacionId);
+            // ▲▲▲ FIN DEL CAMBIO ▲▲▲
+
         } else if (accion === 'eliminar-habitacion') {
-          const habitacionCard = button.closest('.habitacion-card');
-          const nombreHabitacion = habitacionCard?.querySelector('.habitacion-nombre')?.textContent || habitacionId;
-          if (confirm(`¿Está seguro de que desea eliminar la habitación "${nombreHabitacion}"? Esta acción no se puede deshacer.`)) {
-            showLoading(feedbackGlobalEl, 'Eliminando habitación...');
-            await currentSupabaseInstance.from('habitacion_tiempos_permitidos').delete().eq('habitacion_id', habitacionId).eq('hotel_id', currentHotelId);
-            const { error } = await currentSupabaseInstance.from('habitaciones').delete().eq('id', habitacionId).eq('hotel_id', currentHotelId);
-            clearFeedback(feedbackGlobalEl);
-            if (error) throw error;
-            showHabitacionesFeedback(feedbackGlobalEl, 'Habitación eliminada exitosamente.', 'success');
-            await registrarEnBitacora({ supabase: currentSupabaseInstance, hotel_id: currentHotelId, usuario_id: currentModuleUser.id, modulo: 'Habitaciones', accion: 'ELIMINAR_HABITACION', detalles: { habitacion_id: habitacionId, nombre: nombreHabitacion } });
-            await renderHabitaciones(listaHabitacionesContainerEl, feedbackGlobalEl);
-            if (formHabitacionEl.elements.habitacionIdEdit.value === habitacionId) {
-              resetFormHabitacion(formHabitacionEl, selectHabitacionTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl, formHabitacionTitleEl);
+            const habitacionCard = button.closest('.habitacion-card');
+            const nombreHabitacion = habitacionCard?.querySelector('.habitacion-nombre')?.textContent || habitacionId;
+            
+            if (confirm(`¿Está seguro de que desea eliminar la habitación "${nombreHabitacion}"? Esta acción no se puede deshacer.`)) {
+                showLoading(feedbackGlobalEl, 'Eliminando habitación...');
+                await currentSupabaseInstance.from('habitacion_tiempos_permitidos').delete().eq('habitacion_id', habitacionId).eq('hotel_id', currentHotelId);
+                const { error } = await currentSupabaseInstance.from('habitaciones').delete().eq('id', habitacionId).eq('hotel_id', currentHotelId);
+                clearFeedback(feedbackGlobalEl);
+                if (error) throw error;
+                
+                showHabitacionesFeedback(feedbackGlobalEl, 'Habitación eliminada exitosamente.', 'success');
+                await registrarEnBitacora({ supabase: currentSupabaseInstance, hotel_id: currentHotelId, usuario_id: currentModuleUser.id, modulo: 'Habitaciones', accion: 'ELIMINAR_HABITACION', detalles: { habitacion_id: habitacionId, nombre: nombreHabitacion } });
+                await renderHabitaciones(listaHabitacionesContainerEl, feedbackGlobalEl);
+                
+                // Si el formulario principal estaba editando esta habitación, lo reseteamos.
+                if (formHabitacionEl.elements.habitacionIdEdit.value === habitacionId) {
+                  resetFormHabitacion(formHabitacionEl, null, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl, formHabitacionTitleEl);
+                }
             }
-          }
         }
     } catch (err) {
         console.error(`Error en acción '${accion}' de habitación:`, err);
         showHabitacionesFeedback(feedbackGlobalEl, `Error al procesar acción: ${err.message}`, 'error', 0);
-    } finally { button.disabled = false; button.textContent = originalButtonText; }
+    } finally {
+        button.disabled = false;
+        button.textContent = originalButtonText;
+    }
   };
+
   listaHabitacionesContainerEl.addEventListener('click', listaHabitacionesClickHandler);
   moduleListeners.push({ element: listaHabitacionesContainerEl, type: 'click', handler: listaHabitacionesClickHandler });
 
