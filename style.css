@@ -1057,3 +1057,135 @@ img, svg {
   color: white;
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
+/* Añade esto a tu archivo CSS principal */
+
+.button-primary {
+  background-color: #3b82f6; /* Azul */
+  color: white;
+  font-weight: bold;
+}
+.button-primary:hover {
+  background-color: #2563eb;
+}
+
+.button-secondary {
+  background-color: #f1f5f9; /* Gris muy claro */
+  color: #475569; /* Gris oscuro */
+  border: 1px solid #cbd5e1;
+}
+.button-secondary:hover {
+  background-color: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.button-warning {
+  background-color: #f97316; /* Naranja */
+  color: white;
+  font-weight: bold;
+}
+.button-warning:hover {
+  background-color: #ea580c;
+}
+
+.button-danger {
+    background-color: #ef4444; /* Rojo */
+    color: white;
+    font-weight: bold;
+}
+.button-danger:hover {
+    background-color: #dc2626;
+}
+/* --- Estilos para el Modal de Detalles de Compra --- */
+
+/* Contenedor principal del modal */
+.details-modal-dialog {
+    background-color: #f8fafc; /* Un gris muy claro de fondo */
+    width: 95%;
+    max-width: 650px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Importante para que los bordes redondeados afecten a los hijos */
+    border: 1px solid #e2e8f0;
+}
+
+/* Encabezado del modal */
+.details-modal-header {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.details-modal-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1e3a8a; /* Un azul más oscuro */
+}
+
+.details-modal-header .close-button {
+    background: none;
+    border: none;
+    font-size: 1.75rem;
+    line-height: 1;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.details-modal-header .close-button:hover {
+    color: #ef4444; /* Rojo al pasar el mouse */
+}
+
+/* Cuerpo del modal donde va la tabla */
+.details-modal-body {
+    padding: 1.5rem;
+    background-color: #ffffff;
+    overflow-y: auto;
+    max-height: 65vh;
+}
+
+/* Tabla de detalles */
+.details-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.details-table th {
+    background-color: #f1f5f9;
+    color: #475569;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.details-table td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+}
+
+/* Efecto "cebra" para mejorar la legibilidad de la tabla */
+.details-table tbody tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+/* Pie de página del modal con el total */
+.details-modal-footer {
+    padding: 1rem 1.5rem;
+    background-color: #f8fafc;
+    border-top: 1px solid #e2e8f0;
+    text-align: right;
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: #166534; /* Verde oscuro para el total */
+}
+
+.details-modal-footer span {
+    margin-left: 0.5rem;
+}

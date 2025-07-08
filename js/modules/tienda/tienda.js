@@ -717,7 +717,6 @@ async function renderHistorialCompras() {
             return;
         }
 
-        // --- INICIO DE LA CORRECCIÓN ---
         // Se envuelve la tabla en un div con 'overflow-x: auto;' para permitir el scroll horizontal.
         container.innerHTML = `
             <div class="table-responsive-sm mt-4 border rounded-lg shadow-sm" style="overflow-x: auto;">
@@ -729,6 +728,7 @@ async function renderHistorialCompras() {
                             <th>Total Est.</th>
                             <th>Estado</th>
                             <th>Creado por</th>
+                            <th style="text-align:center;">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -739,23 +739,101 @@ async function renderHistorialCompras() {
                                 <td>${formatCurrency(compra.total_compra)}</td>
                                 <td><span class="badge bg-secondary text-white">${compra.estado}</span></td>
                                 <td>${compra.creador?.nombre || 'N/A'}</td>
+                                <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+    <button onclick="window.verDetallesCompra('${compra.id}')" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-1 rounded-full font-semibold transition-colors duration-200">
+        Ver Detalles
+    </button>
+</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
             </div>`;
-        // --- FIN DE LA CORRECCIÓN ---
         
     } catch (err) {
         container.innerHTML = `<p class="text-red-500">Error al cargar el historial: ${err.message}</p>`;
     }
 }
-// Reemplaza esta función en tu archivo tienda.js
+
+window.verDetallesCompra = async function(compraId) {
+    showGlobalLoading("Cargando detalles...");
+
+    try {
+        const { data: detalles, error } = await currentSupabase
+            .from('detalle_compras_tienda')
+            .select('*, producto:productos_tienda(nombre)')
+            .eq('compra_id', compraId);
+
+        if (error) throw error;
+        if (!detalles || detalles.length === 0) {
+            throw new Error("No se encontraron detalles para esta compra.");
+        }
+
+        const totalCompra = detalles.reduce((sum, item) => sum + item.subtotal, 0);
+
+        // Crear y mostrar el modal
+        const modal = document.createElement('div');
+        modal.id = 'modal-detalles-compra';
+        // Overlay oscuro con un poco más de "difuminado"
+        modal.className = "fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-[1001]";
+
+        // Contenido del modal con clases de Tailwind mejoradas
+        modal.innerHTML = `
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col overflow-hidden animate-fade-in-up">
+
+                <div class="flex justify-between items-center p-5 border-b border-gray-200 bg-gray-50">
+                    <h3 class="text-xl font-semibold text-blue-700">Detalles de la Compra</h3>
+                    <button onclick="document.getElementById('modal-detalles-compra').remove()" class="text-gray-500 hover:text-gray-800 text-2xl leading-none focus:outline-none">&times;</button>
+                </div>
+
+                <div class="p-4 sm:p-6 overflow-y-auto max-h-[65vh]">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Producto</th>
+                                <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Cant.</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Precio Unit.</th>
+                                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${detalles.map(d => `
+                                <tr>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-800">${d.producto ? d.producto.nombre : 'N/A'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-center">${d.cantidad}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600 text-right">${formatCurrency(d.precio_unitario)}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-700 text-right">${formatCurrency(d.subtotal)}</td>
+                            </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="flex justify-end p-5 bg-gray-100 border-t border-gray-200">
+                    <div class="text-right">
+                        <span class="text-md font-medium text-gray-700">Total Compra:</span>
+                        <span class="text-2xl font-bold text-green-800 ml-3">${formatCurrency(totalCompra)}</span>
+                    </div>
+                </div>
+
+            </div>
+        `;
+        document.body.appendChild(modal);
+
+    } catch (err) {
+        alert('Error al cargar los detalles: ' + err.message);
+    } finally {
+        hideGlobalLoading();
+    }
+};
+
+
+
 async function renderHistorialRecibidos() {
     const container = document.getElementById('historial-recibidos-container');
     if (!container) return;
 
-    container.innerHTML = `<p style="color:#666;">Cargando historial...</p>`;
+    container.innerHTML = `<p class="text-sm text-gray-500">Cargando historial...</p>`;
     try {
         const { data, error } = await currentSupabase
             .from('compras_tienda')
@@ -773,50 +851,62 @@ async function renderHistorialRecibidos() {
         if (error) throw error;
         
         if (!data || data.length === 0) {
-            container.innerHTML = `<p style="text-align:center;padding:1rem;color:#888;">No hay compras recibidas para mostrar.</p>`;
+            container.innerHTML = `<p class="text-center py-4 text-gray-500">No hay compras recibidas para mostrar.</p>`;
             return;
         }
         
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Se envuelve la tabla en un div con 'overflow-x: auto;' para permitir el scroll horizontal.
         container.innerHTML = `
-            <div style="overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 8px;">
-                <table style="width:100%; min-width: 600px; border-collapse:collapse; font-size:0.95em;">
-                    <thead>
-                        <tr style="text-align:left; background:#f1f5f9;">
-                            <th style="padding:10px;">Fecha Recepción</th>
-                            <th style="padding:10px;">Proveedor</th>
-                            <th style="padding:10px;">Estado</th>
-                            <th style="padding:10px;">Creado por</th>
-                            <th style="padding:10px;">Recibido por</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.map(compra => {
-                            const esParcial = compra.estado === 'recibido_parcial';
-                            const estadoStyle = `background: ${esParcial ? '#fef3c7' : '#dcfce7'}; color: ${esParcial ? '#b45309' : '#166534'}; font-weight: 600; padding: 4px 12px; border-radius: 12px; font-size: 0.9em;`;
-                            const estadoTexto = esParcial ? 'Recibido Parcial' : 'Recibido';
+            <div class="align-middle inline-block min-w-full">
+                <div class="shadow overflow-hidden border-b border-gray-200 sm:rounded-lg">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha Recepción</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Proveedor</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Recibido por</th>
+                                <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            ${data.map(compra => {
+                                const esParcial = compra.estado === 'recibido_parcial';
+                                const estadoClasses = esParcial ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800';
+                                const estadoTexto = esParcial ? 'Recibido Parcial' : 'Recibido';
 
-                            return `
-                                <tr style="border-bottom: 1px solid #e5e7eb;">
-                                    <td style="padding:8px 10px;">${new Date(compra.fecha_recepcion).toLocaleString()}</td>
-                                    <td style="padding:8px 10px;">${compra.proveedor?.nombre || 'N/A'}</td>
-                                    <td style="padding:8px 10px;"><span style="${estadoStyle}">${estadoTexto}</span></td>
-                                    <td style="padding:8px 10px;">${compra.creador?.nombre || 'N/A'}</td>
-                                    <td style="padding:8px 10px;">${compra.receptor?.nombre || 'N/A'}</td>
-                                </tr>
-                            `;
-                        }).join('')}
-                    </tbody>
-                </table>
-            </div>`;
-        // --- FIN DE LA CORRECCIÓN ---
+                                return `
+                                    <tr>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">${new Date(compra.fecha_recepcion).toLocaleString('es-CO')}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${compra.proveedor?.nombre || 'N/A'}</td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoClasses}">
+                                                ${estadoTexto}
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-600">${compra.receptor?.nombre || 'N/A'}</td>
+                                        
+                                        <td class="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
+<button onclick="window.verDetallesCompra('${compra.id}')" class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-1 rounded-full font-semibold transition-colors duration-200">
+    Ver Detalles
+</button>
+                                        </td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
 
     } catch (err) {
         console.error("Error al cargar historial de recibidos:", err);
-        container.innerHTML = `<p style="color:red;">Error al cargar el historial: ${err.message}</p>`;
+        container.innerHTML = `<p class="text-red-500">Error al cargar el historial: ${err.message}</p>`;
     }
 }
+
+
+
 
 /**
  * Valida si los productos del carrito son elegibles para un descuento específico.
@@ -1176,28 +1266,50 @@ async function mostrarModalPagoMixto(total, callback) {
   let pagos = [{ metodo_pago_id: '', monto: '' }];
   const body = document.body;
   const modal = document.createElement('div');
-  modal.id = 'modal-pagos-mixtos-pos';
-  modal.style = `
-    position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:99999;
-    background:rgba(30,41,59,0.45);display:flex;align-items:center;justify-content:center;`;
-  modal.innerHTML = `
-    <div style="background:#fff;max-width:430px;width:95vw;padding:38px 28px 22px 28px;border-radius:20px;box-shadow:0 2px 32px #2563eb44;">
-      <h3 style="font-size:1.22rem;font-weight:700;color:#2563eb;margin-bottom:15px;text-align:center;">Métodos de Pago Mixtos</h3>
-      <div style="font-size:15px;color:#64748b;margin-bottom:8px;">Total de la venta: <b style="color:#0ea5e9;font-size:18px;">$${total}</b></div>
-      <form id="formPagosMixtosPOS">
-        <div id="pagosMixtosPOSCampos"></div>
-        <div style="margin:13px 0;">
-          <button type="button" id="agregarPagoPOS" style="background:#e0e7ff;color:#2563eb;border:none;border-radius:7px;padding:7px 18px;font-weight:600;font-size:1em;cursor:pointer;">+ Agregar Pago</button>
+modal.id = 'modal-detalles-compra';
+// Este es el overlay oscuro
+modal.style = `
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:1001;
+`;
+
+// Usamos las nuevas clases CSS para el contenido
+modal.innerHTML = `
+    <div class="details-modal-dialog">
+        <div class="details-modal-header">
+            <h3>Detalles de la Compra</h3>
+            <button class="close-button" onclick="document.getElementById('modal-detalles-compra').remove()">&times;</button>
         </div>
-        <div style="font-size:15px;margin-bottom:8px;color:#f43f5e;" id="msgPagosMixtosPOS"></div>
-        <div style="display:flex;gap:12px;justify-content:center;margin-top:20px;">
-          <button type="submit" style="background:linear-gradient(90deg,#22c55e,#2563eb);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #22c55e22;cursor:pointer;">Registrar Pagos</button>
-          <button type="button" id="cancelarPagoPOS" style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;box-shadow:0 2px 10px #64748b15;cursor:pointer;">Cancelar</button>
+        <div class="details-modal-body">
+            <table class="details-table">
+                <thead>
+                    <tr>
+                        <th>Producto</th>
+                        <th style="text-align:center;">Cant.</th>
+                        <th style="text-align:right;">Precio Unit.</th>
+                        <th style="text-align:right;">Subtotal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${detalles.map(d => `
+                        <tr>
+                            <td>${d.producto ? d.producto.nombre : 'Producto no encontrado'}</td>
+                            <td style="text-align:center;">${d.cantidad}</td>
+                            <td style="text-align:right;">${formatCurrency(d.precio_unitario)}</td>
+                            <td style="text-align:right; font-weight:600;">${formatCurrency(d.subtotal)}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
         </div>
-      </form>
+        <div class="details-modal-footer">
+            Total Compra: <span>${formatCurrency(totalCompra)}</span>
+        </div>
     </div>
-  `;
-  body.appendChild(modal);
+`;
+document.body.appendChild(modal);
+
+
 
   function renderPagosCampos() {
     const campos = modal.querySelector('#pagosMixtosPOSCampos');
@@ -2889,10 +3001,11 @@ async function renderListaCompras() {
 </div>
   `;
 
-  const btnExportar = document.getElementById('btnExportarListaCompra');
-  if (btnExportar) {
-      btnExportar.onclick = () => alert('Función en desarrollo: exportar a Excel');
-  }
+  
+const btnExportar = document.getElementById('btnExportarListaCompra');
+if (btnExportar) {
+    btnExportar.onclick = exportarListaCompraExcel;
+}
 
   const selectProveedor = document.getElementById('selectProveedorCompra');
   if (selectProveedor) {
@@ -2971,6 +3084,48 @@ function renderTablaListaCompras() {
   });
 }
 
+
+// --- PEGA ESTA NUEVA FUNCIÓN EN TU ARCHIVO tienda.js ---
+
+async function exportarListaCompraExcel() {
+    // 1. Obtener la lista de compras sugerida (misma lógica que en la tabla)
+    let listaSugerida = (inventarioProductos || [])
+        .filter(p => Number(p.stock_actual) < Number(p.stock_minimo));
+
+    // Aplicar el filtro de proveedor si está seleccionado
+    if (filtroProveedorListaCompras) {
+        listaSugerida = listaSugerida.filter(p => p.proveedor_id === filtroProveedorListaCompras);
+    }
+
+    if (listaSugerida.length === 0) {
+        alert("No hay productos en la lista de compras para exportar.");
+        return;
+    }
+
+    // 2. Preparar los datos en un formato amigable para Excel
+    const dataParaExcel = listaSugerida.map(p => {
+        const proveedorNombre = (proveedoresCache || []).find(pr => pr.id === p.proveedor_id)?.nombre || 'N/A';
+        const cantidadASugerir = Math.max(0, (Number(p.stock_maximo) || Number(p.stock_minimo) || 0) - (Number(p.stock_actual) || 0));
+
+        return {
+            'Producto': p.nombre,
+            'Proveedor': proveedorNombre,
+            'Stock Actual': p.stock_actual,
+            'Stock Mínimo': p.stock_minimo,
+            'Sugerido Comprar': cantidadASugerir
+        };
+    });
+
+    // 3. Crear y descargar el archivo Excel usando la librería XLSX (SheetJS)
+    // (Asegúrate de tener la librería SheetJS cargada en tu proyecto)
+    const worksheet = XLSX.utils.json_to_sheet(dataParaExcel);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Lista de Compras");
+
+    const fecha = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(workbook, `Lista_de_Compras_${fecha}.xlsx`);
+}
+
 // Fin de la sección Lista de Compras
 // Asegúrate de que esta sea la última parte de tu archivo, o que esté antes del cierre del módulo si usas IIFE.
 
@@ -2993,50 +3148,45 @@ function renderCarritoCompra() {
   let tbody = document.getElementById('carritoCompra');
   if (!tbody) return;
   tbody.innerHTML = '';
-  let total = 0;
+
+  let totalSinRedondear = 0;
   compraProveedorCarrito.forEach(item => {
     let subtotal = item.cantidad * item.precio;
-    total += subtotal;
+    totalSinRedondear += subtotal;
     let tr = document.createElement('tr');
     tr.innerHTML = `
-  <td style="padding:12px 10px;font-weight:500;color:#1e293b;">
-    ${item.nombre}
-  </td>
-  <td style="padding:12px 10px;text-align:center;color:#0ea5e9;">
-    ${item.cantidad}
-  </td>
-  <td style="padding:12px 10px;text-align:right;color:#22c55e;">
-    $${parseFloat(item.precio).toLocaleString('es-CO', { minimumFractionDigits: 0 })}
-  </td>
-  <td style="padding:12px 10px;text-align:right;font-weight:600;">
-    $${parseFloat(subtotal).toLocaleString('es-CO', { minimumFractionDigits: 0 })}
-  </td>
-  <td style="padding:10px 0;text-align:center;">
-    <button onclick="window.eliminarItemCompra('${item.id}')"
-      style="
-        background:#fee2e2;
-        color:#b91c1c;
-        border:none;
-        border-radius:6px;
-        padding:7px 14px;
-        font-weight:bold;
-        font-size:1.03em;
-        cursor:pointer;
-        transition:background 0.19s;
-      "
-      onmouseover="this.style.background='#fecaca'"
-      onmouseout="this.style.background='#fee2e2'"
-      title="Eliminar"
-    >✖️</button>
-  </td>
-`;
-
+      <td style="padding:12px 10px;font-weight:500;color:#1e293b;">
+        ${item.nombre}
+      </td>
+      <td style="padding:12px 10px;text-align:center;color:#0ea5e9;">
+        ${item.cantidad}
+      </td>
+      <td style="padding:12px 10px;text-align:right;color:#22c55e;">
+        ${formatCurrency(item.precio)}
+      </td>
+      <td style="padding:12px 10px;text-align:right;font-weight:600;">
+        ${formatCurrency(subtotal)}
+      </td>
+      <td style="padding:10px 0;text-align:center;">
+        <button onclick="window.eliminarItemCompra('${item.id}')"
+          style="background:#fee2e2; color:#b91c1c; border:none; border-radius:6px; padding:7px 14px; font-weight:bold; font-size:1.03em; cursor:pointer;"
+          title="Eliminar">
+          ✖️
+        </button>
+      </td>
+    `;
     tbody.appendChild(tr);
   });
-  let totalEl = document.getElementById('totalCompra');
-  if (totalEl) totalEl.textContent = `$${total}`;
-}
 
+  // --- LÓGICA DE REDONDEO APLICADA ---
+  // Redondea hacia arriba al siguiente múltiplo de 1000
+  let totalRedondeado = Math.ceil(totalSinRedondear / 1000) * 1000;
+
+  let totalEl = document.getElementById('totalCompra');
+  if (totalEl) {
+    totalEl.textContent = formatCurrency(totalRedondeado);
+  }
+}
 // 2. Elimina un producto del carrito de compra
 window.eliminarItemCompra = (id)=>{
   compraProveedorCarrito = compraProveedorCarrito.filter(i=>i.id!==id);
@@ -3132,8 +3282,9 @@ async function registrarCompraProveedor() {
             throw new Error("Debes seleccionar un proveedor.");
         }
 
-        let total = compraProveedorCarrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
-
+let totalSinRedondear = compraProveedorCarrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+// Redondea hacia arriba al siguiente múltiplo de 1000
+let total = Math.ceil(totalSinRedondear / 1000) * 1000;
         // 1. Registra la compra principal en estado pendiente
         const { data: compraData, error: compraError } = await currentSupabase.from('compras_tienda').insert({
             hotel_id: currentHotelId,

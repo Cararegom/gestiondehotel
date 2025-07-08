@@ -9,7 +9,19 @@ let currentChartInstances = {}; // Use an object to manage multiple chart instan
 let supabaseClient = null; // Assigned in mount
 let hotelConfigGlobal = null;
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
-import { formatCurrency, formatDateTime } from '../../uiUtils.js'; // Assuming these are available globally or adjust path
+import { formatCurrency, formatDateTime, showConsumosYFacturarModal, mostrarInfoModalGlobal } from '../../uiUtils.js';
+
+window.handleVerConsumosDesdeReporte = (roomContext) => {
+    // Esta función se encarga de llamar al modal, pasándole las variables
+    // globales del módulo de reportes que necesita para funcionar.
+    showConsumosYFacturarModal(
+        roomContext, 
+        supabaseClient, 
+        currentModuleUser, 
+        currentHotelId, 
+        document.getElementById('app-container')
+    );
+};
 
 const REPORTES_POR_PLAN = {
   lite: [
@@ -130,91 +142,95 @@ function limpiarAreaResultados(resultsContainerEl) {
   currentChartInstances = {};
 }
 
+
+
 async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInput, fechaFinInput) {
-  // ... (Código sin cambios significativos, igual al proporcionado anteriormente)
-  if (!resultsContainerEl) return;
-  resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando listado de reservas...</p>';
+    if (!resultsContainerEl) return;
+    resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando listado de reservas...</p>';
 
-  try {
-    const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
-    const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
+    try {
+        const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
+        const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
 
-    let query = supabaseClient
-      .from('reservas')
-      .select(`
-        id, cliente_nombre, fecha_inicio, fecha_fin, estado, monto_total,
-        habitaciones (nombre), metodo_pago_id, usuario_id 
-      `)
-      .eq('hotel_id', currentHotelId)
-      .order('fecha_inicio', { ascending: false });
+        let query = supabaseClient
+            .from('reservas')
+            .select(`
+                id, cliente_nombre, fecha_inicio, fecha_fin, estado, monto_total,
+                habitacion_id, habitaciones (nombre), metodo_pago_id, usuario_id 
+            `)
+            .eq('hotel_id', currentHotelId)
+            .order('fecha_inicio', { ascending: false });
 
-    if (fechaInicioInput) query = query.gte('fecha_inicio', fechaInicioQuery);
-    if (fechaFinInput) query = query.lte('fecha_inicio', fechaFinQuery); 
+        if (fechaInicioInput) query = query.gte('fecha_inicio', fechaInicioQuery);
+        if (fechaFinInput) query = query.lte('fecha_inicio', fechaFinQuery);
 
-    const { data: reservas, error } = await query;
-    if (error) throw error;
+        const { data: reservas, error } = await query;
+        if (error) throw error;
 
-    if (!reservas || reservas.length === 0) {
-      resultsContainerEl.innerHTML = '<p class="text-center text-gray-500 p-4">No se encontraron reservas para los criterios seleccionados.</p>';
-      return;
+        if (!reservas || reservas.length === 0) {
+            resultsContainerEl.innerHTML = '<p class="text-center text-gray-500 p-4">No se encontraron reservas para los criterios seleccionados.</p>';
+            return;
+        }
+
+        const metodoPagoIds = [...new Set(reservas.map(r => r.metodo_pago_id).filter(id => id))];
+        let metodosPagoMap = {};
+        if (metodoPagoIds.length > 0) {
+            const { data: metodosData } = await supabaseClient
+                .from('metodos_pago').select('id, nombre').in('id', metodoPagoIds);
+            if (metodosData) metodosPagoMap = Object.fromEntries(metodosData.map(m => [m.id, m.nombre]));
+        }
+
+        let html = `
+            <h4 class="text-lg font-semibold mb-3">Listado de Reservas</h4>
+            <div class="table-container overflow-x-auto shadow-md rounded-lg">
+                <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-100">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Cliente</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Habitación</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Entrada/Salida</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Estado</th>
+                            <th class="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Monto</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">`;
+
+        reservas.forEach(r => {
+            const roomContext = { id: r.habitacion_id, nombre: r.habitaciones?.nombre || 'N/A' };
+            const roomContextString = JSON.stringify(roomContext).replace(/"/g, "'");
+
+            const estadoLower = String(r.estado).toLowerCase();
+            let estadoClass = 'bg-yellow-100 text-yellow-800';
+            if (['confirmada', 'activa'].includes(estadoLower)) estadoClass = 'bg-green-100 text-green-800';
+            else if (estadoLower === 'cancelada') estadoClass = 'bg-red-100 text-red-800';
+            else if (['check_in', 'checkin'].includes(estadoLower)) estadoClass = 'bg-blue-100 text-blue-800';
+            else if (['check_out', 'checkout', 'completada', 'finalizada_auto'].includes(estadoLower)) estadoClass = 'bg-gray-200 text-gray-800';
+            
+            html += `
+                <tr class="hover:bg-gray-50 transition-colors duration-150">
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${r.cliente_nombre || 'N/A'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${r.habitaciones?.nombre || 'N/A'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(r.fecha_inicio)}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="badge px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoClass}">${r.estado || 'N/A'}</span></td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 text-right font-medium">${formatCurrencyLocal(r.monto_total)}</td>
+                    
+                    <td class="px-4 py-3 whitespace-nowrap text-center text-sm font-medium">
+                        <button onclick="window.handleVerConsumosDesdeReporte(${roomContextString})" 
+                                class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-1 rounded-full font-semibold transition-colors duration-200">
+                            Ver Consumos
+                        </button>
+                    </td>
+                </tr>`;
+        });
+        html += '</tbody></table></div>';
+        resultsContainerEl.innerHTML = html;
+    } catch (err) {
+        console.error('Error generating reservations list report:', err);
+        resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar listado: ${err.message}</p>`;
     }
-
-    const metodoPagoIds = [...new Set(reservas.map(r => r.metodo_pago_id).filter(id => id))];
-    let metodosPagoMap = {};
-    if (metodoPagoIds.length > 0) {
-        const { data: metodosData, error: metodosError } = await supabaseClient
-            .from('metodos_pago').select('id, nombre').in('id', metodoPagoIds);
-        if (metodosError) console.warn("Error fetching metodos_pago:", metodosError);
-        else metodosPagoMap = Object.fromEntries(metodosData.map(m => [m.id, m.nombre]));
-    }
-
-    let html = `
-      <h4 class="text-lg font-semibold mb-3">Listado de Reservas (${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})})</h4>
-      <div class="table-container overflow-x-auto shadow-md rounded-lg">
-        <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
-          <thead class="bg-gray-100">
-            <tr>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Cliente</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Habitación</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Entrada</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Salida</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Estado</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Monto</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Pagado con</th>
-            </tr>
-          </thead>
-          <tbody class="bg-white divide-y divide-gray-200">`;
-
-    reservas.forEach(r => {
-      const estadoLower = String(r.estado).toLowerCase();
-      let estadoClass = 'bg-yellow-100 text-yellow-800';
-      if (['confirmada', 'activa'].includes(estadoLower)) estadoClass = 'bg-green-100 text-green-800';
-      else if (estadoLower === 'cancelada') estadoClass = 'bg-red-100 text-red-800';
-      else if (['check_in', 'checkin'].includes(estadoLower)) estadoClass = 'bg-blue-100 text-blue-800';
-      else if (['check_out', 'checkout', 'completada', 'finalizada_auto'].includes(estadoLower)) estadoClass = 'bg-gray-200 text-gray-800';
-      
-      html += `
-        <tr class="hover:bg-gray-50 transition-colors duration-150">
-          <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${r.cliente_nombre || 'N/A'}</td>
-          <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${r.habitaciones?.nombre || 'N/A'}</td>
-          <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(r.fecha_inicio)}</td>
-          <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(r.fecha_fin)}</td>
-          <td class="px-4 py-3 whitespace-nowrap text-sm">
-            <span class="badge estado-${estadoLower} px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoClass}">
-              ${r.estado || 'N/A'}
-            </span>
-          </td>
-          <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 text-right font-medium">${formatCurrencyLocal(r.monto_total)}</td>
-          <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${metodosPagoMap[r.metodo_pago_id] || 'N/A'}</td>
-        </tr>`;
-    });
-    html += '</tbody></table></div>';
-    resultsContainerEl.innerHTML = html;
-  } catch (err) {
-    console.error('Error generating reservations list report:', err);
-    resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar listado: ${err.message}</p>`;
-  }
 }
+
 
 async function generarReporteIngresosPorPeriodo(resultsContainerEl, fechaInicioInput, fechaFinInput) {
   // ... (Código sin cambios significativos, igual al proporcionado anteriormente)

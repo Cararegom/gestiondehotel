@@ -330,3 +330,411 @@ export async function notificarAlegraViaZapier(supabase, hotelId, datosVenta) {
     console.warn("No se pudo notificar a Zapier/Alegra:", err);
   }
 }
+
+export async function showConsumosYFacturarModal(roomContext, supabase, currentUser, hotelId, mainAppContainer, initialButtonTrigger) {
+    const modalContainerConsumos = document.getElementById('modal-container');
+    if (!modalContainerConsumos) {
+        console.error("El contenedor del modal principal 'modal-container' no se encontró.");
+        return;
+    }
+
+    // 1. OBTENCIÓN DE DATOS (Esta parte ya estaba bien)
+    const { data: reserva, error: errRes } = await supabase.from('reservas').select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id, metodo_pago_id').eq('habitacion_id', roomContext.id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).order('fecha_inicio', { ascending: false }).limit(1).single();
+    
+    if (errRes || !reserva) {
+        mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos", [], modalContainerConsumos);
+        return;
+    }
+    reserva.habitacion_nombre = roomContext.nombre;
+
+    const alojamientoCargo = { tipo: "Habitación", nombre: "Estancia Principal", cantidad: 1, subtotal: Number(reserva.monto_total) || 0, id: "hab", estado_pago: "pendiente", fecha: reserva.fecha_inicio };
+    
+    // ... (El resto de la lógica para buscar cargos de tienda y servicios no cambia)
+    let cargosTienda = [];
+    const { data: ventasTiendaDB } = await supabase.from('ventas_tienda').select('id, creado_en').eq('reserva_id', reserva.id);
+    if (ventasTiendaDB && ventasTiendaDB.length > 0) {
+        const ventaTiendaIds = ventasTiendaDB.map(v => v.id);
+        const { data: detallesTienda } = await supabase.from('detalle_ventas_tienda').select('*, producto_id').in('venta_id', ventaTiendaIds);
+        if (detallesTienda) {
+            const productoIds = [...new Set(detallesTienda.map(d => d.producto_id))];
+            const { data: productos } = await supabase.from('productos_tienda').select('id, nombre').in('id', productoIds);
+            const productosMap = new Map(productos?.map(p => [p.id, p.nombre]));
+            cargosTienda = detallesTienda.map(item => ({ tipo: "Tienda", nombre: productosMap.get(item.producto_id) || 'Producto', id: `dvt_${item.id}`, cantidad: item.cantidad, subtotal: Number(item.subtotal) || 0, estado_pago: "pendiente", fecha: ventasTiendaDB.find(v => v.id === item.venta_id)?.creado_en }));
+        }
+    }
+    
+    const { data: serviciosYExtensiones } = await supabase.from('servicios_x_reserva').select('id, servicio_id, cantidad, nota, estado_pago, creado_en, precio_cobrado, pago_reserva_id, descripcion_manual').eq('reserva_id', reserva.id);
+    let cargosServiciosYExtensiones = [];
+    if (serviciosYExtensiones && serviciosYExtensiones.length) {
+        const servicioIds = [...new Set(serviciosYExtensiones.map(s => s.servicio_id).filter(Boolean))];
+        let nombresServicios = {};
+        if (servicioIds.length > 0) {
+            const { data: infoServicios } = await supabase.from('servicios_adicionales').select('id, nombre').in('id', servicioIds);
+            if (infoServicios) { infoServicios.forEach(s => { nombresServicios[s.id] = s.nombre; }); }
+        }
+        cargosServiciosYExtensiones = serviciosYExtensiones.map(s => ({ tipo: (s.descripcion_manual && s.descripcion_manual.toLowerCase().includes('descuento')) ? "Ajuste" : "Servicios", nombre: s.descripcion_manual || (s.servicio_id && nombresServicios[s.servicio_id]) || `Ítem #${s.id.slice(0,6)}`, id: `sxr_${s.id}`, cantidad: s.cantidad || 1, subtotal: s.precio_cobrado !== null ? Number(s.precio_cobrado) : 0, estado_pago: s.estado_pago || "pendiente", fecha: s.creado_en, nota: s.nota || "" }));
+    }
+
+    let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosServiciosYExtensiones].filter(c => c.id === 'hab' || c.subtotal !== 0);
+    const totalPagadoCalculado = Number(reserva.monto_pagado) || 0;
+    const totalDeTodosLosCargos = todosLosCargos.reduce((sum, c) => sum + Number(c.subtotal), 0);
+    const saldoPendienteFinal = Math.max(0, totalDeTodosLosCargos - totalPagadoCalculado);
+    
+    // 2. GENERACIÓN DE HTML (Esta parte ya estaba bien)
+    let htmlConsumos = `
+        <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:auto;" class="bg-white p-6 rounded-xl">
+            <div class="flex justify-between items-center mb-3"><h3 style="font-size:1.3em;font-weight:bold;color:#1459ae;">🧾 Consumos: Hab. ${roomContext.nombre}</h3><button id="btn-cerrar-modal-consumos-X" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
+            <div style="font-size:0.9em; margin-bottom:10px;">Cliente: <strong>${reserva.cliente_nombre}</strong></div>
+            <div class="max-h-[50vh] overflow-y-auto pr-2 mb-4 border rounded-md">
+                <table style="width:100%;border-collapse:collapse;font-size:0.9em;">
+                    </table>
+            </div>
+            <div style="margin-top:14px;font-size:1.1em; text-align:right; padding-right:10px;">
+                <div style="font-weight:bold;color:#1e40af;">Total Cargos: ${formatCurrency(totalDeTodosLosCargos)}</div>
+                <div style="font-weight:bold;color:#059669;">Total Pagado: ${formatCurrency(totalPagadoCalculado)}</div>
+                <div style="font-weight:bold;color:${saldoPendienteFinal > 0 ? '#dc2626' : '#16a34a'};">Saldo Pendiente: ${formatCurrency(saldoPendienteFinal)}</div>
+            </div>
+            <div class="mt-6 flex flex-col sm:flex-row gap-3 justify-end p-1">
+                ${saldoPendienteFinal > 0 ? `<button id="btn-cobrar-pendientes-consumos" class="button button-warning py-2.5 px-5 text-sm">Cobrar Saldo (${formatCurrency(saldoPendienteFinal)})</button>` : `<div class="text-green-600 font-bold text-lg p-2 text-center">¡Todo saldado! ✅</div>`}
+                ${totalDeTodosLosCargos > 0 ? `<button id="btn-facturar" class="button button-success py-2.5 px-5 text-sm">Facturar</button>` : ''}
+                <button id="btn-cerrar-modal-consumos" class="button button-danger py-2.5 px-5 text-sm">Cerrar</button>
+            </div>
+        </div>`;
+
+    modalContainerConsumos.innerHTML = htmlConsumos;
+    modalContainerConsumos.style.display = "flex";
+
+    // 3. ASIGNACIÓN DE EVENTOS (Aquí estaba el error, ahora corregido)
+    // Se añade una verificación "if (element)" para cada botón antes de asignarle un evento.
+
+    const btnCobrarPendientes = modalContainerConsumos.querySelector('#btn-cobrar-pendientes-consumos');
+    if (btnCobrarPendientes) {
+        btnCobrarPendientes.onclick = async () => { /* ... lógica para cobrar ... */ };
+    }
+
+    const btnFacturar = modalContainerConsumos.querySelector('#btn-facturar');
+    if (btnFacturar) {
+        btnFacturar.onclick = () => {
+            const datosParaImprimir = {
+                habitacion: reserva.habitacion_nombre,
+                cliente: reserva.cliente_nombre,
+                fechaIngreso: reserva.fecha_inicio,
+                fechaSalida: reserva.fecha_fin,
+                consumos: todosLosCargos.map(cargo => ({
+                    nombre: cargo.nombre,
+                    cantidad: cargo.cantidad,
+                    precio: cargo.cantidad > 0 ? (cargo.subtotal / cargo.cantidad) : cargo.subtotal,
+                    total: cargo.subtotal
+                })),
+                totalConsumo: totalDeTodosLosCargos,
+                otrosDatos: `Reserva ID: ${reserva.id.substring(0, 8)}`
+            };
+            imprimirTicketHabitacion({
+                supabase: supabase,
+                hotelId: hotelId,
+                datosTicket: datosParaImprimir,
+                tipoDocumento: 'Cuenta de Cobro'
+            });
+        };
+    }
+
+    const btnCerrarX = modalContainerConsumos.querySelector('#btn-cerrar-modal-consumos-X');
+    if (btnCerrarX) {
+        btnCerrarX.onclick = () => {
+            modalContainerConsumos.style.display = 'none';
+            modalContainerConsumos.innerHTML = '';
+        };
+    }
+
+    const btnCerrar = modalContainerConsumos.querySelector('#btn-cerrar-modal-consumos');
+    if (btnCerrar) {
+        btnCerrar.onclick = () => {
+            modalContainerConsumos.style.display = 'none';
+            modalContainerConsumos.innerHTML = '';
+        };
+    }
+}
+
+export async function imprimirTicketHabitacion({ supabase, hotelId, datosTicket, tipoDocumento }) {
+  // 1. Leer configuración de impresora
+  const { data: config } = await supabase
+    .from('configuracion_hotel')
+    .select('logo_url, nombre_hotel, direccion_fiscal, nit_rut, razon_social, tipo_impresora, tamano_papel, encabezado_ticket, pie_ticket, mostrar_logo')
+    .eq('hotel_id', hotelId)
+    .maybeSingle();
+
+  // 2. Decidir el ancho/tipo
+  let tamano = (config?.tamano_papel || '').toLowerCase();
+  let tipo = (config?.tipo_impresora || '').toLowerCase();
+
+  // --- Datos del ticket (ajusta según tus necesidades)
+  const {
+    habitacion,
+    cliente,
+    fechaIngreso,
+    fechaSalida,
+    consumos, // array [{nombre, cantidad, precio, total}]
+    totalConsumo,
+    otrosDatos // opcional
+  } = datosTicket;
+
+  // --- Estilos y HTML base según impresora ---
+  let style = '';
+  let anchoMax = '100%';
+  if (tamano === '58mm') {
+    anchoMax = '55mm'; style = `
+      body{font-family:monospace;font-size:11px;max-width:55mm;margin:0;padding:0;}
+      .ticket{max-width:55mm;margin:auto;}
+      table{width:100%;font-size:11px;}
+      th,td{padding:2px 2px;}
+      .title{font-size:13px;}
+      .linea{border-bottom:1px dashed #444;margin:3px 0;}
+    `;
+  } else if (tamano === '80mm') {
+    anchoMax = '78mm'; style = `
+      body{font-family:monospace;font-size:13px;max-width:78mm;margin:0;padding:0;}
+      .ticket{max-width:78mm;margin:auto;}
+      table{width:100%;font-size:13px;}
+      th,td{padding:3px 2px;}
+      .title{font-size:17px;}
+      .linea{border-bottom:1px dashed #444;margin:4px 0;}
+    `;
+  } else {
+    anchoMax = '850px'; style = `
+      body{font-family:'Segoe UI',Arial,sans-serif;font-size:15px;max-width:850px;margin:0 auto;}
+      .ticket{max-width:850px;margin:auto;}
+      table{width:100%;font-size:15px;}
+      th,td{padding:6px 5px;}
+      .title{font-size:22px;}
+      .linea{border-bottom:1px solid #ccc;margin:10px 0;}
+    `;
+  }
+
+  // --- HTML ticket --- (ajusta aquí tu template según lo que imprimas: factura, consumo, etc)
+let html = ''; // Inicializar vacía
+
+  if (tipoDocumento === 'Recibo de Pago') {
+    const {
+        habitacion,
+        cliente,
+        fechaPago,
+        montoPagado,
+        metodoPagoNombre,
+        conceptoPago,
+        // usuarioNombre, // Lo incluiremos en otrosDatos si es necesario
+        // transaccionId, // Lo incluiremos en otrosDatos si es necesario
+        otrosDatos // Recibirá: `Reserva ID: XXXXX<br>Atendido por: YYYYY`
+    } = datosTicket;
+
+    html = `
+        <div class="ticket">
+            ${config?.mostrar_logo !== false && config?.logo_url ? `<div style="text-align:center;margin-bottom:4px;"><img src="${config.logo_url}" style="max-width:45mm;max-height:30px; object-fit:contain;"></div>` : ''}
+            <div class="title" style="text-align:center;font-weight:bold; margin-bottom:3px;">${config?.nombre_hotel || ''}</div>
+            <div style="text-align:center;font-size:0.9em;">
+                ${config?.direccion_fiscal || ''}
+                ${config?.nit_rut ? `<br/>NIT/RUT: ${config.nit_rut}` : ''}
+                ${config?.razon_social ? `<br/>${config.razon_social}` : ''}
+                ${config?.telefono_fiscal ? `<br/>Tel: ${config.telefono_fiscal}` : ''}
+            </div>
+            ${config?.encabezado_ticket_l1 || config?.encabezado_ticket_l2 || config?.encabezado_ticket_l3 ? 
+                `<div style="text-align:center;margin:3px 0 5px 0;font-size:0.9em;">
+                    ${config.encabezado_ticket_l1 || ''}
+                    ${config.encabezado_ticket_l2 ? `<br>${config.encabezado_ticket_l2}` : ''}
+                    ${config.encabezado_ticket_l3 ? `<br>${config.encabezado_ticket_l3}` : ''}
+                </div>` : (config?.encabezado_ticket ? `<div style="text-align:center;margin:2px 0 5px 0;font-size:0.9em;">${config.encabezado_ticket}</div>` : '')
+            }
+            <div class="linea"></div>
+            <div style="font-size:1.1em; text-align:center; font-weight:bold; margin: 3px 0;">RECIBO DE PAGO</div>
+            <div class="linea"></div>
+            <div style="font-size:0.95em;"><b>Fecha y Hora:</b> ${formatDateTime(fechaPago)}</div>
+            <div style="font-size:0.95em;"><b>Cliente:</b> ${cliente || "N/A"}</div>
+            <div style="font-size:0.95em;"><b>Habitación:</b> ${habitacion || "N/A"}</div>
+            <div class="linea"></div>
+            <div style="font-size:0.95em;"><b>Concepto:</b> ${conceptoPago || "Pago Varios"}</div>
+            <div style="font-size:0.95em;"><b>Método de Pago:</b> ${metodoPagoNombre || "N/A"}</div>
+            <div class="linea"></div>
+            <div style="text-align:right;font-size:1.2em;font-weight:bold;margin: 5px 0;">
+                TOTAL PAGADO: ${formatCurrency(montoPagado || 0)}
+            </div>
+            ${otrosDatos ? `<div style="margin-top:5px;font-size:0.9em;">${otrosDatos}</div>` : ''}
+            <div class="linea"></div>
+            ${config?.pie_ticket ? `<div style="text-align:center;margin-top:6px;font-size:0.9em;">${config.pie_ticket}</div>` : ''}
+            <div style="text-align:center;font-size:0.8em;margin-top:8px;">Documento no fiscal. Comprobante de pago interno.</div>
+        </div>
+    `;
+  } else { // Lógica existente para 'Ticket de Consumo' o cualquier otro tipo por defecto
+      const {
+          habitacion,
+          cliente,
+          fechaIngreso,
+          fechaSalida,
+          consumos,
+          totalConsumo,
+          otrosDatos: otrosDatosConsumo // Renombrar para evitar colisión
+      } = datosTicket;
+
+      html = `
+          <div class="ticket">
+            ${config?.mostrar_logo !== false && config?.logo_url ? `<div style="text-align:center;margin-bottom:4px;"><img src="${config.logo_url}" style="max-width:45mm;max-height:30px; object-fit:contain;"></div>` : ''}
+            <div class="title" style="text-align:center;font-weight:bold; margin-bottom:3px;">${config?.nombre_hotel || ''}</div>
+            <div style="text-align:center;font-size:0.9em;">
+                ${config?.direccion_fiscal || ''}
+                ${config?.nit_rut ? `<br/>NIT/RUT: ${config.nit_rut}` : ''}
+                ${config?.razon_social ? `<br/>${config.razon_social}` : ''}
+                ${config?.telefono_fiscal ? `<br/>Tel: ${config.telefono_fiscal}` : ''}
+            </div>
+            ${config?.encabezado_ticket_l1 || config?.encabezado_ticket_l2 || config?.encabezado_ticket_l3 ? 
+                `<div style="text-align:center;margin:3px 0 5px 0;font-size:0.9em;">
+                    ${config.encabezado_ticket_l1 || ''}
+                    ${config.encabezado_ticket_l2 ? `<br>${config.encabezado_ticket_l2}` : ''}
+                    ${config.encabezado_ticket_l3 ? `<br>${config.encabezado_ticket_l3}` : ''}
+                </div>` : (config?.encabezado_ticket ? `<div style="text-align:center;margin:2px 0 5px 0;font-size:0.9em;">${config.encabezado_ticket}</div>` : '')
+            }
+            <div class="linea"></div>
+            <div style="font-size:1.1em; text-align:center; font-weight:bold; margin: 3px 0;">${tipoDocumento || "Ticket de Consumo"}</div>
+            <div class="linea"></div>
+            <div style="font-size:0.95em;"><b>Habitación:</b> ${habitacion || ""}</div>
+            <div style="font-size:0.95em;"><b>Cliente:</b> ${cliente || ""}</div>
+            ${fechaIngreso ? `<div style="font-size:0.95em;"><b>Ingreso:</b> ${formatDateTime(fechaIngreso)}</div>` : ""}
+            ${fechaSalida ? `<div style="font-size:0.95em;"><b>Salida:</b> ${formatDateTime(fechaSalida)}</div>` : ""}
+
+            ${(consumos && consumos.length > 0) ? `
+              <div class="linea"></div>
+              <table>
+                <thead>
+                  <tr><th>Producto</th><th>Cant</th><th>Precio</th><th>Total</th></tr>
+                </thead>
+                <tbody>
+                  ${(consumos).map(item => `
+                    <tr>
+                      <td>${item.nombre || ""}</td>
+                      <td style="text-align:center;">${item.cantidad || ""}</td>
+                      <td style="text-align:right;">${formatCurrency(item.precio || 0)}</td>
+                      <td style="text-align:right;">${formatCurrency(item.total || 0)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+              <div class="linea"></div>
+              <div style="text-align:right;font-size:1.2em;font-weight:bold;margin: 5px 0;">
+                TOTAL CONSUMO: ${formatCurrency(totalConsumo || 0)}
+              </div>
+            ` : (totalConsumo && tipoDocumento !== 'Recibo de Pago' ? `
+                <div class="linea"></div>
+                 <div style="text-align:right;font-size:1.2em;font-weight:bold;margin: 5px 0;">
+                    TOTAL: ${formatCurrency(totalConsumo || 0)}
+                </div>
+            ` : '')}
+            ${otrosDatosConsumo ? `<div style="margin-top:5px;font-size:0.9em;">${otrosDatosConsumo}</div>` : ''}
+            <div class="linea"></div>
+            ${config?.pie_ticket ? `<div style="text-align:center;margin-top:6px;font-size:0.9em;">${config.pie_ticket}</div>` : ''}
+          </div>
+        `;
+  }
+  // --- Ventana de impresión ---
+  let w = window.open('', '', `width=400,height=700`);
+  w.document.write(`
+    <html>
+      <head>
+        <title>${tipoDocumento || 'Ticket'}</title>
+        <style>
+          ${style}
+          @media print { .no-print {display:none;} }
+        </style>
+      </head>
+      <body>
+        ${html}
+      </body>
+    </html>
+  `);
+  w.document.close();
+  setTimeout(() => { w.focus(); w.print(); }, 250);
+}
+export function mostrarInfoModalGlobal(htmlContent, title = "Información", botones = [], modalContainerRef = null) {
+    const container = modalContainerRef || document.getElementById('modal-container');
+
+    if (!container) {
+        console.error("Contenedor de modal global no encontrado ('modal-container'). El modal no se puede mostrar.");
+        // Fallback muy básico si el contenedor principal no existe
+        alert(title + "\n\n" + String(htmlContent).replace(/<[^>]*>/g, ''));
+        return;
+    }
+
+    container.style.display = "flex"; // Ahora 'container' debería ser el elemento DOM correcto
+    container.innerHTML = ""; // Limpiar contenido anterior
+
+    const modalDialog = document.createElement('div');
+    modalDialog.className = "bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 m-auto relative animate-fade-in-up";
+
+    let buttonsHTML = '';
+    const closeAndClean = () => {
+        if (container) { // Doble chequeo por si acaso
+            container.style.display = "none";
+            container.innerHTML = '';
+        }
+    };
+
+    if (botones && botones.length > 0) {
+        botones.forEach((btnInfo, index) => {
+            // Usar clases de botón base y permitir clases personalizadas
+            const btnClass = btnInfo.clase || (index === 0 && botones.length === 1 ? 'button-primary' : 'button-neutral');
+            buttonsHTML += `<button id="info-modal-btn-${index}" class="button ${btnClass} py-2 px-4 ml-2">${btnInfo.texto}</button>`;
+        });
+    } else {
+        // Botón "Entendido" por defecto si no se especifican otros botones
+        buttonsHTML = `<button id="btn-ok-info-modal-global" class="button button-primary py-2 px-4">Entendido</button>`;
+    }
+
+    modalDialog.innerHTML = `
+        <div class="flex justify-between items-start mb-4">
+            <h3 class="text-xl font-semibold text-gray-800">${title}</h3>
+            <button id="close-info-modal-global-btn" class="text-gray-400 hover:text-red-600 text-3xl leading-none p-1 -mt-2 -mr-2">&times;</button>
+        </div>
+        <div class="text-gray-700 max-h-[70vh] overflow-y-auto pr-2">${htmlContent}</div>
+        <div class="mt-6 text-right">
+            ${buttonsHTML}
+        </div>
+    `;
+    container.appendChild(modalDialog);
+
+    // Asignar acciones a los botones
+    if (botones && botones.length > 0) {
+        botones.forEach((btnInfo, index) => {
+            const btnElement = modalDialog.querySelector(`#info-modal-btn-${index}`);
+            if (btnElement) {
+                btnElement.onclick = () => {
+                    if (typeof btnInfo.accion === 'function') {
+                        btnInfo.accion();
+                    }
+                    // Por defecto, la mayoría de las acciones de botón deberían cerrar el modal,
+                    // a menos que la propia acción lo maneje o se quiera mantener abierto.
+                    // Si una acción NO debe cerrar el modal, la acción puede devolver `false`.
+                    if (btnInfo.noCerrar !== true) {
+                         closeAndClean();
+                    }
+                };
+            }
+        });
+    } else {
+        const defaultOkButton = modalDialog.querySelector('#btn-ok-info-modal-global');
+        if (defaultOkButton) {
+            defaultOkButton.onclick = closeAndClean;
+        }
+    }
+
+    const closeModalButton = modalDialog.querySelector('#close-info-modal-global-btn');
+    if (closeModalButton) {
+        closeModalButton.onclick = closeAndClean;
+    }
+
+    // Cerrar si se hace clic fuera del modalDialog (en el overlay 'container')
+    container.onclick = (e) => {
+        if (e.target === container) {
+            closeAndClean();
+        }
+    };
+    // Prevenir que el clic en el modalDialog cierre el modal (ya que se propagaría al container)
+    modalDialog.onclick = (e) => {
+        e.stopPropagation();
+    };
+}
