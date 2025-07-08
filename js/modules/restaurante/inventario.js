@@ -94,14 +94,17 @@ async function cargarYRenderizarIngredientes(filtros = {}) {
     if (filtros.nombre) {
       query = query.ilike('nombre', `%${filtros.nombre}%`);
     }
-    if (filtros.stockBajo) {
-      query = query.lte('stock_actual', 'cs.stock_minimo');
-    }
-
     const { data: ingredientes, error } = await query;
-    if (error) throw error;
+if (error) throw error;
 
-    renderTablaIngredientes(container, ingredientes);
+// 👇 Filtra por stock bajo solo en el frontend si se solicita
+let ingredientesFiltrados = ingredientes;
+if (filtros.stockBajo) {
+  ingredientesFiltrados = ingredientes.filter(ing => Number(ing.stock_actual) <= Number(ing.stock_minimo));
+}
+
+renderTablaIngredientes(container, ingredientesFiltrados);
+
   } catch (error) {
     console.error("INVENTARIO: Error cargando ingredientes:", error);
     container.innerHTML = `<p class="error-indicator">Error al cargar ingredientes: ${error.message}</p>`;
@@ -115,7 +118,7 @@ async function cargarYRenderizarIngredientes(filtros = {}) {
  */
 function renderTablaIngredientes(container, ingredientes) {
   if (ingredientes.length === 0) {
-    container.innerHTML = `<div class="p-4 text-center text-gray-500 bg-gray-50 rounded-lg">No se encontraron ingredientes.</div>`;
+    container.innerHTML = `<div class="p-4 text-center text-gray-500 bg-gray-50 rounded-lg">No se encontraron ingredientes con stock bajo.</div>`;
     return;
   }
 

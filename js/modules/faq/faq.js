@@ -7,6 +7,7 @@
 
 // Datos de las preguntas y respuestas, organizadas por categoría y funcionalidad.
 const faqData = [
+  // ... (Las otras categorías como "Mapa de Habitaciones", "Reservas", etc., se mantienen igual)
   {
     category: "Mapa de Habitaciones",
     icon: "🗺️",
@@ -23,22 +24,6 @@ const faqData = [
         q: "¿Cómo funciona 'Alquilar Ahora'?",
         a: "Esta opción, para habitaciones libres, abre un completo formulario de alquiler tipo POS. Aquí puedes:<ul><li>Buscar un cliente existente o registrar uno nuevo.</li><li>Seleccionar la duración por noches o por horas predefinidas.</li><li>Ajustar la cantidad de huéspedes.</li><li>Aplicar descuentos por código, por cliente o automáticos.</li><li>Registrar el pago con uno o varios métodos (pago mixto).</li></ul>"
       },
-      {
-        q: "¿Qué información veo en 'Ver Consumos'?",
-        a: "Abre un modal que muestra un resumen detallado de TODOS los cargos asociados a la reserva activa:<ul><li>El costo de la estancia principal.</li><li>Todos los productos de la tienda cargados a la habitación.</li><li>Todos los platos del restaurante cargados a la habitación.</li><li>Todos los servicios adicionales y extensiones de tiempo.</li></ul>Calcula el total de cargos, el total pagado y el saldo pendiente exacto. Desde aquí también puedes facturar."
-      },
-      {
-        q: "¿Cómo agrego servicios (ej. lavandería) a una habitación ocupada?",
-        a: "Usa el botón 'Servicios Adicionales'. Se abrirá un modal donde puedes seleccionar uno o varios servicios, indicar la cantidad y añadir una nota. Luego, te da dos opciones:<ul><li><b>Cobrar AHORA:</b> Registra el pago del servicio inmediatamente en la caja (si hay un turno abierto).</li><li><b>Cobrar al FINAL:</b> Suma el costo del servicio a la cuenta de la habitación para que se pague al momento del check-out.</li></ul>"
-      },
-      {
-        q: "¿Puedo cambiar a un huésped de habitación?",
-        a: "Sí. El botón 'Cambiar de Habitación' te permite seleccionar una habitación que esté 'Libre' y te pide un motivo para el cambio. El sistema automáticamente transfiere la reserva y el cronómetro a la nueva habitación, deja la habitación de origen en estado de 'Limpieza' y registra el cambio en una bitácora."
-      },
-      {
-        q: "¿Qué hace el botón 'Entregar Habitación'?",
-        a: "Es la función de Check-out. Antes de proceder, el sistema valida que el saldo pendiente de la habitación sea cero. Si la cuenta está saldada, la reserva se marca como 'Completada', el cronómetro se detiene y la habitación cambia su estado a 'Limpieza'."
-      }
     ]
   },
   {
@@ -53,13 +38,9 @@ const faqData = [
         q: "¿Cómo se manejan los pagos de las reservas futuras?",
         a: "Depende de la política del hotel. En 'Configuración', puedes definir si el 'Cobro es al Check-in' (la opción por defecto) o al Check-out. Si es al check-in, el sistema te permitirá registrar un pago completo o un abono al momento de crear la reserva, pero también te exigirá el pago total antes de poder realizar el check-in."
       },
-      {
-        q: "¿Puedo sincronizar estas reservas con un calendario externo?",
-        a: "Sí. El sistema está preparado para sincronizarse con Google Calendar. Al cargar el módulo, intentará buscar nuevos eventos en tu calendario conectado y los importará como nuevas reservas si no existen en el sistema. Reconoce eventos de iCal (Booking, Airbnb) y eventos creados manualmente."
-      }
     ]
   },
-  {
+    {
     category: "Caja y Turnos",
     icon: "💰",
     questions: [
@@ -71,14 +52,6 @@ const faqData = [
         q: "¿Cómo abro y cierro un turno?",
         a: "Si no hay un turno activo, el módulo de Caja te mostrará un botón grande para 'Abrir Turno', pidiéndote un monto inicial. Para cerrar, haz clic en 'Realizar Corte de Caja'. El sistema calculará automáticamente todos los totales, los desglosará por método de pago y generará un reporte detallado."
       },
-      {
-        q: "¿El reporte de cierre de caja se envía a algún lugar?",
-        a: "Sí. Después de confirmar el corte, el sistema envía automáticamente el reporte HTML por correo a la dirección configurada en los ajustes del hotel. Una vez enviado, el turno se marca como 'Cerrado' y ya no se pueden registrar más movimientos en él."
-      },
-      {
-        q: "Cometí un error al registrar un pago. ¿Puedo cambiar el método de pago?",
-        a: "Sí. En la lista de movimientos del turno activo, cada fila tiene un ícono de lápiz (✏️) al lado del método de pago. Al hacer clic, puedes seleccionar el método correcto y guardarlo. Esto solo cambia el método, no el monto."
-      }
     ]
   },
   {
@@ -99,7 +72,7 @@ const faqData = [
       }
     ]
   },
-    {
+  {
     category: "Administración y Configuración",
     icon: "⚙️",
     questions: [
@@ -111,10 +84,6 @@ const faqData = [
             q: "¿Cómo se generan los horarios automáticamente?",
             a: "El sistema cuenta con un flujo de trabajo en N8N que se ejecuta cada jueves para generar los horarios de la próxima semana. Este proceso es rotativo para ser justo y evita asignar a un recepcionista el turno de mañana del lunes si trabajó el domingo por la noche. Los horarios generados se pueden ajustar manualmente después."
         },
-        {
-            q: "¿Dónde configuro el tamaño de los tickets de la impresora?",
-            a: "En el módulo 'Configuración', dentro de la sección 'Configuración de Impresión', puedes seleccionar el tamaño del papel entre 58mm, 80mm (para impresoras térmicas) o Carta/A4 (para impresoras estándar). El sistema adaptará el formato de impresión automáticamente."
-        }
     ]
   }
 ];
@@ -134,43 +103,168 @@ export function mount(container, supabase, user) {
       .faq-answer ul li { margin-bottom: 0.5rem; }
       .faq-item.open .faq-answer { display: block; }
       .faq-item.open .faq-question .icon { transform: rotate(45deg); }
+
+      /* Estilos para la cuadrícula de videos */
+      .video-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+      }
+
+      /* Estilos para cada miniatura de video */
+      .video-thumbnail-container {
+        position: relative;
+        cursor: pointer;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .video-thumbnail-container:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 6px franchising, rgba(0,0,0,0.15);
+      }
+      .video-thumbnail-container img {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+      .play-icon {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        font-size: 3rem;
+        color: white;
+        background-color: rgba(0, 0, 0, 0.5);
+        border-radius: 50%;
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        line-height: 60px;
+        text-shadow: 0 0 10px black;
+        pointer-events: none; /* Para que no interfiera con el clic */
+      }
+      .video-title {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+        color: white;
+        padding: 1rem 0.5rem 0.5rem;
+        font-size: 0.9rem;
+        font-weight: bold;
+        text-align: center;
+        margin: 0;
+      }
+
+      /* Estilos para la ventana modal (reproductor) */
+      .video-modal {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.85);
+        display: none; /* Oculto por defecto */
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+      .video-modal-content {
+        position: relative;
+        width: 90%;
+        max-width: 900px;
+        max-height: 80%;
+      }
+      .video-modal-close {
+        position: absolute;
+        top: -40px;
+        right: 0;
+        color: white;
+        font-size: 2.5rem;
+        font-weight: bold;
+        cursor: pointer;
+      }
+      .video-modal video {
+        width: 100%;
+        height: auto;
+        max-height: 80vh;
+      }
     </style>
+
     <div class="faq-container">
       <h1 class="text-4xl font-extrabold text-center text-gray-800 mb-10">Preguntas Frecuentes Detalladas</h1>
   `;
 
-  faqData.forEach(category => {
+faqData.forEach(category => {
+  html += `
+    <section class="faq-category">
+      <h2 class="faq-category-title">
+        <span class="text-3xl">${category.icon}</span>
+        ${category.category}
+      </h2>
+      <div class="faq-list">
+  `;
+  category.questions.forEach((item, index) => {
     html += `
-      <section class="faq-category">
-        <h2 class="faq-category-title">
-          <span class="text-3xl">${category.icon}</span>
-          ${category.category}
-        </h2>
-        <div class="faq-list">
-    `;
-    category.questions.forEach((item, index) => {
-      html += `
-        <div class="faq-item">
-          <button class="faq-question">
-            <span>${item.q}</span>
-            <span class="icon">+</span>
-          </button>
-          <div class="faq-answer">
-            ${item.a}
-          </div>
+      <div class="faq-item">
+        <button class="faq-question">
+          <span>${item.q}</span>
+          <span class="icon">+</span>
+        </button>
+        <div class="faq-answer">
+          ${item.a}
         </div>
-      `;
-    });
-    html += `</div></section>`;
+      </div>
+    `;
   });
 
-  html += `</div>`;
+  // --- Aquí añadimos los videos SOLO al final de Tienda y Restaurante ---
+  if (category.category === "Tienda y Restaurante") {
+    html += `
+      <div class="faq-video-tutorials mt-6">
+        <h3 class="text-xl font-bold mb-2 text-blue-800">Tutoriales en Video: Punto de Venta</h3>
+        <div class="video-grid">
+          <div class="video-thumbnail-container" data-video-src="../js/modules/faq/Tienda.mp4">
+            <img src="../js/modules/faq/Tienda_thumbnail.png" alt="Video sobre POS de Tienda">
+            <div class="play-icon">▶</div>
+            <p class="video-title">Tutorial: Punto de Venta (Tienda)</p>
+          </div>
+          <div class="video-thumbnail-container" data-video-src="../js/modules/faq/Restaurante.mp4">
+            <img src="../js/modules/faq/Restaurante_thumbnail.png" alt="Video sobre POS de Restaurante">
+            <div class="play-icon">▶</div>
+            <p class="video-title">Tutorial: Punto de Venta (Restaurante)</p>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  html += `</div></section>`;
+});
+  
+
+  // --- PASO 4: AQUÍ AÑADIMOS EL HTML DEL MODAL ---
+  html += `
+      <div id="video-modal" class="video-modal">
+        <div class="video-modal-content">
+          <span id="video-modal-close" class="video-modal-close">&times;</span>
+          <div id="video-player-container"></div>
+        </div>
+      </div>
+    </div>`;
+
   container.innerHTML = html;
 
-  // Lógica del acordeón
+  // --- Lógica original del acordeón (se mantiene igual) ---
   container.querySelectorAll('.faq-question').forEach(button => {
     button.addEventListener('click', () => {
       const item = button.parentElement;
+      // ... (resto de la lógica del acordeón)
       const answer = button.nextElementSibling;
       const icon = button.querySelector('.icon');
       const isOpen = item.classList.contains('open');
@@ -188,8 +282,44 @@ export function mount(container, supabase, user) {
       }
     });
   });
+
+  // --- PASO 5: AQUÍ AÑADIMOS LA LÓGICA JAVASCRIPT PARA LOS VIDEOS ---
+  const modal = container.querySelector('#video-modal');
+  const modalClose = container.querySelector('#video-modal-close');
+  const videoPlayerContainer = container.querySelector('#video-player-container');
+
+  container.querySelectorAll('.video-thumbnail-container').forEach(thumb => {
+    thumb.addEventListener('click', () => {
+      const videoSrc = thumb.getAttribute('data-video-src');
+      if (videoSrc) {
+        // Crea el elemento de video y lo añade al modal
+        videoPlayerContainer.innerHTML = `
+          <video controls autoplay>
+            <source src="${videoSrc}" type="video/mp4">
+            Tu navegador no soporta la etiqueta de video.
+          </video>
+        `;
+        modal.style.display = 'flex'; // Muestra el modal
+      }
+    });
+  });
+
+  // Función para cerrar el modal
+  const closeModal = () => {
+    modal.style.display = 'none'; // Oculta el modal
+    videoPlayerContainer.innerHTML = ''; // Detiene y elimina el video
+  };
+
+  modalClose.addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => {
+    // Cierra el modal si se hace clic en el fondo oscuro, pero no en el video
+    if (e.target === modal) {
+      closeModal();
+    }
+  });
 }
 
 export function unmount(container) {
+  // Limpia el contenido al desmontar el módulo
   container.innerHTML = '';
 }
