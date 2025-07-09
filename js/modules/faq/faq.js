@@ -9,23 +9,80 @@
 const faqData = [
   // ... (Las otras categorías como "Mapa de Habitaciones", "Reservas", etc., se mantienen igual)
   {
-    category: "Mapa de Habitaciones",
-    icon: "🗺️",
-    questions: [
-      {
-        q: "¿Qué significan los colores en las tarjetas de las habitaciones?",
-        a: "Los colores te indican el estado del tiempo de la estancia:<ul><li><b>Verde:</b> La estancia tiene tiempo de sobra.</li><li><b>Naranja:</b> Quedan menos de 30 minutos.</li><li><b>Amarillo:</b> Quedan menos de 15 minutos.</li><li><b>Rojo y Parpadeando:</b> ¡El tiempo se ha agotado! La habitación está en estado 'tiempo agotado'.</li></ul>"
-      },
-      {
-        q: "¿Qué opciones tengo al hacer clic en una habitación?",
-        a: "Abre un menú de acciones rápidas que cambia según el estado de la habitación. Por ejemplo, para una habitación 'Libre' verás 'Alquilar Ahora', mientras que para una 'Ocupada' verás 'Extender Tiempo', 'Ver Consumos', 'Servicios Adicionales', etc.."
-      },
-      {
-        q: "¿Cómo funciona 'Alquilar Ahora'?",
-        a: "Esta opción, para habitaciones libres, abre un completo formulario de alquiler tipo POS. Aquí puedes:<ul><li>Buscar un cliente existente o registrar uno nuevo.</li><li>Seleccionar la duración por noches o por horas predefinidas.</li><li>Ajustar la cantidad de huéspedes.</li><li>Aplicar descuentos por código, por cliente o automáticos.</li><li>Registrar el pago con uno o varios métodos (pago mixto).</li></ul>"
-      },
-    ]
-  },
+  category: "Mapa de Habitaciones",
+  icon: "🗺️",
+  questions: [
+    {
+      q: "¿Qué es el Mapa de Habitaciones y para qué sirve?",
+      a: "Es la vista principal para gestionar el hotel de forma visual. Desde aquí puedes ver rápidamente el estado de todas las habitaciones (libre, ocupada, reservada, limpieza, mantenimiento, bloqueada, etc.) y acceder a todas las acciones importantes como alquilar, entregar reservas, ver información del huésped, facturar, y más."
+    },
+    {
+  q: "¿Qué significan los colores y los estados en las tarjetas de las habitaciones?",
+  a: `<ul>
+    <li><b style="color:#22c55e">Verde (LIBRE):</b> Habitación disponible para alquilar.</li>
+    <li><b style="color:#facc15">Amarillo (OCUPADA):</b> Habitación actualmente ocupada por un cliente hospedado.</li>
+    <li><b style="color:#06b6d4">Celeste (LIMPIEZA):</b> Habitación pendiente de limpieza.</li>
+    <li><b style="color:#a78bfa">Morado (RESERVADA):</b> Habitación reservada para un cliente.</li>
+    <li><b style="color:#f87171">Rojo (TIEMPO AGOTADO o EXCEDIDO):</b> Se acabó o se excedió el tiempo de estadía; la habitación debe ser liberada.</li>
+    <li><b style="color:#6b7280">Gris (BLOQUEADA / MANTENIMIENTO):</b> Habitación no disponible por mantenimiento o bloqueo.</li>
+  </ul>`
+},
+
+    {
+      q: "¿Cómo alquilo una habitación directamente desde el mapa?",
+      a: "Haz clic sobre una tarjeta de habitación que esté en estado 'Libre' (color verde). Luego selecciona 'Alquilar Ahora', completa el formulario con los datos del huésped y el tipo de alquiler (por horas, noche, día completo, etc.) y confirma. La habitación cambiará automáticamente a 'Ocupada'."
+    },
+    {
+      q: "¿Qué hago cuando llega un cliente con reserva?",
+      a: "Ubica la habitación marcada como 'Reservada' (azul) y haz clic en ella. Selecciona la opción 'Entregar Reserva', verifica los datos del cliente y confirma el check-in. La habitación pasará a estado 'Ocupada'."
+    },
+    {
+      q: "¿Cómo agrego servicios o consumos a una habitación ocupada?",
+      a: "Haz clic en la habitación en estado 'Ocupada'. Selecciona la opción 'Ver consumos' o 'Servicios Adicionales'. Aquí podrás agregar productos, restaurante, lavandería, minibar, etc. Todos los consumos quedarán registrados y se sumarán a la factura al momento del check-out."
+    },
+    {
+      q: "¿Puedo extender el tiempo de una habitación que está por vencer?",
+      a: "Sí. Si ves que una habitación ocupada está por agotarse (naranja o parpadeando), haz clic en ella y selecciona 'Extender tiempo'. Elige el nuevo tiempo o tarifa y confirma. El contador de tiempo se actualizará automáticamente."
+    },
+    {
+      q: "¿Cómo facturo y libero una habitación?",
+      a: "Cuando el huésped se retira, haz clic en la habitación ocupada y selecciona 'Facturar/Check-out'. Verifica los cargos y consumos, selecciona el método de pago y finaliza la factura. Al terminar, la habitación pasará a estado 'Pendiente de limpieza'."
+    },
+    {
+      q: "¿Cómo marco una habitación como limpia después del check-out?",
+      a: "Cuando la habitación esté en estado 'Pendiente de limpieza' (amarillo), haz clic en ella y selecciona 'Marcar como limpia' después de que el personal haya terminado. La habitación volverá a estar 'Libre' y disponible para el siguiente huésped."
+    },
+    {
+      q: "¿Qué hago si una habitación necesita ser reparada o no debe ser usada?",
+      a: "Haz clic en la habitación y selecciona 'Enviar a mantenimiento' o 'Bloquear habitación'. Indica el motivo (si es necesario). La habitación quedará en gris y no podrá ser alquilada ni reservada hasta que la reabras manualmente."
+    },
+    {
+      q: "¿Cómo consulto los datos del huésped y el historial de la habitación?",
+      a: "Haz clic en cualquier habitación ocupada y elige 'Ver información del huésped'. Verás nombre, documento, fechas de ingreso/salida, consumos y notas. Para ver el historial completo de ocupaciones, selecciona 'Ver historial de habitación'."
+    },
+    {
+      q: "¿Por qué no puedo alquilar o reservar una habitación?",
+      a: "Verifica que la habitación no esté en estado 'Ocupada', 'Pendiente de limpieza', 'Mantenimiento' o 'Bloqueada'. Solo las habitaciones en estado 'Libre' pueden ser alquiladas o reservadas."
+    },
+    {
+      q: "¿Qué hago si el estado de una habitación no cambia o se ve incorrecto?",
+      a: "Recarga la página y verifica que el estado se actualice. Si el problema persiste, consulta con el administrador o soporte técnico. Puede deberse a una acción no finalizada (por ejemplo, falta facturar o limpiar)."
+    },
+    {
+      q: "¿Puedo mover a un huésped de una habitación a otra?",
+      a: "Sí. Haz clic en la habitación ocupada y selecciona 'Cambiar de habitación'. Elige la nueva habitación disponible y confirma. El sistema moverá toda la cuenta y consumos automáticamente."
+    },
+    {
+      q: "¿Cómo sé cuánto tiempo le queda a una habitación por horas?",
+      a: "Cada tarjeta muestra un contador visual (tiempo restante). Los colores cambian de verde a naranja y luego rojo según el tiempo. Si el tiempo se agota, la habitación cambiará a 'tiempo agotado' (rojo parpadeando) hasta que la factures o extiendas el tiempo."
+    },
+    {
+      q: "¿Qué debo hacer si un cliente se va antes de que acabe su tiempo?",
+      a: "Haz clic en la habitación, selecciona 'Facturar/Check-out', realiza el proceso de salida normal y la habitación pasará a pendiente de limpieza."
+    }
+  ]
+}
+,
   {
     category: "Reservas",
     icon: "🗓️",
