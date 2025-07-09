@@ -225,26 +225,27 @@ faqData.forEach(category => {
   });
 
   // --- Aquí añadimos los videos SOLO al final de Tienda y Restaurante ---
-  if (category.category === "Tienda y Restaurante") {
-    html += `
-      <div class="faq-video-tutorials mt-6">
-        <h3 class="text-xl font-bold mb-2 text-blue-800">Tutoriales en Video: Punto de Venta</h3>
-        <div class="video-grid">
-          <div class="video-thumbnail-container" data-video-src="../js/modules/faq/Tienda.mp4">
-            <img src="../js/modules/faq/Tienda_thumbnail.png" alt="Video sobre POS de Tienda">
-            <div class="play-icon">▶</div>
-            <p class="video-title">Tutorial: Punto de Venta (Tienda)</p>
-          </div>
-          <div class="video-thumbnail-container" data-video-src="../js/modules/faq/Restaurante.mp4">
-            <img src="../js/modules/faq/Restaurante_thumbnail.png" alt="Video sobre POS de Restaurante">
-            <div class="play-icon">▶</div>
-            <p class="video-title">Tutorial: Punto de Venta (Restaurante)</p>
-          </div>
+ if (category.category === "Tienda y Restaurante") {
+  html += `
+    <div class="faq-video-tutorials mt-6">
+      <h3 class="text-xl font-bold mb-2 text-blue-800">Tutoriales en Video: Punto de Venta</h3>
+      <div class="video-grid">
+        <div class="video-thumbnail-container" data-video-src="https://drive.google.com/uc?export=preview&id=1k1DPYeV2cS2_tgJZnBXgtHFoqN8h0fvc">
+          <img src="../js/modules/faq/Tienda_thumbnail.png" alt="Video sobre POS de Tienda">
+          <div class="play-icon">▶</div>
+          <p class="video-title">Tutorial: Punto de Venta (Tienda)</p>
+        </div>
+        <div class="video-thumbnail-container" data-video-src="https://drive.google.com/uc?export=preview&id=11EfslLEER9wDRjUr_QNUzWCWMhWxhsf2">
+          <img src="../js/modules/faq/Restaurante_thumbnail.png" alt="Video sobre POS de Restaurante">
+          <div class="play-icon">▶</div>
+          <p class="video-title">Tutorial: Punto de Venta (Restaurante)</p>
         </div>
       </div>
-    `;
-  }
-  html += `</div></section>`;
+    </div>
+  `;
+}
+html += `</div></section>`;
+
 });
   
 
@@ -288,21 +289,41 @@ faqData.forEach(category => {
   const modalClose = container.querySelector('#video-modal-close');
   const videoPlayerContainer = container.querySelector('#video-player-container');
 
-  container.querySelectorAll('.video-thumbnail-container').forEach(thumb => {
-    thumb.addEventListener('click', () => {
-      const videoSrc = thumb.getAttribute('data-video-src');
-      if (videoSrc) {
-        // Crea el elemento de video y lo añade al modal
+container.querySelectorAll('.video-thumbnail-container').forEach(thumb => {
+  thumb.addEventListener('click', () => {
+    const videoSrc = thumb.getAttribute('data-video-src');
+    if (videoSrc) {
+      // Detectar si es Google Drive (usa "uc?export=preview&id=")
+      if (videoSrc.includes('drive.google.com')) {
+        // Extrae el ID del enlace de Google Drive
+        let driveId = '';
+        if (videoSrc.includes('id=')) {
+          driveId = videoSrc.split('id=')[1].split('&')[0];
+        } else {
+          // Por si acaso usas el otro formato de Drive
+          const match = videoSrc.match(/\/d\/([^/]+)/);
+          if (match) driveId = match[1];
+        }
         videoPlayerContainer.innerHTML = `
-          <video controls autoplay>
+  <iframe width="100%" height="480"
+  src="https://drive.google.com/file/d/1k1DPYeV2cS2_tgJZnBXgtHFoqN8h0fvc/preview"
+  allow="autoplay" allowfullscreen style="border:0;border-radius:12px;">
+</iframe>
+`;
+
+      } else {
+        // Video local o tradicional
+        videoPlayerContainer.innerHTML = `
+          <video controls autoplay style="width:100%;height:auto;max-height:80vh;border-radius:12px;">
             <source src="${videoSrc}" type="video/mp4">
             Tu navegador no soporta la etiqueta de video.
           </video>
         `;
-        modal.style.display = 'flex'; // Muestra el modal
       }
-    });
+      modal.style.display = 'flex'; // Muestra el modal
+    }
   });
+});
 
   // Función para cerrar el modal
   const closeModal = () => {
