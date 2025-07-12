@@ -387,13 +387,19 @@ function renderTablaClientes(clientes) {
             </tbody>
         </table>
     `;
+    
     // ASIGNACIÓN CORRECTA DE LISTENERS PARA "VER" Y "EDITAR"
     wrapper.querySelectorAll('button[data-action="ver"]').forEach(btn => {
         btn.onclick = () => mostrarHistorialCliente(btn.dataset.id);
     });
+
+    // ▼▼▼ AQUÍ ESTÁ LA CORRECCIÓN CLAVE ▼▼▼
+    // Ahora pasamos 'supabaseInstance' y 'hotelIdActual' a la función del formulario
     wrapper.querySelectorAll('button[data-action="editar"]').forEach(btn => {
-        btn.onclick = () => mostrarFormularioCliente(btn.dataset.id);
+        btn.onclick = () => mostrarFormularioCliente(btn.dataset.id, supabaseInstance, hotelIdActual);
     });
+    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
+
     logDebug('Tabla de clientes renderizada.');
 }
 

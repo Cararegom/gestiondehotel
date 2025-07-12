@@ -24,7 +24,7 @@ const estadoColores = {
  // SONIDO SOLO UNA VEZ
     let sonidoLanzado = false;
    function playPopSound() {
-    const audio = new Audio('js/assets/notificacion.mp3'); // O la ruta correcta a tu archivo mp3
+    const audio = new Audio('../../js/assets/notificacion.mp3'); // O la ruta correcta a tu archivo mp3
     audio.volume = 0.8;
     audio.play();
 }
@@ -2543,7 +2543,7 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                     <div id="precio_libre_container_alquiler" class="mt-2" style="display:none;"><label for="precio_libre_valor_alquiler" class="font-semibold text-sm text-gray-700">Valor Total Estancia</label><input type="number" id="precio_libre_valor_alquiler" name="precio_libre_valor" class="form-control text-lg font-bold" placeholder="0"></div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                    <div><label class="form-label">Cant. Huéspedes*</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" value="1" required></div>
+                    <div><label class="form-label">Cant. Huéspedes*</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" value="2" required></div>
                     <div><label class="form-label">Método de Pago*</label><select required name="metodo_pago_id" id="metodo_pago_id" class="form-control">${metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}</select></div>
                 </div>
                 <div>

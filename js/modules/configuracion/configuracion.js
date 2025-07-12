@@ -197,18 +197,6 @@ export async function mount(container, supabase, user, hotelId) {
           </div>
         </fieldset>
 
-        <fieldset class="border-2 border-indigo-200 p-6 rounded-xl shadow-md bg-indigo-50/30">
-          <legend class="text-xl font-semibold text-indigo-700 px-3 py-1 bg-white border-2 border-indigo-200 rounded-lg shadow-sm">
-            <span class="mr-2">🔗</span>Integración con Facturación Electrónica
-          </legend>
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
-            <div><label for="proveedor_fe" class="form-label-fe">Proveedor</label><select name="proveedor_fe" id="proveedor_fe" class="form-control-fe"><option value="">-- Selecciona --</option><option value="alegra">Alegra</option><option value="siigo">Siigo</option></select></div>
-            <div><label for="usuario_fe" class="form-label-fe">Usuario/Correo Proveedor FE</label><input name="usuario_fe" id="usuario_fe" type="email" class="form-control-fe" /></div>
-            <div><label for="token_fe" class="form-label-fe">Token/API Key Proveedor FE</label><input name="token_fe" id="token_fe" type="password" class="form-control-fe" /></div>
-            <div><label for="api_url_fe" class="form-label-fe">URL Base API Proveedor FE</label><input name="api_url_fe" id="api_url_fe" type="url" class="form-control-fe" placeholder="https://api.proveedor.com/v1" /></div>
-          </div>
-        </fieldset>
-
         <div class="col-span-1 md:col-span-2 mt-10 flex justify-center">
           <button id="btn-guardar-config" class="button button-success text-lg px-12 py-3.5 rounded-xl shadow-lg hover:shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105">
             <span class="mr-2">💾</span>Guardar Configuración
@@ -235,7 +223,6 @@ export async function mount(container, supabase, user, hotelId) {
   `;
 
   await cargarConfiguracionHotel();
-  await cargarIntegracionFE();
   await cargarMetodosPago();
   renderTablaMetodosPago();
   const btnNuevoMetodo = document.getElementById('btnNuevoMetodoPago');
@@ -392,25 +379,7 @@ async function cargarConfiguracionHotel() {
   }
 }
 
-async function cargarIntegracionFE() {
-  if (!currentSupabaseInstance || !currentHotelId) return;
-  const { data, error } = await currentSupabaseInstance
-    .from('integraciones_hotel')
-    .select('*')
-    .eq('hotel_id', currentHotelId)
-    .maybeSingle();
 
-  if (error) { console.error("Error cargando integración FE:", error); return; }
-
-  if (data) {
-    const form = document.getElementById('config-form');
-    if (!form) return;
-    form.proveedor_fe.value = data.facturador_nombre || '';
-    form.usuario_fe.value = data.facturador_usuario || '';
-    form.token_fe.value = data.facturador_api_key || '';
-    form.api_url_fe.value = data.facturador_api_url || '';
-  }
-}
 
 async function guardarConfiguracionHotel() {
   const feedbackEl = document.getElementById('config-feedback');
