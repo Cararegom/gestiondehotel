@@ -3329,13 +3329,14 @@ function startCronometro(room, supabase, hotelId, listEl) {
 // ... (asegúrate de que la importación esté al inicio de tu archivo)
 import { showModalTarea } from '../mantenimiento/mantenimiento.js';
 
-// ... (resto de tus funciones del mapa de habitaciones)
+// En tu archivo mapa-habitaciones.js, REEMPLAZA esta función completa:
 
-// REEMPLAZA TU FUNCIÓN showMantenimientoModal ACTUAL CON ESTA VERSIÓN CORREGIDA
+// En tu archivo mapa-habitaciones.js, REEMPLAZA esta función completa:
+
 async function showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
 
-    // 1. Confirmar la acción con el usuario.
+    // 1. Confirmar la acción inicial con el usuario.
     const confirmacion = await new Promise(resolve => {
         mostrarInfoModalGlobal(
             `¿Desea crear una tarea de mantenimiento para la habitación <strong>${room.nombre}</strong>?<br><br><small>La habitación se marcará como 'mantenimiento' solo si guarda la tarea.</small>`,
@@ -3348,53 +3349,55 @@ async function showMantenimientoModal(room, supabase, currentUser, hotelId, main
         );
     });
 
-    // Si el usuario cancela la confirmación inicial, no hacemos nada más.
     if (!confirmacion) {
-        return;
+        return; // El usuario canceló, no hacemos nada más.
     }
     
-    // --- LÓGICA CORREGIDA ---
-    // NO HAY NINGUNA MODIFICACIÓN A LA BASE DE DATOS AQUÍ.
-    // Solo llamamos al modal para que el usuario cree la tarea.
-    try {
-        const modalTareaContainer = document.createElement('div');
-        modalTareaContainer.id = 'mant-modal-temp-container';
-        modalTareaContainer.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4";
-        document.body.appendChild(modalTareaContainer);
+    // 2. Crear el contenedor con el fondo oscuro para el modal de la tarea.
+    const modalTareaContainer = document.createElement('div');
+    modalTareaContainer.id = 'mant-modal-temp-container';
+    modalTareaContainer.className = "fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4";
+    document.body.appendChild(modalTareaContainer);
 
-        // Llamamos a la función del otro módulo para que muestre el formulario.
-        // La lógica de guardar y cambiar estado está DENTRO de showModalTarea.
-        await showModalTarea(
-            modalTareaContainer,
-            supabase,
-            hotelId,
-            currentUser,
-            { // Objeto 'tarea' pre-llenado
-                habitacion_id: room.id,
-                estado: 'pendiente',
-                titulo: `Mantenimiento Hab. ${room.nombre}`
+    // 3. Llamar a la función que muestra el formulario DENTRO del contenedor.
+    showModalTarea(
+        modalTareaContainer,
+        supabase,
+        hotelId,
+        currentUser,
+        {
+            habitacion_id: room.id,
+            estado: 'pendiente',
+            titulo: `Mantenimiento Hab. ${room.nombre}`
+        }
+    );
+
+    // 4. Usar un observador preciso para saber cuándo se cierra el modal.
+    // Este "vigilante" solo se fija si el contenido del formulario desaparece.
+    const observer = new MutationObserver(async (mutationsList, obs) => {
+        // Si el contenedor ya no tiene el formulario adentro...
+        if (modalTareaContainer.children.length === 0) {
+            
+            // Desconectamos el vigilante para que no se ejecute más.
+            obs.disconnect(); 
+            
+            // Eliminamos el contenedor con el fondo oscuro.
+            if (document.body.contains(modalTareaContainer)) {
+                document.body.removeChild(modalTareaContainer);
             }
-        );
-        
-        // 3. Observer para saber cuándo se cierra el modal de tarea y refrescar el mapa.
-        // Esto es para que, sin importar si se guarda o se cancela, el mapa se actualice al final.
-        const observer = new MutationObserver(async (mutationsList, obs) => {
-            if (!document.body.contains(modalTareaContainer) || !modalTareaContainer.innerHTML.trim()) {
-                if (document.body.contains(modalTareaContainer)) {
-                    document.body.removeChild(modalTareaContainer);
-                }
-                await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
-                obs.disconnect();
-            }
-        });
+            
+            // Refrescamos el mapa de habitaciones para ver el estado actualizado.
+            console.log("Modal de tarea cerrado. Refrescando el mapa.");
+            await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+        }
+    });
 
-        observer.observe(document.body, { childList: true, subtree: true });
-
-    } catch (error) {
-        console.error("Error al invocar el modal de mantenimiento:", error);
-        mostrarInfoModalGlobal(`Error al iniciar el proceso: ${error.message}`, "Error");
-    }
+    // Le decimos al vigilante que observe solo el contenedor que creamos.
+    observer.observe(modalTareaContainer, { childList: true });
 }
+
+
+
 async function showReservaFuturaModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
     modalContainer.style.display = "flex";
