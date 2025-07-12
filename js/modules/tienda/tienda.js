@@ -160,34 +160,67 @@ function renderTarjetaCompraPendiente(compra) {
 
 
 
-// REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO tienda.js
+// Reemplaza esta función completa en tienda.js
 
-/**
- * Lógica para recibir el pedido. Ahora con la opción de registrar el pago fuera de turno.
- */
 window.recibirPedido = async function(compraId) {
     showGlobalLoading("Cargando orden...");
     try {
-        const { data: detallesCompra, error: errDetalles } = await currentSupabase
-            .from('detalle_compras_tienda')
-            .select('*, producto:productos_tienda!inner(id, nombre)')
-            .eq('compra_id', compraId);
-            
-        if (errDetalles || !detallesCompra || detallesCompra.length === 0) {
-            throw new Error('No se encontraron los detalles de la compra para recibir.');
-        }
+        const { data: compra, error: errCompra } = await currentSupabase.from('compras_tienda').select('*').eq('id', compraId).single();
+        if (errCompra || !compra) throw new Error('No se encontró la compra para recibir.');
 
-        const recibidoTotalMonto = detallesCompra.reduce((sum, det) => sum + (det.cantidad * det.precio_unitario), 0);
+        const recibidoTotalMonto = compra.total_compra;
+        const esEgresoFueraTurnoCheck = document.getElementById('registrar-pago-fuera-turno')?.checked || false;
+
+        const { data: metodosPagoDB } = await currentSupabase.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true);
         
-        // --- CAMBIO 1: Se elimina la comprobación estricta del turno aquí. ---
-        // La comprobación se hará ahora después, dependiendo de la selección del usuario.
-
-        const { data: metodosPago } = await currentSupabase.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true);
-        const inputOptions = new Map(metodosPago.map(mp => [mp.id, mp.nombre]));
+        // Añadimos la opción de PAGO MIXTO al principio de la lista
+        const metodosPagoConMixto = [
+            { id: "mixto", nombre: "Pago Mixto (varios métodos)" },
+            ...(metodosPagoDB || [])
+        ];
+        
+        const inputOptions = new Map(metodosPagoConMixto.map(mp => [mp.id, mp.nombre]));
         
         hideGlobalLoading();
+
+        // Creamos la función que procesará los pagos para no repetir código
+        const procesarRecepcionYActualizarUI = async (pagos) => {
+            showGlobalLoading("Procesando recepción...");
+            try {
+                let turnoIdParaGuardar = null;
+                if (!esEgresoFueraTurnoCheck) {
+                    const turnoActivoId = turnoService.getActiveTurnId();
+                    if (!turnoActivoId) throw new Error("ACCIÓN BLOQUEADA: Para registrar el pago en el turno, debe haber un turno de caja activo.");
+                    turnoIdParaGuardar = turnoActivoId;
+                }
+
+                const { data: detallesCompra } = await currentSupabase.from('detalle_compras_tienda').select('*, producto:productos_tienda!inner(id, nombre)').eq('compra_id', compraId);
+                
+                for (const det of detallesCompra) {
+                    await currentSupabase.rpc('ajustar_stock_producto', { p_producto_id: det.producto.id, p_cantidad_ajuste: det.cantidad, p_tipo_movimiento: 'ingreso_compra', p_usuario_id: currentUser.id, p_notas: `Recepción de OC #${compraId.substring(0, 8)}` });
+                }
+                
+                await currentSupabase.from('compras_tienda').update({ estado: 'recibido', recibido_por_usuario_id: currentUser.id, fecha_recepcion: new Date().toISOString() }).eq('id', compraId);
+                
+                const { data: compraData } = await currentSupabase.from('compras_tienda').select('proveedor:proveedores(nombre)').eq('id', compraId).single();
+                const conceptoBase = `Pago Compra a ${compraData.proveedor?.nombre || 'N/A'}`;
+
+                for (const pago of pagos) {
+                    await currentSupabase.from('caja').insert({ hotel_id: currentHotelId, tipo: 'egreso', monto: pago.monto, concepto: conceptoBase, usuario_id: currentUser.id, compra_tienda_id: compraId, turno_id: turnoIdParaGuardar, metodo_pago_id: pago.metodo_pago_id });
+                }
+
+                hideGlobalLoading();
+                await Swal.fire('¡Éxito!', 'La recepción y el pago han sido procesados correctamente.', 'success');
+            } catch (err) {
+                hideGlobalLoading();
+                console.error("Error procesando pago y recepción:", err);
+                await Swal.fire('Error', 'No se pudo procesar la recepción y pago: ' + err.message, 'error');
+            } finally {
+                await renderComprasPendientes();
+            }
+        };
         
-        // --- CAMBIO 2: Se añade el checkbox al HTML del diálogo de confirmación. ---
+        // Mostramos el diálogo de confirmación inicial con el selector de pago mejorado
         const { value: metodoPagoId, isConfirmed } = await Swal.fire({
             title: 'Confirmar Recepción y Pago',
             html: `
@@ -201,7 +234,7 @@ window.recibirPedido = async function(compraId) {
             input: 'select', 
             inputOptions, 
             inputPlaceholder: '-- Selecciona método --',
-            confirmButtonText: 'Confirmar y Registrar', 
+            confirmButtonText: 'Siguiente', 
             showCancelButton: true, 
             cancelButtonText: 'Cancelar',
             inputValidator: (v) => !v && 'Debes seleccionar un método de pago'
@@ -209,64 +242,21 @@ window.recibirPedido = async function(compraId) {
 
         if (!isConfirmed || !metodoPagoId) return;
 
-        showGlobalLoading("Procesando recepción...");
-        
-        // --- CAMBIO 3: Se añade la lógica para determinar el turno_id a usar. ---
-        const esEgresoFueraTurno = document.getElementById('registrar-pago-fuera-turno')?.checked || false;
-        let turnoIdParaGuardar = null;
-
-        if (!esEgresoFueraTurno) {
-            // Si NO se marca el checkbox, se exige un turno activo.
-            const turnoActivoId = turnoService.getActiveTurnId();
-            if (!turnoActivoId) {
-                throw new Error("ACCIÓN BLOQUEADA: Para registrar el pago en el turno, debe haber un turno de caja activo.");
-            }
-            turnoIdParaGuardar = turnoActivoId;
+        if (metodoPagoId === 'mixto') {
+            // Si eligen "Pago Mixto", llamamos a nuestro nuevo modal
+            showModalPagoCompra(recibidoTotalMonto, metodosPagoDB, procesarRecepcionYActualizarUI);
+        } else {
+            // Si eligen un método de pago normal, procesamos directamente
+            const unicoPago = [{ metodo_pago_id: metodoPagoId, monto: recibidoTotalMonto }];
+            await procesarRecepcionYActualizarUI(unicoPago);
         }
-        // Si el checkbox SÍ se marca, turnoIdParaGuardar permanecerá como null.
-
-        for (const det of detallesCompra) {
-            await currentSupabase.rpc('ajustar_stock_producto', {
-                p_producto_id: det.producto.id,
-                p_cantidad_ajuste: det.cantidad,
-                p_tipo_movimiento: 'ingreso_compra',
-                p_usuario_id: currentUser.id,
-                p_notas: `Recepción de OC #${compraId.substring(0, 8)}`
-            });
-        }
-        
-        await currentSupabase.from('compras_tienda').update({
-            estado: 'recibido',
-            recibido_por_usuario_id: currentUser.id,
-            fecha_recepcion: new Date().toISOString()
-        }).eq('id', compraId);
-        
-        const { data: compraData } = await currentSupabase.from('compras_tienda').select('proveedor:proveedores(nombre)').eq('id', compraId).single();
-        
-        // --- CAMBIO 4: Se utiliza la variable `turnoIdParaGuardar` en la inserción. ---
-        await currentSupabase.from('caja').insert({
-            hotel_id: currentHotelId, 
-            tipo: 'egreso', 
-            monto: recibidoTotalMonto,
-            concepto: `Pago Compra a ${compraData.proveedor?.nombre || 'N/A'}`,
-            usuario_id: currentUser.id, 
-            compra_tienda_id: compraId,
-            turno_id: turnoIdParaGuardar, // <-- AQUÍ ESTÁ LA MAGIA
-            metodo_pago_id: metodoPagoId
-        });
-        
-        hideGlobalLoading();
-        await Swal.fire('¡Éxito!', 'La recepción ha sido procesada correctamente.', 'success');
 
     } catch (err) {
         hideGlobalLoading();
         console.error("Error en recibirPedido:", err);
         await Swal.fire('Error', 'No se pudo procesar la recepción: ' + err.message, 'error');
-    } finally {
-        await renderComprasPendientes();
     }
 };
-
 /**
  * Muestra el modal para editar la compra.
  */
@@ -313,9 +303,8 @@ window.showModalEditarCompra = async function(compraId) {
     }
 };
 
-/**
- * Guarda los cambios del modal y actualiza el caché local.
- */
+
+
 window.guardarCambiosCompra = async function(compraId) {
     const modal = document.getElementById('modal-editar-compra');
     if (!modal) return;
@@ -342,19 +331,20 @@ window.guardarCambiosCompra = async function(compraId) {
             }
         }
         
-        const { error } = await currentSupabase.rpc('actualizar_compra_y_detalles', {
+        // 1. Actualiza los detalles de los productos
+        const { error: rpcError } = await currentSupabase.rpc('actualizar_compra_y_detalles', {
             p_compra_id: compraId,
             detalles_a_actualizar,
             ids_a_eliminar
         });
 
-        if (error) throw error;
+        if (rpcError) throw rpcError;
         
+        // 2. Recalcula el nuevo total y aplícale el redondeo
         const compraIndex = comprasPendientesCache.findIndex(c => c.id === compraId);
+        let nuevoTotalCalculado = 0;
         if (compraIndex !== -1) {
-            let nuevoTotalCalculado = 0;
             const idsAEliminarSet = new Set(ids_a_eliminar);
-
             const nuevosDetalles = comprasPendientesCache[compraIndex].detalles
                 .filter(det => !idsAEliminarSet.has(det.id))
                 .map(det => {
@@ -367,20 +357,35 @@ window.guardarCambiosCompra = async function(compraId) {
                     nuevoTotalCalculado += det.subtotal;
                     return det;
                 });
-            
             comprasPendientesCache[compraIndex].detalles = nuevosDetalles;
-            comprasPendientesCache[compraIndex].total_compra = nuevoTotalCalculado;
+        }
+        const totalFinalRedondeado = Math.round(nuevoTotalCalculado / 50) * 50;
 
-            if (nuevosDetalles.length === 0) {
+        // ▼▼▼ INICIO DE LA CORRECCIÓN CLAVE ▼▼▼
+        // 3. Guarda el nuevo total redondeado en la tabla principal de compras_tienda
+        const { error: updateTotalError } = await currentSupabase
+            .from('compras_tienda')
+            .update({ total_compra: totalFinalRedondeado })
+            .eq('id', compraId);
+
+        if (updateTotalError) {
+            throw new Error(`Error al actualizar el total de la compra: ${updateTotalError.message}`);
+        }
+        // ▲▲▲ FIN DE LA CORRECCIÓN CLAVE ▲▲▲
+
+        // 4. Actualiza el caché local para reflejar el cambio inmediatamente
+        if (compraIndex !== -1) {
+            comprasPendientesCache[compraIndex].total_compra = totalFinalRedondeado;
+            if (comprasPendientesCache[compraIndex].detalles.length === 0) {
                 comprasPendientesCache.splice(compraIndex, 1);
             }
         }
 
+        // 5. Finaliza y actualiza la interfaz
         hideGlobalLoading();
         modal.remove();
         await Swal.fire('¡Éxito!', 'La orden de compra ha sido actualizada.', 'success');
-
-        redibujarListaPendientes(); // Redibujamos desde el cache actualizado
+        redibujarListaPendientes(); // Redibuja la lista desde el caché ya actualizado
 
     } catch (err) {
         hideGlobalLoading();
@@ -389,9 +394,9 @@ window.guardarCambiosCompra = async function(compraId) {
     }
 };
 
-/**
- * Maneja la cancelación de una orden de compra.
- */
+
+
+
 window.cancelarCompra = async function(compraId) {
     const result = await Swal.fire({
         title: '¿Estás seguro?',
@@ -3180,8 +3185,8 @@ function renderCarritoCompra() {
 
   // --- LÓGICA DE REDONDEO APLICADA ---
   // Redondea hacia arriba al siguiente múltiplo de 1000
-  let totalRedondeado = Math.ceil(totalSinRedondear / 1000) * 1000;
-
+// Redondea al múltiplo de 50 más cercano
+let totalRedondeado = Math.round(totalSinRedondear / 50) * 50;
   let totalEl = document.getElementById('totalCompra');
   if (totalEl) {
     totalEl.textContent = formatCurrency(totalRedondeado);
@@ -3284,7 +3289,8 @@ async function registrarCompraProveedor() {
 
 let totalSinRedondear = compraProveedorCarrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
 // Redondea hacia arriba al siguiente múltiplo de 1000
-let total = Math.ceil(totalSinRedondear / 1000) * 1000;
+// Redondea al múltiplo de 50 más cercano
+let total = Math.round(totalSinRedondear / 50) * 50;
         // 1. Registra la compra principal en estado pendiente
         const { data: compraData, error: compraError } = await currentSupabase.from('compras_tienda').insert({
             hotel_id: currentHotelId,
@@ -3435,3 +3441,112 @@ function getProveedorNombre(proveedorId) {
 // Reemplaza tu función window.recibirPedido existente con esta versión final
 
 
+// Agrega esta nueva función a tienda.js
+
+/**
+ * Muestra un modal de pago mixto para registrar el pago de una compra.
+ * @param {number} totalAPagar - El monto total de la compra.
+ * @param {Array} metodosPagoDisponibles - Array con los métodos de pago (sin la opción 'mixto').
+ * @param {function} onConfirm - Función callback que se ejecuta con los pagos confirmados.
+ */
+function showModalPagoCompra(totalAPagar, metodosPagoDisponibles, onConfirm) {
+    const modalContainer = document.createElement('div');
+    modalContainer.id = 'modal-pago-compra';
+    modalContainer.style = `position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1002;`;
+
+    const opcionesMetodosHTML = metodosPagoDisponibles
+        .map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
+
+    modalContainer.innerHTML = `
+        <div style="background:white; border-radius:12px; padding:24px; width:95%; max-width:500px; max-height:90vh; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h3 style="margin:0; font-size:1.2em; color:#1e3a8a;">Registrar Pago de Compra (Mixto)</h3>
+                <button class="btn-cerrar" style="background:none; border:none; font-size:1.5em; cursor:pointer;">&times;</button>
+            </div>
+            <p style="text-align:center; font-size:1.1em; margin-bottom:15px;">Total a Pagar: <strong style="color:#c2410c; font-size:1.2em;">${formatCurrency(totalAPagar)}</strong></p>
+            
+            <form id="form-pago-compra" style="overflow-y:auto; flex-grow:1; padding-right:10px;">
+                <div id="lista-pagos-compra" class="space-y-3"></div>
+                <button type="button" id="btn-agregar-pago-compra" style="font-size:0.9em; color:#1d4ed8; background:none; border:none; cursor:pointer; margin-top:10px;">+ Agregar otro método</button>
+            </form>
+
+            <div style="margin-top:15px; padding-top:15px; border-top:1px solid #eee; font-weight:600;">
+                <div style="display:flex; justify-content:space-between;"><span>Total ingresado:</span> <span id="total-ingresado-compra">$0</span></div>
+                <div style="display:flex; justify-content:space-between; color:#ef4444;" id="linea-restante"><span>Restante:</span> <span id="restante-compra">${formatCurrency(totalAPagar)}</span></div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button type="submit" form="form-pago-compra" id="btn-confirmar-pago-compra" style="flex:1; background:#16a34a; color:white; border:none; padding:10px; border-radius:6px; font-weight:600; cursor:pointer;" disabled>Confirmar Pago</button>
+                <button type="button" class="btn-cerrar" style="flex:1; background:#6b7280; color:white; border:none; padding:10px; border-radius:6px; font-weight:600; cursor:pointer;">Cancelar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modalContainer);
+
+    const form = modalContainer.querySelector('#form-pago-compra');
+    const listaPagosDiv = modalContainer.querySelector('#lista-pagos-compra');
+    const btnConfirmar = modalContainer.querySelector('#btn-confirmar-pago-compra');
+
+    const closeAction = () => modalContainer.remove();
+    modalContainer.querySelectorAll('.btn-cerrar').forEach(btn => btn.onclick = closeAction);
+
+    const actualizarTotales = () => {
+        let totalIngresado = 0;
+        listaPagosDiv.querySelectorAll('.pago-compra-row').forEach(row => {
+            totalIngresado += Number(row.querySelector('.monto-pago-compra').value) || 0;
+        });
+        const restante = totalAPagar - totalIngresado;
+
+        modalContainer.querySelector('#total-ingresado-compra').textContent = formatCurrency(totalIngresado);
+        modalContainer.querySelector('#restante-compra').textContent = formatCurrency(restante);
+        const lineaRestante = modalContainer.querySelector('#linea-restante');
+
+        if (Math.abs(restante) < 0.01) {
+            btnConfirmar.disabled = false;
+            lineaRestante.style.color = '#16a34a'; // Verde
+        } else {
+            btnConfirmar.disabled = true;
+            lineaRestante.style.color = '#ef4444'; // Rojo
+        }
+    };
+
+    const agregarFila = () => {
+        const newRow = document.createElement('div');
+        newRow.className = 'pago-compra-row';
+        newRow.style = "display:flex; gap:8px; align-items:center;";
+        newRow.innerHTML = `
+            <select class="metodo-pago-compra" style="flex:2; padding:8px; border:1px solid #ccc; border-radius:4px;" required>${opcionesMetodosHTML}</select>
+            <input type="number" class="monto-pago-compra" placeholder="Monto" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px;" required min="0">
+            <button type="button" class="btn-remover-fila" style="background:#fee2e2; color:#dc2626; border:none; padding:5px 8px; border-radius:4px; cursor:pointer;">✖</button>
+        `;
+        listaPagosDiv.appendChild(newRow);
+        newRow.querySelector('.btn-remover-fila').onclick = () => {
+            newRow.remove();
+            actualizarTotales();
+        };
+    };
+
+    modalContainer.querySelector('#btn-agregar-pago-compra').onclick = agregarFila;
+    listaPagosDiv.addEventListener('input', actualizarTotales);
+
+    agregarFila(); // Iniciar con una fila
+    const primerInput = listaPagosDiv.querySelector('.monto-pago-compra');
+    if(primerInput) primerInput.value = totalAPagar; // Pre-llenar el total
+    actualizarTotales();
+
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        const pagosConfirmados = [];
+        listaPagosDiv.querySelectorAll('.pago-compra-row').forEach(row => {
+            const metodoId = row.querySelector('.metodo-pago-compra').value;
+            const monto = Number(row.querySelector('.monto-pago-compra').value);
+            if(metodoId && monto > 0) {
+                pagosConfirmados.push({ metodo_pago_id: metodoId, monto });
+            }
+        });
+        if(pagosConfirmados.length > 0) {
+            onConfirm(pagosConfirmados);
+            closeAction();
+        }
+    };
+}
