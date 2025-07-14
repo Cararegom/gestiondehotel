@@ -162,6 +162,8 @@ function renderTarjetaCompraPendiente(compra) {
 
 // Reemplaza esta función completa en tienda.js
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN tu archivo tienda.js
+
 window.recibirPedido = async function(compraId) {
     showGlobalLoading("Cargando orden...");
     try {
@@ -169,11 +171,9 @@ window.recibirPedido = async function(compraId) {
         if (errCompra || !compra) throw new Error('No se encontró la compra para recibir.');
 
         const recibidoTotalMonto = compra.total_compra;
-        const esEgresoFueraTurnoCheck = document.getElementById('registrar-pago-fuera-turno')?.checked || false;
-
+        
         const { data: metodosPagoDB } = await currentSupabase.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true);
         
-        // Añadimos la opción de PAGO MIXTO al principio de la lista
         const metodosPagoConMixto = [
             { id: "mixto", nombre: "Pago Mixto (varios métodos)" },
             ...(metodosPagoDB || [])
@@ -187,12 +187,19 @@ window.recibirPedido = async function(compraId) {
         const procesarRecepcionYActualizarUI = async (pagos) => {
             showGlobalLoading("Procesando recepción...");
             try {
+                // ▼▼▼ INICIO DE LA CORRECCIÓN CLAVE ▼▼▼
+                const esEgresoFueraTurnoCheck = document.getElementById('registrar-pago-fuera-turno')?.checked || false;
                 let turnoIdParaGuardar = null;
+
                 if (!esEgresoFueraTurnoCheck) {
                     const turnoActivoId = turnoService.getActiveTurnId();
-                    if (!turnoActivoId) throw new Error("ACCIÓN BLOQUEADA: Para registrar el pago en el turno, debe haber un turno de caja activo.");
+                    if (!turnoActivoId) {
+                        throw new Error("ACCIÓN BLOQUEADA: Para registrar el pago en el turno, debe haber un turno de caja activo.");
+                    }
                     turnoIdParaGuardar = turnoActivoId;
                 }
+                // Si la casilla está marcada, turnoIdParaGuardar permanecerá como null.
+                // ▲▲▲ FIN DE LA CORRECCIÓN CLAVE ▲▲▲
 
                 const { data: detallesCompra } = await currentSupabase.from('detalle_compras_tienda').select('*, producto:productos_tienda!inner(id, nombre)').eq('compra_id', compraId);
                 
@@ -206,7 +213,16 @@ window.recibirPedido = async function(compraId) {
                 const conceptoBase = `Pago Compra a ${compraData.proveedor?.nombre || 'N/A'}`;
 
                 for (const pago of pagos) {
-                    await currentSupabase.from('caja').insert({ hotel_id: currentHotelId, tipo: 'egreso', monto: pago.monto, concepto: conceptoBase, usuario_id: currentUser.id, compra_tienda_id: compraId, turno_id: turnoIdParaGuardar, metodo_pago_id: pago.metodo_pago_id });
+                    await currentSupabase.from('caja').insert({ 
+                        hotel_id: currentHotelId, 
+                        tipo: 'egreso', 
+                        monto: pago.monto, 
+                        concepto: conceptoBase, 
+                        usuario_id: currentUser.id, 
+                        compra_tienda_id: compraId, 
+                        turno_id: turnoIdParaGuardar, // Usamos la variable corregida
+                        metodo_pago_id: pago.metodo_pago_id 
+                    });
                 }
 
                 hideGlobalLoading();
@@ -243,10 +259,8 @@ window.recibirPedido = async function(compraId) {
         if (!isConfirmed || !metodoPagoId) return;
 
         if (metodoPagoId === 'mixto') {
-            // Si eligen "Pago Mixto", llamamos a nuestro nuevo modal
             showModalPagoCompra(recibidoTotalMonto, metodosPagoDB, procesarRecepcionYActualizarUI);
         } else {
-            // Si eligen un método de pago normal, procesamos directamente
             const unicoPago = [{ metodo_pago_id: metodoPagoId, monto: recibidoTotalMonto }];
             await procesarRecepcionYActualizarUI(unicoPago);
         }
@@ -257,6 +271,9 @@ window.recibirPedido = async function(compraId) {
         await Swal.fire('Error', 'No se pudo procesar la recepción: ' + err.message, 'error');
     }
 };
+
+
+
 /**
  * Muestra el modal para editar la compra.
  */
