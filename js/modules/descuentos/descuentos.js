@@ -1,6 +1,7 @@
 // js/modules/descuentos/descuentos.js
 import { formatCurrency, formatDateShort, showError, showSuccess, clearFeedback, setFormLoadingState, showConfirmationModal } from '/js/uiUtils.js';
 
+
 let moduleListeners = []; // Centralized array for event listeners
 let currentHotelId = null; // Stores the hotel ID for the current session of this module
 
@@ -320,14 +321,60 @@ function toggleFormVisibility(formEl) {
         }
     }
 }
+
+
+
+// En descuentos.js, reemplaza esta función completa
+
 /**
- * Carga y renderiza la lista de descuentos.
+ * Carga los tiempos de estancia desde la BD y añade la opción especial "Noche Completa".
  */
-// Carga y renderiza la lista de descuentos.
-/**
- * Carga y renderiza la lista de descuentos (VERSIÓN TEMPORAL SIN JOIN)
- */
-// REEMPLAZA ESTA FUNCIÓN COMPLETA EN descuentos.js
+async function loadTiemposEstanciaParaSelector(selectEl, supabaseInstance, hotelId) {
+    if (!selectEl) return;
+    try {
+        // Carga los tiempos por HORA desde la base de datos
+        const { data, error } = await supabaseInstance
+            .from('tiempos_estancia')
+            .select('id, nombre, minutos')
+            .eq('hotel_id', hotelId)
+            .eq('activo', true)
+            .not('nombre', 'ilike', '%noche%') // Excluimos cualquier "noche" que pueda existir en la BD para evitar duplicados
+            .order('minutos', { ascending: true });
+        
+        if (error) throw error;
+
+        // --- LÓGICA CLAVE ---
+        // 1. Creamos la opción para "Noche Completa" de forma virtual.
+        //    Usamos un valor de texto único y fácil de identificar.
+        const opcionNoche = {
+            id: 'NOCHE_COMPLETA',
+            nombre: 'Noche Completa (Estancia por Noche)',
+            minutos: 0 // No es relevante aquí, solo es para el display
+        };
+
+        // 2. Combinamos nuestra opción virtual con las que vienen de la base de datos.
+        const todasLasOpciones = [opcionNoche, ...data];
+        
+        const formatHorasMin = (min) => {
+            if (!min || min < 60) return '';
+            const h = Math.floor(min / 60);
+            const m = min % 60;
+            return `(${h}h${m > 0 ? ` ${m}m` : ''})`;
+        };
+
+        // 3. Renderizamos la lista completa en el selector.
+        selectEl.innerHTML = todasLasOpciones.map(t => 
+            `<option value="${t.id}">${t.nombre} ${formatHorasMin(t.minutos)}</option>`
+        ).join('');
+
+    } catch (err) {
+        console.error("Error cargando tiempos de estancia para el selector:", err);
+        selectEl.innerHTML = '<option disabled>Error al cargar tiempos</option>';
+    }
+}
+
+
+
 
 async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAll = false) {
     if (!tbodyEl || !hotelId) {
@@ -335,24 +382,19 @@ async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAl
         return;
     }
     tbodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-slate-500">Cargando...</td></tr>`;
-  
+ 
     try {
-        // Construimos la consulta base
         let query = supabaseInstance
             .from('descuentos')
-            .select('*')
+            .select('*, clientes(id, nombre)') // Se modifica para hacer el join
             .eq('hotel_id', hotelId);
 
-        // AÑADIMOS EL FILTRO CONDICIONAL
-        // Si showAll es `false` (el valor por defecto), solo mostramos los activos.
         if (!showAll) {
             query = query.eq('activo', true);
         }
 
-        // Añadimos el ordenamiento al final
         query = query.order('created_at', { ascending: false });
 
-        // Ejecutamos la consulta ya construida
         const { data: discounts, error: discountsError } = await query;
 
         if (discountsError) throw discountsError;
@@ -362,19 +404,6 @@ async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAl
             return;
         }
 
-        const clienteIds = discounts.map(d => d.cliente_id).filter(id => id !== null);
-        let clientMap = new Map();
-
-        if (clienteIds.length > 0) {
-            const { data: clientes, error: clientsError } = await supabaseInstance
-                .from('clientes')
-                .select('id, nombre')
-                .in('id', clienteIds);
-            if (clientsError) throw clientsError;
-            clientMap = new Map(clientes.map(c => [c.id, c.nombre]));
-        }
-
-        // Limpiamos el tbody antes de renderizar las nuevas filas
         tbodyEl.innerHTML = ''; 
     
         discounts.forEach(d => {
@@ -397,7 +426,7 @@ async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAl
                     break;
                 case 'automatico': tipoDisplay = 'Automático'; break;
                 case 'cliente_especifico': 
-                    const clientName = clientMap.get(d.cliente_id) || 'N/A';
+                    const clientName = d.clientes?.nombre || 'N/A';
                     tipoDisplay = `Cliente Específico`;
                     nombreDisplay += `<div class="text-slate-500 text-xs inline-block bg-purple-100 text-purple-800 px-2 py-0.5 rounded mt-1">👤 ${clientName}</div>`;
                     break;
@@ -415,6 +444,7 @@ async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAl
                 ? `<span class="inline-flex items-center gap-x-1.5 rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-700"><svg class="h-1.5 w-1.5 fill-green-500" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" /></svg>Activo</span>`
                 : `<span class="inline-flex items-center gap-x-1.5 rounded-full bg-red-100 px-2 py-1 text-xs font-medium text-red-700"><svg class="h-1.5 w-1.5 fill-red-500" viewBox="0 0 6 6"><circle cx="3" cy="3" r="3" /></svg>Inactivo</span>`;
 
+            // --- INICIO DEL CAMBIO ---
             tr.innerHTML = `
                 <td class="px-6 py-4">${nombreDisplay}</td>
                 <td class="px-6 py-4 text-slate-700">${tipoDisplay}</td>
@@ -435,19 +465,22 @@ async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAl
                         <button data-action="card" data-id="${d.id}" title="Crear Tarjeta de Descuento" class="p-1.5 text-slate-500 hover:text-purple-600 hover:bg-slate-100 rounded-md">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M4 4a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V8a2 2 0 00-2-2h-5L9 4H4zm0 2h4.586l1 1H16v6H4V6z" /></svg>
                         </button>
-                        ${(d.usos_actuales || 0) === 0 ? `<button data-action="delete" data-id="${d.id}" title="Eliminar" class="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-md">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-                        </button>` : ''}
+                        ${(d.usos_actuales || 0) === 0 ? `
+                            <button data-action="delete" data-id="${d.id}" title="Eliminar" class="p-1.5 text-slate-500 hover:text-red-600 hover:bg-slate-100 rounded-md">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                            </button>
+                        ` : ''}
                     </div>
                 </td>
             `;
+            // --- FIN DEL CAMBIO ---
             tbodyEl.appendChild(tr);
         });
     } catch (err) {
         console.error('Error loading discounts:', err);
         tbodyEl.innerHTML = `<tr><td colspan="7" class="text-center p-4 text-red-500">Error al cargar descuentos: ${err.message}</td></tr>`;
     }
-} 
+}
 
 
 function populateForm(formEl, discount, formTitleEl, cancelButtonEl) {
@@ -481,8 +514,8 @@ function populateForm(formEl, discount, formTitleEl, cancelButtonEl) {
   // Disparamos de nuevo para asegurar que el sub-selector de habitaciones se muestre
   toggleFormVisibility(formEl);
 
-  formEl.activo.checked = discount.activo;
-  
+formEl.querySelector('#activo').checked = discount.activo;
+
   if (formTitleEl) formTitleEl.textContent = `Editando: ${discount.nombre}`;
   formEl.querySelector('#btn-guardar-descuento').textContent = 'Actualizar Descuento';
   if (cancelButtonEl) cancelButtonEl.style.display = 'inline-block';
@@ -523,7 +556,7 @@ export async function mount(container, supabaseInstance, currentUser) {
     unmount(container);
 
     // Se añade un contenedor para el modal que evita conflictos
-    container.innerHTML = `
+container.innerHTML = `
     <div id="descuentos-module-container" class="bg-slate-50 min-h-full">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 space-y-10">
     
@@ -607,6 +640,7 @@ export async function mount(container, supabaseInstance, currentUser) {
                                         <select id="aplicabilidad" name="aplicabilidad" class="form-control">
                                             <option value="reserva_total">Toda la reserva de Alojamiento</option>
                                             <option value="habitaciones_especificas">Habitaciones Específicas</option>
+                                            <option value="tiempos_estancia_especificos">Tiempos de Estancia Específicos</option> // <--- CAMBIO AQUÍ
                                             <option value="servicios_adicionales">Servicios Adicionales Específicos</option>
                                             <option value="productos_tienda">Productos de Tienda Específicos</option>
                                             <option value="categorias_restaurante">Categorías de Restaurante Específicas</option>
@@ -618,6 +652,14 @@ export async function mount(container, supabaseInstance, currentUser) {
                                             <p class="form-helper-text">Mantén 'Ctrl' o 'Cmd' para selección múltiple.</p>
                                             <select id="habitaciones_aplicables" name="habitaciones_aplicables" class="form-control" multiple size="5"></select>
                                         </div>
+                                        
+                                        
+                                        <div class="form-group items-container" id="items-tiempos_estancia_especificos-container" style="display: none;">
+                                            <label for="items_tiempos_estancia" class="form-label font-semibold">Tiempos de Estancia Aplicables*</label>
+                                            <p class="form-helper-text">Mantén 'Ctrl' o 'Cmd' para selección múltiple.</p>
+                                            <select id="items_tiempos_estancia" name="items_tiempos_estancia" class="form-control" multiple size="5"></select>
+                                        </div>
+
                                         <div class="form-group items-container" id="items-servicios_adicionales-container" style="display: none;">
                                             <label for="items_servicios_adicionales" class="form-label font-semibold">Servicios Aplicables*</label>
                                             <p class="form-helper-text">Mantén 'Ctrl' o 'Cmd' para selección múltiple.</p>
@@ -636,34 +678,34 @@ export async function mount(container, supabaseInstance, currentUser) {
                                     </div>
                                 </div>
                             </div>
+                            
+                            <div class="form-group flex items-center">
+                                <input type="checkbox" id="activo" name="activo" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked />
+                                <label for="activo" class="ml-3 block text-sm font-medium text-slate-700">Activar este descuento</label>
+                            </div>
+
+                            <div class="px-6 py-4 bg-slate-50 flex items-center justify-between">
+                                <div class="form-actions flex items-center gap-x-4">
+                                    <button type="button" id="btn-cancelar-edicion-descuento" class="button button-neutral py-2 px-4" style="display:none;">Cancelar</button>
+                                    <button type="submit" id="btn-guardar-descuento" class="button button-primary py-2 px-5 font-semibold">Guardar Descuento</button>
+                                </div>
+                            </div>
                         </form>
-                    </div>
-    
-                    <div class="px-6 py-4 bg-slate-50 flex items-center justify-between">
-                        <div class="form-group flex items-center">
-                            <input type="checkbox" id="activo" name="activo" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked />
-                            <label for="activo" class="ml-3 block text-sm font-medium text-slate-700">Activar este descuento</label>
-                        </div>
-                        <div class="form-actions flex items-center gap-x-4">
-                            <button type="button" id="btn-cancelar-edicion-descuento" class="button button-neutral py-2 px-4" style="display:none;">Cancelar</button>
-                            <button type="submit" form="form-descuento" id="btn-guardar-descuento" class="button button-primary py-2 px-5 font-semibold">Guardar Descuento</button>
-                        </div>
                     </div>
                 </div>
             </div>
     
            <div id="table-card" class="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-    <div class="px-6 py-5 border-b border-slate-200">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-            <h3 class="text-xl font-bold text-slate-800">Descuentos Existentes</h3>
-            <div class="flex items-center">
-                <input id="show-inactive-discounts-checkbox" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
-                <label for="show-inactive-discounts-checkbox" class="ml-2 block text-sm font-medium text-slate-700">Mostrar inactivos</label>
-            </div>
-        </div>
-        <div id="descuentos-feedback" role="status" aria-live="polite" class="mt-2" style="min-height: 24px;"></div>
-    </div>
-    </div>
+                <div class="px-6 py-5 border-b border-slate-200">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <h3 class="text-xl font-bold text-slate-800">Descuentos Existentes</h3>
+                        <div class="flex items-center">
+                            <input id="show-inactive-discounts-checkbox" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                            <label for="show-inactive-discounts-checkbox" class="ml-2 block text-sm font-medium text-slate-700">Mostrar inactivos</label>
+                        </div>
+                    </div>
+                    <div id="descuentos-feedback" role="status" aria-live="polite" class="mt-2" style="min-height: 24px;"></div>
+                </div>
                 <div class="table-container overflow-x-auto">
                     <table class="w-full text-sm text-left">
                         <thead class="text-xs text-slate-600 uppercase bg-slate-100">
@@ -678,15 +720,14 @@ export async function mount(container, supabaseInstance, currentUser) {
                             </tr>
                         </thead>
                         <tbody id="tabla-descuentos-body" class="divide-y divide-slate-200">
-                            </tbody>
+                        </tbody>
                     </table>
                 </div>
             </div>
         </div>
     </div>
     <div id="modal-container"></div>
-    `;
-
+`;
     // ▼▼▼ ¡ESTA ES LA CORRECCIÓN CLAVE! ▼▼▼
     // Buscamos los elementos directamente en el 'document' después de que
     // el innerHTML ha sido renderizado. Esto garantiza que siempre se encuentren.
@@ -730,6 +771,8 @@ export async function mount(container, supabaseInstance, currentUser) {
   // Carga inicial de datos para selectores
   await loadHabitacionesParaSelector(formEl.querySelector('#habitaciones_aplicables'), supabaseInstance, currentHotelId);
   await loadClientesParaSelector(formEl.querySelector('#cliente'), supabaseInstance, currentHotelId);
+  await loadTiemposEstanciaParaSelector(formEl.querySelector('#items_tiempos_estancia'), supabaseInstance, currentHotelId);
+
 await loadServiciosParaSelector(formEl.querySelector('#items_servicios_adicionales'), supabaseInstance, currentHotelId);
 await loadProductosParaSelector(formEl.querySelector('#items_productos_tienda'), supabaseInstance, currentHotelId);
 await loadCategoriasRestauranteParaSelector(formEl.querySelector('#items_categorias_restaurante'), supabaseInstance, currentHotelId);
@@ -752,7 +795,7 @@ if (showInactiveCheckbox) {
   moduleListeners.push({ element: formEl.aplicabilidad, type: 'change', handler: visibilityHandler });
   toggleFormVisibility(formEl); // Llamada inicial
 
-  // Form Submit Handler
+
 const formSubmitHandler = async (event) => {
     event.preventDefault();
     clearFeedback(feedbackEl);
@@ -779,24 +822,22 @@ const formSubmitHandler = async (event) => {
       tipo: formData.get('tipo'),
       valor: valorInput,
       usos_maximos: parseInt(formData.get('usos_maximos')) || 0,
-      activo: formEl.activo.checked,
+      activo: formEl.querySelector('#activo').checked,
       codigo: null,
       cliente_id: null,
       fecha_inicio: null,
       fecha_fin: null,
-      aplicabilidad: null, // Esta es la columna para el TIPO de aplicabilidad
-      habitaciones_aplicables: null // Esta es la columna para el ARRAY de IDs
+      aplicabilidad: null,
+      habitaciones_aplicables: null
     };
 
     if (tipoGeneral === 'codigo') {
         payload.codigo = formData.get('codigo')?.trim().toUpperCase();
-        payload.aplicabilidad = formData.get('aplicabilidad'); // <-- AÑADE ESTA LÍNEA
         if (!payload.codigo) { 
             showError(feedbackEl, 'El código es obligatorio para este tipo de promoción.');
             setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
             return; 
         }
-  
     } else if (tipoGeneral === 'cliente_especifico') {
         payload.cliente_id = formData.get('cliente_id');
         if (!payload.cliente_id) { 
@@ -817,6 +858,10 @@ const formSubmitHandler = async (event) => {
     // Se determina de qué selector múltiple se obtienen los datos
     if (aplicabilidad === 'habitaciones_especificas') {
         items_aplicables = Array.from(formEl.habitaciones_aplicables.selectedOptions).map(opt => opt.value);
+    } else if (aplicabilidad === 'tiempos_estancia_especificos') { // <--- CAMBIO AQUÍ
+        // Se obtiene la lista de IDs del nuevo selector
+        const selectTiempos = formEl.querySelector('#items_tiempos_estancia');
+        items_aplicables = Array.from(selectTiempos.selectedOptions).map(opt => opt.value);
     } else if (aplicabilidad === 'servicios_adicionales') {
         const selectServicios = formEl.querySelector('#items_servicios_adicionales');
         items_aplicables = Array.from(selectServicios.selectedOptions).map(opt => opt.value);
@@ -828,9 +873,7 @@ const formSubmitHandler = async (event) => {
         items_aplicables = Array.from(selectCategorias.selectedOptions).map(opt => opt.value);
     }
 
-    // ▼▼▼ ¡ESTA ES LA CORRECCIÓN CLAVE! ▼▼▼
-    // Basado en tu esquema, todos los arrays de IDs (sean de habitaciones, servicios, etc.)
-    // se guardan en la única columna disponible: 'habitaciones_aplicables'.
+    // Basado en tu esquema, todos los arrays de IDs se guardan en la misma columna.
     if (items_aplicables && items_aplicables.length > 0) {
         payload.habitaciones_aplicables = items_aplicables;
     }
@@ -861,7 +904,9 @@ const formSubmitHandler = async (event) => {
   moduleListeners.push({ element: formEl, type: 'submit', handler: formSubmitHandler });
 
   // Table Click Handler
-  const tableClickListener = async (event) => {
+ // En descuentos.js, dentro de la función mount, reemplaza el tableClickListener completo
+
+const tableClickListener = async (event) => {
     const button = event.target.closest('button[data-action]');
     if (!button) return;
 
@@ -869,55 +914,69 @@ const formSubmitHandler = async (event) => {
     const action = button.dataset.action;
     clearFeedback(feedbackEl);
 
-    try {
-      const { data: discount, error: fetchError } = await supabaseInstance
-    .from('descuentos').select('*, clientes(id, nombre)').eq('id', discountId).single();
-      if(fetchError) throw fetchError;
-
-      if (action === 'edit') {
-        populateForm(formEl, discount, formTitleEl, btnCancelarEl);
-        window.scrollTo({ top: formEl.offsetTop - 20, behavior: 'smooth' });
-      } else if (action === 'toggle') {
-        const { error } = await supabaseInstance.from('descuentos').update({ activo: !discount.activo }).eq('id', discountId);
-        if (error) throw error;
-        showSuccess(feedbackEl, `Descuento ${!discount.activo ? 'activado' : 'desactivado'}.`);
-        await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId);
-      // ...
-} else if (action === 'delete') {
-    if ((discount.usos_actuales || 0) > 0) {
-        showError(feedbackEl, 'No se puede eliminar un descuento que ya ha sido utilizado.');
-        return;
-    }
-
-    // Llamamos a nuestro nuevo modal de confirmación
-    const confirmed = await showConfirmationModal({
-        title: 'Confirmar Eliminación',
-        text: `¿Realmente deseas eliminar el descuento "<strong>${discount.nombre}</strong>"?<br><br>Esta acción no se puede deshacer.`,
-        confirmButtonText: 'Sí, ¡Eliminar!'
-    });
-
-    // Si el usuario confirmó, procedemos a eliminar
-    if (confirmed) {
+    // --- INICIO DEL CAMBIO: Lógica para la acción de eliminar ---
+    if (action === 'delete') {
         try {
-            const { error } = await supabaseInstance.from('descuentos').delete().eq('id', discountId);
-            if (error) throw error;
-            showSuccess(feedbackEl, 'Descuento eliminado exitosamente.');
-            await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId);
+            // 1. Obtenemos el descuento solo para validar y mostrar el nombre en la confirmación.
+            const { data: discount, error: fetchError } = await supabaseInstance
+                .from('descuentos').select('nombre, usos_actuales').eq('id', discountId).single();
+            
+            if (fetchError) throw new Error(`No se pudo encontrar el descuento: ${fetchError.message}`);
+
+            // 2. Doble validación: no permitir eliminar si ya fue usado.
+            if ((discount.usos_actuales || 0) > 0) {
+                showError(feedbackEl, 'No se puede eliminar un descuento que ya ha sido utilizado.');
+                return;
+            }
+
+            // 3. Pedimos confirmación al usuario.
+            const confirmed = await showConfirmationModal({
+                title: '¿Confirmar Eliminación?',
+                text: `Estás a punto de eliminar el descuento "${discount.nombre}". Esta acción no se puede deshacer.`,
+                confirmButtonText: 'Sí, ¡Eliminar!'
+            });
+
+            // 4. Si el usuario confirma, procedemos.
+            if (confirmed) {
+                showLoading(feedbackEl, 'Eliminando...');
+                const { error: deleteError } = await supabaseInstance.from('descuentos').delete().eq('id', discountId);
+                if (deleteError) throw deleteError;
+                
+                showSuccess(feedbackEl, 'Descuento eliminado exitosamente.');
+                // 5. Refrescamos la lista para que el descuento eliminado desaparezca.
+                await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId, document.getElementById('show-inactive-discounts-checkbox').checked);
+            }
         } catch (err) {
             console.error('Error al eliminar el descuento:', err);
             showError(feedbackEl, `Error al eliminar: ${err.message}`);
         }
+        return; // Salimos de la función después de manejar la eliminación.
     }
+    // --- FIN DEL CAMBIO ---
 
-      } else if (action === 'card') {
-        const { data: hotelData } = await supabaseInstance.from('configuracion_hotel').select('logo_url').eq('hotel_id', currentHotelId).single();
-        await generateDiscountCard(discount, hotelData?.logo_url, supabaseInstance);
-      }
+    // El resto de las acciones (edit, toggle, card) continúan como antes.
+    try {
+        const { data: discount, error: fetchError } = await supabaseInstance
+            .from('descuentos').select('*, clientes(id, nombre)').eq('id', discountId).single();
+        if (fetchError) throw fetchError;
+
+        if (action === 'edit') {
+            populateForm(formEl, discount, formTitleEl, btnCancelarEl);
+            window.scrollTo({ top: formEl.offsetTop - 20, behavior: 'smooth' });
+        } else if (action === 'toggle') {
+            const { error } = await supabaseInstance.from('descuentos').update({ activo: !discount.activo }).eq('id', discountId);
+            if (error) throw error;
+            showSuccess(feedbackEl, `Descuento ${!discount.activo ? 'activado' : 'desactivado'}.`);
+            await loadAndRenderDiscounts(tbodyEl, supabaseInstance, currentHotelId, document.getElementById('show-inactive-discounts-checkbox').checked);
+        } else if (action === 'card') {
+            const { data: hotelData } = await supabaseInstance.from('configuracion_hotel').select('logo_url').eq('hotel_id', currentHotelId).single();
+            await generateDiscountCard(discount, hotelData?.logo_url, supabaseInstance);
+        }
     } catch (err) {
-      console.error(`Error en acción ${action}:`, err);
-      showError(feedbackEl, `Error en acción '${action}': ${err.message}`);
+        console.error(`Error en acción ${action}:`, err);
+        showError(feedbackEl, `Error en acción '${action}': ${err.message}`);
     }
-  };
+};
   tbodyEl.addEventListener('click', tableClickListener);
   moduleListeners.push({ element: tbodyEl, type: 'click', handler: tableClickListener });
 

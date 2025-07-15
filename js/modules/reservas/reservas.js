@@ -802,6 +802,10 @@ async function cargarTiemposEstancia() {
  * @param {string|null} codigoManual - El código introducido por el usuario.
  * @returns {Promise<object|null>} El objeto del descuento si es aplicable, o null.
  */
+// En reservas.js, reemplaza esta función completa
+
+// En reservas.js, reemplaza esta función completa
+
 async function buscarDescuentoParaReserva(formData, codigoManual = null) {
     if (!formData.habitacion_id && !codigoManual && !formData.cliente_id) return null;
 
@@ -813,43 +817,41 @@ async function buscarDescuentoParaReserva(formData, codigoManual = null) {
         .or(`fecha_fin.is.null,fecha_fin.gte.${ahora}`);
 
     const orConditions = ['tipo_descuento_general.eq.automatico'];
-    if (codigoManual) {
-        orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`);
-    }
-    // --- NUEVO: si hay cliente, agrega condición para cliente específico
-    if (formData.cliente_id) {
-        orConditions.push(`cliente_id.eq.${formData.cliente_id}`);
-    }
+    if (codigoManual) { orConditions.push(`codigo.eq.${codigoManual.toUpperCase()}`); }
+    if (formData.cliente_id) { orConditions.push(`cliente_id.eq.${formData.cliente_id}`); }
     query = query.or(orConditions.join(','));
 
     const { data: descuentosPotenciales, error } = await query;
-    if (error) {
-        console.error("Error buscando descuentos de reserva:", error);
-        return null;
-    }
+    if (error) { console.error("Error buscando descuentos de reserva:", error); return null; }
 
     const descuentosValidos = descuentosPotenciales.filter(d => (d.usos_maximos || 0) === 0 || (d.usos_actuales || 0) < d.usos_maximos);
 
-    // Prioridad: por cliente > por código > automáticos
-    // 1. Por cliente_id
-    if (formData.cliente_id) {
-        const descuentoCliente = descuentosValidos.find(d => d.cliente_id === formData.cliente_id);
-        if (descuentoCliente) return descuentoCliente;
-    }
-    // 2. Por código
-    if (codigoManual) {
-        const descuentoCodigo = descuentosValidos.find(d => d.codigo && d.codigo.toUpperCase() === codigoManual.toUpperCase());
-        if (descuentoCodigo) return descuentoCodigo;
-    }
-    // 3. Automático/habitaciones específicas
+    // Prioridad de búsqueda:
+    if (formData.cliente_id) { const d = descuentosValidos.find(d => d.cliente_id === formData.cliente_id); if (d) return d; }
+    if (codigoManual) { const d = descuentosValidos.find(d => d.codigo && d.codigo.toUpperCase() === codigoManual.toUpperCase()); if (d) return d; }
+    
     for (const descuento of descuentosValidos) {
         const aplicabilidad = descuento.aplicabilidad;
-        if (aplicabilidad === 'reserva_total') return descuento;
-        if (aplicabilidad === 'habitaciones_especificas' && formData.habitacion_id && descuento.habitaciones_aplicables?.includes(formData.habitacion_id)) {
+        const itemsAplicables = descuento.habitaciones_aplicables || [];
+
+        if (aplicabilidad === 'tiempos_estancia_especificos') {
+             // --- LÓGICA NUEVA Y CORRECTA ---
+            if (formData.tipo_calculo_duracion === 'noches_manual' && itemsAplicables.includes('NOCHE_COMPLETA')) {
+                return descuento;
+            }
+            if (formData.tipo_calculo_duracion === 'tiempo_predefinido' && formData.tiempo_estancia_id && itemsAplicables.includes(formData.tiempo_estancia_id)) {
+                return descuento;
+            }
+        }
+        else if (aplicabilidad === 'habitaciones_especificas' && formData.habitacion_id && itemsAplicables.includes(formData.habitacion_id)) {
+            return descuento;
+        }
+        else if (aplicabilidad === 'reserva_total') {
             return descuento;
         }
     }
-    return null; // No se encontró ningún descuento aplicable
+    
+    return null;
 }
 
 
