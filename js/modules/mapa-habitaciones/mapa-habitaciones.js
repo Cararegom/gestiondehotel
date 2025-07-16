@@ -2097,8 +2097,6 @@ function crearOpcionesHoras(tiempos) {
         });
 }
 
-// Reemplaza esta función completa en: js/modules/mapa_habitaciones/mapa_habitaciones.js
-
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
     let finAt;
     let montoEstanciaBaseBruto = 0;
@@ -2109,8 +2107,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     const inicioAt = new Date();
     const nochesSeleccionadas = dataForm.noches ? parseInt(dataForm.noches) : 0;
     const minutosSeleccionados = dataForm.horas ? parseInt(dataForm.horas) : 0;
-    const cantidadPersonas = dataForm.cantidad_huespedes ? parseInt(dataForm.cantidad_huespedes) : 1;
-
+    
     const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
     const precioLibreValor = parseFloat(dataForm.precio_libre_valor);
 
@@ -2128,27 +2125,27 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
             montoEstanciaBaseBruto = precioLibreValor;
         } else {
-            // --- INICIO DE LA LÓGICA DE PRECIOS MEJORADA ---
-            // Prioridad 1: Precio específico de la habitación.
-            let precioBasePorNoche = room.precio || 0;
+            // --- INICIO DE LA LÓGICA DE PRECIOS CORREGIDA ---
+            let precioBasePorNoche = 0;
+            const cantidadHuespedes = parseInt(dataForm.cantidad_huespedes) || 1;
 
-            // Prioridad 2: Si el precio de la habitación es 0, buscar la tarifa general de "noche" 
-            // en la configuración de tiempos de estancia.
-            if (precioBasePorNoche <= 0) {
-                const tarifaNocheGeneral = tiempos.find(t => t.tipo_unidad === 'noche' || (t.nombre && t.nombre.toLowerCase().includes('noche')));
-                if (tarifaNocheGeneral) {
-                    precioBasePorNoche = tarifaNocheGeneral.precio || 0;
-                }
+            if (cantidadHuespedes === 1) {
+                // Si es un solo huésped, usamos el precio para una persona.
+                precioBasePorNoche = room.precio_1_persona || 0;
+            } else {
+                // Si son 2 o más, la base es el precio para dos personas.
+                precioBasePorNoche = room.precio_2_personas || 0;
             }
-            
-            // Lógica para huéspedes adicionales
-            const ocupacionBase = 2; // El precio base suele cubrir hasta 2 huéspedes
-            if (cantidadPersonas > ocupacionBase) {
-                const huespedesAdicionales = cantidadPersonas - ocupacionBase;
-                precioBasePorNoche += huespedesAdicionales * (room.precio_huesped_adicional || 0);
+
+            // Si hay más de 2 huéspedes, sumamos el costo adicional por cada persona extra.
+            if (cantidadHuespedes > 2) {
+                const huespedesAdicionales = cantidadHuespedes - 2;
+                const costoAdicional = room.precio_huesped_adicional || 0;
+                precioBasePorNoche += huespedesAdicionales * costoAdicional;
             }
+
             montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
-            // --- FIN DE LA LÓGICA DE PRECIOS MEJORADA ---
+            // --- FIN DE LA LÓGICA DE PRECIOS CORREGIDA ---
         }
 
     } else if (minutosSeleccionados > 0) {
