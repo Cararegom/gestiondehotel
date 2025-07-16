@@ -266,196 +266,177 @@ function validateInitialInputs(formData) {
 
 //-----------calendario------------//
 // Parser para eventos creados desde tu app (si los tuvieras)
+// REEMPLAZA ESTAS DOS FUNCIONES EN: js/modules/reservas/reservas.js
+
+// Parser para eventos creados desde tu app (más robusto)
 function parseEventoGoogle(evento) {
-  if (!evento.summary || !evento.summary.startsWith('Reserva | Cliente:')) return null;
-  const summaryRegex = /^Reserva \| Cliente:\s*([^|]+)\|\s*Room:\s*([^\|]+)\|\s*Huéspedes:\s*(\d+)/i;
+  if (!evento.summary) return null;
+  // Expresión regular mejorada: más flexible con los espacios
+  const summaryRegex = /Reserva\s*\|\s*Cliente:\s*([^|]+?)\s*\|\s*Room:\s*([^|]+?)\s*\|\s*Huéspedes:\s*(\d+)/i;
   const match = evento.summary.match(summaryRegex);
+  
+  // Si el formato del título no coincide, no se puede procesar.
   if (!match) return null;
 
-  const cliente_nombre = match[1].trim();
-  const habitacion_id = match[2].trim();
-  const cantidad_huespedes = parseInt(match[3]);
-  let telefono = null, cedula = null;
+  const [, cliente_nombre, habitacion_nombre, cantidad_huespedes_str] = match;
 
+  // Validación básica de los datos extraídos
+  if (!cliente_nombre.trim() || !habitacion_nombre.trim()) return null;
+
+  let telefono = null, cedula = null;
   if (evento.description) {
-    const telMatch = evento.description.match(/Tel[eé]fono:\s*(\d+)/i);
+    const telMatch = evento.description.match(/Tel[eé]fono:\s*([\d\s\-\+]+)/i);
     if (telMatch) telefono = telMatch[1].trim();
-    const cedulaMatch = evento.description.match(/Cedula:\s*([A-Za-z0-9]+)/i);
+    
+    const cedulaMatch = evento.description.match(/C[eé]dula:\s*([A-Za-z0-9\-\.]+)/i);
     if (cedulaMatch) cedula = cedulaMatch[1].trim();
   }
 
   return {
-    cliente_nombre,
-    cantidad_huespedes,
-    habitacion_id,
+    cliente_nombre: cliente_nombre.trim(),
+    cantidad_huespedes: parseInt(cantidad_huespedes_str, 10) || 1,
+    // Importante: Guardamos el NOMBRE de la habitación para buscar su ID después
+    habitacion_nombre: habitacion_nombre.trim(), 
     telefono,
     cedula,
     fecha_inicio: evento.start.dateTime || evento.start.date,
     fecha_fin: evento.end.dateTime || evento.end.date,
     google_event_id: evento.id,
-    // La propiedad 'descripcion' se elimina antes de insertar
     descripcion: evento.description || '', 
-    // Corregido para que coincida con la columna de la base de datos
     origen_reserva: 'google_calendar'
   };
 }
 
-// Parser para eventos de iCal (Booking, Airbnb, etc.)
+// Parser para eventos de iCal (Booking, Airbnb, etc. - más robusto)
 function parseEventoICal(evento, habitaciones) {
-    let habitacionNombre = null;
-    let habitacion_id = null;
-    const roomRegex = /Room\s*:? ?([^\n]+)/i;
+    if (!evento.summary && !evento.location) return null;
+    
+    let habitacionNombreDetectado = null;
+    
+    // Busca el nombre de la habitación en el título (summary) o en la ubicación (location)
+    const roomRegex = /(?:Room|Habitación)\s*:?\s*([^\s(]+)/i;
+    const summaryMatch = evento.summary ? evento.summary.match(roomRegex) : null;
+    const locationMatch = evento.location ? evento.location.match(roomRegex) : null;
 
-    if (evento.summary) {
-        const match = evento.summary.match(roomRegex);
-        if (match) habitacionNombre = match[1].trim();
-    }
-    if (!habitacionNombre && evento.location) {
-        const match = evento.location.match(roomRegex);
-        if (match) habitacionNombre = match[1].trim();
-    }
-    if (habitacionNombre && Array.isArray(habitaciones)) {
-        const habitacionObj = habitaciones.find(h => h.nombre.trim().toLowerCase() === habitacionNombre.toLowerCase());
-        if (habitacionObj) habitacion_id = habitacionObj.id;
+    if (summaryMatch && summaryMatch[1]) {
+        habitacionNombreDetectado = summaryMatch[1].trim();
+    } else if (locationMatch && locationMatch[1]) {
+        habitacionNombreDetectado = locationMatch[1].trim();
     }
 
-    let cliente_nombre = null, telefono = null, cedula = null, cantidad_huespedes = 1, notas = "";
+    // Si no se encuentra un nombre de habitación, no podemos continuar
+    if (!habitacionNombreDetectado) return null;
+
+    // Busca el ID de la habitación haciendo una comparación insensible a mayúsculas/minúsculas
+    const habitacionObj = habitaciones.find(h => h.nombre.trim().toLowerCase() === habitacionNombreDetectado.toLowerCase());
+    
+    // Si no se encuentra una habitación coincidente en la BD, se descarta el evento.
+    if (!habitacionObj) {
+        console.warn(`[Sync ICal] Evento de ${evento.summary} descartado. No se encontró habitación con el nombre: "${habitacionNombreDetectado}"`);
+        return null;
+    }
+
+    // El resto del parseo de la descripción se mantiene igual
+    let cliente_nombre = evento.summary.replace(roomRegex, "").replace("(Imported)", "").trim() || "Reserva Externa";
+    let cantidad_huespedes = 1;
+
     if (evento.description) {
-        const nombreMatch = evento.description.match(/Nombre:\s*([^\n]+)/i);
-        if (nombreMatch) cliente_nombre = nombreMatch[1].trim();
-
-        const telMatch = evento.description.match(/Tel(?:[é|e]fono)?:\s*([^\n]+)/i);
-        if (telMatch) telefono = telMatch[1].trim();
-
-        const cedulaMatch = evento.description.match(/Cedula:\s*([^\n]+)/i);
-        if (cedulaMatch) cedula = cedulaMatch[1].trim();
-
         const huespedesMatch = evento.description.match(/Huéspedes?:\s*(\d+)/i);
-        if (huespedesMatch) cantidad_huespedes = parseInt(huespedesMatch[1]);
-
-        const notasMatch = evento.description.match(/Notas?:\s*([^\n]+)/i);
-        if (notasMatch) notas = notasMatch[1].trim();
+        if (huespedesMatch) cantidad_huespedes = parseInt(huespedesMatch[1], 10);
     }
-
-    if (!cliente_nombre && evento.summary) {
-        cliente_nombre = evento.summary.replace(roomRegex, "").trim();
-    }
-
-    if (!habitacion_id || !cliente_nombre) return null;
-
+    
     return {
         cliente_nombre,
         cantidad_huespedes,
-        habitacion_id,
-        telefono,
-        cedula,
+        habitacion_id: habitacionObj.id, // Usamos el ID encontrado
         fecha_inicio: evento.start.dateTime || evento.start.date,
         fecha_fin: evento.end.dateTime || evento.end.date,
         google_event_id: evento.id,
-        notas: notas,
-        // La propiedad 'descripcion' se elimina antes de insertar
-        descripcion: evento.description || '',
-        // Corregido para que coincida con la columna de la base de datos
-        origen_reserva: 'ical_google' 
+        origen_reserva: 'ical_google',
+        descripcion: evento.description || ''
     };
 }
 
 
+
+
 // Función principal de sincronización
+// REEMPLAZA ESTA FUNCIÓN EN: js/modules/reservas/reservas.js
+
 async function syncReservasConGoogleCalendar(state) {
   try {
-    if (!state.hotelId) {
-      return;
-    }
+    if (!state.hotelId) return;
 
-    // 1. Obtener datos locales
-    const { data: reservasActuales, error: errorReservas } = await state.supabase
-      .from('reservas')
-      .select('google_event_id')
-      .eq('hotel_id', state.hotelId)
-      .not('google_event_id', 'is', null);
+    // 1. Obtener datos locales (reservas existentes y habitaciones con su ID y nombre)
+    const [reservasResult, habitacionesResult] = await Promise.all([
+        state.supabase.from('reservas').select('google_event_id').eq('hotel_id', state.hotelId).not('google_event_id', 'is', null),
+        state.supabase.from('habitaciones').select('id, nombre').eq('hotel_id', state.hotelId)
+    ]);
 
-    const { data: habitaciones, error: errorHabitaciones } = await state.supabase
-      .from('habitaciones')
-      .select('id, nombre')
-      .eq('hotel_id', state.hotelId);
-    
-    if (errorReservas || errorHabitaciones) {
-        console.error("[Sync] Error obteniendo datos locales:", { errorReservas, errorHabitaciones });
+    if (reservasResult.error || habitacionesResult.error) {
+        console.error("[Sync] Error obteniendo datos locales:", { reservError: reservasResult.error, habError: habitacionesResult.error });
         return;
     }
-    
+    const reservasActuales = reservasResult.data;
+    const habitaciones = habitacionesResult.data;
+
     // 2. Invocar la Edge Function
     const { data: dataEventos, error: errorInvocacion } = await state.supabase.functions.invoke(
-      'calendar-sync-events',
-      { body: { hotelId: state.hotelId } }
+      'calendar-sync-events', { body: { hotelId: state.hotelId } }
     );
-
     if (errorInvocacion) {
       console.error('CRÍTICO: Error al invocar la Edge Function:', errorInvocacion);
       return;
     }
-
     const eventosGoogle = dataEventos.events;
-    if (!Array.isArray(eventosGoogle) || eventosGoogle.length === 0) {
-        return;
-    }
+    if (!Array.isArray(eventosGoogle)) return;
     
     let nuevasReservasInsertadas = 0;
-
     for (const evento of eventosGoogle) {
-      // 3. Parsear el evento
-      let reservaParsed = parseEventoGoogle(evento);
-      if (!reservaParsed) {
-        reservaParsed = parseEventoICal(evento, habitaciones);
-      }
+      if (evento.status === "cancelled") continue;
       
+      const yaExiste = reservasActuales.some(r => r.google_event_id === evento.id);
+      if (yaExiste) continue;
+
+      // 3. Parsear el evento
+      let reservaParsed = parseEventoGoogle(evento) || parseEventoICal(evento, habitaciones);
       if (!reservaParsed) continue;
 
-      // 4. Verificar duplicados
-      const yaExiste = reservasActuales.some(r => r.google_event_id === reservaParsed.google_event_id);
+      // 4. Asegurar que tenemos un habitacion_id
+      if (!reservaParsed.habitacion_id && reservaParsed.habitacion_nombre) {
+          const habEncontrada = habitaciones.find(h => h.nombre.trim().toLowerCase() === reservaParsed.habitacion_nombre.toLowerCase());
+          if (habEncontrada) {
+              reservaParsed.habitacion_id = habEncontrada.id;
+          } else {
+              console.warn(`[Sync] Evento descartado. No se encontró ID para habitación nombrada: "${reservaParsed.habitacion_nombre}"`);
+              continue;
+          }
+      }
+      if (!reservaParsed.habitacion_id) continue;
+
+      // 5. Preparar e insertar
+      const reservaParaInsertar = { ...reservaParsed, hotel_id: state.hotelId, estado: 'reservada', monto_total: 0, monto_pagado: 0, usuario_id: state.currentUser.id };
+      delete reservaParaInsertar.descripcion;
+      delete reservaParaInsertar.habitacion_nombre; // Limpiar campo temporal
+
+      const { data: insertData, error: insertError } = await state.supabase
+        .from('reservas').insert(reservaParaInsertar).select().single();
       
-      if (!yaExiste && evento.status !== "cancelled") {
-        
-        const reservaParaInsertar = {
-          ...reservaParsed,
-          hotel_id: state.hotelId,
-          estado: 'reservada',
-          monto_total: 0,
-          monto_pagado: 0,
-          usuario_id: state.currentUser.id,
-        };
-
-        // Se elimina el campo 'descripcion' si no existe en la tabla de destino
-        if ('descripcion' in reservaParaInsertar) {
-             delete reservaParaInsertar.descripcion;
-        }
-
-        // 5. Insertar en la base de datos
-        const { data: insertData, error: insertError } = await state.supabase
-            .from('reservas')
-            .insert(reservaParaInsertar)
-            .select()
-            .single();
-        
-        if (insertError) {
-          console.error("[Sync] ERROR AL INSERTAR EN SUPABASE:", insertError.message, "--> Objeto que falló:", reservaParaInsertar);
-        } else {
-          console.log("%c[Sync] ¡ÉXITO! Reserva insertada:", "color: green; font-weight: bold;", insertData);
-          nuevasReservasInsertadas++;
-          reservasActuales.push({ google_event_id: insertData.google_event_id });
-        }
+      if (insertError) {
+        console.error("[Sync] ERROR AL INSERTAR EN SUPABASE:", insertError.message, "--> Objeto:", reservaParaInsertar);
+      } else {
+        console.log("%c[Sync] ¡ÉXITO! Reserva insertada:", "color: green; font-weight: bold;", insertData);
+        nuevasReservasInsertadas++;
+        reservasActuales.push({ google_event_id: insertData.google_event_id });
       }
     }
 
-    // 6. Refrescar la UI si hubo cambios
     if (nuevasReservasInsertadas > 0) {
-        console.log("[Sync] Refrescando la lista de reservas en la UI...");
+        console.log(`[Sync] ${nuevasReservasInsertadas} nuevas reservas sincronizadas. Refrescando UI.`);
         await renderReservas();
     }
-
   } catch (e) {
-    console.error("Error catastrófico en el flujo de syncReservasConGoogleCalendar:", e);
+    console.error("Error catastrófico en syncReservasConGoogleCalendar:", e);
   }
 }
 
@@ -2110,25 +2091,34 @@ container.innerHTML = `
 
     // --- 4. LÓGICA Y LISTENERS DE EVENTOS ---
     
-    // Lógica para el selector de cliente
-    const updateClienteFields = (cliente) => {
-        const newClientFieldsContainer = ui.container.querySelector('#new-client-fields');
-        if (cliente) {
-            ui.clienteIdHiddenInput.value = cliente.id;
-            ui.clienteNombreDisplay.querySelector('#selected_client_name').textContent = cliente.nombre;
-            ui.form.elements.cedula.value = cliente.documento || '';
-            ui.form.elements.telefono.value = cliente.telefono || '';
-            ui.clienteNombreDisplay.classList.remove('hidden');
-            if(newClientFieldsContainer) newClientFieldsContainer.style.display = 'none';
-            ui.form.elements.cliente_nombre.required = false;
-        } else {
-            ui.clienteIdHiddenInput.value = '';
-            ui.clienteNombreDisplay.classList.add('hidden');
-            if(newClientFieldsContainer) newClientFieldsContainer.style.display = 'block';
-            ui.form.elements.cliente_nombre.required = true;
-            ['cliente_nombre', 'cedula', 'telefono'].forEach(name => ui.form.elements[name].value = '');
-        }
-    };
+// DENTRO DE LA FUNCIÓN mount, REEMPLAZA la función interna updateClienteFields
+// EN: js/modules/reservas/reservas.js
+
+const updateClienteFields = (cliente) => {
+    const newClientFieldsContainer = ui.container.querySelector('#new-client-fields');
+    if (cliente) {
+        // Rellena los campos con el cliente seleccionado
+        ui.clienteIdHiddenInput.value = cliente.id;
+        ui.clienteNombreDisplay.querySelector('#selected_client_name').textContent = cliente.nombre;
+        ui.form.elements.cliente_nombre.value = cliente.nombre; // Llenar también el input manual
+        ui.form.elements.cedula.value = cliente.documento || '';
+        ui.form.elements.telefono.value = cliente.telefono || '';
+        // Muestra el panel del cliente seleccionado y oculta los campos de nuevo cliente
+        ui.clienteNombreDisplay.classList.remove('hidden');
+        if(newClientFieldsContainer) newClientFieldsContainer.style.display = 'none';
+        ui.form.elements.cliente_nombre.required = false; // El nombre ya no es requerido
+    } else {
+        // Limpia todos los campos si no hay cliente seleccionado
+        ui.clienteIdHiddenInput.value = '';
+        ['cliente_nombre', 'cedula', 'telefono'].forEach(name => {
+            if (ui.form.elements[name]) ui.form.elements[name].value = '';
+        });
+        // Oculta el panel y vuelve a mostrar los campos para un nuevo cliente
+        ui.clienteNombreDisplay.classList.add('hidden');
+        if(newClientFieldsContainer) newClientFieldsContainer.style.display = 'block';
+        ui.form.elements.cliente_nombre.required = true;
+    }
+};
     
     if (ui.btnBuscarCliente) {
     ui.btnBuscarCliente.onclick = () => {

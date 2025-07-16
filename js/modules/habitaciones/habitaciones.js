@@ -474,38 +474,61 @@ async function showEditHabitacionModal(habitacionId) {
 
         // 3. Lógica para guardar los cambios
         const formEditEl = modalContainer.querySelector('#form-edit-habitacion');
-        formEditEl.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btnGuardar = formEditEl.querySelector('#btn-guardar-modal');
-            const modalFeedbackEl = formEditEl.querySelector('#modal-edit-feedback');
-            
-            setFormLoadingState(formEditEl, true, btnGuardar, 'Guardar Cambios', 'Guardando...');
+// REEMPLAZA ESTE LISTENER COMPLETO DENTRO DE la función showEditHabitacionModal
+// EN: js/modules/habitaciones/habitaciones.js
 
-            const formData = new FormData(formEditEl);
-            const payload = {
-                nombre: formData.get('nombre').trim(),
-                tipo: formData.get('tipo').trim(),
-                piso: parseInt(formData.get('piso')) || null,
-                precio_1_persona: parseFloat(formData.get('precio_1_persona')) || 0,
-                precio_2_personas: parseFloat(formData.get('precio_2_personas')) || 0,
-                precio_huesped_adicional: parseFloat(formData.get('precio_huesped_adicional')) || 0,
-                capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || 2,
-                amenidades: formData.get('amenidades').split(',').map(s => s.trim()).filter(Boolean),
-                activo: formEditEl.querySelector('[name="activo"]').checked
-            };
+// REEMPLAZA ESTE LISTENER COMPLETO DENTRO DE la función showEditHabitacionModal
+// EN: js/modules/habitaciones/habitaciones.js
 
-            const { error: updateError } = await currentSupabaseInstance
-                .from('habitaciones').update(payload).eq('id', habitacionId);
+formEditEl.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btnGuardar = formEditEl.querySelector('#btn-guardar-modal');
+    const modalFeedbackEl = formEditEl.querySelector('#modal-edit-feedback');
+    const feedbackEl = currentContainerEl.querySelector('#habitaciones-global-feedback');
+    const listaContainerEl = currentContainerEl.querySelector('#habitaciones-lista-container');
 
-            if (updateError) {
-                showHabitacionesFeedback(modalFeedbackEl, `Error: ${updateError.message}`, 'error');
-            } else {
-                showHabitacionesFeedback(feedbackEl, 'Habitación actualizada con éxito.', 'success');
-                modalContainer.style.display = 'none'; // Ocultar modal
-                await renderHabitaciones(listaContainerEl, feedbackEl); // Refrescar la lista de habitaciones
-            }
-            setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
-        });
+    // 1. Se leen los datos del formulario MIENTRAS los campos están activos.
+    const formData = new FormData(formEditEl);
+
+    // 2. Se desactiva el formulario para mostrar el estado de "Guardando...".
+    setFormLoadingState(formEditEl, true, btnGuardar, 'Guardar Cambios', 'Guardando...');
+
+    // 3. Se procede con la validación (ahora sí encontrará los datos).
+    const nombre = formData.get('nombre')?.trim();
+    if (!nombre) {
+        showHabitacionesFeedback(modalFeedbackEl, 'Error: El nombre de la habitación no puede estar vacío.', 'error');
+        setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+        return;
+    }
+
+    const payload = {
+        nombre: nombre,
+        tipo: formData.get('tipo')?.trim() || null,
+        piso: parseInt(formData.get('piso')) || null,
+        precio_1_persona: parseFloat(formData.get('precio_1_persona')) || 0,
+        precio_2_personas: parseFloat(formData.get('precio_2_personas')) || 0,
+        precio_huesped_adicional: parseFloat(formData.get('precio_huesped_adicional')) || 0,
+        capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || 2,
+        amenidades: formData.get('amenidades')?.split(',').map(s => s.trim()).filter(Boolean) || [],
+        activo: formEditEl.querySelector('[name="activo"]').checked
+    };
+
+    const { error: updateError } = await currentSupabaseInstance
+        .from('habitaciones').update(payload).eq('id', habitacionId);
+
+    if (updateError) {
+        showHabitacionesFeedback(modalFeedbackEl, `Error: ${updateError.message}`, 'error');
+        setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+    } else {
+        const modalContainer = document.getElementById('habitacion-edit-modal-container');
+        if (modalContainer) {
+            modalContainer.style.display = 'none'; // Ocultar modal
+        }
+        showHabitacionesFeedback(feedbackEl, 'Habitación actualizada con éxito.', 'success');
+        await renderHabitaciones(listaContainerEl, feedbackEl); // Refrescar la lista de habitaciones
+        // No es necesario llamar a setFormLoadingState aquí porque el modal se oculta.
+    }
+});
         
         // Lógica para cancelar
         modalContainer.querySelector('#btn-cancelar-modal').addEventListener('click', () => {

@@ -2128,17 +2128,27 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
             montoEstanciaBaseBruto = precioLibreValor;
         } else {
-            // --- LÓGICA DE PRECIOS CORREGIDA ---
-            // Se usa 'room.precio' como base, que es un esquema más común y robusto.
-            // Se suma 'precio_huesped_adicional' si se excede la ocupación base (ej. 2 personas).
-            let precioBasePorNoche = room.precio || 0; // Usar el precio base genérico de la habitación
-            const ocupacionBase = 2; // El precio base suele cubrir hasta 2 huéspedes
+            // --- INICIO DE LA LÓGICA DE PRECIOS MEJORADA ---
+            // Prioridad 1: Precio específico de la habitación.
+            let precioBasePorNoche = room.precio || 0;
 
+            // Prioridad 2: Si el precio de la habitación es 0, buscar la tarifa general de "noche" 
+            // en la configuración de tiempos de estancia.
+            if (precioBasePorNoche <= 0) {
+                const tarifaNocheGeneral = tiempos.find(t => t.tipo_unidad === 'noche' || (t.nombre && t.nombre.toLowerCase().includes('noche')));
+                if (tarifaNocheGeneral) {
+                    precioBasePorNoche = tarifaNocheGeneral.precio || 0;
+                }
+            }
+            
+            // Lógica para huéspedes adicionales
+            const ocupacionBase = 2; // El precio base suele cubrir hasta 2 huéspedes
             if (cantidadPersonas > ocupacionBase) {
                 const huespedesAdicionales = cantidadPersonas - ocupacionBase;
                 precioBasePorNoche += huespedesAdicionales * (room.precio_huesped_adicional || 0);
             }
             montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
+            // --- FIN DE LA LÓGICA DE PRECIOS MEJORADA ---
         }
 
     } else if (minutosSeleccionados > 0) {
@@ -2486,7 +2496,6 @@ async function facturarElectronicaYMostrarResultado({
     }
 }
 // ===================== FIN DE LA FUNCIÓN DE FACTURACIÓN ELECTRÓNICA =====================
-
 
 
 
