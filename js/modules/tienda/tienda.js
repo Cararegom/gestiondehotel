@@ -462,6 +462,7 @@ if (currentUser && currentUser.id && currentHotelId) {
 
 // Renderizador principal con pestañas visuales
 // REEMPLAZA ESTA FUNCIÓN EN TU ARCHIVO tienda.js
+// Reemplaza esta función en tu archivo tienda.js
 function renderTiendaTabs(tab) {
   currentContainerEl.innerHTML = `
     <div style="
@@ -469,10 +470,10 @@ function renderTiendaTabs(tab) {
       margin-bottom: 10px;
       display: flex;
       gap: 6px;
-      overflow-x: auto; /* <-- AÑADIDO: Permite el scroll horizontal */
-      white-space: nowrap; /* <-- AÑADIDO: Evita que los botones salten de línea */
-      -webkit-overflow-scrolling: touch; /* Para un scroll más suave en iOS */
-      padding-bottom: 5px; /* Pequeño espacio para la barra de scroll */
+      overflow-x: auto;
+      white-space: nowrap;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 5px;
     ">
       ${['POS','Inventario','Categorías','Proveedores','Lista de Compras','Compras', 'Compras Pendientes'].map(t =>
         `<button onclick="onTabTiendaClick('${t}')" style="
@@ -484,12 +485,16 @@ function renderTiendaTabs(tab) {
           border-radius: 4px 4px 0 0;
           font-weight: ${t===tab?'bold':'normal'};
           cursor: pointer;
-          flex-shrink: 0; /* <-- AÑADIDO: Evita que los botones se encojan */
+          flex-shrink: 0;
         ">${t}</button>`
       ).join('')}
     </div>
     <div id="contenidoTiendaTab"></div>
+
+    <div id="modalContainer" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#00000080;display:none;align-items:center;justify-content:center;z-index:1000;"></div>
   `;
+  
+  // El resto de la función no cambia
   if(tab === 'POS') renderPOS();
   if(tab === 'Inventario') renderInventario();
   if(tab === 'Categorías') renderCategorias();
@@ -1519,10 +1524,7 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
     setTimeout(() => { msgPOSEl.textContent = ""; }, 2500);
 }// ====================  PESTAÑA INVENTARIO  ====================
 let inventarioProductos = [];
-// Reemplaza esta función completa en tu archivo
-
-// Reemplaza esta función completa en tu archivo tienda.js
-// Reemplaza esta función completa en tu archivo tienda.js
+// Reemplaza esta función en tu archivo tienda.js
 async function renderInventario() {
   const cont = document.getElementById('contenidoTiendaTab');
   cont.innerHTML = `
@@ -1559,10 +1561,9 @@ async function renderInventario() {
         <tbody id="invProductos"></tbody>
       </table>
     </div>
-    <div id="modalContainer" style="position:fixed;top:0;left:0;width:100%;height:100%;background:#00000080;display:none;align-items:center;justify-content:center;z-index:1000;"></div>
-  `;
+    `;
   
-  // El resto de la función (asignación de eventos, etc.) no cambia.
+  // El resto de la función no cambia...
   document.getElementById('btnHojaConteo').onclick = () => imprimirHojaDeConteo();
   document.getElementById('btnDescargarInventario').onclick = () => mostrarModalDescarga();
   document.getElementById('btnNuevoProducto').onclick = () => showModalProducto();
@@ -2020,6 +2021,7 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
 
 
 // REEMPLAZA ESTA FUNCIÓN COMPLETA EN TU ARCHIVO tienda.js
+// Reemplaza esta función completa en tu archivo tienda.js
 async function saveProductoInv(productoId) {
   const btnSubmit = document.querySelector('#formProductoInv button[type="submit"]');
   const originalText = btnSubmit.textContent;
@@ -2042,14 +2044,10 @@ async function saveProductoInv(productoId) {
       imagenUrl = publicUrlData.publicUrl;
     }
 
-    // --- Si es una ACTUALIZACIÓN de un producto existente ---
-    if (productoId) {
-      let datosUpdate = {
+    const datosProducto = {
         hotel_id: currentHotelId,
-        nombre: document.getElementById('prodNombre').value,
-        // --- INICIO DE LA CORRECCIÓN ---
-        codigo_barras: document.getElementById('prodCodigoBarras').value,
-        // --- FIN DE LA CORRECCIÓN ---
+        nombre: document.getElementById('prodNombre').value.trim(),
+        codigo_barras: document.getElementById('prodCodigoBarras').value.trim() || null,
         categoria_id: document.getElementById('prodCategoria').value,
         precio: Number(document.getElementById('prodPrecio').value) || 0,
         precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
@@ -2058,60 +2056,60 @@ async function saveProductoInv(productoId) {
         imagen_url: imagenUrl,
         actualizado_en: new Date().toISOString(),
         proveedor_id: proveedorId,
-      };
-      const { error } = await currentSupabase.from('productos_tienda').update(datosUpdate).eq('id', productoId);
+    };
+
+    if (productoId) {
+      const { error } = await currentSupabase.from('productos_tienda').update(datosProducto).eq('id', productoId);
       if (error) throw error;
-    }
-    // --- Si es la CREACIÓN de un producto nuevo ---
-    else {
-      const stockInicial = Number(document.getElementById('prodStock').value) || 0;
-      let datosInsert = {
-        hotel_id: currentHotelId,
-        nombre: document.getElementById('prodNombre').value,
-        // --- INICIO DE LA CORRECCIÓN ---
-        codigo_barras: document.getElementById('prodCodigoBarras').value,
-        // --- FIN DE LA CORRECCIÓN ---
-        categoria_id: document.getElementById('prodCategoria').value,
-        precio: Number(document.getElementById('prodPrecio').value) || 0,
-        precio_venta: Number(document.getElementById('prodPrecioVenta').value) || 0,
-        stock_actual: stockInicial,
-        stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
-        stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
-        imagen_url: imagenUrl,
-        creado_en: new Date().toISOString(),
-        actualizado_en: new Date().toISOString(),
-        activo: true,
-        proveedor_id: proveedorId
-      };
-      const { data: nuevoProducto, error } = await currentSupabase.from('productos_tienda').insert([datosInsert]).select();
+    } else {
+      datosProducto.stock_actual = Number(document.getElementById('prodStock').value) || 0;
+      datosProducto.creado_en = new Date().toISOString();
+      datosProducto.activo = true;
+      
+      const { data: nuevoProducto, error } = await currentSupabase.from('productos_tienda').insert([datosProducto]).select();
       if (error) throw error;
 
-      if (stockInicial > 0 && nuevoProducto.length > 0) {
+      if (datosProducto.stock_actual > 0 && nuevoProducto && nuevoProducto.length > 0) {
         const { data: { user } } = await currentSupabase.auth.getUser();
         const nombreResponsable = user.user_metadata?.full_name || user.user_metadata?.nombre || user.email;
         const movimientoData = {
           hotel_id: currentHotelId,
           producto_id: nuevoProducto[0].id,
           tipo_movimiento: 'INGRESO',
-          cantidad: stockInicial,
+          cantidad: datosProducto.stock_actual,
           razon: 'Stock inicial de creación',
           usuario_responsable: nombreResponsable,
           stock_anterior: 0,
-          stock_nuevo: stockInicial
+          stock_nuevo: datosProducto.stock_actual
         };
         await currentSupabase.from('movimientos_inventario').insert([movimientoData]);
       }
     }
 
     closeModal();
-    // Refrescamos los caches y la tabla para mostrar el nuevo producto con su proveedor
     await cargarCategoriasYProveedores(); 
     await cargarProductosInventario();
     renderTablaInventario('');
 
   } catch (error) {
     console.error("Error guardando el producto:", error);
-    alert("Error al guardar el producto: " + error.message);
+    
+    let mensajeUsuario = "Ocurrió un error inesperado. Por favor, intente de nuevo.";
+
+    if (error.message.includes('productos_tienda_hotel_id_nombre_key')) {
+        mensajeUsuario = "Error: Ya existe un producto con este nombre en el inventario. Por favor, elija un nombre único.";
+    } else if (error.message.includes('codigo_barras')) {
+        mensajeUsuario = "Error: Ya existe un producto con este código de barras. El código debe ser único para cada producto.";
+    } else {
+        mensajeUsuario = `Error al guardar el producto: ${error.message}`;
+    }
+
+    // --- CAMBIO CLAVE AQUÍ ---
+    // ANTES: alert(mensajeUsuario);
+    // AHORA:
+    showError(null, mensajeUsuario);
+
+  } finally {
     btnSubmit.disabled = false;
     btnSubmit.textContent = originalText;
   }
@@ -2522,90 +2520,93 @@ function renderTablaCategorias() {
   });
 }
 window.showModalCategoria = showModalCategoria;
-async function showModalCategoria(categoriaId=null) {
-  let modal = document.getElementById('modalCategoria');
-  let cat = categoriaId ? categoriasLista.find(c=>c.id===categoriaId) : null;
-  modal.style.display = 'block';
-  modal.innerHTML = `
-  <div style="
-    background:#fff;
-    border-radius:14px;
-    box-shadow:0 4px 24px #0002;
-    max-width:370px;
-    margin:auto;
-    padding:36px 26px 24px 26px;
-    position:relative;
-    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
-  ">
-    <button onclick="window.closeModalCategoria()"
-      style="
-        position:absolute;
-        right:14px;top:10px;
-        background:none;
-        font-size:23px;
-        border:none;
-        color:#64748b;
-        cursor:pointer;
-        transition:color 0.2s;
-      "
-      onmouseover="this.style.color='#e11d48'"
-      onmouseout="this.style.color='#64748b'"
-      title="Cerrar">&times;</button>
-    <h3 style="margin-bottom:22px;color:#2563eb;letter-spacing:0.5px;font-weight:700;">
-      ${categoriaId ? 'Editar' : 'Nueva'} Categoría
-    </h3>
-    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Nombre</label>
-    <input id="catNombre"
-      placeholder="Nombre de la categoría"
-      value="${cat?.nombre||''}"
-      style="width:100%;margin-bottom:18px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
-    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Descripción</label>
-    <input id="catDescripcion"
-      placeholder="Descripción (opcional)"
-      value="${cat?.descripcion||''}"
-      style="width:100%;margin-bottom:24px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
-    <div style="margin-top:8px;text-align:right;">
-      <button id="btnGuardarCategoria"
-        style="
-          background:linear-gradient(90deg,#22c55e,#16a34a);
-          color:#fff;
-          font-size:1em;
-          font-weight:600;
-          padding:10px 28px;
-          border:none;
-          border-radius:7px;
-          box-shadow:0 1px 4px #22c55e44;
-          cursor:pointer;
-          transition:background 0.19s;
-        "
-        onmouseover="this.style.background='linear-gradient(90deg,#2563eb,#38bdf8)'"
-        onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
-      >${categoriaId ? 'Actualizar' : 'Crear'}</button>
-    </div>
-  </div>
-`;
 
-  document.getElementById('btnGuardarCategoria').onclick = ()=>saveCategoria(categoriaId);
-}
-window.closeModalCategoria = ()=>{document.getElementById('modalCategoria').style.display='none';};
-async function saveCategoria(categoriaId){
-  let datos = {
-    hotel_id: currentHotelId,
-    nombre: document.getElementById('catNombre').value,
-    descripcion: document.getElementById('catDescripcion').value,
-    activa: true,
-    actualizado_en: new Date().toISOString(),
+
+async function showModalCategoria(categoriaId = null) {
+  const modalContainer = document.getElementById('modalContainer'); // Usamos el contenedor principal
+  let cat = categoriaId ? categoriasLista.find(c => c.id === categoriaId) : null;
+  const esEdicion = !!cat;
+  
+  modalContainer.style.display = 'flex'; // Activamos el overlay flotante
+  modalContainer.innerHTML = `
+  <div style="background:#fff; border-radius:18px; box-shadow:0 8px 40px #1d4ed828; max-width:430px; width:95vw; margin:auto; padding:34px 26px 22px 26px; position:relative; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+    <button onclick="window.closeModal()" style="position:absolute; right:14px; top:10px; background:none; border:none; font-size:25px; color:#64748b; cursor:pointer;" title="Cerrar">&times;</button>
+    <h2 style="margin-bottom:19px; text-align:center; font-size:1.22rem; font-weight:700; color:#1d4ed8;">
+      ${esEdicion ? 'Editar' : 'Nueva'} Categoría
+    </h2>
+    <form id="formCategoria" autocomplete="off" class="space-y-4">
+        <div>
+            <label>Nombre de la Categoría*</label>
+            <input id="catNombre" required value="${cat?.nombre || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+        </div>
+        <div>
+            <label>Descripción (Opcional)</label>
+            <textarea id="catDescripcion" rows="3" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">${cat?.descripcion || ''}</textarea>
+        </div>
+        <div style="margin-top:23px;display:flex;gap:14px;justify-content:flex-end;">
+            <button type="button" onclick="window.closeModal()" class="button button-neutral py-2 px-5">Cancelar</button>
+            <button id="btnGuardarCategoria" type="submit" class="button button-primary py-2 px-5">${esEdicion ? 'Actualizar' : 'Crear'}</button>
+        </div>
+    </form>
+  </div>
+  `;
+
+  document.getElementById('formCategoria').onsubmit = (e) => {
+      e.preventDefault();
+      saveCategoria(categoriaId);
   };
-  if(categoriaId){
-    await currentSupabase.from('categorias_producto').update(datos).eq('id',categoriaId);
-  }else{
-    datos.creado_en = new Date().toISOString();
-    await currentSupabase.from('categorias_producto').insert([datos]);
-  }
-  closeModalCategoria();
-  await cargarCategorias();
-  renderTablaCategorias();
 }
+
+
+
+async function saveCategoria(categoriaId) {
+  const btnGuardar = document.getElementById('btnGuardarCategoria');
+  if(btnGuardar) btnGuardar.disabled = true;
+
+  try {
+    let datos = {
+      hotel_id: currentHotelId,
+      nombre: document.getElementById('catNombre').value,
+      descripcion: document.getElementById('catDescripcion').value,
+      activa: true,
+      actualizado_en: new Date().toISOString(),
+    };
+
+    if (categoriaId) {
+      const { error } = await currentSupabase.from('categorias_producto').update(datos).eq('id', categoriaId);
+      if (error) throw error;
+    } else {
+      datos.creado_en = new Date().toISOString();
+      const { error } = await currentSupabase.from('categorias_producto').insert([datos]);
+      if (error) throw error;
+    }
+
+    // --- CORRECCIÓN AQUÍ ---
+    // ANTES: closeModalCategoria();
+    // AHORA:
+    closeModal();
+
+    await cargarCategorias();
+    renderTablaCategorias();
+
+  } catch (error) {
+    console.error('Error guardando categoría:', error);
+
+    let mensajeUsuario = "Ocurrió un error al guardar la categoría.";
+    if (error.message.includes('categorias_producto_hotel_id_nombre_key')) {
+        mensajeUsuario = "Error: Ya existe una categoría con este nombre. Por favor, elija un nombre único.";
+    } else {
+        mensajeUsuario = `Error al guardar: ${error.message}`;
+    }
+    showError(null, mensajeUsuario);
+
+  } finally {
+    if(btnGuardar) btnGuardar.disabled = false;
+  }
+}
+
+
+
 window.toggleEstadoCategoria = async (id,act)=>{
   await currentSupabase.from('categorias_producto').update({activa:act}).eq('id',id);
   await cargarCategorias();
@@ -2790,108 +2791,58 @@ function renderTablaProveedores(){
 }
 
 window.showModalProveedor = showModalProveedor; // Asegúrate que esta función exista globalmente o ajústala
+
+
+
 async function showModalProveedor(proveedorId = null) {
-  // Verificar que proveedoresCache (o proveedoresLista si es la que usas para el modal) esté cargada
-  if (!proveedoresCache && !proveedoresLista) { // OJO: Si usas proveedoresCache aquí, asegúrate que esté poblada
-      console.error("[Proveedores] Cache de proveedores no cargada para el modal.");
-      // Podrías intentar cargarla aquí o mostrar un error
-      // await cargarCategoriasYProveedores(); // Si es necesario
-  }
+    const modalContainer = document.getElementById('modalContainer'); // Usamos el contenedor principal
+    const pr = proveedorId ? (proveedoresLista.find(p => p.id === proveedorId) || null) : null;
+    const esEdicion = !!pr;
 
-  let modal = document.getElementById('modalProveedor');
-  // Usa proveedoresLista si es la fuente de datos principal para la tabla.
-  // Si tienes un proveedoresCache separado para los modales, asegúrate que esté sincronizado.
-  let pr = proveedorId ? (proveedoresLista.find(p => p.id === proveedorId) || null) : null; 
+    modalContainer.style.display = 'flex'; // Activamos el overlay flotante
+    modalContainer.innerHTML = `
+      <div style="background:#fff; border-radius:18px; box-shadow:0 8px 40px #1d4ed828; max-width:430px; width:95vw; margin:auto; padding:34px 26px 22px 26px; position:relative; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;">
+        <button onclick="window.closeModal()" style="position:absolute; right:14px; top:10px; background:none; border:none; font-size:25px; color:#64748b; cursor:pointer;" title="Cerrar">&times;</button>
+        <h2 style="margin-bottom:19px; text-align:center; font-size:1.22rem; font-weight:700; color:#1d4ed8;">
+          ${esEdicion ? 'Editar' : 'Nuevo'} Proveedor
+        </h2>
+        <form id="formProveedor" autocomplete="off" class="space-y-4">
+            <div>
+                <label>Nombre del Proveedor*</label>
+                <input id="provNombre" required value="${pr?.nombre || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            </div>
+            <div>
+                <label>Nombre del Contacto</label>
+                <input id="provContacto" value="${pr?.contacto_nombre || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            </div>
+            <div>
+                <label>Teléfono</label>
+                <input id="provTelefono" value="${pr?.telefono || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            </div>
+            <div>
+                <label>Email</label>
+                <input id="provEmail" type="email" value="${pr?.email || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            </div>
+            <div>
+                <label>NIT</label>
+                <input id="provNIT" value="${pr?.nit || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            </div>
+            <div style="margin-top:23px;display:flex;gap:14px;justify-content:flex-end;">
+              <button type="button" onclick="window.closeModal()" class="button button-neutral py-2 px-5">Cancelar</button>
+              <button type="submit" class="button button-primary py-2 px-5">${esEdicion ? 'Actualizar' : 'Crear'}</button>
+            </div>
+        </form>
+      </div>
+    `;
 
-  if (proveedorId && !pr) {
-      console.error(`[Proveedores] No se encontró el proveedor con ID ${proveedorId} en proveedoresLista para editar.`);
-      // Mostrar un mensaje al usuario
-      return;
-  }
-
-  modal.style.display = 'block';
-  modal.innerHTML = `
-  <div style="
-    background:#fff;
-    border-radius:14px;
-    box-shadow:0 4px 24px #0002;
-    max-width:390px;
-    margin:auto;
-    padding:38px 28px 24px 28px;
-    position:relative;
-    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
-  ">
-    <button onclick="window.closeModalProveedor()"
-      style="
-        position:absolute;
-        right:14px;top:10px;
-        background:none;
-        font-size:23px;
-        border:none;
-        color:#64748b;
-        cursor:pointer;
-        transition:color 0.2s;
-      "
-      onmouseover="this.style.color='#e11d48'"
-      onmouseout="this.style.color='#64748b'"
-      title="Cerrar">&times;</button>
-    <h3 style="margin-bottom:22px;color:#2563eb;letter-spacing:0.5px;font-weight:700;">
-      ${proveedorId ? 'Editar' : 'Nuevo'} Proveedor
-    </h3>
-    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Nombre</label>
-    <input id="provNombre"
-      placeholder="Nombre del proveedor"
-      value="${pr?.nombre || ''}"
-      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
-    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Contacto</label>
-    <input id="provContacto"
-      placeholder="Nombre contacto"
-      value="${pr?.contacto_nombre || ''}"
-      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
-    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Teléfono</label>
-    <input id="provTelefono"
-      placeholder="Teléfono"
-      value="${pr?.telefono || ''}"
-      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
-    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">Email</label>
-    <input id="provEmail"
-      placeholder="Correo electrónico"
-      value="${pr?.email || ''}"
-      style="width:100%;margin-bottom:14px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
-    <label style="font-size:15px;font-weight:600;color:#334155;display:block;margin-bottom:6px;">NIT</label>
-    <input id="provNIT"
-      placeholder="NIT"
-      value="${pr?.nit || ''}"
-      style="width:100%;margin-bottom:20px;padding:10px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;" />
-    <div style="margin-top:8px;text-align:right;">
-      <button id="btnGuardarProveedor"
-        style="
-          background:linear-gradient(90deg,#22c55e,#16a34a);
-          color:#fff;
-          font-size:1em;
-          font-weight:600;
-          padding:10px 28px;
-          border:none;
-          border-radius:7px;
-          box-shadow:0 1px 4px #22c55e44;
-          cursor:pointer;
-          transition:background 0.19s;
-        "
-        onmouseover="this.style.background='linear-gradient(90deg,#2563eb,#38bdf8)'"
-        onmouseout="this.style.background='linear-gradient(90deg,#22c55e,#16a34a)'"
-      >${proveedorId ? 'Actualizar' : 'Crear'}</button>
-    </div>
-  </div>
-`;
-
-  document.getElementById('btnGuardarProveedor').onclick = () => saveProveedor(proveedorId);
+    document.getElementById('formProveedor').onsubmit = (e) => {
+        e.preventDefault();
+        saveProveedor(proveedorId);
+    };
 }
 
-window.closeModalProveedor = () => {
-    const modal = document.getElementById('modalProveedor');
-    if (modal) modal.style.display = 'none';
-};
 
+// Reemplaza esta función completa en tu archivo tienda.js
 async function saveProveedor(proveedorId) {
   let datos = {
     hotel_id: currentHotelId,
@@ -2899,13 +2850,13 @@ async function saveProveedor(proveedorId) {
     contacto_nombre: document.getElementById('provContacto').value,
     telefono: document.getElementById('provTelefono').value,
     email: document.getElementById('provEmail').value,
-    nit: document.getElementById('provNIT').value,
-    activo: true, // Por defecto activo al crear/actualizar desde este modal
+    nit: document.getElementById('provNIT').value.trim() || null, // Se asegura de que sea null si está vacío
+    activo: true, 
     actualizado_en: new Date().toISOString(),
   };
 
   if (!datos.nombre) {
-      alert("El nombre del proveedor es obligatorio.");
+      showError(null, "El nombre del proveedor es obligatorio.");
       return;
   }
 
@@ -2913,21 +2864,37 @@ async function saveProveedor(proveedorId) {
     if (proveedorId) {
       const { error } = await currentSupabase.from('proveedores').update(datos).eq('id', proveedorId);
       if (error) throw error;
-      console.log('[Proveedores] Proveedor actualizado:', proveedorId);
     } else {
       datos.creado_en = new Date().toISOString();
       const { error } = await currentSupabase.from('proveedores').insert([datos]);
       if (error) throw error;
-      console.log('[Proveedores] Proveedor creado.');
     }
-    closeModalProveedor();
-    await cargarProveedores(); // Recarga la lista de proveedores
-    renderTablaProveedores();  // Vuelve a dibujar la tabla
+    
+    closeModal();
+    await cargarProveedores(); 
+    renderTablaProveedores();
+    
   } catch (error) {
       console.error('[Proveedores] Error guardando proveedor:', error);
-      alert(`Error al guardar el proveedor: ${error.message}`);
+      
+      let mensajeUsuario = "Ocurrió un error al guardar el proveedor.";
+      
+      if (error.message.includes('proveedores_hotel_id_nombre_key')) {
+          mensajeUsuario = "Error: Ya existe un proveedor con este nombre. Por favor, elija un nombre único.";
+      
+      // --- INICIO DE LA LÓGICA AÑADIDA ---
+      } else if (error.message.includes('proveedores_hotel_id_nit_key')) {
+          mensajeUsuario = "Error: Ya existe un proveedor con este NIT. El NIT debe ser único para cada proveedor.";
+      // --- FIN DE LA LÓGICA AÑADIDA ---
+
+      } else {
+          mensajeUsuario = `Error al guardar: ${error.message}`;
+      }
+      
+      showError(null, mensajeUsuario);
   }
 }
+
 
 window.toggleEstadoProveedor = async (id, act) => {
   try {

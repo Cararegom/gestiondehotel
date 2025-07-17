@@ -8,6 +8,46 @@
 // Datos de las preguntas y respuestas, organizadas por categoría y funcionalidad.
 const faqData = [
   // ... (Las otras categorías como "Mapa de Habitaciones", "Reservas", etc., se mantienen igual)
+
+  {
+    category: "Panel de Control (Dashboard)",
+    icon: "📊",
+    questions: [
+      {
+        q: "¿Para qué sirve el Panel de Control o Dashboard?",
+        a: "Es la pantalla principal y funciona como un <b>resumen ejecutivo</b> del estado de tu hotel <b>en este preciso momento</b>. Está diseñado para que, de un solo vistazo, puedas entender cómo va el día, revisar los indicadores más importantes y anticipar las llegadas y salidas de huéspedes sin necesidad de ir a los reportes detallados."
+      },
+      {
+        q: "¿Qué significan las cuatro tarjetas de la parte superior?",
+        a: `Son tus indicadores clave del día (KPIs). Cada una te da una pieza de información vital:
+           <ul>
+            <li><b>Reservas Activas Hoy:</b> Muestra el número total de habitaciones que están actualmente ocupadas por huéspedes.</li>
+            <li><b>Ingresos Habitaciones Hoy:</b> Es el total de dinero que ha ingresado a la caja <b>hoy</b>, específicamente por conceptos de alojamiento (alquileres, extensiones de tiempo, etc.). No incluye ventas de tienda o restaurante.</li>
+            <li><b>Ocupación Actual:</b> Te dice qué porcentaje de tus habitaciones disponibles están ocupadas en este instante, mostrándote también los números exactos (ej. 50% (10/20)).</li>
+            <li><b>Ventas Tienda Hoy:</b> Es la suma de todo el dinero que ha ingresado a la caja <b>hoy</b> por ventas en el módulo de Tienda.</li>
+           </ul>
+           La pequeña flecha (▲ o ▼) te indica si el valor de hoy es mayor o menor que el de ayer.`
+      },
+      {
+        q: "¿Qué son las listas de 'Próximos Check-Ins' y 'Check-Outs'?",
+        a: "Son recordatorios automáticos para el personal de recepción. Te muestran una lista de todos los huéspedes que tienen programado <b>llegar (Check-in)</b> y <b>salir (Check-out)</b> durante el día de hoy, ayudándote a anticipar el flujo de trabajo y preparar las habitaciones necesarias."
+      },
+      {
+        q: "¿Para qué sirven los gráficos de la parte inferior?",
+        a: `Te dan una visión rápida de la tendencia reciente de tu hotel:
+            <ul>
+                <li><b>Ingresos Habitaciones (Últimos 7 Días):</b> Este gráfico de línea te permite ver la evolución de tus ingresos por alojamiento durante la última semana. Puedes identificar fácilmente qué días fueron más fuertes o más débiles en ventas.</li>
+                <li><b>Ocupación (Últimos 7 Días):</b> Este gráfico de barras muestra el porcentaje de ocupación para cada uno de los últimos siete días. Es perfecto para visualizar picos y valles en la demanda reciente.</li>
+            </ul>`
+      },
+      {
+        q: "¿Qué son los 'Accesos Rápidos'?",
+        a: "Son simplemente botones para llevarte directamente a las secciones más usadas del sistema, como crear una <b>'Nueva Reserva'</b>, ir al <b>'Mapa Hotel'</b> o abrir la <b>'Caja'</b>, ahorrándote clics en tu día a día."
+      }
+    ]
+  },
+
+  
   {
   category: "Mapa de Habitaciones",
   icon: "🗺️",
@@ -184,26 +224,447 @@ const faqData = [
       }
     ]
   },
+{
+    category: "Clientes y CRM",
+    icon: "👤",
+    questions: [
+      {
+        q: "¿Para qué sirve el módulo de Clientes y CRM?",
+        a: "Es mucho más que una agenda. Este módulo es tu centro de gestión de relaciones con los clientes (CRM). Te permite no solo guardar los datos de tus huéspedes, sino también ver su historial completo de visitas, analizar sus gastos, registrar interacciones (llamadas, notas) y asignarles descuentos personalizados para fomentar su lealtad."
+      },
+      {
+        q: "¿Cómo creo, busco o edito un cliente?",
+        a: `<ul>
+            <li><b>Crear:</b> En la pantalla principal del módulo, haz clic en el botón <i>"+ Nuevo Cliente"</i>. Se abrirá un formulario flotante donde podrás llenar toda su información. El <b>número de documento</b> debe ser único.</li>
+            <li><b>Buscar:</b> Usa la barra de búsqueda para encontrar clientes por nombre, documento, email o teléfono. También puedes usar los filtros de fecha para ver quiénes se registraron en un periodo específico.</li>
+            <li><b>Editar:</b> Una vez que encuentres al cliente en la lista, haz clic en el botón "Editar". Se abrirá el mismo formulario con sus datos listos para ser actualizados.</li>
+           </ul>`
+      },
+      {
+        q: "Hice clic en 'Ver' y apareció un panel con pestañas. ¿Qué es cada una?",
+        a: `Ese es el perfil completo del cliente, tu centro de control para todo lo relacionado con él:
+           <ul>
+            <li><b>Datos Generales:</b> Aquí ves y editas su información básica como nombre, teléfono, etc.</li>
+            <li><b>Historial de Visitas:</b> Un registro de cada una de sus estancias pasadas en el hotel, incluyendo en qué habitación se quedó y en qué fechas.</li>
+            <li><b>Historial de Gastos:</b> Una herramienta poderosa para entender a tu cliente. Muestra un <b>gráfico de barras</b> con el total de dinero que ha gastado en diferentes áreas (habitaciones, tienda, restaurante) y una tabla con el detalle de cada consumo.</li>
+            <li><b>Actividades CRM:</b> Tu bitácora de interacciones. Aquí puedes registrar llamadas, emails, notas importantes o tareas pendientes relacionadas con el cliente para que todo tu equipo esté informado.</li>
+            <li><b>Descuentos:</b> Muestra una lista de los descuentos especiales y personalizados que le has asignado exclusivamente a este cliente.</li>
+           </ul>`
+      },
+      {
+        q: "¿Cómo uso la pestaña 'Actividades CRM' de forma efectiva?",
+        a: "Usa esta pestaña para registrar cualquier interacción importante. ¿El cliente llamó para preguntar algo? Anótalo. ¿Le prometiste un descuento en su próxima visita? Créale una 'Tarea' o 'Nota'. Esto ayuda a que todo el personal esté al tanto y pueda dar un servicio personalizado."
+      },
+      {
+        q: "¿Puedo descargar una lista de todos mis clientes?",
+        a: "Sí. En la pantalla principal del módulo, encontrarás un botón que dice <b>'Exportar Excel'</b>. Al hacer clic, el sistema generará y descargará un archivo <code>.xlsx</code> con la información de contacto completa de todos tus clientes registrados, ideal para tus campañas de marketing o análisis externos."
+      },
+      {
+        q: "A veces, al crear una reserva, me aparece una ventana para buscar clientes. ¿Es lo mismo?",
+        a: "Exacto. Esa ventana es el 'Selector de Clientes', una función de este módulo que otros módulos (como Reservas) pueden usar. Te permite buscar y enlazar rápidamente a un cliente existente sin tener que escribir todos sus datos de nuevo, ahorrando tiempo y evitando crear clientes duplicados."
+      }
+    ]
+  },
+  {
+    category: "Configuración de Habitaciones y Tarifas",
+    icon: "🏨",
+    questions: [
+        {
+            q: "¿Para qué sirve este módulo? ¿Es lo mismo que el Mapa de Habitaciones?",
+            a: "No, son diferentes. Piensa en este módulo como el <b>'centro de configuración'</b>. Aquí es donde creas tus habitaciones y defines todas tus tarifas por tiempo. El 'Mapa de Habitaciones', en cambio, es el <b>'centro de operaciones'</b> diario donde usas esas habitaciones y tarifas para hacer check-in, check-out, etc."
+        },
+        {
+            q: "¿Qué son y cómo configuro los 'Tiempos de Estancia'?",
+            a: `Son las diferentes opciones de tarifas que ofreces a tus clientes. Por ejemplo: "3 Horas", "6 Horas", "Noche Completa".
+               <ul>
+                <li>Usa el primer formulario para crear o editar estos tiempos. Debes darles un <b>Nombre</b>, una <b>Duración en Minutos</b> y un <b>Precio</b>.</li>
+                <li><b>¡Truco para 'Noche'!</b> Si en el nombre incluyes la palabra 'Noche', el sistema es inteligente: calculará la duración automáticamente basándose en los horarios de Check-in y Check-out que definiste en la <i>Configuración General del Hotel</i>.</li>
+                <li>Puedes activar o desactivar tiempos para que aparezcan o no como opción al momento de alquilar una habitación.</li>
+               </ul>`
+        },
+        {
+            q: "Guía Rápida: ¿Cómo creo una nueva habitación?",
+            a: `Usa el segundo formulario, "Crear Nueva Habitación". Los campos más importantes son:
+               <ul>
+                <li><b>Nombre/Número:</b> El identificador único de la habitación (ej. "101", "Suite Presidencial").</li>
+                <li><b>Precios por Ocupación:</b> Aquí defines la tarifa por noche.
+                    <ul>
+                        <li><b>Precio 1 Persona:</b> Lo que cobras si se aloja un solo huésped.</li>
+                        <li><b>Precio 2 Personas:</b> Lo que cobras si se alojan dos huéspedes.</li>
+                        <li><b>Precio Huésped Adicional:</b> El monto que se suma por <u>cada</u> huésped extra a partir del tercero.</li>
+                    </ul>
+                </li>
+                <li><b>Capacidad Máxima:</b> El número total de personas que pueden alojarse.</li>
+                <li><b>Amenidades:</b> Escribe las características especiales separadas por coma (ej: Wifi, TV, Aire Acondicionado).</li>
+               </ul>`
+        },
+        {
+            q: "¿Cómo edito o elimino una habitación existente?",
+            a: "En la lista de habitaciones que aparece al final, cada tarjeta tiene sus botones:<ul><li><b>Editar:</b> Al hacer clic, se abrirá un <b>formulario flotante</b> con toda la información de esa habitación para que la modifiques fácilmente.</li><li><b>Eliminar:</b> Ten cuidado, esta acción es <b>permanente e irreversible</b>. El sistema te pedirá una confirmación antes de borrar la habitación para siempre.</li></ul>"
+        },
+        {
+            q: "Intenté crear una habitación y me apareció un mensaje sobre el límite de mi plan. ¿Qué significa?",
+            a: "Tu plan de suscripción actual tiene un límite en la cantidad de habitaciones que puedes registrar en el sistema. Si ya has alcanzado ese número, no podrás crear más. Para seguir añadiendo habitaciones, necesitas mejorar tu plan desde la sección <b>'Mi Cuenta'</b>. Esto te permitirá gestionar todo tu hotel sin restricciones."
+        }
+    ]
+},
 
+{
+    category: "Integraciones con Servicios Externos",
+    icon: "🔌",
+    questions: [
+        {
+            q: "¿Para qué sirve este módulo?",
+            a: "Esta sección te permite conectar tu software hotelero con otras plataformas importantes como <b>Google Calendar</b> y <b>Outlook Calendar</b>. El objetivo es automatizar tareas y sincronizar tus reservas para ahorrar tiempo y evitar errores."
+        },
+        {
+            q: "¿Por qué debería conectar mi calendario de Google u Outlook?",
+            a: `La razón principal es para <b>prevenir la sobreventa (overbooking)</b> de forma automática. Si ya usas un calendario para gestionar tus reservas de plataformas como <b>Booking.com, Airbnb o Expedia</b>, al conectarlo aquí, nuestro sistema podrá:
+               <ul>
+                <li>Leer esas reservas externas y bloquear las habitaciones correspondientes en tu calendario interno.</li>
+                <li>(Próximamente) Enviar tus reservas directas a ese calendario para bloquear la disponibilidad en las otras plataformas.</li>
+               </ul>
+               Esto mantiene tu disponibilidad sincronizada en todos tus canales de venta sin trabajo manual.`
+        },
+        {
+            q: "Guía Rápida: ¿Cómo conecto mi calendario?",
+            a: `Es un proceso seguro y sencillo:
+               <ol style="list-style-type: decimal; padding-left: 20px;">
+                <li style="margin-bottom: 0.5rem;">Ve a la sección de <b>Google Calendar</b> u <b>Outlook Calendar</b>.</li>
+                <li style="margin-bottom: 0.5rem;">Haz clic en el botón azul <b>"Conectar"</b>. Serás redirigido a la página oficial de inicio de sesión de Google o Microsoft.</li>
+                <li style="margin-bottom: 0.5rem;">Inicia sesión con la cuenta de correo cuyo calendario quieres sincronizar.</li>
+                <li style="margin-bottom: 0.5rem;"><b>Acepta los permisos</b> que la aplicación solicita para poder leer y gestionar eventos de tu calendario. ¡Este paso es crucial!</li>
+                <li style="margin-bottom: 0.5rem;">Serás devuelto automáticamente a la plataforma. Si todo salió bien, verás un mensaje de "✅ Conectado como: tu.email@..."</li>
+               </ol>
+               Para verificar, puedes usar el botón <b>"Crear Evento de Prueba"</b>.`
+        }
+    ]
+  },
 
   {
+    category: "Gestión de Limpieza",
+    icon: "🧹",
+    questions: [
+        {
+            q: "¿Para qué sirve el módulo de Limpieza?",
+            a: "Este módulo está diseñado para el personal de housekeeping. Su única función es mostrar una lista clara y actualizada de todas las habitaciones que necesitan ser limpiadas en el hotel, para que el equipo sepa exactamente dónde debe trabajar."
+        },
+        {
+            q: "¿Cómo aparece una habitación en esta lista de pendientes?",
+            a: "Una habitación aparece aquí automáticamente justo después de que un huésped hace <b>check-out</b>. Cuando la recepción libera una habitación desde el 'Mapa de Habitaciones', el estado de esa habitación cambia a 'Limpieza', y se añade instantáneamente a esta lista."
+        },
+        {
+            q: "Ya terminé de limpiar una habitación, ¿qué hago en el sistema?",
+            a: "Es muy sencillo. Junto a cada habitación pendiente, verás un botón verde grande que dice <b>'✔ Confirmar Limpieza'</b>. Simplemente haz clic en ese botón una vez que la habitación esté completamente lista."
+        },
+        {
+            q: "¿Qué sucede exactamente cuando confirmo la limpieza?",
+            a: `Al hacer clic, el sistema realiza tres acciones automáticamente para agilizar el trabajo:
+               <ul>
+                   <li>La habitación <b>desaparece</b> de tu lista de pendientes.</li>
+                   <li>El estado de la habitación cambia a <b>'Libre'</b> en el Mapa de Habitaciones, dejándola disponible para un nuevo huésped.</li>
+                   <li>Se envía una <b>notificación automática a la recepción</b>, avisándoles que la habitación ya está lista para ser vendida.</li>
+               </ul>`
+        },
+        {
+            q: "La pantalla dice '¡Todo limpio!', ¿qué significa?",
+            a: "¡Felicitaciones! Significa que no hay ninguna habitación pendiente de limpieza en todo el hotel. La lista se llenará de nuevo automáticamente en cuanto la recepción realice el próximo check-out."
+        }
+    ]
+  },
+
+  {
+    category: "Gestión de Mantenimiento",
+    icon: "🛠️",
+    questions: [
+      {
+        q: "¿Para qué sirve este módulo?",
+        a: "Este es el centro de control para todas las reparaciones y tareas de mantenimiento del hotel. Te permite crear un registro de cada problema, asignarlo a un miembro del personal, establecer prioridades y dar seguimiento a su estado hasta que se complete, asegurando que nada se olvide."
+      },
+      {
+        q: "Guía Rápida: ¿Cómo reporto un problema o creo una nueva tarea?",
+        a: `Es muy sencillo:
+           <ol style="list-style-type: decimal; padding-left: 20px;">
+            <li style="margin-bottom: 0.5rem;">Haz clic en el botón <b>"+ Nueva tarea"</b>.</li>
+            <li style="margin-bottom: 0.5rem;">En el formulario, selecciona el <b>Encargado</b> (la persona responsable de la reparación).</li>
+            <li style="margin-bottom: 0.5rem;">Si el problema es en una habitación específica, selecciónala en la lista. Si es en un área general (como el lobby), déjalo en "General / Sin asignar".</li>
+            <li style="margin-bottom: 0.5rem;">Escribe un <b>Título</b> claro (ej. "Fuga en el lavamanos") y una descripción con más detalles si es necesario.</li>
+            <li style="margin-bottom: 0.5rem;">Asigna una <b>Prioridad</b> y luego haz clic en "Crear Tarea".</li>
+           </ol>`
+      },
+      {
+        q: "Creé una tarea para la Habitación 201. ¿Qué pasa con esa habitación ahora?",
+        a: `El sistema es inteligente y se encarga de todo automáticamente:
+           <ul>
+            <li>Al crear una tarea y asociarla a una habitación, esa habitación <b>se bloquea de inmediato</b> en el Mapa de Habitaciones, cambiando su estado a 'Mantenimiento'.</li>
+            <li>Esto previene que la recepción la alquile o reserve por error mientras necesita reparaciones.</li>
+            <li>Además, se envía una <b>notificación automática a la recepción</b> para que estén al tanto de que esa habitación no está disponible.</li>
+           </ul>`
+      },
+      {
+        q: "¿Cómo actualizo el estado de una tarea o la marco como terminada?",
+        a: "En la lista de tareas, al final de cada fila, hay un menú desplegable de 'Acción'. Desde allí puedes:<ul><li><b>✏️ Editar:</b> Para cambiar cualquier detalle de la tarea (como la descripción o el encargado).</li><li><b>🔄 Cambiar estado:</b> Para actualizar el progreso (ej. de 'Pendiente' a 'En progreso', o de 'En progreso' a 'Completada').</li><li><b>🗑️ Eliminar:</b> Para borrar la tarea permanentemente.</li></ul>"
+      },
+      {
+        q: "Ya terminé la reparación en la Habitación 201. ¿Cómo la vuelvo a poner disponible?",
+        a: "No tienes que hacerlo manualmente. Simplemente busca la tarea en la lista y cambia su estado a <b>'Completada'</b>. El sistema hará el resto:<ul><li>Verificará si hay otras tareas activas para esa misma habitación.</li><li>Si no hay más reparaciones pendientes, el estado de la habitación cambiará automáticamente a <b>'Limpieza'</b>.</li><li>Una vez que el personal de limpieza la marque como limpia, la habitación quedará 'Libre' y lista para la venta. ¡Todo el proceso está conectado!</li></ul>"
+      },
+      {
+        q: "¿La lista de tareas se actualiza sola?",
+        a: "Sí. La tabla se actualiza <b>en tiempo real</b>. Si un recepcionista crea una nueva tarea mientras tú estás viendo la pantalla, esta aparecerá automáticamente sin que necesites recargar la página."
+      }
+    ]
+  },
+
+ {
+    category: "Gestión de Usuarios y Horarios",
+    icon: "👥",
+    questions: [
+        {
+            q: "¿Para qué sirve este módulo?",
+            a: "Este es tu panel de control para todo tu equipo. Aquí puedes crear las cuentas de usuario para tus empleados, definir exactamente qué pueden hacer en el sistema asignándoles roles y permisos, y organizar sus horarios de trabajo semanales."
+        },
+        {
+            q: "Guía Rápida: ¿Cómo creo un nuevo usuario para un empleado?",
+            a: `Usa el formulario que aparece en la parte superior de la página:
+               <ol style="list-style-type: decimal; padding-left: 20px;">
+                   <li style="margin-bottom: 0.5rem;">Ingresa el <b>Nombre Completo</b> del empleado.</li>
+                   <li style="margin-bottom: 0.5rem;">Escribe su <b>Correo Electrónico</b>. Este será su nombre de usuario para iniciar sesión.</li>
+                   <li style="margin-bottom: 0.5rem;">Asígnale una <b>Contraseña</b> temporal (debe tener al menos 8 caracteres). El usuario podrá cambiarla después.</li>
+                   <li style="margin-bottom: 0.5rem;">Selecciona uno o más <b>Roles</b> (ej. 'Recepcionista', 'Admin'). ¡Este paso es crucial para definir sus permisos!</li>
+                   <li style="margin-bottom: 0.5rem;">Haz clic en "Guardar Usuario".</li>
+               </ol>
+               Desde la tabla de abajo podrás editar, desactivar o resetear la contraseña de cualquier usuario en el futuro.`
+        },
+        {
+            q: "¿Cuál es la diferencia entre 'Roles' y 'Permisos'?",
+            a: `Piénsalo de esta forma:
+               <ul>
+                <li><b>Rol:</b> Es como el "cargo" o puesto de trabajo (Recepcionista, Administrador, Limpieza). Al asignar un rol, le das al usuario un conjunto de permisos estándar para ese puesto.</li>
+                <li><b>Permisos:</b> Es como darle una "llave maestra" para una tarea específica. El botón "Permisos" te permite ajustar el acceso de un usuario de forma individual, dándole un permiso extra o quitándole uno, sin necesidad de cambiar su rol principal. Es para casos especiales.</li>
+               </ul>`
+        },
+        {
+            q: "Guía Rápida: ¿Cómo organizo los turnos de mis recepcionistas?",
+            a: `Es un proceso de dos pasos:
+               <ol style="list-style-type: decimal; padding-left: 20px;">
+                <li style="margin-bottom: 0.5rem;"><b>Define la Duración:</b> Primero, en la sección "Configuración General de Turnos", elige si tu hotel opera con turnos de <b>8 horas</b> (Mañana, Tarde, Noche) o de <b>12 horas</b> (Día, Noche).</li>
+                <li style="margin-bottom: 0.5rem;"><b>Asigna los Turnos:</b> En la tabla "Horario Semanal", verás a tus recepcionistas y los días de la semana. Simplemente haz clic en la casilla de un día y un usuario, y selecciona el turno que le corresponde (ej. '☀️ Día', '🌙 Noche' o '✔️ Descanso'). Los cambios se guardan automáticamente.</li>
+               </ol>`
+        },
+        {
+            q: "¿Puedo imprimir el horario de la semana?",
+            a: "Sí. Justo encima de la tabla de horarios, encontrarás un botón de <b>'Imprimir'</b>. Al presionarlo, se generará una versión limpia del horario semanal, lista para ser impresa y publicada para tu equipo."
+        }
+    ]
+  },
+
+  {
+    category: "Servicios Adicionales",
+    icon: "🛎️",
+    questions: [
+      {
+        q: "¿Para qué sirve este módulo?",
+        a: "Aquí puedes crear un catálogo completo de todos los servicios extra que tu hotel ofrece. Piensa en cosas como <b>servicio de lavandería, transporte al aeropuerto, decoraciones románticas, tours, alquiler de toallas</b>, etc. Los servicios que crees aquí estarán disponibles para ser agregados fácilmente a la cuenta de un huésped desde el Mapa de Habitaciones."
+      },
+      {
+        q: "Guía Rápida: ¿Cómo creo un nuevo servicio?",
+        a: `Es un proceso de dos pasos, muy sencillo:
+           <ol style="list-style-type: decimal; padding-left: 20px;">
+            <li style="margin-bottom: 0.5rem;"><b>Primero, crea la Categoría:</b> En la sección de arriba ("Categorías de Servicios"), crea un grupo para tu servicio. Por ejemplo, "Lavandería", "Transporte" o "Experiencias". Esto te ayudará a mantener todo organizado.</li>
+            <li style="margin-bottom: 0.5rem;"><b>Luego, crea el Servicio:</b> En la segunda sección ("Agregar Nuevo Servicio Adicional"), dale un <b>Nombre</b> específico (ej. "Lavado y Secado por Kilo"), asígnale la <b>Categoría</b> que creaste en el paso anterior, y ponle un <b>Precio</b>. Luego haz clic en "Guardar Servicio".</li>
+           </ol>`
+      },
+      {
+        q: "¿Es obligatorio usar categorías para mis servicios?",
+        a: "No, no es obligatorio, puedes dejar la categoría sin seleccionar. Sin embargo, es <b>muy recomendable</b> usarlas. Te ayudan a mantener tu lista de servicios ordenada y fácil de manejar, especialmente si ofreces muchas opciones diferentes."
+      },
+      {
+        q: "¿Cómo edito un servicio o lo desactivo temporalmente?",
+        a: "En las listas de 'Categorías' y 'Servicios', cada fila tiene botones de 'Acciones':<ul><li><b>Editar:</b> Al hacer clic, el formulario de arriba se llenará con los datos de ese ítem para que puedas modificarlos.</li><li><b>Desactivar/Activar:</b> Te permite ocultar un servicio de la lista de opciones sin tener que borrarlo. Es ideal si un servicio es solo por temporada o no está disponible temporalmente.</li></ul>"
+      },
+      {
+        q: "Ya creé mis servicios. ¿Ahora cómo los uso o los cobro?",
+        a: "Una vez que tus servicios están creados y activos, el personal de recepción podrá usarlos fácilmente. Cuando estén en el <b>Mapa de Habitaciones</b>, solo tienen que hacer clic en una habitación ocupada y seleccionar la opción de <b>'Servicios Adicionales'</b>. Allí aparecerá la lista de todos los servicios que has creado, listos para ser agregados a la cuenta del huésped."
+      }
+    ]
+  },
+
+  {
+    category: "Reportes y Análisis de Datos",
+    icon: "📊",
+    questions: [
+      {
+        q: "¿Para qué sirve el módulo de Reportes?",
+        a: "Este es el cerebro analítico de tu hotel. Aquí puedes generar informes detallados para entender a fondo el rendimiento de tu negocio. Te ayuda a responder preguntas clave sobre tu ocupación, tus finanzas y la eficiencia de tus operaciones para que puedas tomar decisiones informadas y estratégicas."
+      },
+      {
+        q: "Guía Rápida: ¿Cómo genero un reporte?",
+        a: `Es un proceso muy sencillo de 3 pasos:
+           <ol style="list-style-type: decimal; padding-left: 20px;">
+            <li style="margin-bottom: 0.5rem;"><b>Elige el Tipo de Reporte:</b> Selecciona en la primera lista el análisis que deseas ver (ej. "Porcentaje de Ocupación", "Resumen Financiero Global").</li>
+            <li style="margin-bottom: 0.5rem;"><b>Define el Período:</b> Usa los calendarios para seleccionar una fecha de inicio ("Desde") y una fecha de fin ("Hasta").</li>
+            <li style="margin-bottom: 0.5rem;"><b>Genera:</b> Haz clic en el botón <b>"Generar Reporte"</b>. El sistema procesará los datos y te mostrará los resultados con tablas y gráficos.</li>
+           </ol>`
+      },
+      {
+        q: "Reportes Operativos: ¿Qué me dicen el 'Listado de Reservas' y el de 'Ocupación'?",
+        a: `<ul>
+              <li><b>Listado de Reservas:</b> Te da una tabla detallada de cada reserva en el período que elegiste. Es ideal para auditorías o para ver rápidamente quién se hospedó, cuándo y en qué habitación.</li>
+              <li><b>Porcentaje de Ocupación:</b> Es clave para medir la demanda. Te muestra qué tan lleno ha estado tu hotel con un gráfico de línea diario y el promedio total del período. Te ayuda a identificar tus temporadas altas y bajas.</li>
+            </ul>`
+      },
+      {
+        q: "Reportes Financieros: ¿Cuál es la diferencia entre los distintos reportes de ingresos y egresos?",
+        a: `Cada uno te da una perspectiva diferente de tu dinero:
+            <ul>
+                <li><b>Resumen Financiero Global:</b> Es la vista más completa. Te muestra el panorama total: <b>Ingresos vs. Egresos</b>, un Balance Neto, y gráficos de pastel que desglosan de dónde viene tu dinero (habitaciones, tienda, etc.) y en qué lo gastas (compras, nómina, etc.).</li>
+                <li><b>Detalle de Ingresos/Egresos por Categoría:</b> Son 'zooms' específicos. Te permiten ver en detalle solo los ingresos o solo los egresos, categorizados para que sepas exactamente qué áreas son las más rentables o costosas.</li>
+                <li><b>Historial de Cierres de Caja:</b> Un registro de auditoría de cada turno cerrado. Puedes hacer clic en 'Ver Detalle' para ver cada transacción que ocurrió en un turno de caja específico.</li>
+            </ul>`
+      },
+      {
+        q: "Reportes Estratégicos: ¿Qué son los 'KPIs de Rendimiento del Hotel'?",
+        a: "Este es el reporte más avanzado, te da métricas clave de la industria hotelera para medir la salud de tu negocio:<ul><li><b>RevPAR:</b> El indicador más importante. Te dice cuánto dinero estás ganando por cada habitación disponible, estén ocupadas o no.</li><li><b>ADR:</b> La tarifa promedio que te paga cada huésped por noche.</li><li>Además, te muestra información estratégica como tu día de la semana con más demanda, tu cliente más valioso, y tus productos o servicios más vendidos.</li></ul>"
+      },
+      {
+        q: "Algunos reportes me aparecen bloqueados o con un candado (🔒). ¿Por qué?",
+        a: "El acceso a los reportes más avanzados depende de tu plan de suscripción (LITE, PRO, MAX). Reportes como el 'Resumen Financiero Global' o los 'KPIs Avanzados' son exclusivos de los planes superiores. Si deseas desbloquearlos y obtener un análisis más profundo de tu negocio, puedes mejorar tu plan desde la sección <b>'Mi Cuenta'</b>."
+      }
+    ]
+  },
+
+  {
+    category: "Notificaciones y Alertas",
+    icon: "🔔",
+    questions: [
+      {
+        q: "¿Para qué sirve el sistema de notificaciones?",
+        a: "Es el centro de comunicación en tiempo real de tu hotel. Te mantiene informado sobre eventos importantes sin que tengas que estar en cada pantalla a la vez. El sistema te avisa cuando se crean reservas, cuando una habitación queda libre después de la limpieza, cuando se reporta una tarea de mantenimiento, y más."
+      },
+      {
+        q: "Veo una campanita (🔔) en la parte superior. ¿Qué es?",
+        a: `Esa es tu <b>central de alertas rápidas</b>. Funciona así:
+           <ul>
+            <li>Cuando ocurre un evento importante, la campana mostrará un <b>punto rojo</b> indicando que tienes notificaciones nuevas sin leer.</li>
+            <li>Al hacer clic, se despliega una lista con tus <b>notificaciones más recientes</b>.</li>
+            <li>Puedes hacer clic en una notificación para marcarla como leída, o usar el botón "Marcar todas como leídas" para limpiar el contador.</li>
+           </ul>`
+      },
+      {
+        q: "¿Y el módulo completo de 'Notificaciones'?",
+        a: "Ese es tu <b>historial completo</b>. Mientras que la campanita solo te muestra lo más reciente, el módulo de 'Notificaciones' es un archivo permanente de cada alerta que ha recibido el sistema. Es ideal para consultar eventos pasados o si necesitas buscar una notificación específica que ya no aparece en la campanita."
+      },
+      {
+        q: "¿Cómo marco las notificaciones como leídas?",
+        a: "Tanto en la campanita como en el módulo principal, puedes hacer clic en el círculo junto a cada notificación para marcarla como leída individualmente. También encontrarás un botón para 'Marcar todas como leídas' y así limpiar todas tus alertas pendientes de una sola vez."
+      },
+      {
+        q: "La campanita de notificaciones no me aparece. ¿Por qué?",
+        a: "La función de la campanita de notificaciones en tiempo real es una característica <b>exclusiva de los planes de suscripción superiores (MAX)</b>. Si no la ves, es probable que tu hotel esté en un plan LITE o PRO. Puedes mejorar tu plan desde la sección <b>'Mi Cuenta'</b> para activar esta y otras funcionalidades avanzadas."
+      }
+    ]
+  },
+
+  {
+    category: "Promociones y Descuentos",
+    icon: "🎟️",
+    questions: [
+      {
+        q: "¿Para qué sirve este módulo?",
+        a: "Este es tu centro de marketing. Aquí puedes crear todo tipo de ofertas para atraer y fidelizar clientes, desde códigos de descuento para redes sociales hasta promociones automáticas que se aplican solas en fechas especiales o a clientes VIP."
+      },
+      {
+        q: "Veo tres 'Tipos de Promoción'. ¿Cuál es la diferencia?",
+        a: `Cada tipo sirve para un propósito diferente:
+           <ul>
+            <li><b>Por Código (manual):</b> Es el tipo más común. Creas un código (ej. "VERANO2025") que el recepcionista debe introducir manualmente en el sistema de Reservas o en el POS para aplicar el descuento. Ideal para campañas específicas.</li>
+            <li><b>Automática (por fecha):</b> Este descuento se aplica solo, sin necesidad de códigos, a cualquier venta o reserva elegible que se realice dentro del rango de fechas que definas. Perfecto para promociones de temporada (ej. "Oferta de Semana Santa").</li>
+            <li><b>Para Cliente Específico:</b> Es un descuento personalizado y exclusivo para un solo cliente, seleccionado de tu lista. Es perfecto para regalos de cumpleaños, compensaciones o como premio de lealtad.</li>
+           </ul>`
+      },
+      {
+        q: "¿Qué significa la sección 'Aplicar a'?",
+        a: "Aquí es donde defines con precisión <b>qué productos o servicios obtendrán el descuento</b>. Puedes hacer que la promoción aplique a:<ul><li>Toda la reserva de una habitación.</li><li>Solo a <b>habitaciones específicas</b> (ej. 10% de descuento solo en las Suites).</li><li>Solo a <b>tiempos de estancia</b> (ej. 20% de descuento en alquileres de 3 horas).</li><li>Solo a <b>servicios adicionales</b> (ej. $5.000 de descuento en el servicio de lavandería).</li><li>Solo a <b>productos de la tienda</b> o a <b>categorías enteras del restaurante</b>.</li></ul>"
+      },
+      {
+        q: "En la lista de descuentos veo un ícono de tarjeta (🎫). ¿Qué hace?",
+        a: `Esa es una herramienta para crear una <b>tarjeta de regalo digital</b>. Al hacer clic, se genera una imagen profesional de tu descuento que puedes:
+            <ul>
+                <li><b>Descargar</b> como un archivo de imagen (.png) para compartirla fácilmente por WhatsApp o en tus redes sociales.</li>
+                <li><b>Enviar directamente por Email</b> a un cliente con solo escribir su correo y presionar 'Enviar'.</li>
+            </ul>`
+      },
+      {
+        q: "¿Puedo limitar cuántas veces se usa un código o eliminar un descuento?",
+        a: `Sí a ambas:
+            <ul>
+                <li><b>Límite de Usos:</b> En el formulario, el campo 'Límite de Usos' te permite controlar cuántas veces se puede canjear un descuento en total. Si lo dejas en '0', los usos serán ilimitados.</li>
+                <li><b>Eliminar:</b> Puedes eliminar un descuento haciendo clic en el ícono de la papelera (🗑️), pero con una condición importante: <b>solo se puede eliminar si nunca ha sido utilizado</b>. Si ya se usó al menos una vez, no se puede borrar para mantener la integridad de tus reportes de ventas.</li>
+            </ul>`
+      }
+    ]
+  },
+
+
+
+
+
+{
     category: "Tienda y Restaurante",
     icon: "🍔",
     questions: [
       {
-        q: "¿Puedo vender productos de la tienda y del restaurante?",
-        a: "Sí, ambos módulos tienen una interfaz de Punto de Venta (POS). Puedes buscar productos por nombre o código, agregarlos a un carrito y procesar el pago. Para el restaurante, además puedes gestionar las categorías de los platos y las recetas (ingredientes)."
+        q: "¿Para qué sirven estos módulos y en qué se diferencian?",
+        a: "Son dos Puntos de Venta (POS) independientes:<ul><li><b>Tienda:</b> Diseñado para vender productos físicos como snacks, bebidas o souvenirs. Gestiona un inventario completo desde la compra al proveedor hasta la venta final.</li><li><b>Restaurante:</b> Diseñado para vender platos y bebidas preparados. Gestiona su propio inventario de ingredientes y las recetas de cada plato para un control más detallado.</li></ul>"
       },
       {
-        q: "¿Cómo se registra una compra a un proveedor?",
-        a: "En la pestaña 'Compras' del módulo de Tienda, puedes seleccionar un proveedor, elegir los productos que estás comprando, e indicar la cantidad y el precio de compra. Al registrarla, la compra queda en estado 'pendiente'."
+        q: "Guía Rápida: ¿Cómo configuro mi inventario en la Tienda?",
+        a: `Sigue estos 3 pasos en orden para configurar tu tienda desde cero:
+           <ul>
+            <li><b>1. Crea tus Categorías:</b> Ve a <b>Tienda &rarr; Categorías</b>. Haz clic en <i>"+ Agregar Categoría"</i>, dale un nombre (ej. "Bebidas", "Snacks") y guarda. Esto te ayudará a organizar tus productos.</li>
+            <li><b>2. Registra tus Proveedores:</b> Ve a <b>Tienda &rarr; Proveedores</b>. Haz clic en <i>"+ Agregar Proveedor"</i>, llena los datos de la empresa que te surte los productos y guarda. El <b>NIT</b> debe ser único.</li>
+            <li><b>3. Agrega tus Productos:</b> Ve a <b>Tienda &rarr; Inventario</b>. Haz clic en <i>"+ Agregar Producto"</i>. En el formulario, dale un nombre y código de barras únicos, asigna su categoría y proveedor, y define su precio de compra y de venta. El <b>stock inicial</b> es la cantidad que tienes al momento de crearlo.</li>
+           </ul>`
       },
       {
-        q: "¿Cómo ingreso al inventario los productos que compré?",
-        a: "En la pestaña 'Compras Pendientes', verás la lista de compras por recibir. Al hacer clic en 'Recibir Pedido', puedes confirmar las cantidades que llegaron (que pueden ser parciales). Al confirmar, el sistema actualiza automáticamente el stock de cada producto y registra el egreso en la caja con el método de pago que selecciones."
+        q: "Guía Rápida: ¿Cómo registro una compra y actualizo mi stock?",
+        a: `Este es el flujo para reabastecer tu inventario:
+           <ul>
+            <li><b>Paso 1 - Crear la Orden de Compra:</b> Ve a <b>Tienda &rarr; Compras</b>. Selecciona un proveedor, busca los productos que vas a comprar, indica la <b>cantidad</b> y el <b>precio de compra</b> por unidad, y agrégalos al carrito. Al finalizar, haz clic en <i>"Registrar Compra"</i>. Esto crea una orden en estado "pendiente".</li>
+            <li><b>Paso 2 - Recibir la Mercancía:</b> Cuando llegue tu pedido, ve a <b>Tienda &rarr; Compras Pendientes</b>. Busca la orden y haz clic en <i>"✔️ Recibir Productos"</i>. Confirma las cantidades recibidas. Este es el paso crucial: el sistema <b>automáticamente sumará los productos a tu stock</b> y registrará el gasto (egreso) en la Caja.</li>
+           </ul>`
+      },
+      {
+        q: "Guía Rápida: ¿Cómo realizo una venta en el POS de la Tienda?",
+        a: `Ve a <b>Tienda &rarr; POS</b>.
+           <ul>
+            <li><b>Agrega productos</b> al carrito haciendo clic sobre ellos.</li>
+            <li><b>Elige el Modo de Venta:</b>
+                <ul>
+                    <li><b>Pago Inmediato:</b> Para clientes externos. Aquí puedes seleccionar el método de pago. Si eliges <i>"Pago Mixto"</i>, aparecerá una ventana para que puedas dividir el total entre varios métodos (ej. una parte en efectivo y otra en tarjeta).</li>
+                    <li><b>Cargar a Habitación:</b> Para huéspedes. Elige la habitación ocupada de la lista. El costo se sumará a la cuenta de la habitación para ser cobrado en el check-out.</li>
+                </ul>
+            </li>
+            <li>Haz clic en <b>"Registrar Venta"</b>. Esto descuenta el stock y registra el ingreso en la Caja (si fue pago inmediato).</li>
+           </ul>`
+      },
+      {
+        q: "Guía Rápida: ¿Cómo configuro el menú de mi Restaurante?",
+        a: `El restaurante usa un inventario de ingredientes para controlar el costo y stock de los platos.
+           <ul>
+            <li><b>1. Crea tus Ingredientes:</b> Primero, ve a <b>Restaurante &rarr; Inventario</b>. Haz clic en <i>"+ Nuevo Ingrediente"</i>, y registra todo lo que usas para cocinar (ej. "Carne de Res", "Tomate", "Pan"). Define su unidad de medida (kg, lt, unidades).</li>
+            <li><b>2. Crea tus Platos y Recetas:</b> Ve a <b>Restaurante &rarr; Menú/Platos</b>. Haz clic en <i>"Nuevo Plato"</i>. Dale un nombre y precio. En la sección <b>"Receta del Plato"</b>, agrega los ingredientes que creaste en el paso anterior y la cantidad necesaria para preparar una porción de ese plato.</li>
+           </ul>`
+      },
+      {
+        q: "¿El POS del Restaurante funciona igual que el de la Tienda?",
+        a: "Sí, la mecánica es prácticamente la misma. En la pestaña <b>'Registrar Venta (POS)'</b> del módulo de Restaurante, seleccionas los platos del menú, los agregas al pedido y puedes elegir entre <b>Pago Inmediato</b> (con opción de pago mixto) o <b>Cargar a Habitación</b>."
       }
     ]
   },
+
+
   {
     category: "Mi Cuenta y Suscripción",
     icon: "💳",
