@@ -2583,6 +2583,13 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     modalContainer.appendChild(modalContent);
     
     const formEl = modalContainer.querySelector('#alquilar-form-pos');
+    const togglePrecioLibreEl = modalContainer.querySelector('#precio_libre_toggle_alquiler');
+const containerPrecioLibreEl = modalContainer.querySelector('#precio_libre_container_alquiler');
+
+togglePrecioLibreEl.addEventListener('change', () => {
+    // Muestra u oculta el contenedor del precio manual según el estado del checkbox
+    containerPrecioLibreEl.style.display = togglePrecioLibreEl.checked ? 'block' : 'none';
+});
     const codigoInputEl = modalContainer.querySelector('#codigo-descuento-alquiler');
     const feedbackDescuentoAlquilerEl = modalContainer.querySelector('#feedback-descuento-alquiler');
 
