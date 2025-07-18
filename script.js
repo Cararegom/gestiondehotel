@@ -139,7 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.dataLayer = window.dataLayer || [];
                 window.dataLayer.push({ event: 'crear_cuenta' });
 
-                gtag('event', 'conversion', { send_to: 'AW-17205952610/SFYgC8RmR8sYtAEQkaLuXaI' });
 
                 // GESTIÓN DE MODALES CORREGIDA
                 registrationWasSuccessful = true; // 1. Marcamos que el registro fue exitoso
