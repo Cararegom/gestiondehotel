@@ -39,7 +39,7 @@ function isValidEmail(email) {
 // ===================================================================
 
 
-// ---- LÓGICA DE LA PÁGINA ----
+
 document.addEventListener('DOMContentLoaded', () => {
     
     // --- MANEJO DE MODALES Y REGISTRO ---
@@ -47,19 +47,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const registroExitosoModalElement = document.getElementById('registroExitosoModal');
     let registroModalInstance;
     let registroExitosoModalInstance;
-    let registrationWasSuccessful = false; // Flag para controlar el flujo
+    let registrationWasSuccessful = false; 
 
     if (registroModalElement) {
         registroModalInstance = new bootstrap.Modal(registroModalElement);
 
-        // Evento que se dispara DESPUÉS de que el modal de registro se ha ocultado
         registroModalElement.addEventListener('hidden.bs.modal', () => {
-            // Si el modal se cerró porque el registro fue exitoso...
             if (registrationWasSuccessful) {
                 if (registroExitosoModalInstance) {
-                    registroExitosoModalInstance.show(); // ...entonces mostramos el modal de éxito
+                    registroExitosoModalInstance.show(); 
                 }
-                registrationWasSuccessful = false; // Reseteamos el flag para futuros usos
+                registrationWasSuccessful = false; 
             }
         });
     }
@@ -68,7 +66,6 @@ document.addEventListener('DOMContentLoaded', () => {
         registroExitosoModalInstance = new bootstrap.Modal(registroExitosoModalElement);
     }
     
-    // --- CÓDIGO PARA ABRIR MODAL DESDE URL ---
     const urlParamsForModal = new URLSearchParams(window.location.search);
     if (urlParamsForModal.get('modal') === 'registro') {
         if (registroModalInstance) {
@@ -76,7 +73,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- LÓGICA PARA LOS BOTONES DE PLANES ---
     const planButtons = document.querySelectorAll('#pricing .plan-button-select');
     planButtons.forEach(button => {
         button.addEventListener('click', () => {
@@ -107,43 +103,36 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 if (authError) throw authError;
 
+                // Lógica de creación de hotel, usuario, etc... (sin cambios)
                 const supabaseUserId = authData.user?.id;
                 const now = new Date();
                 const trialEnd = new Date();
                 trialEnd.setDate(now.getDate() + 30);
                 const idDeReferido = localStorage.getItem('referido_id');
-
-                // 2. Creación del hotel
-                const { data: hotelData, error: hotelError } = await supabase
-                    .from('hoteles')
-                    .insert({
-                        nombre: hotelName, correo: email, plan: 'max', estado_suscripcion: 'trial',
-                        trial_inicio: now.toISOString(), trial_fin: trialEnd.toISOString(),
-                          suscripcion_fin: trialEnd.toISOString(), creado_por: supabaseUserId,
-                          referido_por: idDeReferido || null,
-                    })
-                    .select('id').single();
+                const { data: hotelData, error: hotelError } = await supabase.from('hoteles').insert({ nombre: hotelName, correo: email, plan: 'max', estado_suscripcion: 'trial', trial_inicio: now.toISOString(), trial_fin: trialEnd.toISOString(), suscripcion_fin: trialEnd.toISOString(), creado_por: supabaseUserId, referido_por: idDeReferido || null }).select('id').single();
                 if (hotelError) throw hotelError;
-                
-                // 3. Lógica de referidos y creación de usuario/rol
-                if (idDeReferido) {
-                    await supabase.from('referidos').insert({ referidor_id: idDeReferido, nombre_hotel_referido: hotelName, estado: 'trial', recompensa_otorgada: false });
-                }
+                if (idDeReferido) { await supabase.from('referidos').insert({ referidor_id: idDeReferido, nombre_hotel_referido: hotelName, estado: 'trial', recompensa_otorgada: false }); }
                 await supabase.from('usuarios').insert({ id: supabaseUserId, nombre: adminName, hotel_id: hotelData.id, correo: email, rol: 'admin' });
                 await supabase.from('usuarios_roles').insert({ usuario_id: supabaseUserId, rol_id: ADMIN_ROL_ID, hotel_id: hotelData.id });
-
                 localStorage.removeItem('referido_id');
                 registroForm.reset();
-                document.getElementById('registroFormAlert').classList.add('d-none');
+                document.getElementById('registroFormAlert').classList.add('d-none');
 
+                // --- INICIO DE LA CORRECCIÓN ---
+                // Se envía el evento con un 'callback' que se ejecutará DESPUÉS de que las etiquetas se disparen.
                 window.dataLayer = window.dataLayer || [];
-                window.dataLayer.push({ event: 'crear_cuenta' });
+                window.dataLayer.push({ 
+                    'event': 'crear_cuenta',
+                    'eventCallback': function() {
+                        console.log("GTM Callback ejecutado: Redirigiendo a login.html");
+                        window.location.href = '/login.html';
+                    },
+                    'eventTimeout': 2000 // Máximo 2 segundos de espera como seguridad
+                });
+                // --- FIN DE LA CORRECCIÓN ---
 
-
-                // GESTIÓN DE MODALES CORREGIDA
-                registrationWasSuccessful = true; // 1. Marcamos que el registro fue exitoso
-                registroModalInstance.hide();    // 2. Damos la orden de cerrar el modal actual
-               
+                registrationWasSuccessful = true;
+                registroModalInstance.hide();    
 
             } catch (error) {
                 showAlert(document.getElementById('registroFormAlert'), `Error: ${error.message}`, 'danger');
@@ -155,7 +144,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const okButton = document.getElementById('btn-ok-registro-exitoso');
     if (okButton) {
         okButton.addEventListener('click', () => {
-            window.location.href = '/login.html';
+            // --- CAMBIO AQUÍ ---
+            // El botón ya no redirige directamente. Solo cierra el modal.
+            // La redirección ahora es manejada por el eventCallback de GTM.
+            // Si el callback falla por alguna razón (ej. GTM bloqueado), el usuario
+            // puede hacer clic de nuevo o la página quedará ahí, pero la etiqueta ya se habrá enviado.
+            if (registroExitosoModalInstance) {
+                registroExitosoModalInstance.hide();
+            }
+             // Como fallback, si después de 2 segundos el callback no ha redirigido, 
+             // forzamos la redirección para no dejar al usuario esperando.
+            setTimeout(() => {
+                if (window.location.pathname.includes('index.html')) { // Solo si seguimos en la misma página
+                   window.location.href = '/login.html';
+                }
+            }, 2100);
         });
     }
 });
