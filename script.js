@@ -40,7 +40,25 @@ function isValidEmail(email) {
 
 
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+    // --- INICIO: CÓDIGO DE REDIRECCIÓN INTELIGENTE ---
+    try {
+        const { data: { session } } = await supabase.auth.getSession();
+
+        // Si hay una sesión activa, el usuario ya está logueado.
+        if (session) {
+            console.log('Sesión activa encontrada, redirigiendo al dashboard...');
+            // Redirigir al panel principal de la aplicación.
+            window.location.href = '/app/index.html#/dashboard';
+            return; // Detiene la ejecución del resto del script para evitar cargar cosas innecesarias.
+        }
+        // Si no hay sesión, no hace nada y deja que se muestre la landing page.
+        console.log('No hay sesión activa, mostrando landing page.');
+
+    } catch (error) {
+        console.error('Error al verificar la sesión:', error);
+        // En caso de error, simplemente muestra la landing page.
+    }
     
     // --- MANEJO DE MODALES Y REGISTRO ---
     const registroModalElement = document.getElementById('registroModal');

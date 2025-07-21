@@ -1189,3 +1189,40 @@ img, svg {
 .details-modal-footer span {
     margin-left: 0.5rem;
 }
+#whatsapp-float {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  box-shadow: 0 6px 18px rgba(32, 129, 42, 0.18);
+  background: #25d366;
+  width: 60px;
+  height: 60px;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+#whatsapp-float:hover {
+  box-shadow: 0 12px 30px rgba(37,211,102,0.24);
+  transform: scale(1.07);
+  background: #128c7e;
+}
+#whatsapp-float img {
+  width: 38px;
+  height: 38px;
+  display: block;
+}
+@media (max-width: 600px) {
+  #whatsapp-float {
+    width: 52px;
+    height: 52px;
+    right: 12px;
+    bottom: 12px;
+  }
+  #whatsapp-float img {
+    width: 30px;
+    height: 30px;
+  }
+}
