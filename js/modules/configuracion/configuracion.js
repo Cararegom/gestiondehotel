@@ -100,7 +100,6 @@ export async function mount(container, supabase, user, hotelId) {
             </div>
           </div>
         </fieldset>
-        <fieldset class="border-2 border-indigo-200 p-6 rounded-xl shadow-md bg-indigo-50/30">
 
         <fieldset class="border-2 border-green-200 p-6 rounded-xl shadow-md bg-green-50/30">
           <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-sm">
@@ -108,15 +107,15 @@ export async function mount(container, supabase, user, hotelId) {
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
             <div>
-              <label for="checkin_hora_config" class="form-label">Hora Check-in Predeterminada <strong class="text-red-600">(Requiere columna en BD)</strong></label>
+              <label for="checkin_hora_config" class="form-label">Hora Check-in Predeterminada</label>
               <input name="checkin_hora_config" id="checkin_hora_config" type="time" class="form-control" />
             </div>
             <div>
-              <label for="checkout_hora_config" class="form-label">Hora Check-out Predeterminada <strong class="text-red-600">(Requiere columna en BD)</strong></label>
+              <label for="checkout_hora_config" class="form-label">Hora Check-out Predeterminada</label>
               <input name="checkout_hora_config" id="checkout_hora_config" type="time" class="form-control" />
             </div>
             <div class="md:col-span-2">
-              <label for="cobro_al_checkin" class="form-label">¿Cuándo se cobra la estancia principal? <strong class="text-red-600">(Requiere columna en BD)</strong></label>
+              <label for="cobro_al_checkin" class="form-label">¿Cuándo se cobra la estancia principal?</label>
               <select name="cobro_al_checkin" id="cobro_al_checkin" class="form-control">
                 <option value="true">Al ingresar (Check-in)</option>
                 <option value="false">Al salir (Check-out)</option>
@@ -208,11 +207,8 @@ export async function mount(container, supabase, user, hotelId) {
 
     <style>
       .form-label { display: block; font-size: 0.875rem; font-weight: 600; color: #374151; margin-bottom: 0.3rem; }
-      .form-label-fe { display: block; font-size: 0.875rem; font-weight: 600; color: #3730a3; margin-bottom: 0.3rem; }
-      .form-control, .form-control-fe { width: 100%; padding: 0.65rem 0.9rem; border-radius: 0.65rem; border: 2px solid #d1d5db; background-color: #f9fafb; transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out; font-size: 0.9rem; }
+      .form-control { width: 100%; padding: 0.65rem 0.9rem; border-radius: 0.65rem; border: 2px solid #d1d5db; background-color: #f9fafb; transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out; font-size: 0.9rem; }
       .form-control:focus { border-color: #60a5fa; box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.3); outline: none; }
-      .form-control-fe { border-color: #c7d2fe; background-color: #eef2ff; }
-      .form-control-fe:focus { border-color: #818cf8; box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.25); outline: none; }
       .form-helper-text { font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem; }
       .feedback-success { color: #16a34a; animation: fadeInOut 3s ease-in-out; }
       .feedback-error { color: #dc2626; animation: shake 0.5s ease-in-out; }
@@ -316,8 +312,6 @@ async function cargarConfiguracionHotel() {
     form.impuesto_nombre_restaurante.value = data.impuesto_nombre_restaurante || '';
     form.impuesto_restaurante_incluido.value = (data.impuesto_restaurante_incluido === true) ? "true" : "false";
 
-    // Horarios (leyendo de las nuevas columnas en configuracion_hotel)
-    // Usar || 'HH:MM' para asegurar que el input time tenga un valor válido si data.X es null
     form.checkin_hora_config.value = data.checkin_hora_config || '15:00';
     form.checkout_hora_config.value = data.checkout_hora_config || '12:00';
 
@@ -350,7 +344,6 @@ async function cargarConfiguracionHotel() {
     form.mostrar_logo.value = (data.mostrar_logo === true || (data.mostrar_logo === null && data.mostrar_logo_en_documentos === true)) ? "true" : "false";
     form.moneda_local_simbolo.value = data.moneda_local || '$';
     
-    // Para los campos informativos de moneda, si las columnas no existen en 'data', se usarán valores por defecto.
     form.moneda_codigo_iso_info.value = data.codigo_moneda_iso || 'COP'; 
     form.moneda_decimales_info.value = (data.cantidad_decimales_moneda !== null && typeof data.cantidad_decimales_moneda !== 'undefined') 
                                         ? data.cantidad_decimales_moneda.toString() 
@@ -362,7 +355,7 @@ async function cargarConfiguracionHotel() {
     form.tamano_papel.value = data.tamano_papel || '80mm';
     form.tipo_impresora.value = data.tipo_impresora || 'termica';
 
-  } else { // Valores por defecto si no hay datos en la BD
+  } else { 
     form.checkin_hora_config.value = '15:00';
     form.checkout_hora_config.value = '12:00';
     form.cobro_al_checkin.value = "true";
@@ -392,17 +385,10 @@ async function guardarConfiguracionHotel() {
 
   const logoUploadInput = document.getElementById('logo_upload');
   const logoFile = logoUploadInput.files[0];
-  // Leer la URL actual del preview si no se sube un nuevo archivo y no es el placeholder
   let logoUrlParaGuardar = document.getElementById('logo-preview').src;
-  if (logoUrlParaGuardar === window.location.href + "#" || logoUrlParaGuardar === '#') { // Si es el placeholder del src="#"
-      // Intentar obtener la URL previamente guardada si existe y no se está subiendo un nuevo logo
+  if (logoUrlParaGuardar === window.location.href + "#" || logoUrlParaGuardar === '#') { 
       const currentLogoSpan = document.getElementById('current-logo-url');
       if (currentLogoSpan && currentLogoSpan.textContent.startsWith('Logo actual:') && !logoFile) {
-          // Esto es un poco hacky, idealmente se guardaría la URL cargada en una variable.
-          // Por ahora, si no hay nuevo archivo y el preview es placeholder, se intenta NO cambiar la URL existente.
-          // Mejor sería obtener la data.logo_url de la carga inicial.
-          // Para una solución más robusta, cargar la URL en una variable al inicio y usarla.
-          // Por ahora, si no hay archivo nuevo, no incluimos logo_url en el payload para no borrarla.
           logoUrlParaGuardar = undefined; 
       } else {
           logoUrlParaGuardar = null;
@@ -411,21 +397,20 @@ async function guardarConfiguracionHotel() {
 
 
   if (logoFile) {
-  // Usar la carpeta 'logos/' dentro del bucket 'hotel-logos'
-  const fileName = `logos/logo_hotel_${currentHotelId}_${Date.now()}_${logoFile.name.replace(/\s+/g, '_')}`;
-  const { data: uploadData, error: uploadError } = await currentSupabaseInstance.storage
-    .from('hotel-logos') 
-    .upload(fileName, logoFile, { cacheControl: '3600', upsert: true });
+      const fileName = `logos/logo_hotel_${currentHotelId}_${Date.now()}_${logoFile.name.replace(/\s+/g, '_')}`;
+      const { data: uploadData, error: uploadError } = await currentSupabaseInstance.storage
+        .from('hotel-logos') 
+        .upload(fileName, logoFile, { cacheControl: '3600', upsert: true });
 
-  if (uploadError) {
-    console.error("Error subiendo logo:", uploadError);
-    feedbackEl.textContent = `Error al subir el logo: ${uploadError.message}`;
-    feedbackEl.className = 'feedback-error';
-    return; 
+      if (uploadError) {
+        console.error("Error subiendo logo:", uploadError);
+        feedbackEl.textContent = `Error al subir el logo: ${uploadError.message}`;
+        feedbackEl.className = 'feedback-error';
+        return; 
+      }
+      const { data: publicUrlData } = currentSupabaseInstance.storage.from('hotel-logos').getPublicUrl(fileName);
+      logoUrlParaGuardar = publicUrlData.publicUrl;
   }
-  const { data: publicUrlData } = currentSupabaseInstance.storage.from('hotel-logos').getPublicUrl(fileName);
-  logoUrlParaGuardar = publicUrlData.publicUrl;
-}
 
 
   const configHotelData = {
@@ -437,24 +422,19 @@ async function guardarConfiguracionHotel() {
     telefono_fiscal: form.telefono_fiscal.value.trim() || null,
     regimen_tributario: form.regimen_tributario.value.trim() || null,
     correo_reportes: form.correo_reportes.value.trim() || null,
-    
-    // Nuevos campos para horarios (asegúrate que las columnas existan en tu BD)
     checkin_hora_config: form.checkin_hora_config.value || null,
     checkout_hora_config: form.checkout_hora_config.value || null,
     cobro_al_checkin: form.cobro_al_checkin.value === "true",
-    
     porcentaje_impuesto_principal: parseFloat(form.porcentaje_impuesto_principal.value) || 0,
     nombre_impuesto_principal: form.nombre_impuesto_principal.value.trim() || null,
     impuestos_incluidos_en_precios: form.impuestos_incluidos_en_precios.value === "true",
-    impuesto_restaurante_incluido: form.impuesto_restaurante_incluido.value === "true",
-     impuesto_nombre_restaurante: form.impuesto_nombre_restaurante.value.trim() || null,
     impuesto_porcentaje_restaurante: parseFloat(form.impuesto_porcentaje_restaurante.value) || 0,
+    impuesto_nombre_restaurante: form.impuesto_nombre_restaurante.value.trim() || null,
     impuesto_restaurante_incluido: form.impuesto_restaurante_incluido.value === "true",
     encabezado_ticket_l1: form.encabezado_ticket_l1.value.trim() || null,
     encabezado_ticket_l2: form.encabezado_ticket_l2.value.trim() || null,
     encabezado_ticket_l3: form.encabezado_ticket_l3.value.trim() || null,
     pie_ticket: form.pie_ticket.value.trim() || null,
-    // logo_url: se asigna condicionalmente abajo
     mostrar_logo: form.mostrar_logo.value === "true",
     moneda_local: form.moneda_local_simbolo.value.trim() || '$',
     politica_cancelacion: form.politica_cancelacion.value.trim() || null,
@@ -464,7 +444,7 @@ async function guardarConfiguracionHotel() {
     actualizado_en: new Date().toISOString(),
   };
 
-  if (logoUrlParaGuardar !== undefined) { // Solo actualiza si hay una nueva URL o se quiere borrar (null)
+  if (logoUrlParaGuardar !== undefined) {
     configHotelData.logo_url = logoUrlParaGuardar;
   }
   
@@ -494,45 +474,11 @@ async function guardarConfiguracionHotel() {
     return;
   }
 
-  // ... (resto de la lógica de guardado de FE y feedback) ...
-  const proveedorFE = form.proveedor_fe.value || null;
-  const usuarioFE = form.usuario_fe.value.trim() || null;
-  const tokenFE = form.token_fe.value.trim() || null; 
-  const apiUrlFE = form.api_url_fe.value.trim() || null;
+  // --- SECCIÓN DE FACTURACIÓN ELECTRÓNICA ELIMINADA ---
+  // La lógica para guardar el proveedor_fe, usuario_fe, etc., ha sido removida.
 
-  let errorIntegracion = null;
-  if (proveedorFE || usuarioFE || apiUrlFE) { 
-    if (!proveedorFE || !usuarioFE || !apiUrlFE) { 
-      feedbackEl.textContent = 'Para la integración de Facturación Electrónica, se recomienda completar Proveedor, Usuario, (Token si es nuevo o se cambia) y URL Base API.';
-      feedbackEl.className = 'feedback-error'; 
-    } else {
-      const integracionData = {
-        hotel_id: currentHotelId,
-        facturador_nombre: proveedorFE,
-        facturador_usuario: usuarioFE,
-        facturador_api_key: tokenFE || undefined, 
-        facturador_api_url: apiUrlFE,
-        updated_at: new Date().toISOString(),
-      };
-      if (integracionData.facturador_api_key === undefined) {
-        delete integracionData.facturador_api_key;
-      }
-
-      const { error } = await currentSupabaseInstance
-        .from('integraciones_hotel')
-        .upsert(integracionData, { onConflict: 'hotel_id' });
-      errorIntegracion = error;
-    }
-  }
-
-  if (errorIntegracion) {
-    console.error("Error guardando integración FE:", errorIntegracion);
-    feedbackEl.textContent = `Configuración general guardada, pero hubo un error al actualizar la integración FE: ${errorIntegracion.message}`;
-    feedbackEl.className = 'feedback-error';
-  } else if (feedbackEl.className !== 'feedback-error') {
-    feedbackEl.textContent = '¡Configuración guardada exitosamente!';
-    feedbackEl.className = 'feedback-success';
-  }
+  feedbackEl.textContent = '¡Configuración guardada exitosamente!';
+  feedbackEl.className = 'feedback-success';
 
   setTimeout(() => {
     if (feedbackEl.className !== 'feedback-error') { 
@@ -541,7 +487,6 @@ async function guardarConfiguracionHotel() {
     }
   }, 3500);
 }
-// EN: configuracion.js (Pegar al final de todo el archivo)
 
 /**
  * Carga los métodos de pago desde la base de datos y los guarda en el caché.
