@@ -308,12 +308,14 @@ window.showModalEditarCompra = async function(compraId) {
                 </div>
             </div>`;
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+document.querySelectorAll('.delete-detail-btn').forEach(btn => {
+    btn.onclick = (e) => {
+        const row = e.target.closest('.edit-detail-row');
+        row.dataset.deleted = '1';             // Marca la fila como eliminada
+        row.style.display = 'none';            // Y la oculta visualmente
+    };
+});
 
-        document.querySelectorAll('.delete-detail-btn').forEach(btn => {
-            btn.onclick = (e) => {
-                e.target.closest('.edit-detail-row').style.display = 'none';
-            };
-        });
     } catch (err) {
         hideGlobalLoading();
         alert("Error al cargar detalles para editar: " + err.message);
@@ -335,8 +337,10 @@ window.guardarCambiosCompra = async function(compraId) {
 
         for (const row of rows) {
             const detailId = row.getAttribute('data-detail-id');
-            if (row.style.display === 'none') {
+            // Detecta si está marcada para eliminar o está oculta visualmente
+            if (row.dataset.deleted === '1' || row.style.display === 'none') {
                 ids_a_eliminar.push(detailId);
+                continue;
             } else {
                 const cantidad = parseInt(row.querySelector('.edit-cantidad').value, 10);
                 const precio_unitario = parseFloat(row.querySelector('.edit-precio').value);
@@ -347,7 +351,11 @@ window.guardarCambiosCompra = async function(compraId) {
                 detalles_a_actualizar.push({ id: detailId, cantidad, precio_unitario });
             }
         }
-        
+
+        // 🔎 LOGS DE DEPURACIÓN:
+        console.log('IDs a eliminar:', ids_a_eliminar);
+        console.log('Detalles a actualizar:', detalles_a_actualizar);
+
         // 1. Actualiza los detalles de los productos
         const { error: rpcError } = await currentSupabase.rpc('actualizar_compra_y_detalles', {
             p_compra_id: compraId,
@@ -355,7 +363,11 @@ window.guardarCambiosCompra = async function(compraId) {
             ids_a_eliminar
         });
 
-        if (rpcError) throw rpcError;
+        // 🔎 LOG DEL ERROR SI OCURRE
+        if (rpcError) {
+            console.error('Error del RPC:', rpcError);
+            throw rpcError;
+        }
         
         // 2. Recalcula el nuevo total y aplícale el redondeo
         const compraIndex = comprasPendientesCache.findIndex(c => c.id === compraId);
@@ -378,7 +390,6 @@ window.guardarCambiosCompra = async function(compraId) {
         }
         const totalFinalRedondeado = Math.round(nuevoTotalCalculado / 50) * 50;
 
-        // ▼▼▼ INICIO DE LA CORRECCIÓN CLAVE ▼▼▼
         // 3. Guarda el nuevo total redondeado en la tabla principal de compras_tienda
         const { error: updateTotalError } = await currentSupabase
             .from('compras_tienda')
@@ -386,9 +397,9 @@ window.guardarCambiosCompra = async function(compraId) {
             .eq('id', compraId);
 
         if (updateTotalError) {
+            console.error('Error al actualizar el total:', updateTotalError);
             throw new Error(`Error al actualizar el total de la compra: ${updateTotalError.message}`);
         }
-        // ▲▲▲ FIN DE LA CORRECCIÓN CLAVE ▲▲▲
 
         // 4. Actualiza el caché local para reflejar el cambio inmediatamente
         if (compraIndex !== -1) {
@@ -410,6 +421,7 @@ window.guardarCambiosCompra = async function(compraId) {
         await Swal.fire('Error', 'No se pudo guardar: ' + err.message, 'error');
     }
 };
+
 
 
 
@@ -1289,114 +1301,117 @@ async function registrarVentaPOS() {
 }
 
 // ================== BLOQUE UTILIDAD MODAL PAGO MIXTO Y PROCESO DE VENTA ==================
-async function mostrarModalPagoMixto(total, callback) {
-  let pagos = [{ metodo_pago_id: '', monto: '' }];
-  const body = document.body;
-  const modal = document.createElement('div');
-modal.id = 'modal-detalles-compra';
-// Este es el overlay oscuro
-modal.style = `
-    position:fixed; top:0; left:0; width:100%; height:100%;
-    background:rgba(0,0,0,0.5); display:flex; align-items:center; justify-content:center; z-index:1001;
-`;
 
-// Usamos las nuevas clases CSS para el contenido
-modal.innerHTML = `
-    <div class="details-modal-dialog">
-        <div class="details-modal-header">
-            <h3>Detalles de la Compra</h3>
-            <button class="close-button" onclick="document.getElementById('modal-detalles-compra').remove()">&times;</button>
+async function mostrarModalPagoMixto(totalAPagar, callback) {
+    const modalContainer = document.createElement('div');
+    modalContainer.id = 'modal-pago-mixto-pos';
+    modalContainer.style = `
+        position:fixed; top:0; left:0; width:100%; height:100%;
+        background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center;
+        z-index:1002;
+    `;
+
+    const metodosDisponibles = posMetodosPago.filter(mp => mp.id !== 'mixto');
+    const opcionesMetodosHTML = metodosDisponibles
+        .map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
+
+    modalContainer.innerHTML = `
+        <div style="background:white; border-radius:12px; padding:24px; width:95%; max-width:500px; max-height:90vh; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <h3 style="margin:0; font-size:1.2em; color:#1e3a8a;">Registrar Pago Mixto (POS)</h3>
+                <button class="btn-cerrar" style="background:none; border:none; font-size:1.5em; cursor:pointer;">&times;</button>
+            </div>
+            <p style="text-align:center; font-size:1.1em; margin-bottom:15px;">Total a Pagar: <strong style="color:#c2410c; font-size:1.2em;">${formatCurrency(totalAPagar)}</strong></p>
+            
+            <form id="form-pago-mixto-pos" style="overflow-y:auto; flex-grow:1; padding-right:10px;">
+                <div id="lista-pagos-mixtos-pos" class="space-y-3"></div>
+                <button type="button" id="btn-agregar-pago-mixto-pos" style="font-size:0.9em; color:#1d4ed8; background:none; border:none; cursor:pointer; margin-top:10px;">+ Agregar otro método</button>
+            </form>
+
+            <div style="margin-top:15px; padding-top:15px; border-top:1px solid #eee; font-weight:600;">
+                <div style="display:flex; justify-content:space-between;"><span>Total ingresado:</span> <span id="total-ingresado-mixto-pos">$0</span></div>
+                <div style="display:flex; justify-content:space-between; color:#ef4444;" id="linea-restante-pos"><span>Restante:</span> <span id="restante-mixto-pos">${formatCurrency(totalAPagar)}</span></div>
+            </div>
+
+            <div style="display:flex; gap:10px; margin-top:20px;">
+                <button type="submit" form="form-pago-mixto-pos" id="btn-confirmar-pago-mixto-pos" style="flex:1; background:#16a34a; color:white; border:none; padding:10px; border-radius:6px; font-weight:600; cursor:pointer;" disabled>Confirmar Pago</button>
+                <button type="button" class="btn-cerrar" style="flex:1; background:#6b7280; color:white; border:none; padding:10px; border-radius:6px; font-weight:600; cursor:pointer;">Cancelar</button>
+            </div>
         </div>
-        <div class="details-modal-body">
-            <table class="details-table">
-                <thead>
-                    <tr>
-                        <th>Producto</th>
-                        <th style="text-align:center;">Cant.</th>
-                        <th style="text-align:right;">Precio Unit.</th>
-                        <th style="text-align:right;">Subtotal</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${detalles.map(d => `
-                        <tr>
-                            <td>${d.producto ? d.producto.nombre : 'Producto no encontrado'}</td>
-                            <td style="text-align:center;">${d.cantidad}</td>
-                            <td style="text-align:right;">${formatCurrency(d.precio_unitario)}</td>
-                            <td style="text-align:right; font-weight:600;">${formatCurrency(d.subtotal)}</td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        </div>
-        <div class="details-modal-footer">
-            Total Compra: <span>${formatCurrency(totalCompra)}</span>
-        </div>
-    </div>
-`;
-document.body.appendChild(modal);
+    `;
+    document.body.appendChild(modalContainer);
 
+    const form = modalContainer.querySelector('#form-pago-mixto-pos');
+    const listaPagosDiv = modalContainer.querySelector('#lista-pagos-mixtos-pos');
+    const btnConfirmar = modalContainer.querySelector('#btn-confirmar-pago-mixto-pos');
 
+    const closeAction = () => {
+        modalContainer.remove();
+        callback(null); // Llama al callback con null para indicar cancelación
+    };
+    modalContainer.querySelectorAll('.btn-cerrar').forEach(btn => btn.onclick = closeAction);
 
-  function renderPagosCampos() {
-    const campos = modal.querySelector('#pagosMixtosPOSCampos');
-    campos.innerHTML = '';
-    pagos.forEach((pago, idx) => {
-      campos.innerHTML += `
-        <div style="display:flex;align-items:center;gap:7px;margin-bottom:6px;">
-          <select required style="padding:7px 12px;border-radius:7px;border:1.5px solid #cbd5e1;flex:2;" data-idx="${idx}">
-            <option value="">Método de pago...</option>
-            ${posMetodosPago.filter(m => m.id !== "mixto").map(m => `<option value="${m.id}" ${pago.metodo_pago_id === m.id ? 'selected' : ''}>${m.nombre}</option>`).join('')}
-          </select>
-          <input type="number" required min="1" style="flex:1.5;padding:7px 11px;border-radius:7px;border:1.5px solid #cbd5e1;" placeholder="Monto" value="${pago.monto}" data-idx="${idx}" />
-          ${pagos.length > 1 ? `<button type="button" data-remove="${idx}" style="background:#fee2e2;color:#f43f5e;border:none;border-radius:5px;padding:3px 10px;font-size:1em;cursor:pointer;">✖</button>` : ''}
-        </div>
-      `;
-    });
-    campos.querySelectorAll('button[data-remove]').forEach(btn => {
-      btn.onclick = () => {
-        const idx = parseInt(btn.getAttribute('data-remove'));
-        pagos.splice(idx, 1);
-        renderPagosCampos();
-      };
-    });
-    campos.querySelectorAll('select[data-idx]').forEach(sel => {
-      sel.onchange = (e) => {
-        pagos[parseInt(sel.getAttribute('data-idx'))].metodo_pago_id = sel.value;
-      };
-    });
-    campos.querySelectorAll('input[type="number"][data-idx]').forEach(inp => {
-      inp.oninput = (e) => {
-        pagos[parseInt(inp.getAttribute('data-idx'))].monto = inp.value;
-      };
-    });
-  }
-  renderPagosCampos();
+    const actualizarTotales = () => {
+        let totalIngresado = 0;
+        listaPagosDiv.querySelectorAll('.pago-mixto-row-pos').forEach(row => {
+            totalIngresado += Number(row.querySelector('.monto-pago-mixto-pos').value) || 0;
+        });
+        const restante = totalAPagar - totalIngresado;
 
-  modal.querySelector('#agregarPagoPOS').onclick = () => {
-    pagos.push({ metodo_pago_id: '', monto: '' });
-    renderPagosCampos();
-  };
-  modal.querySelector('#cancelarPagoPOS').onclick = () => {
-    body.removeChild(modal);
-    callback(null);
-  };
-  modal.querySelector('#formPagosMixtosPOS').onsubmit = (e) => {
-    e.preventDefault();
-    const suma = pagos.reduce((s, p) => s + Number(p.monto || 0), 0);
-    if (suma !== total) {
-      modal.querySelector('#msgPagosMixtosPOS').textContent = `La suma de los pagos ($${suma}) debe ser igual al total de la venta ($${total}).`;
-      return;
-    }
-    for (let p of pagos) {
-      if (!p.metodo_pago_id) {
-        modal.querySelector('#msgPagosMixtosPOS').textContent = `Falta seleccionar método de pago.`;
-        return;
-      }
-    }
-    body.removeChild(modal);
-    callback(pagos);
-  };
+        modalContainer.querySelector('#total-ingresado-mixto-pos').textContent = formatCurrency(totalIngresado);
+        const restanteEl = modalContainer.querySelector('#restante-mixto-pos');
+        restanteEl.textContent = formatCurrency(restante);
+        const lineaRestante = modalContainer.querySelector('#linea-restante-pos');
+
+        // Comparamos usando una pequeña tolerancia para evitar errores de punto flotante
+        if (Math.abs(restante) < 0.01) {
+            btnConfirmar.disabled = false;
+            lineaRestante.style.color = '#16a34a'; // Verde
+        } else {
+            btnConfirmar.disabled = true;
+            lineaRestante.style.color = '#ef4444'; // Rojo
+        }
+    };
+
+    const agregarFila = () => {
+        const newRow = document.createElement('div');
+        newRow.className = 'pago-mixto-row-pos';
+        newRow.style = "display:flex; gap:8px; align-items:center;";
+        newRow.innerHTML = `
+            <select class="metodo-pago-mixto-pos" style="flex:2; padding:8px; border:1px solid #ccc; border-radius:4px;" required>${opcionesMetodosHTML}</select>
+            <input type="number" class="monto-pago-mixto-pos" placeholder="Monto" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px;" required min="0">
+            <button type="button" class="btn-remover-fila-pos" style="background:#fee2e2; color:#dc2626; border:none; padding:5px 8px; border-radius:4px; cursor:pointer;">✖</button>
+        `;
+        listaPagosDiv.appendChild(newRow);
+        newRow.querySelector('.btn-remover-fila-pos').onclick = () => {
+            newRow.remove();
+            actualizarTotales();
+        };
+    };
+
+    modalContainer.querySelector('#btn-agregar-pago-mixto-pos').onclick = agregarFila;
+    listaPagosDiv.addEventListener('input', actualizarTotales);
+
+    agregarFila(); // Iniciar con una fila
+    const primerInput = listaPagosDiv.querySelector('.monto-pago-mixto-pos');
+    if(primerInput) primerInput.value = totalAPagar; // Pre-llenar el total
+    actualizarTotales();
+
+    form.onsubmit = (e) => {
+        e.preventDefault();
+        const pagosConfirmados = [];
+        listaPagosDiv.querySelectorAll('.pago-mixto-row-pos').forEach(row => {
+            const metodoId = row.querySelector('.metodo-pago-mixto-pos').value;
+            const monto = Number(row.querySelector('.monto-pago-mixto-pos').value);
+            if(metodoId && monto > 0) {
+                pagosConfirmados.push({ metodo_pago_id: metodoId, monto });
+            }
+        });
+        if(pagosConfirmados.length > 0) {
+            callback(pagosConfirmados);
+            modalContainer.remove();
+        }
+    };
 }
 
 // En tu archivo tienda.js

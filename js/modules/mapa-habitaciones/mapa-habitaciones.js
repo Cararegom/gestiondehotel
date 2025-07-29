@@ -569,8 +569,36 @@ async function renderRooms(gridEl, supabase, currentUser, hotelId) {
     }
 
     currentRooms = habitaciones;
-    
-    // El contenedor principal para refrescar es el grid de las habitaciones (gridEl)
+
+    // ================== INICIO DE LA LÓGICA DE CORRECCIÓN ==================
+    // Aquí añadimos la lógica para verificar y cambiar el estado dinámicamente.
+
+    const ahora = new Date();
+    const dosHorasEnMilisegundos = 2 * 60 * 60 * 1000;
+
+    currentRooms.forEach(room => {
+        // Solo nos interesa si la base de datos dice que está 'libre' pero tiene reservas futuras.
+        if (room.estado === 'libre' && room.reservas && room.reservas.length > 0) {
+            // Buscamos la reserva futura más próxima que esté en estado 'reservada'.
+            const proximaReserva = room.reservas
+                .filter(r => r.estado === 'reservada' && new Date(r.fecha_inicio) > ahora)
+                .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio))[0];
+
+            if (proximaReserva) {
+                const inicioReserva = new Date(proximaReserva.fecha_inicio);
+                const diferenciaTiempo = inicioReserva.getTime() - ahora.getTime();
+
+                // Si la diferencia es de 2 horas o menos, cambiamos el estado solo para la vista.
+                if (diferenciaTiempo > 0 && diferenciaTiempo <= dosHorasEnMilisegundos) {
+                    console.log(`Habitación ${room.nombre} está a menos de 2h de una reserva. Cambiando estado a 'reservada' para la vista.`);
+                    room.estado = 'reservada'; // ¡Esta es la corrección clave!
+                }
+            }
+        }
+    });
+    // =================== FIN DE LA LÓGICA DE CORRECCIÓN ====================
+
+
     const mainAppContainer = gridEl;
     
     renderFloorFilters(currentRooms, filterContainer, gridEl, supabase, currentUser, hotelId);
@@ -590,8 +618,7 @@ async function renderRooms(gridEl, supabase, currentUser, hotelId) {
     });
 
     currentRooms.forEach(room => {
-        // --- CORRECCIÓN AQUÍ ---
-        // Se pasa 'mainAppContainer' (que ahora es gridEl) a la función roomCard.
+        // Ahora, cuando se llame a roomCard, algunas habitaciones ya tendrán su estado modificado a 'reservada'.
         gridEl.appendChild(roomCard(room, supabase, currentUser, hotelId, mainAppContainer));
         if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
             startCronometro(room, supabase, hotelId, gridEl);
