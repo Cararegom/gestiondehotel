@@ -473,18 +473,30 @@ function esTiempoEstanciaNoches(tiempoEstanciaId) {
     return tiempo && tiempo.minutos >= (22 * 60) && tiempo.minutos <= (26 * 60);
 }
 
-// REEMPLAZA ESTA FUNCIÓN COMPLETA
-// REEMPLAZA ESTA FUNCIÓN COMPLETA
 // REEMPLAZA esta función completa en tu archivo reservas.js
 function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, tiempoId, precioLibreActivado, precioLibreValor) {
-    let montoEstanciaBaseBruto = 0;
     if (!habitacionInfo) return { errorMonto: "Información de habitación no disponible." };
 
-    // --- LÓGICA DE PRECIO LIBRE ---
+    let montoEstanciaBaseBruto;
+    let montoPorHuespedesAdicionales = 0;
+    let montoDescontado = 0;
+    let totalAntesDeImpuestos;
+
+    // --- INICIO DE LA LÓGICA CORREGIDA ---
+    // Si el precio libre está activado, este se convierte en el precio total antes de impuestos.
+    // Se ignoran los cálculos de precio de habitación, huéspedes adicionales y descuentos.
     if (precioLibreActivado && typeof precioLibreValor === 'number' && precioLibreValor >= 0) {
+        
         montoEstanciaBaseBruto = precioLibreValor;
+        totalAntesDeImpuestos = precioLibreValor;
+        // Forzamos a cero los otros conceptos para que no se sumen ni resten.
+        montoPorHuespedesAdicionales = 0;
+        montoDescontado = 0;
+
     } else {
-        // --- LÓGICA DE CÁLCULO NORMAL (SI PRECIO LIBRE NO ESTÁ ACTIVO) ---
+        // --- LÓGICA DE CÁLCULO NORMAL (CUANDO EL PRECIO LIBRE NO ESTÁ ACTIVO) ---
+
+        // 1. Calcular precio base de la estancia (por noche o por tiempo)
         if (tipoDuracion === "noches_manual") {
             montoEstanciaBaseBruto = (habitacionInfo.precio || 0) * cantDuracion;
         } else {
@@ -495,46 +507,48 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
                 return { errorMonto: "Precio no definido para el tiempo de estancia seleccionado." };
             }
         }
-    }
-    // --- FIN LÓGICA DE PRECIO ---
 
-    let montoPorHuespedesAdicionales = 0;
-    // ... (el resto de la función para calcular adicionales, descuentos e impuestos no cambia)
-    const capacidadMaxima = habitacionInfo.capacidad_maxima || huespedes;
-    if (huespedes > capacidadMaxima) {
-        return { errorMonto: `Cantidad de huéspedes (${huespedes}) excede la capacidad máxima (${capacidadMaxima}).` };
-    }
-    const capacidadBase = habitacionInfo.capacidad_base || 1;
-    if (huespedes > capacidadBase) {
-        const extraHuespedes = huespedes - capacidadBase;
-        let factorDuracionParaAdicional = 1;
-        if (tipoDuracion === "noches_manual") {
-            factorDuracionParaAdicional = cantDuracion;
-        } else if (tipoDuracion === "tiempo_predefinido" && esTiempoEstanciaNoches(tiempoId)) {
-            factorDuracionParaAdicional = Math.max(1, Math.round(cantDuracion / (24 * 60)));
+        // 2. Validar capacidad y calcular costo de huéspedes adicionales
+        const capacidadMaxima = habitacionInfo.capacidad_maxima || huespedes;
+        if (huespedes > capacidadMaxima) {
+            return { errorMonto: `Cantidad de huéspedes (${huespedes}) excede la capacidad máxima (${capacidadMaxima}).` };
         }
-        montoPorHuespedesAdicionales = extraHuespedes * (habitacionInfo.precio_huesped_adicional || 0) * factorDuracionParaAdicional;
-    }
-
-    const totalAntesDeDescuento = montoEstanciaBaseBruto + montoPorHuespedesAdicionales;
-    
-    let montoDescontado = 0;
-    if (state.descuentoAplicado) {
-        if (state.descuentoAplicado.tipo === 'fijo') {
-            montoDescontado = parseFloat(state.descuentoAplicado.valor);
-        } else if (state.descuentoAplicado.tipo === 'porcentaje') {
-            montoDescontado = totalAntesDeDescuento * (parseFloat(state.descuentoAplicado.valor) / 100);
+        const capacidadBase = habitacionInfo.capacidad_base || 1;
+        if (huespedes > capacidadBase) {
+            const extraHuespedes = huespedes - capacidadBase;
+            let factorDuracionParaAdicional = 1;
+            if (tipoDuracion === "noches_manual") {
+                factorDuracionParaAdicional = cantDuracion;
+            } else if (tipoDuracion === "tiempo_predefinido" && esTiempoEstanciaNoches(tiempoId)) {
+                factorDuracionParaAdicional = Math.max(1, Math.round(cantDuracion / (24 * 60)));
+            }
+            montoPorHuespedesAdicionales = extraHuespedes * (habitacionInfo.precio_huesped_adicional || 0) * factorDuracionParaAdicional;
         }
-    }
-    montoDescontado = Math.min(totalAntesDeDescuento, montoDescontado);
-    const totalConDescuento = totalAntesDeDescuento - montoDescontado;
 
+        const totalAntesDeDescuento = montoEstanciaBaseBruto + montoPorHuespedesAdicionales;
+
+        // 3. Calcular descuento si aplica
+        if (state.descuentoAplicado) {
+            if (state.descuentoAplicado.tipo === 'fijo') {
+                montoDescontado = parseFloat(state.descuentoAplicado.valor);
+            } else if (state.descuentoAplicado.tipo === 'porcentaje') {
+                montoDescontado = totalAntesDeDescuento * (parseFloat(state.descuentoAplicado.valor) / 100);
+            }
+        }
+        montoDescontado = Math.min(totalAntesDeDescuento, montoDescontado);
+        
+        totalAntesDeImpuestos = totalAntesDeDescuento - montoDescontado;
+    }
+    // --- FIN DE LA LÓGICA CORREGIDA ---
+
+
+    // --- CÁLCULO DE IMPUESTOS (COMÚN PARA AMBOS CASOS) ---
     let montoImpuestoCalculado = 0;
-    let baseImponibleFinal = totalConDescuento;
+    let baseImponibleFinal = totalAntesDeImpuestos;
 
     if (state.configHotel.impuestos_incluidos_en_precios && state.configHotel.porcentaje_impuesto_principal > 0) {
-        baseImponibleFinal = totalConDescuento / (1 + (state.configHotel.porcentaje_impuesto_principal / 100));
-        montoImpuestoCalculado = totalConDescuento - baseImponibleFinal;
+        baseImponibleFinal = totalAntesDeImpuestos / (1 + (state.configHotel.porcentaje_impuesto_principal / 100));
+        montoImpuestoCalculado = totalAntesDeImpuestos - baseImponibleFinal;
     } else if (state.configHotel.porcentaje_impuesto_principal > 0) {
         montoImpuestoCalculado = baseImponibleFinal * (state.configHotel.porcentaje_impuesto_principal / 100);
     }
@@ -547,7 +561,7 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
         baseSinImpuestos: Math.round(baseImponibleFinal),
         errorMonto: null
     };
-}// REEMPLAZA ESTA FUNCIÓN COMPLETA
+}
 
 
 async function validateAndCalculateBooking(formData) {

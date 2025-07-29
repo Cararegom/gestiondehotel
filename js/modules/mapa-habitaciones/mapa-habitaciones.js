@@ -2124,97 +2124,107 @@ function crearOpcionesHoras(tiempos) {
         });
 }
 
+// REEMPLAZA esta función completa en tu archivo mapa-habitaciones.js
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
+    let inicioAt = new Date();
     let finAt;
     let montoEstanciaBaseBruto = 0;
+    let montoDescuento = 0;
     let descripcionEstancia = "Seleccione duración";
     let tipoCalculo = null;
     let cantidadCalculo = 0;
+    let precioFinalAntesDeImpuestos;
 
-    const inicioAt = new Date();
     const nochesSeleccionadas = dataForm.noches ? parseInt(dataForm.noches) : 0;
     const minutosSeleccionados = dataForm.horas ? parseInt(dataForm.horas) : 0;
     
     const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
     const precioLibreValor = parseFloat(dataForm.precio_libre_valor);
 
-    if (nochesSeleccionadas > 0) {
-        tipoCalculo = 'noches';
-        cantidadCalculo = nochesSeleccionadas;
-        descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''}`;
-
-        let fechaSalida = new Date(inicioAt);
-        fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
-        const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
-        fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
-        finAt = fechaSalida;
+    // --- INICIO DE LA LÓGICA CORREGIDA ---
+    // Si el precio manual está activado, este anula todos los demás cálculos.
+    if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
         
-        if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
-            montoEstanciaBaseBruto = precioLibreValor;
+        montoEstanciaBaseBruto = precioLibreValor;
+        montoDescuento = 0; // Forzamos el descuento a cero.
+        precioFinalAntesDeImpuestos = precioLibreValor;
+        descripcionEstancia = "Estancia (Precio Manual)";
+        tipoCalculo = 'manual';
+        cantidadCalculo = precioLibreValor;
+
+        // Se sigue calculando la fecha de fin para el registro
+        if (nochesSeleccionadas > 0) {
+            let fechaSalida = new Date(inicioAt);
+            fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
+            const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
+            fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
+            finAt = fechaSalida;
+        } else if (minutosSeleccionados > 0) {
+            finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
         } else {
-            // --- INICIO DE LA LÓGICA DE PRECIOS CORREGIDA ---
+            finAt = new Date(inicioAt); // Si no hay duración, no se mueve.
+        }
+
+    } else {
+        // --- LÓGICA DE CÁLCULO NORMAL (SI EL PRECIO MANUAL NO ESTÁ ACTIVO) ---
+        if (nochesSeleccionadas > 0) {
+            tipoCalculo = 'noches';
+            cantidadCalculo = nochesSeleccionadas;
+            descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''}`;
+
+            let fechaSalida = new Date(inicioAt);
+            fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
+            const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
+            fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
+            finAt = fechaSalida;
+            
             let precioBasePorNoche = 0;
             const cantidadHuespedes = parseInt(dataForm.cantidad_huespedes) || 1;
+            if (cantidadHuespedes === 1) precioBasePorNoche = room.precio_1_persona || 0;
+            else precioBasePorNoche = room.precio_2_personas || 0;
 
-            if (cantidadHuespedes === 1) {
-                // Si es un solo huésped, usamos el precio para una persona.
-                precioBasePorNoche = room.precio_1_persona || 0;
-            } else {
-                // Si son 2 o más, la base es el precio para dos personas.
-                precioBasePorNoche = room.precio_2_personas || 0;
-            }
-
-            // Si hay más de 2 huéspedes, sumamos el costo adicional por cada persona extra.
             if (cantidadHuespedes > 2) {
                 const huespedesAdicionales = cantidadHuespedes - 2;
                 const costoAdicional = room.precio_huesped_adicional || 0;
                 precioBasePorNoche += huespedesAdicionales * costoAdicional;
             }
-
             montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
-            // --- FIN DE LA LÓGICA DE PRECIOS CORREGIDA ---
-        }
 
-    } else if (minutosSeleccionados > 0) {
-        tipoCalculo = 'horas';
-        cantidadCalculo = minutosSeleccionados;
-        finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
-        descripcionEstancia = formatHorasMin(minutosSeleccionados);
-        
-        if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
-            montoEstanciaBaseBruto = precioLibreValor;
-        } else {
+        } else if (minutosSeleccionados > 0) {
+            tipoCalculo = 'horas';
+            cantidadCalculo = minutosSeleccionados;
+            finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
+            descripcionEstancia = formatHorasMin(minutosSeleccionados);
             const tiempoSeleccionado = tiempos.find(t => t.minutos === minutosSeleccionados);
             montoEstanciaBaseBruto = tiempoSeleccionado?.precio || 0;
+        } else {
+            finAt = new Date(inicioAt);
         }
 
-    } else {
-        finAt = new Date(inicioAt);
-    }
-
-    const totalAntesDeDescuento = montoEstanciaBaseBruto;
-    
-    let montoDescuento = 0;
-
-    if (descuentoAplicado) {
-        if (descuentoAplicado.tipo === 'fijo') {
-            montoDescuento = parseFloat(descuentoAplicado.valor);
-        } else if (descuentoAplicado.tipo === 'porcentaje') {
-            montoDescuento = totalAntesDeDescuento * (parseFloat(descuentoAplicado.valor) / 100);
+        const totalAntesDeDescuento = montoEstanciaBaseBruto;
+        if (descuentoAplicado) {
+            if (descuentoAplicado.tipo === 'fijo') {
+                montoDescuento = parseFloat(descuentoAplicado.valor);
+            } else if (descuentoAplicado.tipo === 'porcentaje') {
+                montoDescuento = totalAntesDeDescuento * (parseFloat(descuentoAplicado.valor) / 100);
+            }
         }
+        montoDescuento = Math.min(totalAntesDeDescuento, montoDescuento);
+        precioFinalAntesDeImpuestos = totalAntesDeDescuento - montoDescuento;
     }
-    montoDescuento = Math.min(totalAntesDeDescuento, montoDescuento);
-    const subtotalConDescuento = totalAntesDeDescuento - montoDescuento;
+    // --- FIN DE LA LÓGICA CORREGIDA ---
 
+
+    // --- CÁLCULO DE IMPUESTOS (COMÚN PARA AMBOS CASOS) ---
     let montoImpuesto = 0;
-    let precioFinalConImpuestos = subtotalConDescuento;
+    let precioFinalConImpuestos = precioFinalAntesDeImpuestos;
     const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal || 0);
     if (porcentajeImpuesto > 0) {
         if (hotelConfigGlobal?.impuestos_incluidos_en_precios) {
-            const baseImponible = subtotalConDescuento / (1 + (porcentajeImpuesto / 100));
-            montoImpuesto = subtotalConDescuento - baseImponible;
+            const baseImponible = precioFinalAntesDeImpuestos / (1 + (porcentajeImpuesto / 100));
+            montoImpuesto = precioFinalAntesDeImpuestos - baseImponible;
         } else {
-            montoImpuesto = subtotalConDescuento * (porcentajeImpuesto / 100);
+            montoImpuesto = precioFinalAntesDeImpuestos * (porcentajeImpuesto / 100);
             precioFinalConImpuestos += montoImpuesto;
         }
     }
