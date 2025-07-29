@@ -212,6 +212,8 @@ export async function getClientes({ hotelId, search = '', dateRange = {} } = {})
             query = query.eq('hotel_id', hotelId || hotelIdActual);
         }
 
+        // NOTA: Ya no se filtra por `activo: true` para poder mostrar todos los clientes.
+
         if (search) {
             const searchLower = search.toLowerCase();
             query = query.or(`nombre.ilike.%${searchLower}%,email.ilike.%${searchLower}%,documento.ilike.%${searchLower}%,telefono.ilike.%${searchLower}%`);
@@ -343,10 +345,54 @@ async function cargarYRenderizarClientes() {
     }
 }
 
+async function toggleEstadoCliente(clienteId, clienteNombre, nuevoEstado) {
+    const accionTexto = nuevoEstado ? 'activar' : 'inactivar';
+    const titulo = nuevoEstado ? '¿Activar Cliente?' : '¿Inactivar Cliente?';
+    const html = `¿Estás seguro de que quieres <b>${accionTexto}</b> al cliente "<b>${clienteNombre}</b>"?`;
+
+    const result = await Swal.fire({
+        title: titulo,
+        html: html,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: nuevoEstado ? '#28a745' : '#d33',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: `Sí, ${accionTexto}`,
+        cancelButtonText: 'Cancelar'
+    });
+
+    if (result.isConfirmed) {
+        const feedbackEl = document.getElementById('clientes-feedback');
+        showLoading(feedbackEl, `${accionTexto.charAt(0).toUpperCase() + accionTexto.slice(1)}ndo a ${clienteNombre}...`);
+
+        try {
+            const { error } = await supabaseInstance
+                .from('clientes')
+                .update({ activo: nuevoEstado })
+                .eq('id', clienteId);
+
+            if (error) throw error;
+
+            await Swal.fire(
+                `¡${accionTexto.charAt(0).toUpperCase() + accionTexto.slice(1)}do!`,
+                `El cliente "${clienteNombre}" ha sido ${accionTexto}do correctamente.`,
+                'success'
+            );
+            
+            await cargarYRenderizarClientes();
+            clearFeedback(feedbackEl);
+
+        } catch (err) {
+            logError(`Error al ${accionTexto} cliente:`, err);
+            showError(feedbackEl, `Error: ${err.message}`);
+        }
+    }
+}
 /**
  * Renderiza la tabla HTML de clientes.
  * @param {Array} clientes Array de objetos de cliente a mostrar.
  */
+
 function renderTablaClientes(clientes) {
     logDebug('Renderizando tabla de clientes con', clientes.length, 'clientes.');
     const wrapper = document.getElementById('clientes-table-wrapper');
@@ -358,49 +404,66 @@ function renderTablaClientes(clientes) {
         wrapper.innerHTML = `<div class="text-center text-gray-500 p-6">No hay clientes registrados que coincidan con el filtro.</div>`;
         return;
     }
+
     wrapper.innerHTML = `
         <table class="table w-full text-left border-collapse">
             <thead>
                 <tr class="bg-gray-200">
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Nombre</th>
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Documento</th>
-                    <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Email</th>
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Teléfono</th>
-                    <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Registrado</th>
+                    <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold text-center">Estado</th>
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Acciones</th>
                 </tr>
             </thead>
             <tbody>
-                ${clientes.map(cli => `
-                    <tr class="hover:bg-gray-50 transition-colors duration-150 ease-in-out">
-                        <td class="py-2 px-4 border-b border-gray-200">${cli.nombre || ''}</td>
-                        <td class="py-2 px-4 border-b border-gray-200">${cli.documento || ''}</td>
-                        <td class="py-2 px-4 border-b border-gray-200">${cli.email || ''}</td>
-                        <td class="py-2 px-4 border-b border-gray-200">${cli.telefono || ''}</td>
-                        <td class="py-2 px-4 border-b border-gray-200">${formatDate(cli.fecha_creado)}</td>
-                        <td class="py-2 px-4 border-b border-gray-200 whitespace-nowrap">
-                            <button class="button button-accent button-sm bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-md mr-2" data-id="${cli.id}" data-action="ver">Ver</button>
-                            <button class="button button-primary button-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md" data-id="${cli.id}" data-action="editar">Editar</button>
-                        </td>
-                    </tr>
-                `).join('')}
+                ${clientes.map(cli => {
+                    // --- INICIO DE LA LÓGICA DINÁMICA ---
+                    const esActivo = cli.activo;
+                    const filaEstilo = esActivo ? '' : 'opacity-60 bg-gray-50';
+                    const estadoBadge = esActivo
+                        ? '<span class="px-2 py-1 text-xs font-semibold leading-5 text-green-800 bg-green-100 rounded-full">Activo</span>'
+                        : '<span class="px-2 py-1 text-xs font-semibold leading-5 text-red-800 bg-red-100 rounded-full">Inactivo</span>';
+
+                    const botonToggle = esActivo
+                        ? `<button class="button button-danger button-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md" data-id="${cli.id}" data-nombre="${cli.nombre}" data-action="toggle-estado" data-estado-actual="true">Inactivar</button>`
+                        : `<button class="button button-success button-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md" data-id="${cli.id}" data-nombre="${cli.nombre}" data-action="toggle-estado" data-estado-actual="false">Activar</button>`;
+                    // --- FIN DE LA LÓGICA DINÁMICA ---
+
+                    return `
+                        <tr class="hover:bg-blue-50 transition-colors duration-150 ease-in-out ${filaEstilo}">
+                            <td class="py-2 px-4 border-b border-gray-200">${cli.nombre || ''}</td>
+                            <td class="py-2 px-4 border-b border-gray-200">${cli.documento || ''}</td>
+                            <td class="py-2 px-4 border-b border-gray-200">${cli.telefono || ''}</td>
+                            <td class="py-2 px-4 border-b border-gray-200 text-center">${estadoBadge}</td>
+                            <td class="py-2 px-4 border-b border-gray-200 whitespace-nowrap">
+                                <button class="button button-accent button-sm bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-md mr-2" data-id="${cli.id}" data-action="ver">Ver</button>
+                                <button class="button button-primary button-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md mr-2" data-id="${cli.id}" data-action="editar">Editar</button>
+                                ${botonToggle}
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
             </tbody>
         </table>
     `;
     
-    // ASIGNACIÓN CORRECTA DE LISTENERS PARA "VER" Y "EDITAR"
+    // Listeners para "Ver" y "Editar" (sin cambios)
     wrapper.querySelectorAll('button[data-action="ver"]').forEach(btn => {
         btn.onclick = () => mostrarHistorialCliente(btn.dataset.id);
     });
-
-    // ▼▼▼ AQUÍ ESTÁ LA CORRECCIÓN CLAVE ▼▼▼
-    // Ahora pasamos 'supabaseInstance' y 'hotelIdActual' a la función del formulario
     wrapper.querySelectorAll('button[data-action="editar"]').forEach(btn => {
         btn.onclick = () => mostrarFormularioCliente(btn.dataset.id, supabaseInstance, hotelIdActual);
     });
-    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
+    
+    // Listener para el nuevo botón dinámico "toggle-estado"
+    wrapper.querySelectorAll('button[data-action="toggle-estado"]').forEach(btn => {
+        const estadoActual = btn.dataset.estadoActual === 'true';
+        // Llamamos a la nueva función 'toggleEstadoCliente'
+        btn.onclick = () => toggleEstadoCliente(btn.dataset.id, btn.dataset.nombre, !estadoActual);
+    });
 
-    logDebug('Tabla de clientes renderizada.');
+    logDebug('Tabla de clientes renderizada con estado dinámico.');
 }
 
 /**
@@ -432,9 +495,8 @@ async function filtrarTabla(texto, dateRange) {
  */
 
 
-// js/modules/clientes/clientes.js
-
 // REEMPLAZA ESTA FUNCIÓN COMPLETA EN clientes.js
+
 export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, opts = {}) {
     logDebug('Mostrando formulario de cliente para ID:', clienteId);
 
@@ -444,7 +506,6 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         return;
     }
 
-    // Usar siempre el contenedor de modal principal para consistencia
     const modal = document.getElementById('modal-container');
     if (!modal) {
         console.error("Error crítico: No se encontró el contenedor de modal #modal-container.");
@@ -452,7 +513,6 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         return;
     }
     
-    // Busca el cliente en los datos ya cargados si es una edición
     const cliente = clienteId ? clientesData.find(c => c.id === clienteId) : {};
     
     modal.innerHTML = `
@@ -521,10 +581,10 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         try {
             let resp;
             if (clienteId) {
-                // Lógica para ACTUALIZAR un cliente existente
+                // Lógica para ACTUALIZAR un cliente existente (sin cambios)
                 resp = await supabase.from('clientes').update(data).eq('id', clienteId).select().single();
             } else {
-                // Lógica para CREAR un nuevo cliente, con validación de duplicados
+                // --- INICIO DE LA LÓGICA DE VALIDACIÓN DE DUPLICADOS ---
                 if (data.documento && data.documento.trim() !== '') {
                     const { data: clienteExistente, error: checkError } = await supabase
                         .from('clientes')
@@ -539,6 +599,8 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
                         throw new Error(`Ya existe un cliente (${clienteExistente.nombre}) con ese número de documento.`);
                     }
                 }
+                // --- FIN DE LA LÓGICA DE VALIDACIÓN ---
+
                 // Si pasa la validación, inserta el nuevo cliente
                 resp = await supabase.from('clientes').insert([{ ...data, hotel_id: hotelId }]).select().single();
             }
@@ -547,12 +609,10 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
 
             showSuccess(feedback, "Cliente guardado exitosamente.");
             
-            // Si la tabla principal de clientes está visible, la recarga
             if (document.getElementById('clientes-table-wrapper')) {
                 await cargarYRenderizarClientes();
             }
             
-            // Cierra el modal y ejecuta el callback después de un breve momento
             setTimeout(() => {
                 closeModal();
                 afterSaveCallback(resp.data);
@@ -564,6 +624,8 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
         }
     };
 }
+
+
 // --- VISTA DETALLADA DEL CLIENTE (PESTAÑAS, HISTORIAL, CRM, GRÁFICOS) ---
 
 /**
@@ -1037,8 +1099,9 @@ function renderGastosChart({ reservas, ventas, ventasTienda, ventasRestaurante }
  * Esta función puede ser llamada desde otros módulos (como reservas.js).
  * Acepta supabase y hotelId opcionales, para garantizar independencia del mount().
  */
+// REEMPLAZA ESTA FUNCIÓN COMPLETA EN clientes.js
+
 export async function showClienteSelectorModal(supabaseManual, hotelIdManual, opts = {}) {
-  // ----- ¡CAMBIO CLAVE AQUÍ! Usamos el contenedor secundario -----
   const modal = document.getElementById('modal-container-secondary');
   
   if (!modal) {
@@ -1047,7 +1110,6 @@ export async function showClienteSelectorModal(supabaseManual, hotelIdManual, op
     return;
   }
 
-  // Asignar instancias si se pasan manualmente
   if (supabaseManual) supabaseInstance = supabaseManual;
   if (hotelIdManual) hotelIdActual = hotelIdManual;
 
@@ -1058,7 +1120,6 @@ export async function showClienteSelectorModal(supabaseManual, hotelIdManual, op
     return;
   }
 
-  // Mostrar modal centrado y elegante
   modal.style.display = 'flex';
   modal.innerHTML = `
     <div class="modal-content bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 sm:p-8 relative animate-fade-in-up">
@@ -1085,30 +1146,23 @@ export async function showClienteSelectorModal(supabaseManual, hotelIdManual, op
 
   const listaDiv = modal.querySelector('#lista-clientes');
   const inputFiltro = modal.querySelector('#filtro-cliente');
-  const btnCerrar = modal.querySelector('#cerrar-modal-clientes');
-  const btnCerrar2 = modal.querySelector('#cerrar-modal-clientes2');
-
+  
   const cerrar = () => {
     modal.style.display = 'none';
     modal.innerHTML = '';
   };
-  btnCerrar.onclick = cerrar;
-  btnCerrar2.onclick = cerrar;
-  
-  // Cerrar si se hace clic en el fondo oscuro
-  modal.onclick = (e) => {
-    if (e.target === modal) {
-        cerrar();
-    }
-  };
-  // Prevenir que el clic en el contenido del modal lo cierre
+  modal.querySelector('#cerrar-modal-clientes').onclick = cerrar;
+  modal.querySelector('#cerrar-modal-clientes2').onclick = cerrar;
+  modal.onclick = (e) => { if (e.target === modal) cerrar(); };
   modal.querySelector('.modal-content').onclick = (e) => e.stopPropagation();
 
-  // Obtener todos los clientes del hotel
+  // ▼▼▼ CAMBIO CLAVE AQUÍ ▼▼▼
+  // Obtenemos solo los clientes ACTIVOS del hotel
   const { data: clientes, error } = await supabaseInstance
     .from('clientes')
     .select('*')
     .eq('hotel_id', hotelIdActual)
+    .eq('activo', true) // <-- SE AÑADIÓ ESTE FILTRO
     .order('nombre', { ascending: true });
 
   if (error) {
@@ -1126,7 +1180,7 @@ export async function showClienteSelectorModal(supabaseManual, hotelIdManual, op
     );
 
     if (filtrados.length === 0) {
-      listaDiv.innerHTML = '<div class="p-4 text-gray-500 text-center">No se encontraron clientes.</div>';
+      listaDiv.innerHTML = '<div class="p-4 text-gray-500 text-center">No se encontraron clientes activos.</div>';
       return;
     }
 
@@ -1147,21 +1201,16 @@ export async function showClienteSelectorModal(supabaseManual, hotelIdManual, op
         const nombre = item.getAttribute('data-nombre');
         const documento = item.getAttribute('data-documento');
         const telefono = item.getAttribute('data-telefono');
-
         onSelect({ id: clienteId, nombre, documento, telefono });
-
         cerrar();
       };
     });
   };
 
-  inputFiltro.oninput = () => {
-    renderClientes(inputFiltro.value);
-  };
+  inputFiltro.oninput = () => renderClientes(inputFiltro.value);
   inputFiltro.focus();
   renderClientes();
 }
-// --- FUNCIONALIDAD DE EXPORTACIÓN A EXCEL ---
 
 /**
  * Exporta todos los datos de los clientes a un archivo Excel (.xlsx).
