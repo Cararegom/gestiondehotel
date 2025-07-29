@@ -324,6 +324,7 @@ document.querySelectorAll('.delete-detail-btn').forEach(btn => {
 
 
 
+
 window.guardarCambiosCompra = async function(compraId) {
     const modal = document.getElementById('modal-editar-compra');
     if (!modal) return;
@@ -335,12 +336,11 @@ window.guardarCambiosCompra = async function(compraId) {
         const detalles_a_actualizar = [];
         const ids_a_eliminar = [];
 
+        // 1. Recolecta los datos del formulario (esto no cambia)
         for (const row of rows) {
             const detailId = row.getAttribute('data-detail-id');
-            // Detecta si está marcada para eliminar o está oculta visualmente
             if (row.dataset.deleted === '1' || row.style.display === 'none') {
                 ids_a_eliminar.push(detailId);
-                continue;
             } else {
                 const cantidad = parseInt(row.querySelector('.edit-cantidad').value, 10);
                 const precio_unitario = parseFloat(row.querySelector('.edit-precio').value);
@@ -352,68 +352,27 @@ window.guardarCambiosCompra = async function(compraId) {
             }
         }
 
-        // 🔎 LOGS DE DEPURACIÓN:
-        console.log('IDs a eliminar:', ids_a_eliminar);
-        console.log('Detalles a actualizar:', detalles_a_actualizar);
+        // 2. Llama a la nueva y mejorada función de la base de datos UNA SOLA VEZ
+        console.log("Enviando al backend:", { p_compra_id: compraId, detalles_a_actualizar, ids_a_eliminar });
 
-        // 1. Actualiza los detalles de los productos
         const { error: rpcError } = await currentSupabase.rpc('actualizar_compra_y_detalles', {
             p_compra_id: compraId,
             detalles_a_actualizar,
             ids_a_eliminar
         });
 
-        // 🔎 LOG DEL ERROR SI OCURRE
         if (rpcError) {
             console.error('Error del RPC:', rpcError);
             throw rpcError;
         }
         
-        // 2. Recalcula el nuevo total y aplícale el redondeo
-        const compraIndex = comprasPendientesCache.findIndex(c => c.id === compraId);
-        let nuevoTotalCalculado = 0;
-        if (compraIndex !== -1) {
-            const idsAEliminarSet = new Set(ids_a_eliminar);
-            const nuevosDetalles = comprasPendientesCache[compraIndex].detalles
-                .filter(det => !idsAEliminarSet.has(det.id))
-                .map(det => {
-                    const detalleActualizado = detalles_a_actualizar.find(act => act.id === det.id);
-                    if (detalleActualizado) {
-                        const subtotal = detalleActualizado.cantidad * detalleActualizado.precio_unitario;
-                        nuevoTotalCalculado += subtotal;
-                        return { ...det, cantidad: detalleActualizado.cantidad, precio_unitario: detalleActualizado.precio_unitario, subtotal: subtotal };
-                    }
-                    nuevoTotalCalculado += det.subtotal;
-                    return det;
-                });
-            comprasPendientesCache[compraIndex].detalles = nuevosDetalles;
-        }
-        const totalFinalRedondeado = Math.round(nuevoTotalCalculado / 50) * 50;
-
-        // 3. Guarda el nuevo total redondeado en la tabla principal de compras_tienda
-        const { error: updateTotalError } = await currentSupabase
-            .from('compras_tienda')
-            .update({ total_compra: totalFinalRedondeado })
-            .eq('id', compraId);
-
-        if (updateTotalError) {
-            console.error('Error al actualizar el total:', updateTotalError);
-            throw new Error(`Error al actualizar el total de la compra: ${updateTotalError.message}`);
-        }
-
-        // 4. Actualiza el caché local para reflejar el cambio inmediatamente
-        if (compraIndex !== -1) {
-            comprasPendientesCache[compraIndex].total_compra = totalFinalRedondeado;
-            if (comprasPendientesCache[compraIndex].detalles.length === 0) {
-                comprasPendientesCache.splice(compraIndex, 1);
-            }
-        }
-
-        // 5. Finaliza y actualiza la interfaz
+        // 3. Finaliza y refresca la vista desde la base de datos (la fuente de verdad)
         hideGlobalLoading();
         modal.remove();
-        await Swal.fire('¡Éxito!', 'La orden de compra ha sido actualizada.', 'success');
-        redibujarListaPendientes(); // Redibuja la lista desde el caché ya actualizado
+        await Swal.fire('¡Éxito!', 'La orden de compra ha sido actualizada correctamente en la base de datos.', 'success');
+        
+        // Vuelve a cargar y dibujar la lista desde cero para asegurar que los datos son correctos.
+        await renderComprasPendientes(); 
 
     } catch (err) {
         hideGlobalLoading();
