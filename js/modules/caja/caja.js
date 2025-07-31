@@ -344,7 +344,6 @@ async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId) {
 
 
 
-
 async function renderizarUIAbierta() {
     console.log("renderizarUIAbierta llamado");
 
@@ -409,7 +408,21 @@ async function renderizarUIAbierta() {
             <div><label>Método de Pago *</label><select name="metodoPagoId" class="form-control" required><option value="">Cargando...</option></select></div>
           </div>
           <div class="mb-4"><label>Concepto/Descripción *</label><input type="text" name="concepto" class="form-control" required minlength="3" /></div>
-          <div class="mb-4" style="display:flex;align-items:center;gap:7px;"><input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" style="transform:scale(1.3);"><label for="egreso-fuera-turno" style="margin:0;">Registrar egreso fuera del turno/caja</label></div>
+          
+          <div class="flex items-center gap-6 mb-4">
+            <div style="display:flex;align-items:center;gap:7px;">
+              <input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" style="transform:scale(1.3);">
+              <label for="egreso-fuera-turno" style="margin:0;">Registrar fuera del turno/caja</label>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;">
+              <input type="checkbox" id="fecha-anterior-check" name="fecha_anterior_check" style="transform:scale(1.3);">
+              <label for="fecha-anterior-check" style="margin:0;">Registrar con fecha anterior</label>
+            </div>
+          </div>
+          <div id="fecha-anterior-container" class="mb-4" style="display:none;">
+            <label>Fecha y Hora del Movimiento *</label>
+            <input type="datetime-local" id="fecha-movimiento-custom" name="fecha_movimiento_custom" class="form-control">
+          </div>
           <button type="submit" class="button button-accent">＋ Agregar Movimiento</button>
           <div id="turno-add-feedback" class="feedback-message mt-3"></div>
         </form>
@@ -427,10 +440,8 @@ async function renderizarUIAbierta() {
         balance: currentContainerEl.querySelector('#turno-balance')
     };
     
-    // Llamada a la función para cargar los movimientos del turno correcto
     await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
 
-    // Listener para salir de supervisión
     if (esModoSupervision) {
         const salirBtn = currentContainerEl.querySelector('#btn-salir-supervision');
         if(salirBtn) {
@@ -440,7 +451,6 @@ async function renderizarUIAbierta() {
         }
     }
 
-    // Listeners de admin
     if (isAdmin) {
         const verTurnosBtn = currentContainerEl.querySelector('#btn-ver-turnos-abiertos');
         if(verTurnosBtn) {
@@ -456,26 +466,36 @@ async function renderizarUIAbierta() {
         }
     }
     
-    // Listener para el botón principal de cierre, que AHORA llama al resumen
     const cerrarTurnoBtn = currentContainerEl.querySelector('#btn-cerrar-turno');
     const resumenHandler = () => mostrarResumenCorteDeCaja();
     cerrarTurnoBtn.addEventListener('click', resumenHandler);
     moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: resumenHandler });
     
-    // Listener para el formulario de agregar movimiento
     const addFormEl = currentContainerEl.querySelector('#turno-add-form');
     const metodoPagoSelect = addFormEl.elements.metodoPagoId;
     await popularMetodosPagoSelect(metodoPagoSelect);
+
+    // ▼▼▼ LISTENER PARA EL NUEVO CHECKBOX ▼▼▼
+    const fechaAnteriorCheck = addFormEl.querySelector('#fecha-anterior-check');
+    const fechaAnteriorContainer = addFormEl.querySelector('#fecha-anterior-container');
+    fechaAnteriorCheck.addEventListener('change', () => {
+        fechaAnteriorContainer.style.display = fechaAnteriorCheck.checked ? 'block' : 'none';
+    });
+    // ▲▲▲ FIN DEL LISTENER ▲▲▲
 
     const submitHandler = async (e) => {
         e.preventDefault();
         const formData = new FormData(addFormEl);
         const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
-        let turnoIdToSave = turnoParaMostrar.id; // Asigna al turno que se está mostrando
+        let turnoIdToSave = turnoParaMostrar.id;
 
         if (formData.get('tipo') === "egreso" && esEgresoFueraTurno) {
             turnoIdToSave = null;
         }
+        
+        // ▼▼▼ LÓGICA MODIFICADA PARA CAPTURAR LA FECHA ▼▼▼
+        const esFechaAnterior = !!formData.get('fecha_anterior_check');
+        const fechaCustom = formData.get('fecha_movimiento_custom');
 
         const newMovement = {
             tipo: formData.get('tipo'),
@@ -484,14 +504,22 @@ async function renderizarUIAbierta() {
             metodo_pago_id: formData.get('metodoPagoId'),
             usuario_id: currentModuleUser.id,
             hotel_id: currentHotelId,
-            turno_id: turnoIdToSave
+            turno_id: turnoIdToSave,
+            fecha_movimiento: (esFechaAnterior && fechaCustom) ? new Date(fechaCustom).toISOString() : new Date().toISOString()
         };
+        // ▲▲▲ FIN DE LA LÓGICA DE FECHA ▲▲▲
 
         const feedbackEl = addFormEl.querySelector('#turno-add-feedback');
         setFormLoadingState(addFormEl, true);
 
         if (!(newMovement.monto > 0) || !newMovement.concepto || !newMovement.metodo_pago_id || !newMovement.tipo) {
             showError(feedbackEl, 'Todos los campos son obligatorios.');
+            setFormLoadingState(addFormEl, false);
+            return;
+        }
+        
+        if (esFechaAnterior && !fechaCustom) {
+            showError(feedbackEl, 'Debes seleccionar una fecha y hora si marcas la opción de fecha anterior.');
             setFormLoadingState(addFormEl, false);
             return;
         }
@@ -502,6 +530,7 @@ async function renderizarUIAbierta() {
         } else {
             showSuccess(feedbackEl, 'Movimiento agregado.');
             addFormEl.reset();
+            fechaAnteriorContainer.style.display = 'none'; // Ocultar el campo de fecha después de agregar
             await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
         }
         setFormLoadingState(addFormEl, false);
