@@ -60,8 +60,20 @@ const formatCurrencyLocal = (value, currency = 'COP') => {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency: currency }).format(value);
 };
 
+
+
 const formatDateLocal = (dateStr, options = { dateStyle: 'short', timeStyle: 'short' }) => {
   if (!dateStr) return 'N/A';
+  
+  // Divide la cadena de fecha para construirla manualmente y evitar problemas de zona horaria
+  const parts = dateStr.slice(0, 10).split('-');
+  if (parts.length === 3) {
+    // Crea la fecha como local usando los componentes año, mes (0-indexado), día
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    return isNaN(date.getTime()) ? 'Fecha Inválida' : date.toLocaleString('es-CO', options);
+  }
+  
+  // Para fechas que ya incluyen hora, el método original funciona bien
   const date = new Date(dateStr);
   return isNaN(date.getTime()) ? 'Fecha Inválida' : date.toLocaleString('es-CO', options);
 };
@@ -101,6 +113,45 @@ function showReportesLoading(loadingEl, generateButtonEl, show, message = 'Gener
   }
  
 }
+
+
+/**
+ * Obtiene todos los registros de una consulta de Supabase utilizando paginación.
+ * Maneja automáticamente el límite de 1,000 filas por consulta.
+ * @param {object} queryBuilder - La consulta de Supabase ya construida (sin .range() o .limit()).
+ * @returns {Promise<{data: Array, error: object}>} Un objeto con todos los datos o un error.
+ */
+async function fetchAllWithPagination(queryBuilder) {
+    let allData = [];
+    let from = 0;
+    const pageSize = 1000; // El tamaño de página que usa Supabase por defecto
+
+    while (true) {
+        const { data, error } = await queryBuilder.range(from, from + pageSize - 1);
+
+        if (error) {
+            console.error("Error durante la obtención de datos paginados:", error);
+            return { data: null, error }; // Devuelve el error para detener la ejecución
+        }
+
+        if (data && data.length > 0) {
+            allData.push(...data); // Usa push con spread operator para eficiencia
+            from += pageSize;
+        } else {
+            // Si no vienen más datos, hemos terminado.
+            break;
+        }
+
+        // Una medida de seguridad para evitar bucles infinitos en casos extraños.
+        // 50,000 registros deberían ser más que suficientes para cualquier reporte.
+        if (from > 50000) { 
+             console.warn("La paginación se detuvo en 50,000 registros para prevenir un posible bucle infinito.");
+             break;
+        }
+    }
+    return { data: allData, error: null };
+}
+
 function renderSelectorReportes(planActivo) {
   // Lista de todos los reportes (puedes agregar/quitar)
   const TODOS_LOS_REPORTES = [
@@ -163,8 +214,10 @@ async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInpu
 
         if (fechaInicioInput) query = query.gte('fecha_inicio', fechaInicioQuery);
         if (fechaFinInput) query = query.lte('fecha_inicio', fechaFinQuery);
+        
+        // USAR LA FUNCIÓN DE PAGINACIÓN
+        const { data: reservas, error } = await fetchAllWithPagination(query);
 
-        const { data: reservas, error } = await query;
         if (error) throw error;
 
         if (!reservas || reservas.length === 0) {
@@ -232,67 +285,102 @@ async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInpu
 }
 
 
+// EN TU ARCHIVO: reportes.js
+
 async function generarReporteIngresosPorPeriodo(resultsContainerEl, fechaInicioInput, fechaFinInput) {
-  // ... (Código sin cambios significativos, igual al proporcionado anteriormente)
-  if (!resultsContainerEl) return;
-  resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando reporte de ingresos por habitaciones (Caja)...</p>';
+    if (!resultsContainerEl) return;
+    resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando reporte de ingresos por habitaciones (Caja)...</p>';
 
-  if (!window.Chart) {
-    resultsContainerEl.innerHTML = '<p class="error-indicator text-center p-4 text-red-600">Librería de gráficos (Chart.js) no está cargada.</p>';
-    return;
-  }
-  destroyChartInstance('reporte-ingresos-habitaciones-chart');
-  try {
-    const start = new Date(`${fechaInicioInput}T00:00:00.000Z`);
-    const end = new Date(`${fechaFinInput}T23:59:59.999Z`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-      throw new Error('Rango de fechas inválido.');
+    if (!window.Chart) {
+        resultsContainerEl.innerHTML = '<p class="error-indicator text-center p-4 text-red-600">Librería de gráficos (Chart.js) no está cargada.</p>';
+        return;
     }
+    destroyChartInstance('reporte-ingresos-habitaciones-chart');
+    try {
+        const start = new Date(`${fechaInicioInput}T00:00:00.000Z`);
+        const end = new Date(`${fechaFinInput}T23:59:59.999Z`);
+        if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
+            throw new Error('Rango de fechas inválido.');
+        }
 
-    const labels = [];
-    const dailyIncomeValues = [];
-    
-    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-      const currentDateISO = d.toISOString().slice(0, 10);
-      labels.push(currentDateISO);
-      
-      const dayStartUTC = `${currentDateISO}T00:00:00.000Z`;
-      const dayEndUTC = `${currentDateISO}T23:59:59.999Z`;
-      
-      const { data: ingresosDelDia, error: fetchError } = await supabaseClient
-        .from('caja')
-        .select('monto')
-        .eq('hotel_id', currentHotelId)
-        .eq('tipo', 'ingreso')
-        .gte('fecha_movimiento', dayStartUTC)
-        .lte('fecha_movimiento', dayEndUTC)
-        .or('concepto.ilike.Alquiler de%,concepto.ilike.Extensión de%,concepto.ilike.Estadia en%,concepto.ilike.Noche adicional%,reserva_id.not.is.null');
+        const fechaInicioQuery = start.toISOString();
+        const fechaFinQuery = end.toISOString();
 
-      if (fetchError) {
-        console.warn(`Error fetching income for ${currentDateISO} from 'caja':`, fetchError.message);
-        dailyIncomeValues.push(0); 
-      } else {
-        const totalDelDia = ingresosDelDia.reduce((sum, p) => sum + (p.monto || 0), 0);
-        dailyIncomeValues.push(totalDelDia);
-      }
+        // 1. Obtener todos los movimientos relevantes en una sola consulta
+        const { data: movimientos, error: fetchError } = await supabaseClient
+            .from('caja')
+            .select('fecha_movimiento, monto')
+            .eq('hotel_id', currentHotelId)
+            .eq('tipo', 'ingreso')
+            .gte('fecha_movimiento', fechaInicioQuery)
+            .lte('fecha_movimiento', fechaFinQuery)
+            .or('concepto.ilike.Alquiler de%,concepto.ilike.Extensión de%,concepto.ilike.Estadia en%,concepto.ilike.Noche adicional%,reserva_id.not.is.null');
+
+        if (fetchError) {
+            throw new Error(`Error al consultar la caja: ${fetchError.message}`);
+        }
+
+        // 2. Procesar los resultados en JavaScript para agrupar por día
+        const ingresosDiarios = {};
+        (movimientos || []).forEach(mov => {
+            const fecha = mov.fecha_movimiento.slice(0, 10); // Extraer YYYY-MM-DD
+            ingresosDiarios[fecha] = (ingresosDiarios[fecha] || 0) + mov.monto;
+        });
+
+        // 3. Generar etiquetas y datos para el rango de fechas completo, rellenando los días con cero ingresos
+        const labels = [];
+        const dailyIncomeValues = [];
+        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+            const currentDateISO = d.toISOString().slice(0, 10);
+            labels.push(currentDateISO);
+            dailyIncomeValues.push(ingresosDiarios[currentDateISO] || 0);
+        }
+
+        // 4. Renderizar el gráfico (código de renderizado sin cambios)
+        resultsContainerEl.innerHTML = `
+          <h4 class="text-lg font-semibold mb-3">Ingresos por Habitaciones (Caja) (${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})})</h4>
+          <div class="chart-container bg-white p-4 rounded-lg shadow-xl border" style="height:350px; position: relative;">
+            <canvas id="reporte-ingresos-habitaciones-chart"></canvas>
+          </div>`;
+
+        const ctx = resultsContainerEl.querySelector('#reporte-ingresos-habitaciones-chart').getContext('2d');
+        currentChartInstances['reporte-ingresos-habitaciones-chart'] = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Ingresos Diarios por Habitaciones (Caja)',
+                    data: dailyIncomeValues,
+                    backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { callback: value => formatCurrencyLocal(value) }
+                    },
+                    x: {
+                        title: { display: true, text: 'Fecha' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: context => `${context.dataset.label || ''}: ${formatCurrencyLocal(context.parsed.y)}`
+                        }
+                    }
+                }
+            }
+        });
+    } catch (err) {
+        console.error('Error generating income report (caja):', err);
+        resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar reporte de ingresos (caja): ${err.message}</p>`;
     }
-
-    resultsContainerEl.innerHTML = `
-      <h4 class="text-lg font-semibold mb-3">Ingresos por Habitaciones (Caja) (${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})})</h4>
-      <div class="chart-container bg-white p-4 rounded-lg shadow-xl border" style="height:350px; position: relative;">
-        <canvas id="reporte-ingresos-habitaciones-chart"></canvas>
-      </div>`;
-
-    const ctx = resultsContainerEl.querySelector('#reporte-ingresos-habitaciones-chart').getContext('2d');
-    currentChartInstances['reporte-ingresos-habitaciones-chart'] = new Chart(ctx, {
-      type: 'bar', 
-      data: { labels: labels, datasets: [{ label: 'Ingresos Diarios por Habitaciones (Caja)', data: dailyIncomeValues, backgroundColor: 'rgba(75, 192, 192, 0.7)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1 }] },
-      options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: value => formatCurrencyLocal(value) }}, x: { title: { display: true, text: 'Fecha' } } }, plugins: { tooltip: { callbacks: { label: context => `${context.dataset.label || ''}: ${formatCurrencyLocal(context.parsed.y)}`}}} }
-    });
-  } catch (err) {
-    console.error('Error generating income report (caja):', err);
-    resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar reporte de ingresos (caja): ${err.message}</p>`;
-  }
 }
 
 // --- Helper for robust period key sorting ---
@@ -411,7 +499,9 @@ function renderTablaMovimientos(movimientos, tituloTabla) {
     return tablaHtml;
 }
 
-async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInput, fechaFinInput, agrupacion, tipoReporteEspecifico) {
+
+
+async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInput, fechaFinInput, tipoReporteEspecifico) {
     if (!resultsContainerEl) return;
     resultsContainerEl.innerHTML = `<p class="loading-indicator text-center p-4 text-gray-500">Generando reporte financiero detallado...</p>`;
     
@@ -428,8 +518,7 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
         const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
         const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
 
-        // --- Adjusted to fetch metodos_pago needed for renderTablaMovimientos ---
-        const { data: movimientos, error: errorMovimientos } = await supabaseClient
+        const query = supabaseClient
             .from('caja')
             .select(`
                 id, fecha_movimiento, tipo, monto, concepto, reserva_id, 
@@ -440,6 +529,8 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
             .gte('fecha_movimiento', fechaInicioQuery)
             .lte('fecha_movimiento', fechaFinQuery)
             .order('fecha_movimiento', { ascending: true });
+
+        const { data: movimientos, error: errorMovimientos } = await fetchAllWithPagination(query);
 
         if (errorMovimientos) throw errorMovimientos;
 
@@ -453,9 +544,10 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
 
         const movimientosCategorizados = movimientos.map(mov => ({...mov, categoria: categorizarMovimiento(mov, serviciosAdicionales)}));
         let html = '';
-        const tituloBase = `(${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})}) - Agrupado: ${agrupacion.charAt(0).toUpperCase() + agrupacion.slice(1)}`;
+        const tituloBase = `(${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})})`;
 
         if (tipoReporteEspecifico === 'movimientos_financieros_global') {
+            const agrupacion = 'diario'; // Agrupación diaria por defecto para el gráfico
             html += `<h4 class="text-xl font-semibold mb-4 text-gray-800">Resumen Financiero Global ${tituloBase}</h4>`;
             const ingresos = movimientosCategorizados.filter(m => m.tipo === 'ingreso');
             const egresos = movimientosCategorizados.filter(m => m.tipo === 'egreso');
@@ -484,7 +576,7 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
             const dataEgresosFinal = todasLasEtiquetas.map(label => egresosAgrupados.labels.includes(label) ? egresosAgrupados.data[egresosAgrupados.labels.indexOf(label)] : 0);
             
             const ctxBar = resultsContainerEl.querySelector('#reporte-ingresos-egresos-chart')?.getContext('2d');
-            if (ctxBar) currentChartInstances['reporte-ingresos-egresos-chart'] = new Chart(ctxBar, { type: 'bar', data: { labels: todasLasEtiquetas, datasets: [ { label: 'Ingresos', data: dataIngresosFinal, backgroundColor: 'rgba(75, 192, 192, 0.7)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1}, { label: 'Egresos', data: dataEgresosFinal, backgroundColor: 'rgba(255, 99, 132, 0.7)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1} ] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: value => formatCurrencyLocal(value) } }, x: { title: { display: true, text: `Período (${agrupacion})` } } }, plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatCurrencyLocal(ctx.parsed.y)}` } } } } });
+            if (ctxBar) currentChartInstances['reporte-ingresos-egresos-chart'] = new Chart(ctxBar, { type: 'bar', data: { labels: todasLasEtiquetas, datasets: [ { label: 'Ingresos', data: dataIngresosFinal, backgroundColor: 'rgba(75, 192, 192, 0.7)', borderColor: 'rgba(75, 192, 192, 1)', borderWidth: 1}, { label: 'Egresos', data: dataEgresosFinal, backgroundColor: 'rgba(255, 99, 132, 0.7)', borderColor: 'rgba(255, 99, 132, 1)', borderWidth: 1} ] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { callback: value => formatCurrencyLocal(value) } }, x: { title: { display: true, text: `Evolución Diaria` } } }, plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatCurrencyLocal(ctx.parsed.y)}` } } } } });
             
             const ingresosPorCat = ingresos.reduce((acc, mov) => { acc[mov.categoria] = (acc[mov.categoria] || 0) + mov.monto; return acc; }, {});
             const catIngLabels = Object.keys(ingresosPorCat); const catIngData = Object.values(ingresosPorCat);
@@ -1470,8 +1562,6 @@ function mostrarModalUpgrade(tipoReporte) {
 }
 
 
-// --- Mount / Unmount ---
-// --- COPIA Y PEGA ESTA FUNCIÓN "mount" COMPLETA REEMPLAZANDO LA ANTERIOR ---
 
 export async function mount(container, sbInstance, user) {
   unmount(container); 
@@ -1486,7 +1576,7 @@ export async function mount(container, sbInstance, user) {
       <div class="card-body p-4 md:p-6">
         <div id="reportes-feedback" role="status" aria-live="polite" class="feedback-message mb-4" style="min-height:24px;display:none;"></div>
         <div class="reportes-controles mb-6 p-4 border border-gray-200 rounded-lg bg-white shadow-md">
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
             <div class="form-group md:col-span-2 lg:col-span-1">
               <label for="reporte-tipo-select" class="block text-sm font-medium text-gray-700 mb-1">Tipo de Reporte:</label>
               <select id="reporte-tipo-select" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3">
@@ -1497,16 +1587,11 @@ export async function mount(container, sbInstance, user) {
                 <option value="movimientos_financieros_global">Resumen Financiero Global</option>
                 <option value="detalle_ingresos_categoria">Detalle de Ingresos por Categoría</option>
                 <option value="detalle_egresos_categoria">Detalle de Egresos por Categoría</option>
-                <option value="cierres_de_caja">Historial de Cierres de Caja</option> </select>
+                <option value="cierres_de_caja">Historial de Cierres de Caja</option>
+              </select>
             </div>
             <div class="form-group lg:col-span-1"><label for="reporte-fecha-inicio" class="block text-sm font-medium text-gray-700 mb-1">Desde:</label><input type="date" id="reporte-fecha-inicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
             <div class="form-group lg:col-span-1"><label for="reporte-fecha-fin" class="block text-sm font-medium text-gray-700 mb-1">Hasta:</label><input type="date" id="reporte-fecha-fin" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
-            <div class="form-group lg:col-span-1">
-              <label for="reporte-agrupacion-periodo" class="block text-sm font-medium text-gray-700 mb-1">Agrupar por:</label>
-              <select id="reporte-agrupacion-periodo" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3">
-                <option value="diario">Diario</option><option value="mensual" selected>Mensual</option><option value="bimestral">Bimestral</option><option value="trimestral">Trimestral</option><option value="semestral">Semestral</option><option value="anual">Anual</option>
-              </select>
-            </div>
             <div class="form-group lg:col-span-1 self-end"><button id="btn-generar-reporte" class="button button-primary w-full py-2.5 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition ease-in-out duration-150">Generar Reporte</button></div>
           </div>
         </div>
@@ -1520,22 +1605,20 @@ export async function mount(container, sbInstance, user) {
   const tipoSelectEl = container.querySelector('#reporte-tipo-select');
   const fechaInicioEl = container.querySelector('#reporte-fecha-inicio');
   const fechaFinEl = container.querySelector('#reporte-fecha-fin');
-  const agrupacionPeriodoEl = container.querySelector('#reporte-agrupacion-periodo');
   const btnGenerarEl = container.querySelector('#btn-generar-reporte');
   const feedbackEl = container.querySelector('#reportes-feedback');
   const loadingEl = container.querySelector('#reportes-loading');
   const resultadoContainerEl = container.querySelector('#reporte-resultado-container');
 
-  const today = new Date(); 
-  const thirtyDaysAgo = new Date(); 
+  const today = new Date();
+  const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(today.getDate() - 30);
   fechaInicioEl.value = thirtyDaysAgo.toISOString().split('T')[0];
   fechaFinEl.value = today.toISOString().split('T')[0];
 
-  let planActivo = 'lite'; // Valor por defecto
+  let planActivo = 'lite';
 
   try {
-    // 1. OBTENER EL HOTEL ID DEL USUARIO
     let hotelIdTemporal = user?.user_metadata?.hotel_id;
     if (!hotelIdTemporal && user?.id) {
         const { data: perfil, error: perfilError } = await supabaseClient
@@ -1552,7 +1635,6 @@ export async function mount(container, sbInstance, user) {
     }
     currentHotelId = hotelIdTemporal;
 
-    // 2. OBTENER EL PLAN DESDE LA TABLA 'hoteles' USANDO EL HOTEL ID
     const { data: hotelData, error: hotelError } = await supabaseClient
         .from('hoteles')
         .select('plan')
@@ -1561,7 +1643,6 @@ export async function mount(container, sbInstance, user) {
     
     if (hotelError) throw new Error(`No se pudo obtener la información del plan del hotel: ${hotelError.message}`);
     
-    // 3. ESTABLECER EL PLAN ACTIVO
     planActivo = (hotelData?.plan || 'lite').toLowerCase();
     console.log(`Plan del hotel ${currentHotelId} es: ${planActivo}`);
 
@@ -1569,12 +1650,10 @@ export async function mount(container, sbInstance, user) {
       console.error("Error al inicializar el módulo de reportes:", err);
       showReportesFeedback(feedbackEl, err.message, 'error-indicator', 0);
       if (btnGenerarEl) btnGenerarEl.disabled = true;
-      [tipoSelectEl, fechaInicioEl, fechaFinEl, agrupacionPeriodoEl].forEach(el => { if(el) el.disabled = true; });
+      [tipoSelectEl, fechaInicioEl, fechaFinEl].forEach(el => { if(el) el.disabled = true; });
       return;
   }
 
-  // --- El resto del código continúa usando el 'planActivo' correcto ---
-  
   renderSelectorReportes(planActivo);
   
   tipoSelectEl.addEventListener('change', function() {
@@ -1597,31 +1676,14 @@ export async function mount(container, sbInstance, user) {
     moduleListeners.push({ element: script, type: 'remove-on-unmount' });
   }
 
-  const handleTipoReporteChange = () => {
-      const tipoReporte = tipoSelectEl.value;
-      const reportsRequiringAgrupacion = ['movimientos_financieros_global', 'detalle_ingresos_categoria', 'detalle_egresos_categoria'];
-      const isAgrupacionRelevant = reportsRequiringAgrupacion.includes(tipoReporte);
-      agrupacionPeriodoEl.disabled = !isAgrupacionRelevant;
-      agrupacionPeriodoEl.parentElement.style.display = isAgrupacionRelevant ? 'block' : 'none';
-  };
-  tipoSelectEl.addEventListener('change', handleTipoReporteChange);
-  moduleListeners.push({ element: tipoSelectEl, type: 'change', handler: handleTipoReporteChange });
-  handleTipoReporteChange();
-
   const handleGenerateClick = async () => {
-    const tipoReporte = tipoSelectEl.value;
-    const fechaInicio = fechaInicioEl.value;
-    const fechaFin = fechaFinEl.value;
-    const agrupacion = agrupacionPeriodoEl.value;
+    const tipoReporte = container.querySelector('#reporte-tipo-select').value;
+    const fechaInicio = container.querySelector('#reporte-fecha-inicio').value;
+    const fechaFin = container.querySelector('#reporte-fecha-fin').value;
 
     if (!tipoReporte) { showReportesFeedback(feedbackEl, 'Seleccione un tipo de reporte.', 'error-indicator', 3000); return; }
     if (!fechaInicio || !fechaFin) { showReportesFeedback(feedbackEl, 'Seleccione un rango de fechas.', 'error-indicator', 3000); return; }
     if (new Date(fechaInicio) > new Date(fechaFin)) { showReportesFeedback(feedbackEl, 'Fecha "Desde" no puede ser posterior a "Hasta".', 'error-indicator', 3000); return; }
-    
-    const reportsRequiringAgrupacion = ['movimientos_financieros_global', 'detalle_ingresos_categoria', 'detalle_egresos_categoria'];
-    if (reportsRequiringAgrupacion.includes(tipoReporte) && !agrupacion) {
-        showReportesFeedback(feedbackEl, 'Seleccione un período de agrupación.', 'error-indicator', 3000); return;
-    }
     
     showReportesLoading(loadingEl, btnGenerarEl, true, 'Generando reporte, un momento...');
     clearReportesFeedback(feedbackEl);
@@ -1633,17 +1695,18 @@ export async function mount(container, sbInstance, user) {
       else if (tipoReporte === 'ingresos_por_habitaciones_periodo') await generarReporteIngresosPorPeriodo(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'cierres_de_caja') await generarReporteCierresDeCaja(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'kpis_avanzados_hotel') await generarReporteKPIsAvanzados(resultadoContainerEl, fechaInicio, fechaFin);
-      else if (reportsRequiringAgrupacion.includes(tipoReporte)) await generarReporteFinancieroGlobal(resultadoContainerEl, fechaInicio, fechaFin, agrupacion, tipoReporte);
-      else {
+      else if (['movimientos_financieros_global', 'detalle_ingresos_categoria', 'detalle_egresos_categoria'].includes(tipoReporte)) {
+        await generarReporteFinancieroGlobal(resultadoContainerEl, fechaInicio, fechaFin, tipoReporte);
+      } else {
         showReportesFeedback(feedbackEl, 'Tipo de reporte no implementado.', 'info-indicator', 3000);
         resultadoContainerEl.innerHTML = `<p class="text-gray-500 text-center p-4">El tipo de reporte '${tipoReporte}' no está disponible.</p>`;
       }
-      await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Generación reporte: ${tipoReporte}`, { fechaInicio, fechaFin, agrupacion: agrupacionPeriodoEl.disabled ? 'N/A' : agrupacion });
+      await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Generación reporte: ${tipoReporte}`, { fechaInicio, fechaFin });
     } catch (err) {
         console.error("Error in handleGenerateClick:", err);
         showReportesFeedback(feedbackEl, `Error al generar reporte: ${err.message}`, 'error-indicator', 0);
         resultadoContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error inesperado. Revise consola.</p>`;
-        await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Error reporte: ${tipoReporte}`, { error: err.message, fechaInicio, fechaFin, agrupacion: agrupacionPeriodoEl.disabled ? 'N/A' : agrupacion });
+        await registrarEnBitacora(supabaseClient, currentHotelId, currentModuleUser.id, 'Reportes', `Error reporte: ${tipoReporte}`, { error: err.message, fechaInicio, fechaFin });
     } finally {
         showReportesLoading(loadingEl, btnGenerarEl, false);
     }
@@ -1652,6 +1715,10 @@ export async function mount(container, sbInstance, user) {
   btnGenerarEl.addEventListener('click', handleGenerateClick);
   moduleListeners.push({ element: btnGenerarEl, type: 'click', handler: handleGenerateClick });
 }
+
+
+
+
 export function unmount(container) {
   Object.keys(currentChartInstances).forEach(destroyChartInstance);
   currentChartInstances = {};
