@@ -1656,10 +1656,11 @@ function descargarPDF() {
   const nombreArchivo = `Reporte_Inventario_${new Date().toISOString().slice(0, 10)}.pdf`;
   doc.save(nombreArchivo);
 }
-// Reemplaza esta función completa en tu archivo
+
+
 
 async function imprimirHojaDeConteo() {
-  // 🎯 1. OBTENEMOS EL USUARIO LOGUEADO PRIMERO
+  // 1. OBTENEMOS EL USUARIO LOGUEADO PRIMERO
   const { data: { user }, error: userError } = await currentSupabase.auth.getUser();
   if (userError || !user) {
     alert("No se pudo identificar al usuario. Por favor, inicia sesión de nuevo.");
@@ -1678,19 +1679,21 @@ async function imprimirHojaDeConteo() {
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Hoja de Conteo Físico de Inventario</title>
+      <title>Hoja de Reconciliación de Inventario</title>
       <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 11px; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 9px; }
         .header { text-align: center; margin-bottom: 25px; }
-        .header h1 { color: #1d4ed8; margin-bottom: 10px; }
+        .header h1 { color: #1d4ed8; margin-bottom: 10px; font-size: 1.8em; }
         .info-conteo { border: 1px solid #ccc; padding: 15px; margin-top: 20px; border-radius: 8px; }
-        .info-conteo p { margin: 8px 0; text-align: left; }
+        .info-conteo p { margin: 8px 0; text-align: left; font-size: 1.2em;}
         .info-conteo span { font-weight: bold; }
         .linea-firma { border-bottom: 1px solid #555; display: inline-block; min-width: 250px; }
         table { width: 100%; border-collapse: collapse; margin-top: 25px; }
-        th, td { border: 1px solid #999; padding: 6px; text-align: left; }
-        th { background-color: #eef2ff; }
-        .footer { text-align: right; font-size: 10px; color: #777; margin-top: 20px; }
+        th, td { border: 1px solid #999; padding: 4px; text-align: left; }
+        th { background-color: #eef2ff; font-size: 1.1em; }
+        .col-resaltada-ok { background-color: #f0fdf4; } /* Verde claro para verificación */
+        .col-resaltada-venta { background-color: #fff1f2; } /* Rojo claro para ventas */
+        .col-resaltada-compra { background-color: #f0fdfa; } /* Cyan claro para compras */
         @media print {
           body { -webkit-print-color-adjust: exact; }
           .header, .info-conteo { page-break-after: avoid; }
@@ -1702,11 +1705,11 @@ async function imprimirHojaDeConteo() {
     </head>
     <body>
       <div class="header">
-        <h1>Hoja de Conteo Físico de Inventario</h1>
+        <h1>Hoja de Reconciliación de Inventario</h1>
       </div>
 
       <div class="info-conteo">
-        <p><span>Fecha de Conteo:</span> <span class="linea-firma"></span></p>
+        <p><span>Fecha de Turno:</span> <span class="linea-firma"></span></p>
         <p><span>Realizado por (Nombre y Firma):</span> <span class="linea-firma"></span></p>
         <p><span>Supervisado por (Nombre y Firma):</span> <span class="linea-firma"></span></p>
       </div>
@@ -1714,12 +1717,15 @@ async function imprimirHojaDeConteo() {
       <table>
         <thead>
           <tr>
-            <th style="width: 35%;">Nombre del Producto</th>
-            <th style="width: 15%;">Código</th>
-            <th>Stock Teórico (Sistema)</th>
-            <th style="min-width: 100px;">Conteo Físico</th>
-            <th style="min-width: 100px;">Diferencia</th>
-            <th style="min-width: 100px;">Notas</th>
+            <th style="width: 28%;">Producto</th>
+            <th style="width: 12%;">Código</th>
+            <th style="text-align:center;">Stock Sistema</th>
+            <th style="text-align:center;" class="col-resaltada-ok">Conteo Físico Inicial (✓)</th>
+            <th style="text-align:center;" class="col-resaltada-venta">Ventas (-)</th>
+            <th style="text-align:center;" class="col-resaltada-compra">Llegadas (+)</th>
+            <th style="text-align:center;">Conteo Físico Final</th>
+            <th style="text-align:center;">Diferencia</th>
+            <th style="width: 15%;">Notas</th>
           </tr>
         </thead>
         <tbody>
@@ -1730,7 +1736,10 @@ async function imprimirHojaDeConteo() {
       <tr>
         <td>${p.nombre}</td>
         <td>${p.codigo_barras || '—'}</td>
-        <td style="text-align:center; font-weight: bold;">${p.stock_actual}</td>
+        <td style="text-align:center; font-weight: bold; font-size: 1.2em;">${p.stock_actual}</td>
+        <td class="col-resaltada-ok"></td>
+        <td class="col-resaltada-venta"></td>
+        <td class="col-resaltada-compra"></td>
         <td></td>
         <td></td>
         <td></td>
@@ -1758,6 +1767,9 @@ async function imprimirHojaDeConteo() {
   ventanaImpresion.print();
   ventanaImpresion.close();
 }
+
+
+
 async function cargarProductosInventario() {
   let { data } = await currentSupabase
     .from('productos_tienda')
@@ -2980,6 +2992,7 @@ if (btnExportar) {
   renderTablaListaCompras(); // Renderizar la tabla inicialmente
 }
 
+
 function renderTablaListaCompras() {
   const tbody = document.getElementById('bodyListaCompras');
   if (!tbody) {
@@ -2988,8 +3001,11 @@ function renderTablaListaCompras() {
   }
   tbody.innerHTML = '';
 
+  // ▼▼▼ LÍNEA MODIFICADA ▼▼▼
+  // Se añade .filter(p => p.activo) para excluir productos inactivos.
   let listaSugerida = (inventarioProductos || [])
-    .filter(p => Number(p.stock_actual) < Number(p.stock_minimo)); // O podrías usar stock_maximo para rellenar hasta el máximo
+    .filter(p => p.activo)
+    .filter(p => Number(p.stock_actual) < Number(p.stock_minimo));
 
   if (filtroProveedorListaCompras) {
     listaSugerida = listaSugerida.filter(p => p.proveedor_id === filtroProveedorListaCompras);
@@ -3002,47 +3018,40 @@ function renderTablaListaCompras() {
 
   listaSugerida.forEach(p => {
     let proveedor = (proveedoresCache || []).find(pr => pr.id === p.proveedor_id)?.nombre || 'N/A';
-    // Sugerir comprar la diferencia para alcanzar el stock máximo, o al menos el mínimo.
-    // Aquí usamos stock_maximo. Si prefieres solo hasta el mínimo, cambia p.stock_maximo por p.stock_minimo
     let cantidadASugerir = Math.max(0, (Number(p.stock_maximo) || Number(p.stock_minimo) || 0) - (Number(p.stock_actual) || 0));
     
-    if (cantidadASugerir <= 0 && Number(p.stock_actual) >= Number(p.stock_minimo) ) { // Si ya tiene suficiente para el mínimo, no lo mostramos si no necesita para el máximo
-        // Opcional: si quieres mostrar solo los que están POR DEBAJO del mínimo estricto, descomenta la siguiente línea y comenta la lógica de stock_maximo
-        // if (Number(p.stock_actual) >= Number(p.stock_minimo)) return;
-        // cantidadASugerir = Math.max(0, (Number(p.stock_minimo) || 0) - (Number(p.stock_actual) || 0));
-        // if (cantidadASugerir <= 0) return;
+    if (cantidadASugerir <= 0 && Number(p.stock_actual) >= Number(p.stock_minimo) ) {
+        // No mostrar si no se necesita comprar
     }
-
 
     let tr = document.createElement('tr');
     tr.innerHTML = `
-  <td style="padding:12px 10px;border-bottom:1px solid #f1f5f9;font-weight:500;color:#334155;">
-    ${p.nombre}
-  </td>
-  <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
-    ${p.stock_actual || 0}
-  </td>
-  <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
-    ${p.stock_minimo || 0}
-  </td>
-  <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
-    ${p.stock_maximo || 0}
-  </td>
-  <td style="
-      padding:12px 10px;text-align:right;font-weight:700;border-bottom:1px solid #f1f5f9;
-      ${cantidadASugerir > 0 ? 'color:#fff;background:#facc15;border-radius:7px;' : 'color:#64748b;'}
-    ">
-    ${cantidadASugerir > 0
-      ? `<span style="padding:5px 18px;border-radius:14px;background:#facc15;color:#a16207;display:inline-block;">
-          +${cantidadASugerir}
-        </span>`
-      : '<span style="color:#aaa;">—</span>'}
-  </td>
-  <td style="padding:12px 10px;color:#2563eb;border-bottom:1px solid #f1f5f9;">
-    ${proveedor ? `<span style="font-weight:600;">${proveedor}</span>` : '<span style="color:#aaa;">Sin proveedor</span>'}
-  </td>
-`;
-
+      <td style="padding:12px 10px;border-bottom:1px solid #f1f5f9;font-weight:500;color:#334155;">
+        ${p.nombre}
+      </td>
+      <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
+        ${p.stock_actual || 0}
+      </td>
+      <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
+        ${p.stock_minimo || 0}
+      </td>
+      <td style="padding:12px 10px;text-align:right;border-bottom:1px solid #f1f5f9;">
+        ${p.stock_maximo || 0}
+      </td>
+      <td style="
+          padding:12px 10px;text-align:right;font-weight:700;border-bottom:1px solid #f1f5f9;
+          ${cantidadASugerir > 0 ? 'color:#fff;background:#facc15;border-radius:7px;' : 'color:#64748b;'}
+        ">
+        ${cantidadASugerir > 0
+          ? `<span style="padding:5px 18px;border-radius:14px;background:#facc15;color:#a16207;display:inline-block;">
+              +${cantidadASugerir}
+            </span>`
+          : '<span style="color:#aaa;">—</span>'}
+      </td>
+      <td style="padding:12px 10px;color:#2563eb;border-bottom:1px solid #f1f5f9;">
+        ${proveedor ? `<span style="font-weight:600;">${proveedor}</span>` : '<span style="color:#aaa;">Sin proveedor</span>'}
+      </td>
+    `;
     tbody.appendChild(tr);
   });
 }
@@ -3157,9 +3166,6 @@ window.eliminarItemCompra = (id)=>{
 };
 
 // 3. Renderiza los productos disponibles para compras (por proveedor/categoría/nombre)
-// Reemplaza esta función en: tienda.js
-
-// Reemplaza esta función en: tienda.js
 
 function renderProductosCompra(filtro = '') {
     const productosListEl = document.getElementById('productosCompraList');
@@ -3173,7 +3179,9 @@ function renderProductosCompra(filtro = '') {
         return;
     }
 
-    let listaFiltrada = productosCache.filter(p => p.proveedor_id === proveedorSel);
+    // ▼▼▼ LÍNEA CORREGIDA ▼▼▼
+    // Se añade "&& p.activo === true" para filtrar solo productos activos del proveedor.
+    let listaFiltrada = productosCache.filter(p => p.proveedor_id === proveedorSel && p.activo === true);
 
     if (filtroLower) {
         listaFiltrada = listaFiltrada.filter(p =>
@@ -3184,7 +3192,7 @@ function renderProductosCompra(filtro = '') {
     }
 
     if (!listaFiltrada.length) {
-        productosListEl.innerHTML = `<div style="color:#999; padding:12px;">No hay productos para este proveedor ${filtro ? "o filtro" : ""}.</div>`;
+        productosListEl.innerHTML = `<div style="color:#999; padding:12px;">No hay productos ACTIVOS para este proveedor ${filtro ? "o filtro" : ""}.</div>`;
         return;
     }
 

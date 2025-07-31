@@ -113,7 +113,69 @@ function showReportesLoading(loadingEl, generateButtonEl, show, message = 'Gener
   }
  
 }
+// AÑADE ESTAS FUNCIONES EN reportes.js
 
+/**
+ * Genera y descarga un archivo PDF a partir de una tabla de datos.
+ * @param {string} titulo - El título del reporte.
+ * @param {Array<string>} headers - Un array con los nombres de las columnas.
+ * @param {Array<Array<any>>} data - Un array de arrays con los datos de las filas.
+ * @param {string} nombreArchivo - El nombre del archivo a descargar.
+ */
+function exportarTablaAPDF(titulo, headers, data, nombreArchivo) {
+  if (typeof window.jspdf === 'undefined') {
+    alert("La librería jsPDF no está cargada. No se puede exportar a PDF.");
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({
+    orientation: 'landscape', // Hoja horizontal para más espacio
+    unit: 'pt',
+    format: 'letter'
+  });
+
+  doc.setFontSize(18);
+  doc.text(titulo, 40, 40);
+  
+  doc.autoTable({
+    startY: 50,
+    head: [headers],
+    body: data,
+    theme: 'striped',
+    styles: { fontSize: 8 },
+    headStyles: { fillColor: [41, 128, 185], textColor: 255 },
+    margin: { top: 60 }
+  });
+
+  doc.save(`${nombreArchivo}.pdf`);
+}
+
+/**
+ * Genera y descarga un archivo Excel (XLSX) a partir de una tabla de datos.
+ * @param {string} titulo - El título del reporte (será el nombre de la hoja).
+ * @param {Array<string>} headers - Un array con los nombres de las columnas.
+ * @param {Array<Array<any>>} data - Un array de arrays con los datos de las filas.
+ * @param {string} nombreArchivo - El nombre del archivo a descargar.
+ */
+function exportarTablaAExcel(titulo, headers, data, nombreArchivo) {
+  if (typeof XLSX === 'undefined') {
+    alert("La librería SheetJS (xlsx) no está cargada. No se puede exportar a Excel.");
+    return;
+  }
+  
+  const workbook = XLSX.utils.book_new();
+  const worksheetData = [headers, ...data];
+  const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+  
+  // Ajustar el ancho de las columnas
+  const colWidths = headers.map((_, i) => ({
+    wch: Math.max(...worksheetData.map(row => (row[i] ? String(row[i]).length : 10))) + 2
+  }));
+  worksheet['!cols'] = colWidths;
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, titulo.substring(0, 31)); // El nombre de la hoja tiene un límite de 31 caracteres
+  XLSX.writeFile(workbook, `${nombreArchivo}.xlsx`);
+}
 
 /**
  * Obtiene todos los registros de una consulta de Supabase utilizando paginación.
@@ -466,10 +528,27 @@ function agregarDatosPorPeriodo(movimientos, agrupacion) {
     return { labels: clavesOrdenadas, data: clavesOrdenadas.map(clave => agregados[clave]) };
 }
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA en reportes.js
+
 function renderTablaMovimientos(movimientos, tituloTabla) {
-    // ... (Código sin cambios significativos, igual al proporcionado anteriormente)
+    const headers = ['Fecha', 'Categoría', 'Concepto', 'Monto', 'Método Pago'];
+    const dataRows = movimientos.map(mov => [
+        formatDateLocal(mov.fecha_movimiento || mov.creado_en),
+        mov.categoria || mov.tipo,
+        mov.concepto || 'N/A',
+        formatCurrencyLocal(mov.monto),
+        mov.metodos_pago?.nombre || 'N/A'
+    ]);
+    const nombreArchivo = `${tituloTabla.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}`;
+
     let tablaHtml = `
-      <h5 class="text-md font-semibold mt-6 mb-2 text-gray-700">${tituloTabla}</h5>
+      <div class="flex flex-col sm:flex-row justify-between items-center mt-6 mb-2">
+        <h5 class="text-md font-semibold text-gray-700">${tituloTabla}</h5>
+        <div class="flex items-center gap-2 mt-2 sm:mt-0">
+          <button id="btn-export-pdf" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs">Exportar PDF</button>
+          <button id="btn-export-excel" class="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-xs">Exportar Excel</button>
+        </div>
+      </div>
       <div class="table-container overflow-x-auto shadow-md rounded-lg">
         <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-100">
@@ -478,24 +557,60 @@ function renderTablaMovimientos(movimientos, tituloTabla) {
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Categoría</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Concepto</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-600 uppercase tracking-wider">Monto</th>
-               <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Método Pago</th> </tr>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Método Pago</th>
+            </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">`;
 
     if (movimientos.length === 0) {
-        tablaHtml += `<tr><td colspan="5" class="px-4 py-4 text-sm text-gray-500 text-center">No hay movimientos para mostrar.</td></tr>`; // Adjusted colspan
+        tablaHtml += `<tr><td colspan="5" class="px-4 py-4 text-sm text-gray-500 text-center">No hay movimientos para mostrar.</td></tr>`;
     } else {
-        movimientos.forEach(mov => {
+        dataRows.forEach((row, index) => {
+            const mov = movimientos[index];
             tablaHtml += `
                 <tr class="hover:bg-gray-50 transition-colors duration-150">
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(mov.fecha_movimiento || mov.creado_en)}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-medium">${mov.categoria || mov.tipo}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600 break-words min-w-[200px] max-w-[400px]">${mov.concepto || 'N/A'}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold ${mov.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrencyLocal(mov.monto)}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${mov.metodos_pago?.nombre || 'N/A'}</td> </tr>`;
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${row[0]}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-medium">${row[1]}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600 break-words min-w-[200px] max-w-[400px]">${row[2]}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold ${mov.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${row[3]}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${row[4]}</td>
+                </tr>`;
         });
     }
     tablaHtml += '</tbody></table></div>';
+    
+    // Inmediatamente después de crear el HTML, adjuntamos los eventos a los botones
+    setTimeout(() => {
+        const btnPdf = document.getElementById('btn-export-pdf');
+        if (btnPdf) {
+            btnPdf.addEventListener('click', () => {
+                const dataParaPdf = movimientos.map(mov => [
+                    formatDateLocal(mov.fecha_movimiento || mov.creado_en),
+                    mov.categoria || mov.tipo,
+                    mov.concepto || 'N/A',
+                    // Para PDF es mejor exportar el número sin formato de moneda para que se pueda sumar
+                    { content: mov.monto, styles: { halign: 'right' } },
+                    mov.metodos_pago?.nombre || 'N/A'
+                ]);
+                exportarTablaAPDF(tituloTabla, headers, dataParaPdf, nombreArchivo);
+            });
+        }
+        
+        const btnExcel = document.getElementById('btn-export-excel');
+        if (btnExcel) {
+            btnExcel.addEventListener('click', () => {
+                const dataParaExcel = movimientos.map(mov => [
+                    formatDateLocal(mov.fecha_movimiento || mov.creado_en, { dateStyle: 'short', timeStyle: 'short' }),
+                    mov.categoria || mov.tipo,
+                    mov.concepto || 'N/A',
+                    mov.monto, // Exportamos el número sin formato
+                    mov.metodos_pago?.nombre || 'N/A'
+                ]);
+                exportarTablaAExcel(tituloTabla, headers, dataParaExcel, nombreArchivo);
+            });
+        }
+    }, 0);
+
     return tablaHtml;
 }
 
