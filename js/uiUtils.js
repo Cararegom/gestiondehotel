@@ -1,5 +1,5 @@
 // js/uiUtils.js
-
+import { turnoService } from './services/turnoService.js';
 import { APP_CONFIG, I18N_TEXTS } from './config.js';
 // Swal se asume global o se debe importar si se maneja como módulo.
 
@@ -448,12 +448,114 @@ export async function showConsumosYFacturarModal(roomContext, supabase, currentU
         modalDialogActual.querySelector('#btn-cerrar-modal-consumos-X').onclick = cerrarDesdeModal;
         modalDialogActual.querySelector('#btn-cerrar-modal-consumos').onclick = cerrarDesdeModal;
         
-        const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
-        if (btnCobrarConsumosPend) {
-            btnCobrarConsumosPend.onclick = async () => {
-                // (Aquí va toda la lógica del botón "Cobrar Saldo" que ya tenías)
+      // --- Reemplaza el bloque vacío con este en uiUtils.js ---
+
+const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
+if (btnCobrarConsumosPend) {
+    btnCobrarConsumosPend.onclick = async () => {
+        // Deshabilitar botón para evitar dobles clics
+        btnCobrarConsumosPend.disabled = true;
+        btnCobrarConsumosPend.textContent = 'Procesando...';
+
+        try {
+            // Asumimos que tienes acceso a tu turnoService globalmente o lo importas
+            const turnoId = turnoService.getActiveTurnId(); 
+            if (!turnoId) {
+                mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No hay un turno de caja activo para registrar este pago.", "Turno Requerido");
+                return;
+            }
+
+            // Obtener métodos de pago para el modal de selección
+            const { data: metodosPagoDB } = await supabase.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true);
+            const metodosPagoDisponibles = metodosPagoDB || [];
+            metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
+
+            // Función interna para procesar el pago una vez confirmado el método
+            const procesarPagoDeuda = async (pagos) => {
+                const totalPagadoDeuda = pagos.reduce((sum, p) => sum + p.monto, 0);
+
+                // 1. Registrar los pagos en 'pagos_reserva'
+                const pagosParaInsertar = pagos.map(p => ({
+                    hotel_id: hotelId,
+                    reserva_id: reserva.id,
+                    monto: p.monto,
+                    fecha_pago: new Date().toISOString(),
+                    metodo_pago_id: p.metodo_pago_id,
+                    usuario_id: currentUser.id,
+                    concepto: `Abono a saldo pendiente (Hab. ${roomContext.nombre})`
+                }));
+                const { data: pagosData, error: errPagos } = await supabase.from('pagos_reserva').insert(pagosParaInsertar).select('id');
+                if (errPagos) throw new Error(`Error al registrar el pago: ${errPagos.message}`);
+
+                // 2. Registrar el ingreso en 'caja'
+                const movimientosCaja = pagos.map((p, index) => ({
+                    hotel_id: hotelId,
+                    tipo: 'ingreso',
+                    monto: p.monto,
+                    concepto: `Cobro saldo Hab. ${roomContext.nombre} - ${reserva.cliente_nombre}`,
+                    fecha_movimiento: new Date().toISOString(),
+                    metodo_pago_id: p.metodo_pago_id,
+                    usuario_id: currentUser.id,
+                    reserva_id: reserva.id,
+                    turno_id: turnoId,
+                    pago_reserva_id: pagosData[index].id
+                }));
+                const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
+                if (errCaja) console.error("Error registrando en caja, pero el pago fue guardado:", errCaja);
+
+                // 3. Actualizar el 'monto_pagado' en la reserva principal
+                const { data: reservaActual } = await supabase.from('reservas').select('monto_pagado').eq('id', reserva.id).single();
+                const nuevoMontoPagado = (reservaActual.monto_pagado || 0) + totalPagadoDeuda;
+                await supabase.from('reservas').update({ monto_pagado: nuevoMontoPagado }).eq('id', reserva.id);
+
+                mostrarInfoModalGlobal("¡Saldo cobrado con éxito!", "Pago Registrado");
+                
+                // Cerrar modal actual y refrescar el mapa de habitaciones
+                cerrarDesdeModal();
+                // Necesitarás una referencia a renderRooms o emitir un evento global para actualizar
+                const event = new CustomEvent('forceRefreshRoomMap');
+                document.dispatchEvent(event);
             };
+
+            // Preguntar al usuario por el método de pago usando SweetAlert2
+            const opcionesMetodosHTML = metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
+            const { value: metodoPagoId, isConfirmed } = await Swal.fire({
+                title: 'Confirmar Cobro de Saldo',
+                html: `
+                    <p class="mb-4">Se cobrará un total de <strong>${formatCurrency(saldoPendienteFinal)}</strong>.</p>
+                    <label for="swal-metodo-pago" class="swal2-label">Seleccione el método de pago:</label>
+                    <select id="swal-metodo-pago" class="swal2-input">${opcionesMetodosHTML}</select>`,
+                focusConfirm: false,
+                preConfirm: () => document.getElementById('swal-metodo-pago').value,
+                showCancelButton: true,
+                confirmButtonText: 'Siguiente',
+                cancelButtonText: 'Cancelar'
+            });
+
+            if (isConfirmed && metodoPagoId) {
+                // Si se elige pago mixto, se necesita una función que muestre ese modal
+                // y que al confirmar llame a `procesarPagoDeuda`.
+                // Por simplicidad, aquí asumimos que tienes una función `showPagoMixtoModal`.
+                if (metodoPagoId === "mixto") {
+                    // showPagoMixtoModal(saldoPendienteFinal, metodosPagoDisponibles, procesarPagoDeuda);
+                    alert("La lógica para Pago Mixto debe ser implementada aquí.");
+                } else {
+                    await procesarPagoDeuda([{ metodo_pago_id: metodoPagoId, monto: saldoPendienteFinal }]);
+                }
+            }
+
+        } catch (error) {
+            console.error("Error en el proceso de cobrar saldo:", error);
+            mostrarInfoModalGlobal(`Error al procesar el pago: ${error.message}`, "Error Crítico");
+        } finally {
+            // Reactivar el botón en caso de cancelación o error
+            if(btnCobrarConsumosPend){
+                btnCobrarConsumosPend.disabled = false;
+                btnCobrarConsumosPend.textContent = `Cobrar Saldo (${formatCurrency(saldoPendienteFinal)})`;
+            }
         }
+    };
+}
         
         // --- LÓGICA AÑADIDA PARA EL BOTÓN "FACTURAR" ---
         const btnFacturar = modalDialogActual.querySelector('#btn-facturar');
