@@ -573,29 +573,37 @@ async function renderRooms(gridEl, supabase, currentUser, hotelId) {
     // ================== INICIO DE LA LÓGICA DE CORRECCIÓN ==================
     // Aquí añadimos la lógica para verificar y cambiar el estado dinámicamente.
 
-    const ahora = new Date();
-    const dosHorasEnMilisegundos = 2 * 60 * 60 * 1000;
+   const ahora = new Date();
+const TRES_HORAS_MS = 3 * 60 * 60 * 1000;
 
-    currentRooms.forEach(room => {
-        // Solo nos interesa si la base de datos dice que está 'libre' pero tiene reservas futuras.
-        if (room.estado === 'libre' && room.reservas && room.reservas.length > 0) {
-            // Buscamos la reserva futura más próxima que esté en estado 'reservada'.
-            const proximaReserva = room.reservas
-                .filter(r => r.estado === 'reservada' && new Date(r.fecha_inicio) > ahora)
-                .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio))[0];
+currentRooms.forEach(room => {
+  // Si no hay arreglo de reservas, no hacemos nada
+  if (!Array.isArray(room.reservas) || room.reservas.length === 0) return;
 
-            if (proximaReserva) {
-                const inicioReserva = new Date(proximaReserva.fecha_inicio);
-                const diferenciaTiempo = inicioReserva.getTime() - ahora.getTime();
+  // Tomamos la próxima reserva futura en estado 'reservada'
+  const proximaReserva = room.reservas
+    .filter(r => r.estado === 'reservada' && new Date(r.fecha_inicio) > ahora)
+    .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio))[0];
 
-                // Si la diferencia es de 2 horas o menos, cambiamos el estado solo para la vista.
-                if (diferenciaTiempo > 0 && diferenciaTiempo <= dosHorasEnMilisegundos) {
-                    console.log(`Habitación ${room.nombre} está a menos de 2h de una reserva. Cambiando estado a 'reservada' para la vista.`);
-                    room.estado = 'reservada'; // ¡Esta es la corrección clave!
-                }
-            }
-        }
-    });
+  if (!proximaReserva) return;
+
+  const inicioReserva = new Date(proximaReserva.fecha_inicio);
+  const diff = inicioReserva.getTime() - ahora.getTime();
+
+  // Si faltan más de 3 horas: mostrar "LIBRE" (solo para la vista),
+  // excepto si realmente está ocupada/agotada/limpieza/mantenimiento.
+  if (diff > TRES_HORAS_MS) {
+    if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(room.estado)) {
+      room.estado = 'libre';
+    }
+    return;
+  }
+
+  // Si faltan entre 0 y 3 horas: mostrar "RESERVADA"
+  if (diff > 0 && diff <= TRES_HORAS_MS) {
+    room.estado = 'reservada';
+  }
+});
     // =================== FIN DE LA LÓGICA DE CORRECCIÓN ====================
 
 

@@ -564,7 +564,10 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
 }
 
 
+// Archivo: /js/modules/reservas/reservas.js
+
 async function validateAndCalculateBooking(formData) {
+    // Obtiene información de la habitación (precio, capacidad, etc.)
     const [habitacionResult] = await Promise.all([
         state.supabase.from('habitaciones').select('precio, capacidad_base, capacidad_maxima, precio_huesped_adicional').eq('id', formData.habitacion_id).single(),
     ]);
@@ -572,38 +575,70 @@ async function validateAndCalculateBooking(formData) {
     const habitacionInfo = habitacionResult.data;
     if (!habitacionInfo) throw new Error("No se encontró la habitación seleccionada.");
 
+    // Calcula las fechas de entrada y salida basadas en la duración seleccionada
     const { fechaEntrada, fechaSalida, tipoDuracionOriginal, cantidadDuracionOriginal, errorFechas } = calculateFechasEstancia(formData.fecha_entrada, formData.tipo_calculo_duracion, formData.cantidad_noches, formData.tiempo_estancia_id, state.configHotel.checkout_hora_config);
     if (errorFechas) throw new Error(errorFechas);
 
+    // ▼▼▼ INICIO DE LA VALIDACIÓN INTELIGENTE DEL LADO DEL CLIENTE ▼▼▼
+    const HORAS_BLOQUEO_PREVIO = 3; // Horas de bloqueo antes de una reserva
+    
+    // Buscamos la próxima reserva confirmada para la habitación seleccionada
+    const { data: proximaReserva, error: errProx } = await state.supabase
+        .from('reservas')
+        .select('id, fecha_inicio')
+        .eq('habitacion_id', formData.habitacion_id)
+        .in('estado', ['reservada', 'confirmada'])
+        .gte('fecha_inicio', fechaEntrada.toISOString()) // Solo reservas que inicien después de nuestra entrada
+        .order('fecha_inicio', { ascending: true })
+        .limit(1)
+        .maybeSingle(); // Usamos maybeSingle para no generar error si no encuentra nada
+
+    if (errProx) {
+        throw new Error(`Error validando disponibilidad futura: ${errProx.message}.`);
+    }
+
+    if (proximaReserva) {
+        // Si hay una reserva futura, calculamos el inicio de su período de bloqueo
+        const inicioProximaReserva = new Date(proximaReserva.fecha_inicio);
+        const inicioBloqueo = new Date(inicioProximaReserva.getTime() - HORAS_BLOQUEO_PREVIO * 60 * 60 * 1000);
+
+        // Comprobamos si la fecha de SALIDA de nuestra NUEVA reserva se mete en el período de bloqueo
+        if (fechaSalida > inicioBloqueo) {
+            throw new Error(`Conflicto: La duración de esta reserva se cruza con el período de bloqueo de una reserva futura que inicia el ${formatDateTime(inicioProximaReserva)}. Intente con una duración menor.`);
+        }
+    }
+    // ▲▲▲ FIN DE LA VALIDACIÓN INTELIGENTE ▲▲▲
+
+    // Se mantiene la llamada a la función de la BD como una segunda barrera de seguridad.
     const { data: hayCruce, error: errCruce } = await state.supabase.rpc('validar_cruce_reserva', {
         p_habitacion_id: formData.habitacion_id, p_entrada: fechaEntrada.toISOString(),
         p_salida: fechaSalida.toISOString(), p_reserva_id_excluida: state.isEditMode ? state.editingReservaId : null
     });
     if (errCruce) throw new Error(`Error validando disponibilidad: ${errCruce.message}.`);
-    if (hayCruce === true) throw new Error("Conflicto: La habitación no está disponible para el período seleccionado.");
+    if (hayCruce === true) throw new Error("Conflicto: La habitación no está disponible para el período seleccionado (verificado por la base de datos).");
     
-    // ▼▼▼ INICIO DE LA CORRECCIÓN CLAVE ▼▼▼
-    // Ahora pasamos correctamente los valores del precio libre a la función de cálculo.
+    // Llama a la función de cálculo de montos, pasando los valores del precio libre
     const { montoEstanciaBase, montoPorHuespedesAdicionales, montoDescontado, montoImpuesto, baseSinImpuestos, errorMonto } = calculateMontos(
         habitacionInfo, parseInt(formData.cantidad_huespedes), tipoDuracionOriginal, cantidadDuracionOriginal, formData.tiempo_estancia_id, 
         formData.precio_libre_toggle, 
         parseFloat(formData.precio_libre_valor)
     );
-    // ▲▲▲ FIN DE LA CORRECCIÓN CLAVE ▲▲▲
-
     if (errorMonto) throw new Error(errorMonto);
 
+    // Actualiza el total en el estado global y la UI
     state.currentBookingTotal = baseSinImpuestos + montoImpuesto;
     if (ui && typeof ui.updateTotalDisplay === 'function') { 
         ui.updateTotalDisplay(montoDescontado);
     }
     
+    // Prepara las notas, añadiendo la información de precio manual si aplica
     let notasFinales = formData.notas.trim() || null;
     if (formData.precio_libre_toggle) {
         const precioManualStr = `[PRECIO MANUAL: ${formatCurrency(parseFloat(formData.precio_libre_valor))}]`;
         notasFinales = notasFinales ? `${precioManualStr} ${notasFinales}` : precioManualStr;
     }
 
+    // Construye el objeto final con los datos de la reserva
     const datosReserva = {
         cliente_id: formData.cliente_id,
         cliente_nombre: formData.cliente_nombre.trim(),
@@ -622,7 +657,7 @@ async function validateAndCalculateBooking(formData) {
         monto_estancia_base_sin_impuestos: baseSinImpuestos,
         monto_impuestos_estancia: montoImpuesto,
         porcentaje_impuestos_aplicado: state.configHotel.porcentaje_impuesto_principal,
-        nombre_impuesto_aplicado: state.configHotel.nombre_impuesto_principal,
+        nombre_impuesto_aplicado: state.configHotel.nombre_impuesto_aplicado,
         monto_total: state.currentBookingTotal,
         descuento_aplicado_id: state.descuentoAplicado?.id || null,
         monto_descontado: montoDescontado,
@@ -631,15 +666,16 @@ async function validateAndCalculateBooking(formData) {
         id_temporal_o_final: state.isEditMode ? state.editingReservaId : `TEMP-${Date.now()}`
     };
     
+    // Construye el objeto con los datos del pago
     const datosPago = {
         monto_abono: parseFloat(formData.monto_abono) || 0,
         metodo_pago_id: formData.metodo_pago_id || null,
         tipo_pago: formData.tipo_pago
     };
     
+    // Retorna ambos objetos para ser procesados
     return { datosReserva, datosPago };
 }
-
 
 
 
