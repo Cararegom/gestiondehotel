@@ -141,13 +141,25 @@ function renderTarjetaCompraPendiente(compra) {
                 `).join('')}
             </tbody>
         </table>`;
+        
+    // --- NUEVA LÓGICA PARA MOSTRAR LA FECHA ---
+    const fechaLlegadaEstimada = compra.fecha_llegada_estimada 
+        ? new Date(compra.fecha_llegada_estimada + 'T00:00:00') // Previene errores de zona horaria
+        : null;
+
+    const fechaLlegadaHtml = fechaLlegadaEstimada
+        ? `<div style="font-size:0.95em; color:#475569; margin-bottom: 12px; font-weight: 600; background: #f0fdf4; padding: 6px 12px; border-radius: 6px; border: 1px solid #bbf7d0; text-align:center;">
+            🚚 Llegada estimada: <span style="color:#15803d;">${fechaLlegadaEstimada.toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+           </div>`
+        : '';
 
     return `
         <div style="border-radius:11px;background:#fff;border:1.7px solid #e2e8f0;box-shadow:0 2px 10px #94a3b81a;margin-bottom:23px;padding:24px 18px 16px 18px;max-width:520px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
                 <span style="font-size:1.07em; font-weight:700; color:#4f46e5;">Proveedor: <span style="color:#1e293b;">${compra.proveedor?.nombre || 'N/A'}</span></span>
-                <span style="font-size:0.9em; color:#475569;">${new Date(compra.fecha).toLocaleDateString()}</span>
+                <span style="font-size:0.9em; color:#475569;">Creada: ${new Date(compra.fecha).toLocaleDateString()}</span>
             </div>
+            ${fechaLlegadaHtml}
             ${productosHtml}
             <div style="margin:16px 0 13px 0; text-align:right; font-weight:700; font-size:1.1em; color:#166534;">Total Compra: ${formatCurrency(compra.total_compra)}</div>
             <div style="display:flex;gap:8px;">
@@ -1964,11 +1976,11 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
         </div>
         <div>
             <label>Stock mínimo</label>
-            <input id="prodStockMin" type="number" min="0" value="${prod?.stock_min||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <input id="prodStockMin" type="number" min="0" value="${prod?.stock_minimo||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
         <div>
             <label>Stock máximo</label>
-            <input id="prodStockMax" type="number" min="0" value="${prod?.stock_max||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <input id="prodStockMax" type="number" min="0" value="${prod?.stock_maximo||''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
         </div>
 
         <div style="grid-column:1/3; margin-top:10px;">
@@ -1986,7 +1998,7 @@ window.showModalProducto = async function showModalProducto(productoId = null) {
 
       </div>
       <div style="margin-top:23px;display:flex;gap:14px;justify-content:center;">
-        <button type="submit" style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;cursor:pointer;">
+        <button type="submit" style="background:linear-gradient(90deg,#22c55e,#16a3a4);color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;cursor:pointer;">
           ${esEdicion ? 'Actualizar' : 'Crear'}
         </button>
         <button type="button" onclick="window.closeModal()" style="background:#e0e7ef;color:#334155;font-weight:600;border:none;border-radius:7px;padding:11px 28px;font-size:1.08em;cursor:pointer;">
@@ -3230,15 +3242,11 @@ window.agregarProductoCompra = (id)=>{
 
 // 5. Registra la compra (en estado pendiente)
 
-// REEMPLAZA esta función en tu archivo tienda.js
-// REEMPLAZA esta función en tu archivo tienda.js
 async function registrarCompraProveedor() {
     const msgEl = document.getElementById('msgCompra');
     const btnEl = document.getElementById('btnRegistrarCompra');
     const originalBtnText = btnEl.textContent;
   
-    // ▼▼▼ CORRECCIÓN AQUÍ ▼▼▼
-    // Reemplazamos clearFeedback(msgEl) por una limpieza manual del mensaje.
     if (msgEl) msgEl.textContent = '';
     
     btnEl.disabled = true;
@@ -3252,11 +3260,16 @@ async function registrarCompraProveedor() {
         if (!proveedorId) {
             throw new Error("Debes seleccionar un proveedor.");
         }
+        
+        // --- NUEVA LÍNEA: Obtener la fecha de llegada ---
+        const fechaLlegada = document.getElementById('fechaLlegadaCompra').value;
+        if (!fechaLlegada) {
+            throw new Error("Debes seleccionar una fecha de llegada estimada.");
+        }
 
-let totalSinRedondear = compraProveedorCarrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
-// Redondea hacia arriba al siguiente múltiplo de 1000
-// Redondea al múltiplo de 50 más cercano
-let total = Math.round(totalSinRedondear / 50) * 50;
+        let totalSinRedondear = compraProveedorCarrito.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+        let total = Math.round(totalSinRedondear / 50) * 50;
+        
         // 1. Registra la compra principal en estado pendiente
         const { data: compraData, error: compraError } = await currentSupabase.from('compras_tienda').insert({
             hotel_id: currentHotelId,
@@ -3264,6 +3277,7 @@ let total = Math.round(totalSinRedondear / 50) * 50;
             proveedor_id: proveedorId,
             total_compra: total,
             fecha: new Date().toISOString(),
+            fecha_llegada_estimada: fechaLlegada, // <-- NUEVO DATO GUARDADO
             estado: "pendiente"
         }).select().single();
 
@@ -3272,7 +3286,6 @@ let total = Math.round(totalSinRedondear / 50) * 50;
         const compraId = compraData.id;
         console.log(`✅ Orden de compra principal creada con ID: ${compraId}`);
 
-        // 2. Prepara los items del detalle para ser insertados
         const detalleItems = compraProveedorCarrito.map(item => ({
             compra_id: compraId,
             producto_id: item.id,
@@ -3299,14 +3312,15 @@ let total = Math.round(totalSinRedondear / 50) * 50;
         }
         console.log("✅ Precios de compra de los productos actualizados.");
 
-await Swal.fire({
-  icon: 'success',
-  title: '¡Compra Registrada!',
-  text: 'La orden se ha creado exitosamente y ahora está en la pestaña "Compras Pendientes".',
-  confirmButtonColor: '#16a34a',
-  timer: 3000, // La notificación se cierra sola después de 3 segundos
-  timerProgressBar: true
-});        
+        await Swal.fire({
+          icon: 'success',
+          title: '¡Compra Registrada!',
+          text: 'La orden se ha creado exitosamente y ahora está en la pestaña "Compras Pendientes".',
+          confirmButtonColor: '#16a34a',
+          timer: 3000,
+          timerProgressBar: true
+        });        
+        
         compraProveedorCarrito = [];
         renderCarritoCompra();
         document.getElementById('buscarProductoCompra').value = '';
@@ -3315,7 +3329,6 @@ await Swal.fire({
 
     } catch (err) {
         console.error("Error en registrarCompraProveedor:", err);
-        // `showError` no está definida, la reemplazamos con un alert
         if (msgEl) msgEl.textContent = err.message; else alert(err.message);
     } finally {
         btnEl.disabled = false;
@@ -3346,13 +3359,18 @@ async function renderModuloCompras() {
     cont.innerHTML = `
       <div style="background:#fff; border-radius:14px; box-shadow:0 3px 16px #0002; padding:30px 24px; max-width:520px; margin:auto;">
           <h3 style="font-size:1.24em;color:#1d4ed8;font-weight:700;margin-bottom:18px;">📝 Registrar Compra a Proveedor</h3>
-          <div style="margin-bottom:15px;">
-              <label style="font-weight:600; color:#334155; display:block;">Proveedor:
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom:15px;">
+              <div style="grid-column: 1 / -1;">
+                  <label style="font-weight:600; color:#334155; display:block;">Proveedor:</label>
                   <select id="selectProveedorCompraForm" style="margin-top:6px; width:100%; padding:9px 13px; border-radius:7px; border:1.5px solid #cbd5e1;">
                       <option value="">Selecciona proveedor</option>
                       ${proveedoresCache.map(pr => `<option value="${pr.id}">${pr.nombre}</option>`).join('')}
                   </select>
-              </label>
+              </div>
+              <div>
+                  <label style="font-weight:600; color:#334155; display:block;">Fecha de Llegada:</label>
+                  <input type="date" id="fechaLlegadaCompra" style="margin-top:6px; width:100%; padding:8px 13px; border-radius:7px; border:1.5px solid #cbd5e1; font-family: inherit; font-size: inherit; color: #334155;">
+              </div>
           </div>
           <input id="buscarProductoCompra" placeholder="Buscar producto..." style="width:100%; padding:9px 13px; margin-bottom:13px; border-radius:6px; border:1.5px solid #d1d5db;"/>
           <div id="productosCompraList" style="margin-bottom:20px;"></div>
@@ -3374,6 +3392,15 @@ async function renderModuloCompras() {
     // --- CORRECCIÓN EN LOS EVENT LISTENERS ---
     const buscarInput = document.getElementById('buscarProductoCompra');
     const proveedorSelect = document.getElementById('selectProveedorCompraForm');
+    const fechaInput = document.getElementById('fechaLlegadaCompra');
+
+    // Establecer la fecha de hoy por defecto
+    if (fechaInput) {
+        const today = new Date();
+        const offset = today.getTimezoneOffset();
+        const todayLocal = new Date(today.getTime() - (offset*60*1000));
+        fechaInput.value = todayLocal.toISOString().split('T')[0];
+    }
 
     buscarInput.oninput = () => {
         renderProductosCompra(buscarInput.value);
