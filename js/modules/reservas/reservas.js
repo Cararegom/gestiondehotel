@@ -1352,7 +1352,6 @@ async function puedeHacerCheckIn(reservaId) {
     return totalPagado >= r.monto_total;
 }
 
-// MODIFICADO: renderReservas para mostrar solo 'reservada', 'confirmada', 'activa'
 async function renderReservas() {
      if (!state.isModuleMounted) {
         console.log("[Reservas] renderReservas abortado porque el módulo ya no está montado.");
@@ -1366,14 +1365,15 @@ async function renderReservas() {
 
     console.log("[Reservas] Render: Hotel ID para la consulta:", state.hotelId);
 
-    const estadosVisibles = ['reservada', 'confirmada', 'activa'];
+    const estadosVisibles = ['reservada', 'confirmada', 'activa', 'cancelada']; // MODIFICADO: Añadido 'cancelada'
     console.log("[Reservas] Render: Buscando reservas con estados:", estadosVisibles);
 
     const { data: rs, error } = await state.supabase.from('reservas')
         .select(`
             *, 
             habitaciones(nombre, tipo), 
-            pagos_reserva(monto)
+            pagos_reserva(monto),
+            cancelador:cancelado_por_usuario_id(nombre) // MODIFICADO: Obtiene el nombre del usuario que canceló
         `)
         .eq('hotel_id', state.hotelId)
         .in('estado', estadosVisibles)
@@ -1383,7 +1383,7 @@ async function renderReservas() {
     console.log("[Reservas] Render: Datos crudos de la consulta:", rs);
     console.log("[Reservas] Render: Error en consulta:", error);
 
-    clearFeedback(ui.reservasListEl); // Limpia el "Cargando..."
+    clearFeedback(ui.reservasListEl);
 
     if (error) {
         showError(ui.reservasListEl, `Error cargando reservas: ${error.message}`);
@@ -1393,63 +1393,60 @@ async function renderReservas() {
 
     let htmlGeneral = '';
     if (rs && rs.length > 0) {
-        console.log(`[Reservas] Render: Se encontraron ${rs.length} reservas para procesar.`);
         rs.forEach(r => {
             const abonado = r.pagos_reserva ? r.pagos_reserva.reduce((s, p) => s + Number(p.monto), 0) : 0;
             r.abonado = abonado;
             r.pendiente = Math.max((r.monto_total || 0) - abonado, 0);
         });
 
-        const groupedVisibles = rs.reduce((acc, r) => {
-            (acc[r.estado] = acc[r.estado] || []).push(r);
-            return acc;
-        }, {});
-        
-        console.log("[Reservas] Render: Reservas agrupadas:", groupedVisibles);
+        // --- LÓGICA DE SEPARACIÓN DE RESERVAS ---
+        const reservasActivas = rs.filter(r => ['reservada', 'confirmada', 'activa'].includes(r.estado));
+        const reservasCanceladas = rs.filter(r => r.estado === 'cancelada').sort((a, b) => new Date(b.fecha_cancelacion) - new Date(a.fecha_cancelacion));
 
+        // --- Renderizar sección de Reservas Actuales ---
         htmlGeneral += `<div class="mb-10"><h2 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Reservas Actuales y Próximas</h2>`;
-
-        let foundAnyReservasInGroups = false;
-        estadosVisibles.forEach(k => {
-            console.log(`[Reservas] Render: Verificando grupo para estado '${k}'`);
-            if (groupedVisibles[k]?.length) {
-                console.log(`[Reservas] Render: Renderizando grupo '${k}' con ${groupedVisibles[k].length} reservas.`);
-                htmlGeneral += renderReservasGrupo(k.charAt(0).toUpperCase() + k.slice(1).replace(/_/g, ' '), groupedVisibles[k]);
-                foundAnyReservasInGroups = true;
-            } else {
-                console.log(`[Reservas] Render: No hay reservas para el grupo '${k}'.`);
-            }
-        });
-        
-        if (!foundAnyReservasInGroups) {
-             htmlGeneral += `<div class="info-box p-4 text-center text-gray-500">No hay reservas que coincidan con los estados visibles después de agrupar.</div>`;
-             console.log("[Reservas] Render: No se encontraron reservas en los grupos después de procesar.");
+        if (reservasActivas.length > 0) {
+            const groupedActivas = reservasActivas.reduce((acc, r) => {
+                (acc[r.estado] = acc[r.estado] || []).push(r);
+                return acc;
+            }, {});
+            
+            ['reservada', 'confirmada', 'activa'].forEach(k => {
+                if (groupedActivas[k]?.length) {
+                    htmlGeneral += renderReservasGrupo(k.charAt(0).toUpperCase() + k.slice(1), groupedActivas[k]);
+                }
+            });
+        } else {
+            htmlGeneral += `<div class="info-box p-4 text-center text-gray-500">No hay reservas activas o próximas para mostrar.</div>`;
         }
         htmlGeneral += `</div>`;
 
+        // --- Renderizar sección de Reservas Canceladas ---
+        if (reservasCanceladas.length > 0) {
+            htmlGeneral += `<div class="mb-10"><h2 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Historial de Reservas Canceladas</h2>`;
+            htmlGeneral += renderReservasGrupo('Canceladas', reservasCanceladas);
+            htmlGeneral += `</div>`;
+        }
+
     } else {
-        console.log("[Reservas] Render: No se encontraron reservas en la consulta inicial.");
-        htmlGeneral += `<div class="mb-10"><h2 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Reservas Actuales y Próximas</h2><div class="info-box p-4 text-center text-gray-500">No hay reservas activas o próximas para mostrar.</div></div>`;
+        htmlGeneral += `<div class="mb-10"><h2 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Reservas</h2><div class="info-box p-4 text-center text-gray-500">No hay reservas para mostrar.</div></div>`;
     }
 
     console.log("[Reservas] Render: HTML General generado (primeros 500 caracteres):", htmlGeneral.substring(0,500));
     try {
-        // Asegurarnos de que ui.reservasListEl sigue siendo válido y visible
         if (!ui.reservasListEl) {
             console.error("[Reservas] Render: ui.reservasListEl se volvió nulo antes de la asignación de innerHTML. Esto no debería pasar.");
-            // Intentar re-seleccionarlo como último recurso, aunque esto indicaría un problema más profundo.
             ui.reservasListEl = document.getElementById('reservas-list');
             if (!ui.reservasListEl) {
                  console.error("[Reservas] Render: CRÍTICO - No se pudo re-seleccionar #reservas-list.");
-                 return; // No podemos continuar
+                 return;
             }
         }
         
-        ui.reservasListEl.style.display = 'block'; // Forzar que sea visible por si CSS lo ocultó
+        ui.reservasListEl.style.display = 'block';
         ui.reservasListEl.innerHTML = htmlGeneral; 
         console.log("[Reservas] Render: HTML insertado en el DOM.");
 
-        // VERIFICACIÓN ADICIONAL:
         if (ui.reservasListEl.childNodes.length > 0) {
             console.log("[Reservas] VERIFICATION SUCCESS: ui.reservasListEl ahora tiene nodos hijos.", ui.reservasListEl.innerHTML.substring(0, 200));
         } else if (htmlGeneral.trim() !== '') {
@@ -1461,11 +1458,13 @@ async function renderReservas() {
 
     } catch (e) {
         console.error("[Reservas] Render: Error al insertar HTML en el DOM:", e);
-        if (ui.reservasListEl) { // Solo intentar si ui.reservasListEl existe
+        if (ui.reservasListEl) {
              ui.reservasListEl.innerHTML = "<p class='error-indicator'>Error crítico al mostrar la lista de reservas. Revise la consola.</p>";
         }
     }
 }
+
+
 function renderReservasGrupo(titulo, grupo) {
     console.log(`[ReservasGrupo] Renderizando grupo titulado: "${titulo}" con ${grupo.length} elementos.`);
     let html = `<h3 class="text-xl font-bold mt-6 mb-3 text-blue-700 border-b pb-2">${titulo} (${grupo.length})</h3>`;
@@ -1492,7 +1491,14 @@ function renderReservasGrupo(titulo, grupo) {
                 ${r.abonado > 0 ? `<p style="color:#059669"><strong>Abonado:</strong> ${formatCurrency(r.abonado, monedaSimbolo, monedaISO, monedaDecimales)}</p>` : ''}
                 ${r.pendiente > 0 ? `<p style="color:#b91c1c"><strong>Pendiente:</strong> ${formatCurrency(r.pendiente, monedaSimbolo, monedaISO, monedaDecimales)}</p>` : ''}
                 ${r.notas ? `<p class="mt-1"><strong>Notas:</strong> <span class="italic">${r.notas}</span></p>` : ''}
-            </div>
+
+                ${r.estado === 'cancelada' ? `
+                    <div class="mt-2 pt-2 border-t border-dashed border-gray-300 text-xs text-red-700">
+                        <p><strong>Cancelado por:</strong> ${r.cancelador?.nombre || 'Usuario desconocido'}</p>
+                        <p><strong>Fecha cancelación:</strong> ${formatDateTime(r.fecha_cancelacion)}</p>
+                    </div>
+                ` : ''}
+                </div>
             <div class="mt-4 pt-3 border-t flex flex-wrap gap-2">
                 ${getAccionesReservaHTML(r)}
             </div>
@@ -1619,6 +1625,8 @@ async function mostrarModalAbonoReserva(reservaActual) {
     document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'reservas', accion: 'abono' } }));
 }
 
+
+
 function getAccionesReservaHTML(reserva) {
     let actions = '';
     const baseClass = "button text-xs px-2.5 py-1 rounded-md shadow-sm disabled:opacity-50";
@@ -1634,7 +1642,7 @@ function getAccionesReservaHTML(reserva) {
     switch (estado) {
         case 'reservada':
             actions += `<button class="${baseClass} bg-cyan-500 hover:bg-cyan-600 text-white" data-action="confirmar" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Confirmar</button>`;
-            actions += `<button class="${baseClass} bg-red-500 hover:bg-red-600 text-white" data-action="cancelar_reserva" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Cancelar Reserva</button>`;
+            
             const fInicioRes = new Date(reserva.fecha_inicio);
             const ahoraRes = new Date();
             const inicioVentanaCheckinRes = new Date(fInicioRes.getTime() - 24 * 60 * 60 * 1000); 
@@ -1642,7 +1650,11 @@ function getAccionesReservaHTML(reserva) {
             if (ahoraRes >= inicioVentanaCheckinRes && ahoraRes <= finVentanaCheckinRes) {
                  actions += `<button class="${baseClass} bg-blue-500 hover:bg-blue-600 text-white" data-action="checkin" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Check-in</button>`;
             }
+
+            actions += `<button class="${baseClass} bg-red-500 hover:bg-red-600 text-white" data-action="cancelar_reserva" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Cancelar Reserva</button>`;
+            actions += `<button class="${baseClass} bg-purple-500 hover:bg-purple-600 text-white" data-action="no_show" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">No Presentado</button>`;
             break;
+
         case 'confirmada':
             const fInicioConf = new Date(reserva.fecha_inicio);
             const ahoraConf = new Date();
@@ -1652,15 +1664,23 @@ function getAccionesReservaHTML(reserva) {
                 actions += `<button class="${baseClass} bg-blue-500 hover:bg-blue-600 text-white" data-action="checkin" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Check-in</button>`;
             }
             actions += `<button class="${baseClass} bg-red-500 hover:bg-red-600 text-white" data-action="cancelar_reserva" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Cancelar Reserva</button>`;
-            actions += `<button class="${baseClass} bg-purple-500 hover:bg-purple-600 text-white" data-action="no_show" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">No Show</button>`;
+            actions += `<button class="${baseClass} bg-purple-500 hover:bg-purple-600 text-white" data-action="no_show" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">No Presentado</button>`;
             break;
+            
         case 'activa':
             actions += `<button class="${baseClass} bg-teal-500 hover:bg-teal-600 text-white" data-action="checkout" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Check-out</button>`;
             break;
+
+        case 'cancelada':
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // Solo muestra el botón si el usuario actual tiene el rol de 'administrador'
+            if (state.currentUser && state.currentUser.rol === 'administrador') {
+                actions += `<button class="${baseClass} bg-gray-600 hover:bg-gray-700 text-white" data-action="eliminar" data-id="${reserva.id}">Eliminar Permanentemente</button>`;
+            }
+            // --- FIN DE LA MODIFICACIÓN ---
+            break;
     }
-     if (['reservada', 'confirmada'].includes(estado)) {
-        actions += `<button class="${baseClass} bg-black hover:bg-gray-800 text-white" data-action="eliminar" data-id="${reserva.id}">Eliminar</button>`;
-     }
+    
     return actions;
 }
 
@@ -1826,18 +1846,18 @@ async function handleListActions(event) {
             case 'editar':
                 await prepareEditReserva(reservaId);
                 break;
+            
             case 'cancelar_reserva':
-                const confirmCancel = await ui.showConfirmationModal("¿Está seguro de que desea cancelar esta reserva? La habitación asociada se marcará como libre.");
+                const confirmCancel = await ui.showConfirmationModal("¿Está seguro de cancelar esta reserva? Cualquier pago o abono registrado será revertido de la caja.");
                 if (confirmCancel) {
-                    await handleUpdateEstadoReserva(reservaId, 'cancelada', 'libre', habitacionId, true);
+                    await cancelarReservaConReembolso(reservaId, habitacionId);
                 }
                 break;
+
             case 'confirmar':
-            // CORRECCIÓN: Solo se actualiza el estado de la RESERVA a 'confirmada'.
-            // El estado de la HABITACIÓN no se toca (se pasa 'null'),
-            // permitiendo que siga 'libre' hasta que sea inminente.
-            await handleUpdateEstadoReserva(reservaId, 'confirmada', null, habitacionId);
-            break;
+                await handleUpdateEstadoReserva(reservaId, 'confirmada', null, habitacionId);
+                break;
+
             case 'checkin':
                 const puedeCheckin = await puedeHacerCheckIn(reservaId);
                 if (!puedeCheckin && state.configHotel.cobro_al_checkin) {
@@ -1855,6 +1875,7 @@ async function handleListActions(event) {
                     await handleUpdateEstadoReserva(reservaId, 'activa', 'ocupada', habitacionId);
                 }
                 break;
+
             case 'checkout':
                  const { data: reservaCheckout, error: errCheckout } = await state.supabase
                     .from('reservas')
@@ -1880,6 +1901,7 @@ async function handleListActions(event) {
                     await handleUpdateEstadoReserva(reservaId, 'completada', 'limpieza', habitacionId);
                 }
                 break;
+
             case 'abonar':
                 const { data: reservaActual, error: errRA } = await state.supabase
                     .from('reservas')
@@ -1889,15 +1911,18 @@ async function handleListActions(event) {
                 if (errRA || !reservaActual) throw new Error("Reserva no encontrada para abonar.");
                 await mostrarModalAbonoReserva(reservaActual);
                 break;
+
             case 'no_show':
-                 const confirmNoShow = await ui.showConfirmationModal("¿Marcar esta reserva como 'No Show'? La habitación se marcará como libre.");
+                 const confirmNoShow = await ui.showConfirmationModal("¿Marcar esta reserva como 'No Presentado'? La habitación se liberará, pero el dinero registrado NO se devolverá.");
                 if (confirmNoShow) {
                     await handleUpdateEstadoReserva(reservaId, 'no_show', 'libre', habitacionId, true);
                 }
                 break;
+
             case 'eliminar':
                 await handleDeleteReserva(reservaId);
                 break;
+                
             case 'ver_detalles':
                  ui.showInfoModal(`Funcionalidad "Ver Detalles" para reserva ${reservaId.substring(0,8)} aún no implementada.`, "En Desarrollo");
                 break;
@@ -1911,6 +1936,92 @@ async function handleListActions(event) {
         btn.disabled = false;
         btn.innerHTML = originalButtonText;
     }
+}
+
+/**
+ * Proceso completo para cancelar una reserva, incluyendo la reversión de pagos.
+ * 1. Busca todos los pagos de la reserva en 'pagos_reserva'.
+ * 2. Con los IDs de esos pagos, elimina los movimientos correspondientes de 'caja'.
+ * 3. Elimina los registros de 'pagos_reserva'.
+ * 4. Finalmente, actualiza el estado de la reserva a 'cancelada' y de la habitación a 'libre'.
+ */
+async function cancelarReservaConReembolso(reservaId, habitacionId) {
+    if (!ui.feedbackDiv) return;
+    showLoading(ui.feedbackDiv, "Cancelando y revirtiendo pagos...");
+
+    // 1. Encontrar todos los pagos asociados a esta reserva
+    const { data: pagos, error: errPagos } = await state.supabase
+        .from('pagos_reserva')
+        .select('id')
+        .eq('reserva_id', reservaId);
+
+    if (errPagos) {
+        throw new Error(`Error buscando pagos para cancelar: ${errPagos.message}`);
+    }
+
+    if (pagos && pagos.length > 0) {
+        const idsDePagos = pagos.map(p => p.id);
+        
+        // 2. Eliminar los movimientos de la caja que correspondan a esos pagos
+        const { error: errCaja } = await state.supabase
+            .from('caja')
+            .delete()
+            .in('pago_reserva_id', idsDePagos);
+
+        if (errCaja) {
+            throw new Error(`Error revirtiendo ingresos en caja: ${errCaja.message}`);
+        }
+        
+        // 3. Eliminar los registros de la tabla 'pagos_reserva'
+        const { error: errPagosDelete } = await state.supabase
+            .from('pagos_reserva')
+            .delete()
+            .eq('reserva_id', reservaId);
+            
+        if (errPagosDelete) {
+            throw new Error(`Error eliminando el historial de pagos de la reserva: ${errPagosDelete.message}`);
+        }
+        
+        console.log(`[Reservas] Reembolso completado. ${idsDePagos.length} pago(s) revertido(s) de la caja y de la reserva.`);
+    }
+
+    // --- INICIO DE LA LÓGICA MODIFICADA ---
+    // 4. Actualizar la reserva con el nuevo estado y la información de cancelación
+    const ahora = new Date().toISOString();
+    const { error: updateError } = await state.supabase
+        .from('reservas')
+        .update({
+            estado: 'cancelada',
+            monto_pagado: 0, // Se resetea el monto pagado
+            actualizado_en: ahora,
+            // NUEVOS CAMPOS
+            cancelado_por_usuario_id: state.currentUser.id, // Guardamos quién cancela
+            fecha_cancelacion: ahora // Guardamos cuándo se cancela
+        })
+        .eq('id', reservaId);
+
+    if (updateError) {
+        throw new Error(`Error al actualizar el estado de la reserva: ${updateError.message}`);
+    }
+
+    // 5. Liberar la habitación
+    if (habitacionId) {
+        const { error: errHab } = await state.supabase
+            .from('habitaciones')
+            .update({ estado: 'libre' })
+            .eq('id', habitacionId);
+
+        if (errHab) {
+            console.warn("Advertencia: Reserva cancelada, pero hubo un error al liberar la habitación.", errHab);
+        }
+    }
+    // --- FIN DE LA LÓGICA MODIFICADA ---
+
+    showSuccess(ui.feedbackDiv, "Reserva cancelada y pagos revertidos exitosamente.");
+    
+    // Disparamos los eventos de actualización
+    await renderReservas();
+    document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'reservas', accion: 'cancel' } }));
 }
 
 function actualizarVisibilidadPago() {

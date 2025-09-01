@@ -66,10 +66,15 @@ const formatCurrencyLocal = (value, currency = 'COP') => {
 const formatDateLocal = (dateStr, options = { dateStyle: 'short', timeStyle: 'short' }) => {
   if (!dateStr) return 'N/A';
   
-  // Se elimina la lógica anterior que truncaba la fecha.
-  // Ahora se crea el objeto Date directamente desde la cadena ISO completa,
-  // lo que preserva la información de la hora correctamente.
-  const date = new Date(dateStr);
+  let date;
+  // VERIFICACIÓN: Si la fecha es solo 'YYYY-MM-DD', la tratamos como local para evitar el desfase.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    // Se añade T00:00:00 sin la 'Z' para que se interprete en la zona horaria del navegador.
+    date = new Date(dateStr + 'T00:00:00');
+  } else {
+    // Para fechas completas (ISO string), se mantiene el comportamiento original.
+    date = new Date(dateStr);
+  }
 
   // Se verifica si la fecha resultante es válida antes de formatearla.
   return isNaN(date.getTime()) ? 'Fecha Inválida' : date.toLocaleString('es-CO', options);
