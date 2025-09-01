@@ -3246,30 +3246,50 @@ modalContainer.style.display = "none";            modalContainer.innerHTML = '';
 
 
 
-// ===================== BLOQUE CRONÓMETRO (VERSIÓN OPTIMIZADA) =====================
 function startCronometro(room, supabase, hotelId, listEl) {
-    // 1. OBTENER LA FECHA FIN UNA SOLA VEZ
-    // Esta es la única consulta a la base de datos al inicio del cronómetro.
     supabase.from('reservas')
         .select('id, fecha_fin')
         .eq('habitacion_id', room.id)
         .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
         .order('fecha_inicio', { ascending: false })
-        // CÓDIGO CORREGIDO
+        .limit(1)
+        .then(async ({ data: reservas, error: reservaError }) => {
+            const reservaActiva = (reservas && reservas.length > 0) ? reservas[0] : null;
+            const cronometroDiv = listEl.querySelector(`#cronometro-${room.id}`);
 
-//...
-.limit(1) // Esta línea ya asegura que solo obtenemos un resultado.
-// Se elimina .single() para evitar el error 406.
-.then(({ data: reservas, error: reservaError }) => { // 'data' ahora se llama 'reservas' y es un array
-    // Tomamos el primer (y único) elemento del array.
-    const reservaActiva = (reservas && reservas.length > 0) ? reservas[0] : null;
+            // ▼▼▼ INICIO DEL CÓDIGO DE AUTO-CORRECCIÓN ▼▼▼
+            if (reservaError || !reservaActiva) {
+                console.warn(`Inconsistencia detectada: Habitación ${room.nombre} (${room.id}) tiene estado "${room.estado}" pero no tiene reserva activa. Corrigiendo a 'libre'.`);
+                
+                // 1. Corregir el estado en la base de datos
+                const { error: updateError } = await supabase
+                    .from('habitaciones')
+                    .update({ estado: 'libre' })
+                    .eq('id', room.id);
 
-    const cronometroDiv = listEl.querySelector(`#cronometro-${room.id}`);
-    if (reservaError || !reservaActiva) {
-        if (cronometroDiv) cronometroDiv.innerHTML = `<span class="text-sm text-slate-400 italic">No activo</span>`;
-//...
-                return;
+                if (updateError) {
+                    console.error("Error al auto-corregir el estado de la habitación:", updateError);
+                    if (cronometroDiv) cronometroDiv.innerHTML = `<span class="text-sm text-red-500 italic">Error de estado</span>`;
+                } else {
+                    // 2. Actualizar visualmente la tarjeta de la habitación para que refleje el nuevo estado "LIBRE"
+                    const cardElement = listEl.querySelector(`#cronometro-${room.id}`)?.closest('.room-card');
+                    if (cardElement) {
+                        const badgeEl = cardElement.querySelector('.badge');
+                        const estadoTextEl = cardElement.querySelector('h3');
+                        
+                        if(badgeEl) {
+                            badgeEl.className = 'badge bg-green-100 text-green-700 px-2.5 py-1 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm flex-shrink-0';
+                            badgeEl.textContent = 'LIBRE';
+                        }
+                        if(cronometroDiv) {
+                            cronometroDiv.innerHTML = ''; // Limpiar el "No activo"
+                        }
+                        cardElement.classList.remove('animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-yellow-500');
+                    }
+                }
+                return; // Detener la ejecución del cronómetro para esta habitación
             }
+            // ▲▲▲ FIN DEL CÓDIGO DE AUTO-CORRECCIÓN ▲▲▲
 
             const fechaFin = new Date(reservaActiva.fecha_fin);
             const cronometroId = `cronometro-${room.id}`;
@@ -3292,24 +3312,18 @@ function startCronometro(room, supabase, hotelId, listEl) {
                 if (diff <= 0) {
                     if (!tiempoAgotadoNotificado) {
                         tiempoAgotadoNotificado = true;
-                        console.log(`⚡️ Notificando a Supabase: Habitación ${room.id} ha agotado su tiempo.`);
                         supabase.from('habitaciones')
                             .update({ estado: 'tiempo agotado' })
                             .eq('id', room.id)
                             .then(({ error }) => {
-                                if (error) {
-                                    console.error("Error al actualizar habitación a 'tiempo agotado':", error);
-                                } else {
-                                    playPopSound && playPopSound();
-                                }
+                                if (error) console.error("Error al actualizar habitación a 'tiempo agotado':", error);
+                                else playPopSound && playPopSound();
                             });
                     }
 
-                    // Actualización visual inmediata
                     const diffPos = Math.abs(diff);
                     const h = String(Math.floor(diffPos / 3600000)).padStart(2, '0');
                     const m = String(Math.floor((diffPos % 3600000) / 60000)).padStart(2, '0');
-                    // CAMBIO 1: Añadir segundos al cálculo y al texto
                     const s = String(Math.floor((diffPos % 60000) / 1000)).padStart(2, '0');
                     cronometroDiv.innerHTML = `<span class="font-bold text-red-500 animate-pulse">⏰ Excedido: -${h}:${m}:${s}</span>`;
                     
@@ -3319,7 +3333,6 @@ function startCronometro(room, supabase, hotelId, listEl) {
                     }
 
                 } else {
-                    // CAMBIO 1 (cont.): Añadir segundos al cálculo y al texto
                     const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
                     const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
                     const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
@@ -3329,24 +3342,21 @@ function startCronometro(room, supabase, hotelId, listEl) {
                     
                     if (cardElement) cardElement.classList.remove('animate-pulse-fast', 'ring-4', 'ring-red-500', 'ring-yellow-500');
                     
-                    if (diff < 10 * 60 * 1000) { // Menos de 10 min
+                    if (diff < 10 * 60 * 1000) {
                         textColor = 'text-yellow-600 font-semibold';
                         iconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
                         if (cardElement) cardElement.classList.add('ring-4', 'ring-yellow-500');
-                    } else if (diff < 30 * 60 * 1000) { // Menos de 30 min
+                    } else if (diff < 30 * 60 * 1000) {
                         textColor = 'text-orange-500';
                         iconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
                     }
                     
-                    // Se añade la variable 's' para los segundos
                     cronometroDiv.innerHTML = `${iconSVG}<span class="${textColor}">${h}:${m}:${s}</span>`;
                 }
             }
             
             updateCronoDisplay();
-
-            // CAMBIO 2: El intervalo ahora se ejecuta cada segundo (1000ms)
-            cronometrosInterval[cronometroId] = setInterval(updateCronoDisplay, 1000); 
+            cronometrosInterval[cronometroId] = setInterval(updateCronoDisplay, 1000);
         })
         .catch(err => {
             if (err.code !== 'PGRST116') {
