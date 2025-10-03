@@ -120,7 +120,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // 1. OBTENER Y VALIDAR DATOS DEL FORMULARIO (VALIDACIÓN FRONT-END)
             const hotelName = document.getElementById('hotelName').value.trim();
             const adminName = document.getElementById('adminName').value.trim();
-            const email = document.getElementById('registroEmail').value.trim();
+            const email = document.getElementById('registroEmail').value.trim().toLowerCase();
             const password = document.getElementById('registroPassword').value;
             const confirmPasswordValue = document.getElementById('confirmPassword').value;
 
