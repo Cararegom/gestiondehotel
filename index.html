@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <!-- Google tag (gtag.js) event -->
+<script>
+  gtag('event', 'conversion_event_signup', {
+    // <event_parameters>
+  });
+</script>
+    <script>
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id=GTM-NDC7DNLK';f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-NDC7DNLK');
+</script>
+    <meta charset="UTF-8">
+    <title>Gestión de Hotel | Transforma tu Hotel - Prueba TODO GRATIS 30 Días</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Software de gestión hotelera diseñado para Latinoamérica. Administra reservas (¡también por horas!), habitaciones, caja, limpieza y más en segundos. Olvídate del papel y controla todo desde tu celular.">
+
+    <link rel="icon" href="/icons/favicon.png" type="image/png">
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --hotel-blue: #1a5ca3;
+            --hotel-green: #28a745;
+            --hotel-orange: #ff9800;
+            --text-color: #343a40;
+            --text-muted-color: #6c757d;
+            --light-gray: #f8f9fa;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            line-height: 1.7;
+            color: var(--text-color);
+            background-color: #fff;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Helpers & Animations */
+        .hover-lift { transition: transform 0.3s ease; }
+        .hover-lift:hover { transform: translateY(-5px); }
+        .text-gradient-hotel {
+            background: linear-gradient(90deg, var(--hotel-blue), var(--hotel-green));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+        .hotel-gradient {
+            background: linear-gradient(135deg, var(--hotel-blue), #144981);
+        }
+        .hotel-shadow { box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05); }
+        .hotel-shadow-lg { box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08); }
+        .hotel-shadow-green { box-shadow: 0 4px 20px rgba(40, 167, 69, 0.25); }
+
+        @keyframes float-hotel {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+        .animate-float-hotel { animation: float-hotel 6s ease-in-out infinite; }
+        
+        @keyframes pulse-hotel {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.95; }
+        }
+        .animate-pulse-hotel { animation: pulse-hotel 2.5s ease-in-out infinite; }
+
+        /* Typography */
+        .responsive-text-hero { font-size: clamp(2.5rem, 5vw, 3.75rem); }
+        .responsive-text-section { font-size: clamp(2rem, 4vw, 3rem); }
+
+        /* Buttons & Badges */
+        .btn-hotel-primary {
+            background-color: var(--hotel-green);
+            color: white;
+            border: 2px solid var(--hotel-green);
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+        .btn-hotel-primary:hover {
+            background-color: white;
+            color: var(--hotel-green);
+        }
+        .btn-hotel-secondary {
+            background-color: var(--hotel-blue);
+            color: white;
+            border: 2px solid var(--hotel-blue);
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+        .btn-hotel-secondary:hover {
+            background-color: white;
+            color: var(--hotel-blue);
+        }
+        .badge-custom {
+            font-weight: 600;
+            border: 1px solid rgba(0,0,0,0.1);
+        }
+
+        /* Navbar & Header */
+        .navbar { background-color: rgba(255, 255, 255, 0.9) !important; backdrop-filter: blur(10px); }
+        
+        /* Cards & Icons */
+        .module-icon-hotel {
+            width: 60px;
+            height: 60px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+        .module-icon-blue { background: linear-gradient(135deg, var(--hotel-blue), #144981); }
+        .module-icon-green { background: linear-gradient(135deg, var(--hotel-green), #218838); }
+        .benefit-card, .module-card {
+            border: 0;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            background-color: white;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        }
+        .benefit-card:hover, .module-card:hover { 
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); 
+            transform: translateY(-8px); 
+        }
+
+        /* Pricing Section */
+        .pricing-card {
+            border-radius: 1rem;
+            border: 1px solid #e9ecef;
+            background-color: white;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+        }
+        .pricing-card.popular {
+            border: 2px solid var(--hotel-orange);
+            transform: scale(1.03);
+            z-index: 2;
+        }
+        .feature-list { list-style: none; padding-left: 0; }
+        .feature-list li { display: flex; align-items: flex-start; gap: 0.75rem; margin-bottom: 0.85rem; font-size: 0.95rem; }
+        .feature-list li .bi { font-size: 1.2rem; margin-top: 2px; flex-shrink: 0; }
+        .feature-list li .bi-check-circle-fill { color: var(--hotel-green); }
+        .feature-list li .bi-x-circle-fill { color: #dc3545; }
+
+        /* Switch Component */
+        .switch-container { display: flex; align-items: center; gap: 0.75rem; }
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--hotel-green); }
+        input:checked + .slider:before { transform: translateX(22px); }
+        .switch-label { font-weight: 500; color: var(--text-muted-color); transition: color 0.3s; }
+        .switch-label.active { color: var(--hotel-blue); }
+
+        /* Footer */
+        .footer { background-color: #111827; color: #9ca3af; }
+        .footer h5 { color: white; font-weight: 600; }
+        .footer a { color: #9ca3af; text-decoration: none; }
+        .footer a:hover { color: white; }
+    </style>
+</head>
+<body>
+    <noscript>
+  <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK"
+  height="0" width="0" style="display:none;visibility:hidden"></iframe>
+</noscript>
+    <nav class="navbar navbar-expand-lg navbar-light shadow-sm fixed-top">
+        <div class="container">
+          <a class="navbar-brand" href="#">
+    <img src="/icons/logo.jpeg" alt="Gestión de Hotel Logo" style="max-height: 100px;">
+</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto align-items-center">
+                    <li class="nav-item"><a class="nav-link fw-semibold" href="#beneficios">Beneficios</a></li>
+                    <li class="nav-item"><a class="nav-link fw-semibold" href="#features">Módulos</a></li>
+                    <li class="nav-item"><a class="nav-link fw-semibold" href="#pricing">Planes</a></li>
+                    <li class="nav-item"><a class="nav-link fw-semibold" href="#testimonials">Testimonios</a></li>
+                    <li class="nav-item"><a class="nav-link fw-semibold" href="#faq">FAQ</a></li>
+                    <li class="nav-item ms-lg-2"><a class="btn btn-outline-primary btn-sm" href="login.html">Iniciar Sesión</a></li>
+                    <li class="nav-item ms-lg-2"><a class="btn btn-hotel-primary btn-sm" data-bs-toggle="modal" data-bs-target="#registroModal">Probar Gratis</a></li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="py-5" style="background: linear-gradient(to bottom right, #f0f7ff, #ffffff, #f0fff4); overflow: hidden;">
+             <div class="container py-5">
+                <div class="row align-items-center g-5">
+                    <div class="col-lg-6">
+                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3 py-2 mb-3 badge-custom">
+                            <i class="bi bi-sparkles me-1"></i> Prueba gratis 30 días • Sin tarjeta de crédito
+                        </span>
+                        <h1 class="responsive-text-hero fw-bolder lh-tight">
+                            Todo lo que tu Hotel o Motel necesita,
+                            <span class="d-block text-gradient-hotel mt-1">en una sola app.</span>
+                        </h1>
+                        <p class="fs-5 text-secondary fw-medium my-4">
+                            Administra reservas, habitaciones, caja, limpieza, mantenimiento, tienda, restaurante y más en segundos. 
+                            <span class="d-block fw-bold mt-1" style="color: var(--hotel-green);">Controla tu Hotel o Motel en tiempo real desde cualquier dispositivo.</span>
+                        </p>
+                        <div class="d-flex flex-column flex-sm-row gap-3 mt-4">
+                            <a href="#" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-hotel-primary btn-lg rounded-pill px-4 py-3 hover-lift">
+                                Probar ahora gratis <i class="bi bi-arrow-right-short"></i>
+                            </a>
+                            <a href="#pricing" class="btn btn-hotel-secondary btn-lg rounded-pill px-4 py-3 hover-lift">
+                                Ver planes y precios
+                            </a>
+                        </div>
+                    </div>
+                    <div class="col-lg-6 d-none d-lg-block">
+                        <div class="p-4 rounded-4 hotel-shadow-lg" style="background: rgba(255,255,255,0.8); backdrop-filter: blur(10px);">
+                            <div class="p-4 rounded-3" style="border: 1px solid rgba(40, 167, 69, 0.2);">
+                                <div class="d-flex justify-content-between align-items-center mb-4">
+                                    <h3 class="fw-bold text-gradient-hotel fs-5 mb-0">Dashboard en Vivo</h3>
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3 py-2 badge-custom">
+                                        <i class="bi bi-broadcast"></i> Tiempo Real
+                                    </span>
+                                </div>
+                                <div class="row g-3 mb-4">
+                                    <div class="col text-center bg-white p-3 rounded-3 border hover-lift">
+                                        <div class="fs-2 fw-bold text-gradient-hotel">23</div>
+                                        <div class="small text-secondary fw-semibold">Habitaciones</div>
+                                    </div>
+                                    <div class="col text-center bg-white p-3 rounded-3 border hover-lift">
+                                        <div class="fs-2 fw-bold" style="color: var(--hotel-green);">89%</div>
+                                        <div class="small text-secondary fw-semibold">Ocupación</div>
+                                    </div>
+                                </div>
+                                <div class="vstack gap-3">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="fw-semibold text-secondary">Ingresos Hoy</span>
+                                        <span class="fw-bold text-gradient-hotel">$1.850,000</span>
+                                    </div>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="fw-semibold text-secondary">Check-ins Pendientes</span>
+                                        <span class="fw-bold fs-5" style="color: var(--hotel-green);">4</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+<section id="beneficios" class="py-5">
+    <div class="container py-4">
+        <div class="text-center mb-5">
+            <h2 class="responsive-text-section fw-bold">Tu <span class="text-gradient-hotel">Centro de Mando</span> Hotelero</h2>
+            <p class="fs-5 text-secondary mx-auto" style="max-width: 800px;">Herramientas poderosas diseñadas para maximizar tu rentabilidad y darte control total.</p>
+        </div>
+        <div class="row g-4">
+            <div class="col-lg-3 col-md-6 d-flex">
+                <div class="benefit-card w-100">
+                    <div class="module-icon-hotel module-icon-green mx-auto mb-4">
+                        <i class="bi bi-clock-history fs-2"></i>
+                    </div>
+                    <h5 class="fw-bold">Reservas Flexibles</h5>
+                    <p class="small text-secondary">Gestiona tarifas por noches completas, por horas o estadías personalizadas. Maximiza tu ocupación.</p>
+                </div>
+            </div>
+
+            <div class="col-lg-3 col-md-6 d-flex">
+                <div class="benefit-card w-100">
+                    <div class="module-icon-hotel module-icon-blue mx-auto mb-4">
+                        <i class="bi bi-phone-fill fs-2"></i>
+                    </div>
+                    <h5 class="fw-bold">Tu Hotel en tu Bolsillo</h5>
+                    <p class="small text-secondary">Monitorea todo en tiempo real desde tu celular o tablet. Ingresos, ocupación y más, al instante.</p>
+                </div>
+            </div>
+
+            <div class="col-lg-3 col-md-6 d-flex">
+                <div class="benefit-card w-100">
+                    <div class="module-icon-hotel module-icon-green mx-auto mb-4">
+                        <i class="bi bi-bar-chart-line-fill fs-2"></i>
+                    </div>
+                    <h5 class="fw-bold">Reportes Inteligentes</h5>
+                    <p class="small text-secondary">Toma mejores decisiones con reportes automáticos de ingresos, ocupación y tendencias.</p>
+                </div>
+            </div>
+
+            <div class="col-lg-3 col-md-6 d-flex">
+                <div class="benefit-card w-100">
+                    <div class="module-icon-hotel module-icon-blue mx-auto mb-4">
+                        <i class="bi bi-headset fs-2"></i>
+                    </div>
+                    <h5 class="fw-bold">Soporte Global en tu Idioma</h5>
+                    <p class="small text-secondary">Recibe asistencia rápida y personalizada por WhatsApp, sin importar si estás en LATAM, España o Guinea Ecuatorial.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+
+<section id="pricing" class="py-5 bg-light">
+    <div class="container py-4">
+        <div class="text-center mb-5">
+            <h2 class="responsive-text-section fw-bold">
+                Planes diseñados para <span class="text-gradient-hotel">hacer crecer tu hotel</span>
+            </h2>
+            <p class="fs-5 text-secondary mx-auto" style="max-width: 720px;">
+                Comienza con el plan Max <strong>GRATIS por 30 días</strong>. Cambia de plan cuando lo necesites. Sin contratos.
+            </p>
+        </div>
+
+        <div class="d-flex flex-column flex-sm-row align-items-center justify-content-center gap-4 my-5 p-4 bg-white rounded-4 shadow-sm border">
+            <div class="switch-container">
+    <span id="label-usd" class="switch-label active">USD</span>
+    <label class="switch"><input type="checkbox" id="monedaSwitch"><span class="slider"></span></label>
+    <span id="label-cop" class="switch-label">COP</span>
+</div>
+            <div class="switch-container">
+                <span id="label-mensual" class="switch-label active">Mensual</span>
+                <label class="switch"><input type="checkbox" id="periodoSwitch"><span class="slider"></span></label>
+                <span id="label-anual" class="switch-label">Anual (2 meses gratis)</span>
+            </div>
+        </div>
+        <div class="row justify-content-center g-4 g-lg-5">
+            
+            <div class="col-lg-4 d-flex">
+                <div class="pricing-card p-4">
+                    <div class="text-center">
+                        <h3 class="fw-bold fs-4">Lite</h3>
+                        <p class="text-secondary">Ideal para hoteles pequeños o en lanzamiento</p>
+                        <div class="my-4">
+                            <span class="fs-5 text-muted text-decoration-line-through me-2" id="price-original-lite">$149.000</span>
+                            <span class="fs-1 fw-bolder text-gradient-hotel" id="price-lite">$99.000</span>
+                            <span class="text-secondary" id="period-lite">/mes</span>
+                        </div>
+                    </div>
+                    <ul class="feature-list mt-3 mb-auto">
+                        <li><i class="bi bi-check-circle-fill"></i> Hasta 10 habitaciones</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Reservas por horas y noches</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Cronómetro por habitación</li>
+                        <li><i class="bi bi-check-circle-fill"></i> 1 usuario</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Caja + Facturación PDF</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Reportes básicos</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Backups automáticos</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Programa de referidos</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Soporte Chatbot IA</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Servicios, Tienda y Restaurante</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Limpieza y Mantenimiento</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Horarios automáticos</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Reportes avanzados + KPIs</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Notificaciones internas</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="col-lg-4 d-flex">
+                <div class="pricing-card p-4">
+                    <div class="text-center">
+                        <h3 class="fw-bold fs-4">Pro</h3>
+                        <p class="text-secondary">Perfecto para hoteles en operación</p>
+                        <div class="my-4">
+                            <span class="fs-5 text-muted text-decoration-line-through me-2" id="price-original-pro">$199.000</span>
+                            <span class="fs-1 fw-bolder text-gradient-hotel" id="price-pro">$149.000</span>
+                            <span class="text-secondary" id="period-pro">/mes</span>
+                        </div>
+                    </div>
+                    <ul class="feature-list mt-3 mb-auto">
+                        <li><i class="bi bi-check-circle-fill"></i> Hasta 20 habitaciones</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Hasta 5 usuarios</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Servicios adicionales</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Tienda / Inventario / Compras</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Restaurante + Comandas</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Limpieza y Mantenimiento</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Reportes operativos</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Soporte Prioritario</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Modulo de Descuentos</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Integracion de Fact. electrónica</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Reportes avanzados + KPIs</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Integraciones (Google Calendar / Outlook Calendar)</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Horarios automáticos</li>
+                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Notificaciones internas
+</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="col-lg-4 d-flex">
+                <div class="pricing-card popular p-4 position-relative">
+                    <span class="badge bg-warning text-dark position-absolute top-0 start-50 translate-middle-x py-1 px-3 fw-bold">RECOMENDADO</span>
+                    <div class="text-center mt-3">
+                        <h3 class="fw-bold fs-4">Max</h3>
+                        <p class="text-secondary">Solución completa para crecer sin límites</p>
+                        <div class="my-4">
+                            <span class="fs-5 text-muted text-decoration-line-through me-2" id="price-original-max">$299.000</span>
+                            <span class="fs-1 fw-bolder" style="color:var(--hotel-orange)" id="price-max">$199.000</span>
+                            <span class="text-secondary" id="period-max">/mes</span>
+                        </div>
+                    </div>
+                    <ul class="feature-list mt-3 mb-auto">
+                      <li><i class="bi bi-check-circle-fill"></i> Todo lo de Lite y Pro</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Habitaciones ilimitadas</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Hasta 20 usuarios</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Notificaciones internas</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Descuentos automáticos</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Reportes avanzados + KPIs</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Integraciones (Google Calendar / Outlook Calendar)</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Horarios automáticos</li>
+                        <li><i class="bi bi-check-circle-fill"></i> Soporte VIP + Consultoría</li>
+                    </ul>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="text-center mt-5">
+            <a href="#" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-primary btn-lg px-5 fw-bold">
+                ¡Empieza tus 30 días gratis!
+            </a>
+        </div>
+    </div>
+</section>
+
+
+        <section id="testimonials" class="py-5"><div class="container py-4"><div class="text-center mb-5"><h2 class="responsive-text-section fw-bold">Hoteleros Reales, <span class="text-gradient-hotel">Resultados Reales</span></h2><p class="fs-5 text-secondary mx-auto" style="max-width: 800px;">No solo lo decimos nosotros. Escucha a quienes ya están transformando su gestión.</p></div><div class="position-relative mx-auto" style="max-width: 800px;"><div id="testimonial-carousel" class="carousel slide"><div class="carousel-inner"></div></div><button id="prev-testimonial" class="btn btn-outline-dark rounded-circle d-none d-md-block" style="position: absolute; top: 50%; left: -30px; transform: translateY(-50%); width: 45px; height: 45px;"><i class="bi bi-chevron-left"></i></button><button id="next-testimonial" class="btn btn-outline-dark rounded-circle d-none d-md-block" style="position: absolute; top: 50%; right: -30px; transform: translateY(-50%); width: 45px; height: 45px;"><i class="bi bi-chevron-right"></i></button></div></div></section>
+        
+        <section class="py-5 hotel-gradient text-white"><div class="container text-center py-5"><div class="mx-auto" style="max-width: 800px;"><h2 class="display-4 fw-bold mb-4">Deja de perder dinero con métodos obsoletos.</h2><p class="fs-4 lead mb-4">Únete a más de 200 hoteles que ya automatizaron su gestión. Configuración en 5 minutos, soporte inmediato por WhatsApp.</p><a href="#" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-warning btn-lg px-5 py-3 animate-pulse-hotel">Empezar gratis ahora <i class="bi bi-arrow-right-short"></i></a></div></div></section>
+
+        <section id="faq" class="py-5"><div class="container py-4" style="max-width: 800px;"><div class="text-center mb-5"><h2 class="responsive-text-section fw-bold">Resolvemos tus <span class="text-gradient-hotel">Dudas</span></h2></div><div class="accordion accordion-flush" id="faqAccordion"><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse1">¿Cómo funciona la prueba GRATIS de 30 días?</button></h2><div id="faqCollapse1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion"><div class="accordion-body">Es muy simple: te registras (sin necesidad de tarjeta de crédito) y obtienes acceso COMPLETO a TODAS las funcionalidades del Plan Max durante 30 días. Queremos que pruebes a fondo el sistema y veas cómo puede transformar la gestión de tu hotel.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse2">¿Qué pasa después de los 30 días de prueba?</button></h2><div id="faqCollapse2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Antes de que finalice tu prueba, te contactaremos. Si decides continuar (¡estamos seguros de que así será!), podrás elegir uno de nuestros planes (Lite, Pro o Max) y realizar el pago de forma segura para seguir disfrutando de Gestión de Hotel sin interrupciones. Si no, tu cuenta simplemente se desactivará, sin cargos ni compromisos.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse3">¿Puedo cambiar de plan o cancelar en cualquier momento?</button></h2><div id="faqCollapse3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">¡Totalmente! Creemos en la flexibilidad. Puedes cambiar de plan (subir o bajar) o cancelar tu suscripción cuando quieras directamente desde tu panel "Mi Cuenta", sin contratos a largo plazo ni penalizaciones. Tú tienes el control.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse4">¿Qué tipo de soporte ofrecen?</button></h2><div id="faqCollapse4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Ofrecemos soporte técnico en español a través de nuestro Chatbot IA inteligente (24/7), email, y para planes Pro y Max, atención prioritaria y WhatsApp. El Plan Max incluye soporte VIP y consultoría inicial.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse5">¿Ofrecen descuento por pago anual?</button></h2><div id="faqCollapse5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">¡Sí! Al elegir el pago anual para cualquiera de nuestros planes, obtienes un generoso descuento equivalente a <strong>2 meses GRATIS</strong>. Es una excelente forma de asegurar tu acceso y ahorrar.</div></div></div></div></div></section>
+    </main>
+
+    <footer class="footer py-5">
+        <div class="container">
+            <div class="row gy-4">
+                <div class="col-lg-4 text-center text-lg-start">
+                    <h5 class="mb-3">Gestión de Hotel</h5>
+                    <p class="text-muted">La plataforma más fácil para administrar hoteles, moteles y hostales en Latinoamérica.</p>
+                </div>
+                <div class="col-lg-2 col-6"><h5 class="mb-3">Producto</h5><ul class="list-unstyled"><li class="mb-2"><a href="#beneficios">Beneficios</a></li><li class="mb-2"><a href="#features">Módulos</a></li><li class="mb-2"><a href="#pricing">Planes</a></li></ul></div>
+                <div class="col-lg-2 col-6"><h5 class="mb-3">Soporte</h5><ul class="list-unstyled"><li class="mb-2"><a href="#">Centro de Ayuda</a></li><li class="mb-2"><a href="#">Video Tutoriales</a></li><li class="mb-2"><a href="#">WhatsApp</a></li></ul></div>
+                <div class="col-lg-2 col-6"><h5 class="mb-3">Empresa</h5><ul class="list-unstyled"><li class="mb-2"><a href="#" data-bs-toggle="modal" data-bs-target="#privacidadModal">Política de Privacidad</a></li><li class="mb-2"><a href="#" data-bs-toggle="modal" data-bs-target="#terminosModal">Términos de Servicio</a></li></ul></div>
+                 <div class="col-lg-2 col-6"><h5 class="mb-3">Contacto</h5><ul class="list-unstyled"><li class="mb-2"><a href="mailto:soporte@gestiondehotel.com">Email</a></li></ul></div>
+            </div>
+            <div class="text-center text-muted border-top border-secondary-subtle mt-4 pt-4">
+                <p>&copy; 2025 Gestión de Hotel. Todos los derechos reservados. Hecho con ❤️ en Colombia.</p>
+            </div>
+        </div>
+    </footer>
+
+    <div class="modal fade" id="registroModal" tabindex="-1" aria-labelledby="registroModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form id="registroForm">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="registroModalLabel">¡Estás a un paso de Transformar tu Hotel!</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-center fw-bold">Completa tus datos y obtén 30 DÍAS GRATIS con TODAS las funcionalidades del Plan Max.</p>
+                    <p class="text-center small mb-3">Sin tarjeta de crédito requerida. Sin compromisos.</p>
+                    <div id="registroFormAlert" class="alert d-none" role="alert"></div>
+
+                    <div class="mb-3">
+                        <label for="hotelName" class="form-label">Nombre del Hotel <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="hotelName" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="adminName" class="form-label">Tu Nombre (Administrador) <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="adminName" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="registroEmail" class="form-label">Email <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" id="registroEmail" required>
+                    </div>
+
+                    <div class="mb-3 position-relative">
+                        <label for="registroPassword" class="form-label">Contraseña <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" id="registroPassword" required>
+                        <i class="bi bi-eye-slash-fill position-absolute" style="cursor: pointer; right: 15px; top: 42px;" id="togglePassword"></i>
+                    </div>
+
+                    <div class="mb-3 position-relative">
+                        <label for="confirmPassword" class="form-label">Confirmar Contraseña <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" id="confirmPassword" required>
+                        <i class="bi bi-eye-slash-fill position-absolute" style="cursor: pointer; right: 15px; top: 42px;" id="toggleConfirmPassword"></i>
+                    </div>
+                </div>
+                <div class="modal-footer flex-column"> <p class="text-center text-muted small mb-3">
+                        Al hacer clic en "Crear mi Cuenta", aceptas nuestros 
+                        <a href="#terminos" data-bs-toggle="modal" data-bs-target="#terminosModal" class="text-decoration-underline">Términos y Condiciones</a> y nuestra 
+                        <a href="#privacidad" data-bs-toggle="modal" data-bs-target="#privacidadModal" class="text-decoration-underline">Política de Privacidad</a>.
+                    </p>
+                    <button type="submit" class="btn btn-warning w-100 py-2 fw-bold">¡Crear mi Cuenta y Empezar Prueba GRATIS!</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+    <div class="modal fade" id="modalBloqueoSuscripcion" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white"><h5 class="modal-title">Tu Suscripción Requiere Atención</h5></div><div class="modal-body text-center"><p>Tu periodo de prueba de 30 días ha finalizado o tu suscripción está vencida.<br>Para continuar usando todas las funcionalidades del sistema, por favor realiza el pago de tu plan:</p><button id="btnPagarModal" class="btn btn-success btn-lg"><i class="bi bi-cash-coin me-2"></i> Pagar Suscripción Ahora</button></div></div></div></div>
+    <div class="modal fade" id="terminosModal" tabindex="-1" aria-labelledby="terminosModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="terminosModalLabel">Términos y Condiciones de Uso</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><p>Bienvenido a Gestión de Hotel. Al utilizar nuestros servicios, aceptas los siguientes términos y condiciones:</p><h6>1. Prueba Gratuita y Suscripción</h6><p>Ofrecemos una prueba gratuita de 30 días con acceso a todas las funcionalidades del Plan Max. No se requiere tarjeta de crédito para la prueba. Al finalizar el periodo de prueba, para continuar utilizando el servicio, deberás seleccionar un plan de suscripción y realizar el pago correspondiente. Las tarifas de suscripción se detallan en nuestra sección de Planes y Precios. Se ofrecen descuentos por pagos anuales.</p><h6>2. Uso Aceptable</h6><p>Te comprometes a utilizar el software Gestión de Hotel únicamente para fines lícitos y relacionados con la administración de tu establecimiento hotelero. No podrás utilizar el servicio para transmitir material ilegal, difamatorio, o que infrinja derechos de terceros.</p><p></p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
+    <div class="modal fade" id="privacidadModal" tabindex="-1" aria-labelledby="privacidadModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="privacidadModalLabel">Política de Privacidad</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><p>En Gestión de Hotel, la privacidad de tus datos es fundamental. Esta política describe cómo recopilamos, usamos y protegemos tu información:</p><h6>1. Información que Recopilamos</h6><p>Recopilamos información que nos proporcionas durante el registro (nombre, email, nombre del hotel) y datos generados por el uso del sistema (reservas, datos de huéspedes bajo tu responsabilidad, configuraciones). No almacenamos datos de tarjetas de crédito directamente; estos son procesados por pasarelas de pago seguras.</p><h6>2. Uso de la Información</h6><p>Utilizamos tu información para operar y mejorar el servicio, comunicarnos contigo, procesar pagos y cumplir con obligaciones legales. Los datos de tus huéspedes son gestionados por ti, y nosotros solo actuamos como procesadores de datos según tus instrucciones.</p><p></p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
+    <div class="modal fade" id="registroExitosoModal" tabindex="-1" aria-labelledby="registroExitosoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow-lg"><div class="modal-body text-center p-4 p-md-5"><i class="bi bi-check-circle-fill display-1 text-success mb-3"></i><h4 class="modal-title fw-bold mb-2" id="registroExitosoModalLabel">¡Registro Completado!</h4><p class="fs-5">¡Revisa tu correo para activar tu cuenta!</p><p class="text-secondary">Te hemos enviado un correo de confirmación a la dirección que proporcionaste. Por favor, haz clic en el enlace de activación para empezar a usar tu cuenta.</p><p class="small text-danger fst-italic mt-3"><i class="bi bi-exclamation-triangle-fill me-1"></i> Si no lo ves, ¡revisa tu carpeta de Spam o Correo no deseado!</p><button type="button" id="btn-ok-registro-exitoso" class="btn btn-primary mt-3">Entendido, ir a Iniciar Sesión</button></div></div></div></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="module" src="script.js"></script>
+
+
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- LÓGICA DE TESTIMONIOS CON FOTOS LOCALES ---
+        const testimonials = [
+            { 
+                name: "Laura Cárdenas", 
+                role: "Propietaria, Hotel Paraíso Azul", 
+                content: "Desde que usamos Gestión de Hotel, nuestras reservas por horas se dispararon un 40%. El sistema es súper fácil de usar y el soporte siempre está ahí. ¡Lo recomiendo a ojos cerrados!", 
+                image: "icons/testimonio-laura-cardenas.png"  // <-- RUTA ACTUALIZADA
+            },
+            { 
+                name: "Ricardo Morales", 
+                role: "Gerente, Motel El Descanso", 
+                content: "Antes perdíamos mucho tiempo con la caja y las facturas. Ahora todo es automático y sin errores. La integración con WhatsApp es una maravilla para confirmar reservas. ¡Un alivio total!", 
+                image: "icons/testimonio-ricardo-morales.png" // <-- RUTA ACTUALIZADA
+            },
+            { 
+                name: "Sofía Peña", 
+                role: "Administradora, Hostal Aventura", 
+                content: "Lo que más me gusta es el mapa de habitaciones y lo fácil que es ver la disponibilidad. El primer mes gratis nos convenció y ahora no podríamos vivir sin él. ¡Gracias, Gestión de Hotel!", 
+                image: "icons/testimonio-sofia-pena.png" // <-- RUTA ACTUALIZADA
+            }
+        ];
+
+        // El resto del código que crea el carrusel se mantiene igual...
+        const carouselInner = document.querySelector('#testimonial-carousel .carousel-inner');
+        if (carouselInner) {
+            testimonials.forEach((t, index) => {
+                const item = document.createElement('div');
+                item.className = `carousel-item ${index === 0 ? 'active' : ''}`;
+                item.innerHTML = `<div class="card testimonial-card border-0 hotel-shadow-lg bg-white text-center p-4 p-md-5"><img src="${t.image}" alt="Foto de ${t.name}" class="rounded-circle mx-auto mb-3" style="width: 70px; height: 70px; border: 3px solid var(--hotel-blue); object-fit: cover;"><p class="fs-5 fst-italic text-secondary mb-4">"${t.content}"</p><div><p class="fw-bold mb-0">${t.name}</p><p class="text-secondary small mb-0">${t.role}</p></div></div>`;
+                carouselInner.appendChild(item);
+            });
+            const testimonialCarousel = new bootstrap.Carousel(document.getElementById('testimonial-carousel'), { interval: 6000, ride: 'carousel' });
+            const prevBtn = document.getElementById('prev-testimonial');
+            const nextBtn = document.getElementById('next-testimonial');
+            if(prevBtn) prevBtn.addEventListener('click', () => testimonialCarousel.prev());
+            if(nextBtn) nextBtn.addEventListener('click', () => testimonialCarousel.next());
+        }
+
+
+        // --- LÓGICA DE PRECIOS (se mantiene igual) ---
+        const PLANES = {
+            lite: { cop: 99000,  usd: 25, original_cop: 149000, original_usd: 40 },
+            pro:  { cop: 149000, usd: 38, original_cop: 229000, original_usd: 60 },
+            max:  { cop: 199000, usd: 50, original_cop: 299000, original_usd: 75 }
+        };
+        const monedaSwitch = document.getElementById('monedaSwitch');
+        const periodoSwitch = document.getElementById('periodoSwitch');
+
+        function formatCurrency(value, currency) {
+             if (currency === 'USD') return value.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 });
+            return value.toLocaleString('es-CO', { style: 'currency', currency: 'COP', minimumFractionDigits: 0 });
+        }
+
+        function updateLabels(isCOP, isAnnual) {
+            document.getElementById('label-usd').classList.toggle('active', !isCOP);
+            document.getElementById('label-cop').classList.toggle('active', isCOP);
+            document.getElementById('label-mensual').classList.toggle('active', !isAnnual);
+            document.getElementById('label-anual').classList.toggle('active', isAnnual);
+        }
+
+        function updatePrices() {
+            if(!monedaSwitch || !periodoSwitch) return;
+            const isCOP = monedaSwitch.checked; 
+            const isAnnual = periodoSwitch.checked;
+            const currency = isCOP ? 'cop' : 'usd';
+            const originalCurrencyKey = isCOP ? 'original_cop' : 'original_usd';
+            const currencyCode = isCOP ? 'COP' : 'USD';
+            updateLabels(isCOP, isAnnual);
+            for (const plan in PLANES) {
+                const priceMonthly = PLANES[plan][currency];
+                const priceAnnual = priceMonthly * 10;
+                const displayPrice = isAnnual ? priceAnnual : priceMonthly;
+                const originalPriceMonthly = PLANES[plan][originalCurrencyKey];
+                const originalPriceAnnual = originalPriceMonthly * 10;
+                const displayOriginalPrice = isAnnual ? originalPriceAnnual : originalPriceMonthly;
+                const periodText = isAnnual ? '/año' : '/mes';
+                document.getElementById(`price-${plan}`).textContent = formatCurrency(displayPrice, currencyCode);
+                const originalPriceElement = document.getElementById(`price-original-${plan}`);
+                if (originalPriceElement) {
+                    originalPriceElement.textContent = formatCurrency(displayOriginalPrice, currencyCode);
+                }
+                document.getElementById(`period-${plan}`).textContent = periodText;
+            }
+        }
+
+        if(monedaSwitch) monedaSwitch.addEventListener('change', updatePrices);
+        if(periodoSwitch) periodoSwitch.addEventListener('change', updatePrices);
+        updatePrices();
+    });
+</script>
+
+<link rel="stylesheet" href="style.css">
+
+<a href="https://wa.me/573135463769" target="_blank" id="whatsapp-float" aria-label="Habla con un asesor por WhatsApp">
+  <svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 48 48">
+    <path fill="#fff" d="M4.9,43.3l2.7-9.8C5.9,30.6,5,27.3,5,24C5,13.5,13.5,5,24,5c5.1,0,9.8,2,13.4,5.6	C41,14.2,43,18.9,43,24c0,10.5-8.5,19-19,19c0,0,0,0,0,0h0c-3.2,0-6.3-0.8-9.1-2.3L4.9,43.3z"></path>
+    <path fill="#fff" d="M4.9,43.8c-0.1,0-0.3-0.1-0.4-0.1c-0.1-0.1-0.2-0.3-0.1-0.5L7,33.5c-1.6-2.9-2.5-6.2-2.5-9.6	C4.5,13.2,13.3,4.5,24,4.5c5.2,0,10.1,2,13.8,5.7c3.7,3.7,5.7,8.6,5.7,13.8c0,10.7-8.7,19.5-19.5,19.5c-3.2,0-6.3-0.8-9.1-2.3	L5,43.8C5,43.8,4.9,43.8,4.9,43.8z"></path>
+    <path fill="#cfd8dc" d="M24,5c5.1,0,9.8,2,13.4,5.6C41,14.2,43,18.9,43,24c0,10.5-8.5,19-19,19h0c-3.2,0-6.3-0.8-9.1-2.3	L4.9,43.3l2.7-9.8C5.9,30.6,5,27.3,5,24C5,13.5,13.5,5,24,5 M24,43L24,43L24,43 M24,43L24,43L24,43 M24,4L24,4C13,4,4,13,4,24	c0,3.4,0.8,6.7,2.5,9.6L3.9,43c-0.1,0.3,0,0.7,0.3,1c0.2,0.2,0.4,0.3,0.7,0.3c0.1,0,0.2,0,0.3,0l9.7-2.5c2.8,1.5,6,2.2,9.2,2.2	c11,0,20-9,20-20c0-5.3-2.1-10.4-5.8-14.1C34.4,6.1,29.4,4,24,4L24,4z"></path>
+    <path fill="#40c351" d="M35.2,12.8c-3-3-6.9-4.6-11.2-4.6C15.3,8.2,8.2,15.3,8.2,24c0,3,0.8,5.9,2.4,8.4L11,33l-1.6,5.8	l6-1.6l0.6,0.3c2.4,1.4,5.2,2.2,8,2.2h0c8.7,0,15.8-7.1,15.8-15.8C39.8,19.8,38.2,15.8,35.2,12.8z"></path>
+    <path fill="#fff" fill-rule="evenodd" d="M19.3,16c-0.4-0.8-0.7-0.8-1.1-0.8c-0.3,0-0.6,0-0.9,0	s-0.8,0.1-1.3,0.6c-0.4,0.5-1.7,1.6-1.7,4s1.7,4.6,1.9,4.9s3.3,5.3,8.1,7.2c4,1.6,4.8,1.3,5.7,1.2c0.9-0.1,2.8-1.1,3.2-2.3	c0.4-1.1,0.4-2.1,0.3-2.3c-0.1-0.2-0.4-0.3-0.9-0.6s-2.8-1.4-3.2-1.5c-0.4-0.2-0.8-0.2-1.1,0.2c-0.3,0.5-1.2,1.5-1.5,1.9	c-0.3,0.3-0.6,0.4-1,0.1c-0.5-0.2-2-0.7-3.8-2.4c-1.4-1.3-2.4-2.8-2.6-3.3c-0.3-0.5,0-0.7,0.2-1c0.2-0.2,0.5-0.6,0.7-0.8	c0.2-0.3,0.3-0.5,0.5-0.8c0.2-0.3,0.1-0.6,0-0.8C20.6,19.3,19.7,17,19.3,16z" clip-rule="evenodd"></path>
+  </svg>
+</a>
+
+
+
+
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf-autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <meta charset="UTF-8">
+    <title>Gestión de Hotel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Sistema de Gestión Hotelera - Tu hotel bajo control.">
+
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    
+    <link rel="stylesheet" href="../style.css"> 
+    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Configuración de Tailwind para colores personalizados
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'primary': '#1d4ed8', 
+              'secondary': '#f59e0b',
+              'accent': '#10b981',
+            }
+          }
+        }
+      }
+    </script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <style>
+        /* Asegura que el sidebar y la barra superior móvil tengan un z-index menor que los modales */
+        #sidebar, #mobile-topbar {
+            z-index: 40;
+        }
+    </style>
+<!-- Link al Manifest -->
+<link rel="manifest" href="../js/manifest.json">
+
+<!-- Color de barra superior para Android -->
+<meta name="theme-color" content="#1d4ed8">
+
+<!-- Apple Touch Icon -->
+<link rel="apple-touch-icon" href="../icons/192x192.png">
+
+<!-- Web App Settings -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<!-- Google Tag Manager -->
+<script>
+(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id=GTM-NDC7DNLK'+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-NDC7DNLK');
+</script>
+<!-- End Google Tag Manager -->
+
+</head>
+<body>
+  <!-- Google Tag Manager (noscript) -->
+<noscript>
+<iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK"
+height="0" width="0" style="display:none;visibility:hidden"></iframe>
+</noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+  <div id="main-wrapper" class="flex min-h-screen"> 
+    
+    <div id="mobile-topbar" class="md:hidden flex items-center justify-between p-4 bg-[#2a3647] text-white shadow-md z-40">
+        <button id="hamburger-button" aria-label="Abrir menú" aria-expanded="false" class="text-white focus:outline-none">
+            <i class="bi bi-list" style="font-size: 1.8rem;"></i>
+        </button>
+        <div class="logo-mobile flex-shrink-0">
+            <a href="#/dashboard">
+                 <img src="/icons/logo.jpeg" alt="Gestión de Hotel" style="max-height: 35px; width:auto; border-radius: 5px;">
+            </a>
+        </div>
+        <div></div>
+    </div>
+
+    <aside id="sidebar" class="bg-[#2a3647] text-white flex-col items-center py-4 hidden md:flex md:w-64 transition-all duration-300 ease-in-out z-40">
+      <a href="#/dashboard" class="flex items-center justify-center px-4 py-3" style="text-decoration:none;">
+        <img src="/icons/logo.jpeg" alt="Gestión de Hotel" style="max-width:140px; width:100%; height:auto; display:block; border-radius: 10px;" />
+      </a>
+      <nav id="main-nav" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
+      <div id="user-info-nav" class="mt-auto w-full"></div>
+    </aside>
+
+<div id="menu-overlay" class="fixed inset-0 bg-black bg-opacity-50 hidden" style="z-index: 199;"></div>
+
+    <div id="main-content-area" class="flex-1 flex flex-col min-w-0 bg-gray-100 overflow-hidden">
+      <div id="notificaciones-campanita-container" class="fixed top-4 right-4 z-50"></div> 
+      <div id="app-global-feedback-banner" class="app-global-feedback fixed top-5 right-5 p-4 rounded-md shadow-lg z-50 text-sm" style="display:none;"></div>
+      
+      <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6">
+        <p class="text-center text-gray-500">Cargando aplicación...</p>
+      </main>
+    </div>
+  </div>
+
+  <div id="app-global-loading-overlay" class="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center z-[100] hidden">
+      <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mx-auto mb-4"></div>
+      <p id="global-loading-message" class="text-lg font-semibold text-white mt-4">Cargando...</p>
+  </div>
+  <div id="modal-container" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[1000] hidden"></div>
+  <div id="modal-global" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[950] hidden"></div>
+  <div id="modal-container-secondary" class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 z-[1050] hidden"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.js"></script>
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  
+  <script type="module" src="/js/main.js"></script>
+  <script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('../js/sw.js')
+      .then(reg => console.log('[PWA] SW registrado:', reg.scope))
+      .catch(err => console.error('[PWA] Error al registrar SW:', err));
+  });
+}
+</script>
+
+
+  </body>
+</html>
