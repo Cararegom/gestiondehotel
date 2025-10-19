@@ -520,29 +520,53 @@ function renderTablaMetodosPago() {
         return;
     }
 
-    tbody.innerHTML = '';
+    tbody.innerHTML = ''; // Limpiamos el cuerpo de la tabla primero
     metodosPagoCache.forEach(metodo => {
         let tr = document.createElement('tr');
         tr.style.borderTop = '1px solid #f1f5f9';
-        tr.innerHTML = `
-            <td style="padding:12px 14px; font-weight:600; color:#1e293b;">
-                ${metodo.nombre}
-            </td>
-            <td style="padding:12px 14px; text-align:center;">
-                <span style="display:inline-block; padding:5px 16px; border-radius:9999px; font-size:0.8rem; font-weight:700;
-                    ${metodo.activo ? 'background:#dcfce7; color:#15803d;' : 'background:#fee2e2; color:#b91c1c;'}">
-                    ${metodo.activo ? 'Activo' : 'Inactivo'}
-                </span>
-            </td>
-            <td style="padding:12px 14px; text-align:center;">
-                <button onclick="showModalMetodoPago('${metodo.id}')" title="Editar" class="button-icon bg-blue-100 text-blue-700 hover:bg-blue-200">
-                    ✏️
-                </button>
-                <button onclick="toggleEstadoMetodoPago('${metodo.id}', ${!metodo.activo})" title="${metodo.activo ? 'Desactivar' : 'Activar'}" class="button-icon ${metodo.activo ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}">
-                    ${metodo.activo ? '❌' : '✅'}
-                </button>
-            </td>
-        `;
+
+        // Celda 1: Nombre
+        let tdNombre = document.createElement('td');
+        tdNombre.style = "padding:12px 14px; font-weight:600; color:#1e293b;";
+        tdNombre.textContent = metodo.nombre;
+        tr.appendChild(tdNombre);
+
+        // Celda 2: Estado
+        let tdEstado = document.createElement('td');
+        tdEstado.style = "padding:12px 14px; text-align:center;";
+        let spanEstado = document.createElement('span');
+        spanEstado.style.cssText = `display:inline-block; padding:5px 16px; border-radius:9999px; font-size:0.8rem; font-weight:700; ${metodo.activo ? 'background:#dcfce7; color:#15803d;' : 'background:#fee2e2; color:#b91c1c;'}`;
+        spanEstado.textContent = metodo.activo ? 'Activo' : 'Inactivo';
+        tdEstado.appendChild(spanEstado);
+        tr.appendChild(tdEstado);
+
+        // Celda 3: Acciones
+        let tdAcciones = document.createElement('td');
+        tdAcciones.style = "padding:12px 14px; text-align:center;";
+
+        // Botón Editar
+        let btnEditar = document.createElement('button');
+        btnEditar.title = "Editar";
+        btnEditar.className = "button-icon bg-blue-100 text-blue-700 hover:bg-blue-200";
+        btnEditar.innerHTML = '✏️'; // Usamos innerHTML para el emoji
+        btnEditar.addEventListener('click', () => {
+            // Este SÍ tiene acceso a showModalMetodoPago
+            showModalMetodoPago(metodo.id);
+        });
+        tdAcciones.appendChild(btnEditar);
+
+        // Botón Activar/Desactivar
+        let btnToggle = document.createElement('button');
+        btnToggle.title = metodo.activo ? 'Desactivar' : 'Activar';
+        btnToggle.className = `button-icon ${metodo.activo ? 'bg-red-100 text-red-700 hover:bg-red-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`;
+        btnToggle.innerHTML = metodo.activo ? '❌' : '✅';
+        btnToggle.addEventListener('click', () => {
+            // Este SÍ tiene acceso a toggleEstadoMetodoPago
+            toggleEstadoMetodoPago(metodo.id, !metodo.activo);
+        });
+        tdAcciones.appendChild(btnToggle);
+
+        tr.appendChild(tdAcciones);
         tbody.appendChild(tr);
     });
 }
