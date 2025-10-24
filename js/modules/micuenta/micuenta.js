@@ -351,15 +351,15 @@ try {
     const amountInCents = Math.round(montoPagar * 100);
 
     try {
+      window.dataLayer = window.dataLayer || [];
       window.dataLayer.push({
-  'event': 'Pago_de_suscripcion',
-  'currency': 'COP',
-  'value': montoPagar,
-  'plan': plan.nombre,
-  'hotel_id': hotel.id,
-  'periodo': periodoActual
-});
-
+        'event': tipo === 'upgrade' ? 'cambio_plan_wompi' : 'renovacion_plan_wompi',
+        'currency': 'COP',
+        'value': montoPagar,
+        'plan': plan.nombre,
+        'hotel_id': hotel.id,
+        'periodo': periodoActual
+      });
     } catch (e) { console.error("GA Error:", e); }
 
     if (typeof Swal !== 'undefined') {
