@@ -593,80 +593,25 @@ img, svg {
     transition: transform 0.8s ease-in-out;
 }
 
-/* Estilo para cada slide individual */
-.slide {
-    position: relative;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 2rem;
-    background-size: cover;
-    background-position: center center;
+/* Después (scopeado al hero) */
+.hero-slider .slide {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  /* … */
+}
+.hero-slider .slide::before { /* overlay azul */ }
+.hero-slider .slide-content { /* … */ }
+.hero-slider .slide-1 { background-image: url('img/hero-1.jpg'); }
+.hero-slider .slide-2 { background-image: url('img/hero-2.jpg'); }
+.hero-slider .slide-3 { background-image: url('img/hero-3.jpg'); }
+.hero-slider .slide.slide-con-imagen img { /* … */ }
+.hero-slider .slide.slide-con-imagen::before { background-image: none; }
+
+@media (max-width: 767px) {
+  .hero-slider .slide.slide-con-imagen img { /* … */ }
 }
 
-/* Filtro de color para cada slide */
-.slide::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-image: linear-gradient(rgba(26, 92, 163, 0.92), rgba(26, 92, 163, 0.88));
-    z-index: 1;
-}
-
-/* Contenido dentro de cada slide */
-.slide-content {
-    position: relative;
-    z-index: 2;
-    max-width: 850px;
-    animation: fadeInHeroContent 1s ease-out forwards;
-    margin: 0 auto; /*! ESENCIAL: Esto arregla el problema de "descuadrado" */
-}
-
-/* Asignación de imágenes */
-.slide-1 { background-image: url('img/hero-1.jpg'); }
-.slide-2 { background-image: url('img/hero-2.jpg'); }
-.slide-3 { background-image: url('img/hero-3.jpg'); }
-
-/* Estilos del texto (sin cambios) */
-.slide-content h1 {
-    font-weight: 800;
-    font-size: clamp(2.8rem, 5.5vw, 4rem);
-    line-height: 1.15;
-    margin-bottom: 1rem;
-    text-shadow: 2px 2px 6px rgba(0, 0, 0, 0.65);
-}
-
-.slide-content .lead {
-    font-size: clamp(1.15rem, 2.6vw, 1.45rem);
-    font-weight: 400;
-    margin-bottom: 1.8rem;
-    line-height: 1.75;
-    text-shadow: 1px 1px 4px rgba(0, 0, 0, 0.6);
-}
-
-.slide-content .sub-offer {
-    font-size: clamp(1.05rem, 2.1vw, 1.2rem);
-    font-weight: 600;
-    color: #ffdd57;
-    background-color: rgba(0,0,0,0.35);
-    padding: 0.6rem 1.2rem;
-    border-radius: 6px;
-    display: inline-block;
-    margin-bottom: 2.8rem;
-    border: 1px solid rgba(255,222,89,0.4);
-    text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-@keyframes fadeInHeroContent {
-    from { opacity: 0; transform: translateY(20px); }
-    to { opacity: 1; transform: translateY(0); }
-}
 /* ESTA ES LA REGLA CORREGIDA */
 .slide.slide-con-imagen img {
     width: 100%;
@@ -1225,4 +1170,38 @@ img, svg {
     width: 30px;
     height: 30px;
   }
+}
+#testimonials {
+  background-color: #f9fafb; /* gris claro */
+}
+
+#testimonial-carousel .carousel-inner {
+  background: transparent !important;
+  min-height: 250px;
+}
+
+.testimonial-card {
+  background-color: #fff !important;
+  border-radius: 1rem;
+  padding: 2rem;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+.testimonial-card p {
+  color: #555;
+}
+#testimonials {
+  background: linear-gradient(to bottom right, #f8fcff, #ffffff, #f6fff8);
+  padding-top: 5rem;
+  padding-bottom: 5rem;
+}
+
+
+/* Animación suave para las tarjetas de Módulos */
+#features .rounded-4 {
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+#features .rounded-4:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 22px rgba(0,0,0,.12);
 }
