@@ -475,7 +475,7 @@ async function renderizarUIAbierta() {
     const metodoPagoSelect = addFormEl.elements.metodoPagoId;
     await popularMetodosPagoSelect(metodoPagoSelect);
 
-    // ▼▼▼ LISTENER PARA EL NUEVO CHECKBOX ▼▼▼
+    // ▼▼▼ LISTENER PARA EL CHECKBOX 'fecha-anterior-check' ▼▼▼
     const fechaAnteriorCheck = addFormEl.querySelector('#fecha-anterior-check');
     const fechaAnteriorContainer = addFormEl.querySelector('#fecha-anterior-container');
     fechaAnteriorCheck.addEventListener('change', () => {
@@ -483,17 +483,26 @@ async function renderizarUIAbierta() {
     });
     // ▲▲▲ FIN DEL LISTENER ▲▲▲
 
+    // --- INICIO DEL submitHandler CORREGIDO ---
     const submitHandler = async (e) => {
         e.preventDefault();
         const formData = new FormData(addFormEl);
-        const esEgresoFueraTurno = !!formData.get('egreso_fuera_turno');
+        
+        // --- 🐞 AQUÍ ESTÁ EL ARREGLO ---
+        
+        // 1. Leemos el valor del checkbox (lo renombramos para claridad)
+        const esFueraTurno = !!formData.get('egreso_fuera_turno');
+        
+        // 2. Asignamos el ID del turno actual por defecto
         let turnoIdToSave = turnoParaMostrar.id;
 
-        if (formData.get('tipo') === "egreso" && esEgresoFueraTurno) {
+        // 3. Si el checkbox está marcado (SIN IMPORTAR EL TIPO), ponemos el ID en null
+        if (esFueraTurno) {
             turnoIdToSave = null;
         }
+        // --- FIN DEL ARREGLO ---
         
-        // ▼▼▼ LÓGICA MODIFICADA PARA CAPTURAR LA FECHA ▼▼▼
+        // ▼▼▼ LÓGICA DE FECHA (sin cambios) ▼▼▼
         const esFechaAnterior = !!formData.get('fecha_anterior_check');
         const fechaCustom = formData.get('fecha_movimiento_custom');
 
@@ -504,7 +513,7 @@ async function renderizarUIAbierta() {
             metodo_pago_id: formData.get('metodoPagoId'),
             usuario_id: currentModuleUser.id,
             hotel_id: currentHotelId,
-            turno_id: turnoIdToSave,
+            turno_id: turnoIdToSave, // Se usa la variable corregida
             fecha_movimiento: (esFechaAnterior && fechaCustom) ? new Date(fechaCustom).toISOString() : new Date().toISOString()
         };
         // ▲▲▲ FIN DE LA LÓGICA DE FECHA ▲▲▲
@@ -535,6 +544,8 @@ async function renderizarUIAbierta() {
         }
         setFormLoadingState(addFormEl, false);
     };
+    // --- FIN DEL submitHandler CORREGIDO ---
+
     addFormEl.addEventListener('submit', submitHandler);
     moduleListeners.push({ element: addFormEl, type: 'submit', handler: submitHandler });
 }
