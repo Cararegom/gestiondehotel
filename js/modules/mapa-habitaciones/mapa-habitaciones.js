@@ -559,7 +559,7 @@ async function renderRooms(gridEl, supabase, currentUser, hotelId) {
 
     const { data: habitaciones, error } = await supabase
         .from('habitaciones')
-        .select('*, reservas(estado, fecha_inicio, seguimiento_articulos)')
+        .select('*, reservas(estado, fecha_inicio, historial_articulos_prestados(id, articulo_nombre, accion, item_prestable_id))')
         .eq('hotel_id', hotelId)
         .order('nombre', { ascending: true });
 
@@ -703,12 +703,14 @@ function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
     }
     // --- FIN DE LA NUEVA LÓGICA ---
 
-    // --- INICIO DE NUEVA LÓGICA: Mostrar artículos en seguimiento ---
+    // Nuevo (Bloque de Reemplazo)
+// --- INICIO DE NUEVA LÓGICA: Mostrar artículos en seguimiento ---
 const reservaOcupada = (Array.isArray(room.reservas) && room.reservas.length > 0)
     ? room.reservas.find(r => ['ocupada', 'activa', 'tiempo agotado'].includes(r.estado))
     : null;
 
-const articulosEnSeguimiento = reservaOcupada?.seguimiento_articulos || [];
+// Filtramos el historial para mostrar solo los que están 'prestados'
+const articulosEnSeguimiento = reservaOcupada?.historial_articulos_prestados?.filter(h => h.accion === 'prestado') || [];
 let articulosInfoHTML = '';
 
 if (articulosEnSeguimiento.length > 0) {
@@ -720,7 +722,7 @@ if (articulosEnSeguimiento.length > 0) {
                 <span>Artículos Prestados:</span>
             </p>
             <div class="flex flex-wrap gap-1.5">
-                ${articulosEnSeguimiento.map(item => `<span class="badge bg-blue-100 text-blue-800 px-2 py-0.5 text-xs font-medium rounded-full">${item}</span>`).join('')}
+                ${articulosEnSeguimiento.map(item => `<span class="badge bg-blue-100 text-blue-800 px-2 py-0.5 text-xs font-medium rounded-full">${item.articulo_nombre}</span>`).join('')}
             </div>
         </div>
     `;
@@ -1968,12 +1970,14 @@ async function validarCargosPendientesAntesDeEntregar(supabase, reservaId, habit
         mostrarInfoModalGlobal(`Ocurrió un error al validar las deudas: ${error.message}`, "Error de Validación");
         return false; // Por seguridad, no permitir la entrega si hay un error
     }
-}  // =================== BOTÓN ENTREGAR (igual que antes)
-setupButtonListener('btn-entregar', async (btn, room) => {
-    // Guardamos el contenido original del botón
-    const originalContent = btn.innerHTML;
+}  
 
-    // --- PASO 1: Deshabilitar y mostrar indicador INMEDIATAMENTE ---
+
+
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
+
+setupButtonListener('btn-entregar', async (btn, room) => {
+    const originalContent = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = `
         <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -1984,19 +1988,17 @@ setupButtonListener('btn-entregar', async (btn, room) => {
     `;
 
     try {
-        // --- PASO 2: Ejecutar toda la lógica que ya tenías ---
+        // --- 1. Buscar la reserva activa ---
         let reservaActiva = null;
         for (const estado of ['activa', 'ocupada', 'tiempo agotado']) {
             const { data, error } = await supabase
                 .from('reservas')
-                // Se solicita 'seguimiento_articulos' para la validación
-                .select('id, fecha_fin, fecha_inicio, seguimiento_articulos') 
+                .select('id, fecha_fin, fecha_inicio') // Ya no necesitamos 'seguimiento_articulos'
                 .eq('habitacion_id', room.id)
                 .eq('estado', estado)
                 .order('fecha_inicio', { ascending: false })
                 .limit(1)
                 .maybeSingle();
-
             if (error && error.code !== 'PGRST116') throw error;
             if (data) {
                 reservaActiva = data;
@@ -2006,74 +2008,118 @@ setupButtonListener('btn-entregar', async (btn, room) => {
 
         if (reservaActiva) {
             
-            // --- INICIO DE LA VALIDACIÓN DE ARTÍCULOS (CON HISTORIAL) ---
-            const articulosPendientes = reservaActiva.seguimiento_articulos || [];
-            if (articulosPendientes.length > 0) {
-    
-                // 1. Preguntar al usuario si los artículos fueron devueltos
-                const confirmacionArticulos = await Swal.fire({
-                    icon: 'warning',
-                    title: '¡Artículos Pendientes!',
-                    html: `Esta habitación tiene los siguientes artículos prestados:
-                           <br><strong class="text-lg">${articulosPendientes.join(', ')}</strong><br><br>
-                           ¿Desea confirmar que han sido devueltos?`,
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, han sido devueltos',
-                    cancelButtonText: 'Cancelar entrega',
-                    confirmButtonColor: '#1d4ed8', // Azul (consistente con tus otros modales)
-                    cancelButtonColor: '#d33'
-                });
-
-                if (!confirmacionArticulos.isConfirmed) {
-                    // Si el usuario presiona "Cancelar", detenemos toda la función de entrega.
-                    // El bloque 'finally' se asegurará de reactivar el botón.
-                    return; 
-                }
-
-                // 2. Si confirma, crear los logs de "devuelto" para CADA artículo.
-                const logItemsDevueltos = articulosPendientes.map(item => ({
-                    hotel_id: hotelId, // Variable del scope de showHabitacionOpcionesModal
-                    reserva_id: reservaActiva.id,
-                    habitacion_id: room.id,
-                    usuario_id: currentUser.id, // Variable del scope
-                    articulo_nombre: item,
-                    accion: 'devuelto',
-                    cantidad: 1,
-                    notas: 'Devuelto al finalizar estancia.'
-                }));
-
-                // 3. Insertar todos los logs en el historial
-                const { error: logError } = await supabase.from('historial_articulos_prestados').insert(logItemsDevueltos);
-                
-                if (logError) {
-                    // Si falla el log, lanzamos un error para detener el proceso.
-                    // Será capturado por el bloque 'catch' principal.
-                    throw new Error(`Error al registrar devolución en historial: ${logError.message}`);
-                }
-
-                // 4. Limpiar la lista de artículos en la reserva (JSONB)
-                await supabase
-                    .from('reservas')
-                    .update({ seguimiento_articulos: '[]' })
-                    .eq('id', reservaActiva.id);
-            }
-            // --- FIN DE LA VALIDACIÓN DE ARTÍCULOS ---
-
+            // --- 2. Validar Deudas (Sin cambios) ---
             const puedeEntregar = await validarCargosPendientesAntesDeEntregar(supabase, reservaActiva.id, room.id);
             if (!puedeEntregar) {
-                // Si no puede entregar, la función validarCargos ya muestra el modal de error.
-                // Simplemente salimos de la función aquí. El bloque 'finally' restaurará el botón.
-                return;
+                return; // La función de validación ya muestra la alerta
             }
+
+            // --- 3. NUEVA LÓGICA DE ARTÍCULOS PRESTADOS (CON INVENTARIO) ---
+            const { data: articulosPendientes, error: errPendientes } = await supabase
+                .from('historial_articulos_prestados')
+                .select('id, articulo_nombre, item_prestable_id')
+                .eq('reserva_id', reservaActiva.id)
+                .eq('accion', 'prestado');
+            
+            if (errPendientes) throw new Error(`Error al buscar artículos pendientes: ${errPendientes.message}`);
+            
+            if (articulosPendientes && articulosPendientes.length > 0) {
+                
+                // 3.1. Construir el checklist
+                const checklistHtml = articulosPendientes.map(item => `
+                    <label class="flex items-center gap-3 p-2 rounded-md hover:bg-gray-100">
+                        <input type="checkbox" 
+                               class="form-checkbox h-5 w-5 text-blue-600 swal-articulo-check" 
+                               data-historial-id="${item.id}"
+                               data-item-id="${item.item_prestable_id}">
+                        <span class="text-lg text-gray-700">${item.articulo_nombre}</span>
+                    </label>
+                `).join('');
+
+                // 3.2. Mostrar el modal de checklist
+                const { value: formValues, isConfirmed } = await Swal.fire({
+                    icon: 'warning',
+                    title: 'Verificar Artículos Prestados',
+                    html: `
+                        <div class="text-left p-2">
+                            <p class="text-gray-600 mb-3">Por favor, marque solo los artículos que el huésped está <strong>DEVOLVIENDO</strong>.</p>
+                            <div class="space-y-2 max-h-40 overflow-y-auto border p-3 rounded-lg">
+                                ${checklistHtml}
+                            </div>
+                            <p class="text-red-600 font-semibold mt-3">Cualquier artículo NO marcado se reportará como 'Perdido'.</p>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: 'Confirmar Devolución y Entregar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#1d4ed8',
+                    cancelButtonColor: '#d33',
+                    preConfirm: () => {
+                        const devueltos = [];
+                        const perdidos = [];
+                        document.querySelectorAll('.swal-articulo-check').forEach(checkbox => {
+                            const itemData = {
+                                historial_id: checkbox.dataset.historialId,
+                                item_id: checkbox.dataset.itemId
+                            };
+                            if (checkbox.checked) {
+                                devueltos.push(itemData);
+                            } else {
+                                perdidos.push(itemData);
+                            }
+                        });
+                        return { devueltos, perdidos };
+                    }
+                });
+
+                if (!isConfirmed) {
+                    return; // El usuario canceló
+                }
+
+                // 3.3. Procesar el resultado (Llamadas a RPC y Bucle de Historial)
+                const { devueltos, perdidos } = formValues;
+                const rpcCalls = [];
+                const historialUpdates = [];
+
+                // Preparar RPCs y updates de DEVUELTOS
+                devueltos.forEach(item => {
+                    rpcCalls.push(supabase.rpc('recibir_articulo_devuelto', { p_item_id: item.item_id }));
+                    historialUpdates.push(
+                        supabase.from('historial_articulos_prestados')
+                            .update({ accion: 'devuelto', notas: 'Devuelto al check-out' })
+                            .eq('id', item.historial_id)
+                    );
+                });
+
+                // Preparar RPCs y updates de PERDIDOS
+                perdidos.forEach(item => {
+                    rpcCalls.push(supabase.rpc('reportar_articulo_perdido', { p_item_id: item.item_id }));
+                    historialUpdates.push(
+                        supabase.from('historial_articulos_prestados')
+                            .update({ accion: 'perdido', notas: 'Reportado perdido al check-out' })
+                            .eq('id', item.historial_id)
+                    );
+                });
+
+                // Ejecutar todas las actualizaciones en paralelo
+                const results = await Promise.all([...rpcCalls, ...historialUpdates]);
+                
+                // Verificar errores (simple)
+                const rpcError = results.find(r => r && r.error);
+                if (rpcError) throw new Error(`Error al actualizar inventario: ${rpcError.error.message}`);
+            }
+            
+            // --- 4. Continuar con la entrega normal (Sin cambios) ---
             await supabase.from('cronometros').update({ activo: false }).eq('reserva_id', reservaActiva.id);
             await supabase.from('reservas').update({ estado: 'completada' }).eq('id', reservaActiva.id);
+
         } else {
             await supabase.from('cronometros').update({ activo: false }).eq('habitacion_id', room.id);
         }
 
+        // --- 5. Enviar a limpieza (Sin cambios) ---
         await supabase.from('habitaciones').update({ estado: 'limpieza' }).eq('id', room.id);
         
-        // Cierra el modal de opciones antes de refrescar para una transición más suave
         document.getElementById('modal-container').style.display = "none";
         document.getElementById('modal-container').innerHTML = '';
 
@@ -2081,14 +2127,15 @@ setupButtonListener('btn-entregar', async (btn, room) => {
 
     } catch (error) {
         console.error("Error al liberar la habitación:", error);
-        // El error (incluyendo el de logError) se mostrará aquí
         mostrarInfoModalGlobal(`Ocurrió un error: ${error.message}`, "Error");
     } finally {
-        // --- PASO 3: Restaurar el botón, sin importar si hubo éxito o error ---
+        // --- 6. Restaurar el botón (Sin cambios) ---
         btn.disabled = false;
         btn.innerHTML = originalContent;
     }
 });
+
+
   // =================== BOTÓN VER CONSUMOS (igual que antes)
    // Utilidades
 const formatCurrency = val => Number(val || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP' });
@@ -3612,187 +3659,209 @@ async function showReservaFuturaModal(room, supabase, currentUser, hotelId, main
     }
 }
 
+// REEMPLAZA ESTA FUNCIÓN COMPLETA
+
 /**
  * Muestra un modal para gestionar la lista de artículos prestados de una reserva.
+ * AHORA CONECTADO A INVENTARIO_PRESTABLES.
  */
 async function showSeguimientoArticulosModal(room, supabase, currentUser, hotelId) {
-    const modalContainer = document.getElementById('modal-container'); // Usamos el modal principal
-
-    // 1. Encontrar la reserva activa
-    const { data: reservaActiva, error: errRes } = await supabase
-        .from('reservas')
-        .select('id, seguimiento_articulos')
-        .eq('habitacion_id', room.id)
-        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-        .order('fecha_inicio', { ascending: false })
-        .limit(1)
-        .single();
-
-    if (errRes || !reservaActiva) {
-        mostrarInfoModalGlobal("No se encontró una reserva activa para esta habitación.", "Error");
-        return;
-    }
-
-    let currentItems = [...(reservaActiva.seguimiento_articulos || [])]; // Copia de los artículos
-
-    // 2. Crear el HTML del modal
-    modalContainer.style.display = "flex";
-    modalContainer.innerHTML = "";
-    const modalContent = document.createElement('div');
-    modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-md p-6 m-auto relative animate-fade-in-up";
-
-    modalContent.innerHTML = `
-        <h3 class="text-xl font-bold mb-4 text-blue-700">Gestionar Artículos (Hab. ${room.nombre})</h3>
-
-        <div class="mb-4">
-            <label class="form-label" for="nuevo-articulo-input">Añadir artículo:</label>
-            <div class="flex gap-2">
-                <input type="text" id="nuevo-articulo-input" class="form-control flex-grow" placeholder="Ej: Cobija, Plancha...">
-                <button id="btn-add-articulo" class="button button-info">Añadir</button>
-            </div>
-        </div>
-
-        <div class="mb-4">
-            <p class="font-semibold text-gray-700">Artículos prestados actualmente:</p>
-            <div id="lista-articulos-seguimiento" class="mt-2 space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded">
-                </div>
-        </div>
-
-        <div class="flex gap-3 mt-6">
-            <button id="btn-guardar-seguimiento" class="button button-success flex-1">Guardar Cambios</button>
-            <button id="btn-cancelar-seguimiento" class="button button-neutral flex-1">Cancelar</button>
-        </div>
-    `;
-    modalContainer.appendChild(modalContent);
-
-    const listaEl = modalContent.querySelector('#lista-articulos-seguimiento');
-    const inputEl = modalContent.querySelector('#nuevo-articulo-input');
-
-    // 3. Función para renderizar la lista de artículos
-    function renderListaArticulos() {
-        if (currentItems.length === 0) {
-            listaEl.innerHTML = `<p class="text-gray-500 italic text-sm text-center">No hay artículos prestados.</p>`;
-            return;
-        }
-        listaEl.innerHTML = currentItems.map((item, index) => `
-            <div class="flex justify-between items-center bg-white p-2 rounded shadow-sm">
-                <span class="text-gray-800">${item}</span>
-                <button data-index="${index}" class="btn-remove-articulo text-red-500 hover:text-red-700 font-bold text-xl">&times;</button>
-            </div>
-        `).join('');
-    }
-
-    // 4. Listeners del modal
-
-    // Añadir artículo
-    modalContent.querySelector('#btn-add-articulo').onclick = () => {
-        const newItem = inputEl.value.trim();
-        if (newItem && !currentItems.includes(newItem)) {
-            currentItems.push(newItem);
-            renderListaArticulos();
-            inputEl.value = "";
-            inputEl.focus();
-        }
-    };
-    // (Permitir añadir con "Enter")
-    inputEl.onkeydown = (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            modalContent.querySelector('#btn-add-articulo').click();
-        }
-    };
-
-    // Quitar artículo (delegación de eventos)
-    listaEl.onclick = (e) => {
-        if (e.target.classList.contains('btn-remove-articulo')) {
-            const indexToRemove = parseInt(e.target.dataset.index, 10);
-            currentItems.splice(indexToRemove, 1);
-            renderListaArticulos();
-        }
-    };
-
-    // Cancelar
-    modalContent.querySelector('#btn-cancelar-seguimiento').onclick = () => {
-        modalContainer.style.display = "none";
-        modalContainer.innerHTML = '';
-    };
-
-    // Guardar Cambios
-    modalContent.querySelector('#btn-guardar-seguimiento').onclick = async () => {
-    const btn = modalContent.querySelector('#btn-guardar-seguimiento');
-    btn.disabled = true;
-    btn.textContent = "Guardando...";
-
+    const modalContainer = document.getElementById('modal-container');
+    showGlobalLoading("Cargando inventario...", modalContainer);
+    
     try {
-        // Comparamos la lista original (de la BD) con la nueva lista (del modal)
-        const articulosOriginales = new Set(reservaActiva.seguimiento_articulos || []);
-        const articulosNuevos = new Set(currentItems);
-
-        const articulosPrestados = currentItems.filter(item => !articulosOriginales.has(item));
-        const articulosDevueltos = (reservaActiva.seguimiento_articulos || []).filter(item => !articulosNuevos.has(item));
-
-        let logItems = [];
-
-        // 1. Preparar logs de artículos PRESTADOS
-        for (const item of articulosPrestados) {
-            logItems.push({
-                hotel_id: hotelId,
-                reserva_id: reservaActiva.id,
-                habitacion_id: room.id,
-                usuario_id: currentUser.id,
-                articulo_nombre: item,
-                accion: 'prestado',
-                cantidad: 1
-            });
-        }
-
-        // 2. Preparar logs de artículos DEVUELTOS
-        for (const item of articulosDevueltos) {
-            logItems.push({
-                hotel_id: hotelId,
-                reserva_id: reservaActiva.id,
-                habitacion_id: room.id,
-                usuario_id: currentUser.id,
-                articulo_nombre: item,
-                accion: 'devuelto',
-                cantidad: 1 
-            });
-        }
-
-        // 3. Insertar los logs en el historial (si hay algo que loguear)
-        if (logItems.length > 0) {
-            const { error: logError } = await supabase
-                .from('historial_articulos_prestados')
-                .insert(logItems);
-
-            if (logError) {
-                throw new Error(`Error al guardar historial: ${logError.message}`);
-            }
-        }
-
-        // 4. Actualizar el ESTADO ACTUAL en la reserva (la columna JSONB)
-        const { error: updateError } = await supabase
+        // 1. Encontrar la reserva activa
+        const { data: reservaActiva, error: errRes } = await supabase
             .from('reservas')
-            .update({ seguimiento_articulos: currentItems }) // Setea la lista nueva
-            .eq('id', reservaActiva.id);
+            .select('id')
+            .eq('habitacion_id', room.id)
+            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+            .order('fecha_inicio', { ascending: false })
+            .limit(1)
+            .single();
 
-        if (updateError) {
-            throw new Error(`Error al actualizar reserva: ${updateError.message}`);
+        if (errRes || !reservaActiva) {
+            throw new Error("No se encontró una reserva activa para esta habitación.");
         }
 
-        // 5. Todo salió bien
-        modalContainer.style.display = "none";
-        modalContainer.innerHTML = '';
-        // Refrescamos el mapa principal para que la tarjeta se actualice
-        await renderRooms(document.getElementById('room-map-list'), supabase, currentUser, hotelId);
+        // 2. Cargar datos en paralelo
+        const [prestadosRes, disponiblesRes] = await Promise.all([
+            // Artículos YA prestados a esta reserva
+            supabase.from('historial_articulos_prestados')
+                .select('id, articulo_nombre, item_prestable_id')
+                .eq('reserva_id', reservaActiva.id)
+                .eq('accion', 'prestado'),
+            // Artículos DISPONIBLES en el inventario
+            supabase.from('inventario_prestables')
+                .select('id, nombre_item, stock_disponible')
+                .eq('hotel_id', hotelId)
+                .gt('stock_disponible', 0) // ¡Solo los que tienen stock!
+        ]);
 
-    } catch (error) {
-        mostrarInfoModalGlobal(error.message, "Error al Guardar", [], modalContainer);
-        btn.disabled = false;
-        btn.textContent = "Guardar Cambios";
+        if (prestadosRes.error) throw new Error(`Error cargando prestados: ${prestadosRes.error.message}`);
+        if (disponiblesRes.error) throw new Error(`Error cargando disponibles: ${disponiblesRes.error.message}`);
+
+        const itemsYaPrestados = prestadosRes.data || [];
+        const itemsDisponibles = disponiblesRes.data || [];
+
+        hideGlobalLoading();
+        modalContainer.innerHTML = ""; // Limpiar el "cargando"
+        const modalContent = document.createElement('div');
+        modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-md p-6 m-auto relative animate-fade-in-up";
+
+        // 3. Crear el HTML del modal
+        const opcionesSelect = itemsDisponibles.length > 0
+            ? itemsDisponibles.map(item => `<option value="${item.id}" data-nombre="${item.nombre_item}">${item.nombre_item} (Stock: ${item.stock_disponible})</option>`).join('')
+            : '<option value="" disabled>No hay artículos disponibles</option>';
+
+        modalContent.innerHTML = `
+            <h3 class="text-xl font-bold mb-4 text-blue-700">Gestionar Artículos (Hab. ${room.nombre})</h3>
+            <div class="mb-4">
+                <label class="form-label" for="select-articulo-prestable">Añadir artículo:</label>
+                <div class="flex gap-2">
+                    <select id="select-articulo-prestable" class="form-control flex-grow">
+                        <option value="">-- Seleccione un artículo --</option>
+                        ${opcionesSelect}
+                    </select>
+                    <button id="btn-add-articulo" class="button button-info">Prestar</button>
+                </div>
+            </div>
+            <div class="mb-4">
+                <p class="font-semibold text-gray-700">Artículos prestados actualmente:</p>
+                <div id="lista-articulos-seguimiento" class="mt-2 space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded">
+                    </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button id="btn-cerrar-seguimiento" class="button button-neutral flex-1">Cerrar</button>
+            </div>
+        `;
+        modalContainer.appendChild(modalContent);
+
+        const listaEl = modalContent.querySelector('#lista-articulos-seguimiento');
+        const selectEl = modalContent.querySelector('#select-articulo-prestable');
+
+        // 4. Función para renderizar la lista de artículos prestados
+        // 4. Función para renderizar la lista de artículos prestados
+        function renderListaPrestados(items) {
+            if (items.length === 0) {
+                listaEl.innerHTML = `<p class="text-gray-500 italic text-sm text-center">No hay artículos prestados.</p>`;
+                return;
+            }
+            listaEl.innerHTML = items.map(item => `
+                <div class="flex justify-between items-center bg-white p-2 rounded shadow-sm">
+                    <span class="text-gray-800">${item.articulo_nombre}</span>
+                    
+                    <button data-historial-id="${item.id}" data-item-id="${item.item_prestable_id}" 
+                            class="btn-devolver-articulo button button-danger button-small text-xs py-1 px-2" 
+                            title="Marcar como Devuelto">
+                        Devolver
+                    </button>
+                    </div>
+            `).join('');
+        }
+        renderListaPrestados(itemsYaPrestados); // Renderizado inicial
+
+        // 5. Listeners del modal
+        modalContent.querySelector('#btn-cerrar-seguimiento').onclick = () => {
+            modalContainer.style.display = "none";
+            modalContainer.innerHTML = '';
+            // Refrescar el mapa para que la tarjeta muestre el cambio
+            renderRooms(document.getElementById('room-map-list'), supabase, currentUser, hotelId);
+        };
+
+        // PRESTAR artículo
+        modalContent.querySelector('#btn-add-articulo').onclick = async () => {
+            const selectedOption = selectEl.options[selectEl.selectedIndex];
+            const itemId = selectedOption.value;
+            const itemNombre = selectedOption.dataset.nombre;
+
+            if (!itemId) {
+                alert("Por favor, seleccione un artículo para prestar.");
+                return;
+            }
+            
+            const btn = modalContent.querySelector('#btn-add-articulo');
+            btn.disabled = true;
+            btn.textContent = "Prestando...";
+
+            try {
+                // 1. Llamar a la RPC para descontar stock
+                const { error: rpcError } = await supabase.rpc('prestar_articulo', { p_item_id: itemId });
+                if (rpcError) throw rpcError;
+
+                // 2. Insertar en el historial
+                const { data: nuevoHistorial, error: insertError } = await supabase.from('historial_articulos_prestados').insert({
+                    hotel_id: hotelId,
+                    reserva_id: reservaActiva.id,
+                    habitacion_id: room.id,
+                    usuario_id: currentUser.id,
+                    articulo_nombre: itemNombre,
+                    item_prestable_id: itemId,
+                    accion: 'prestado',
+                    cantidad: 1
+                }).select('id, articulo_nombre, item_prestable_id').single();
+                if (insertError) throw insertError;
+
+                // 3. Recargar el modal
+                await showSeguimientoArticulosModal(room, supabase, currentUser, hotelId);
+
+            } catch (err) {
+                alert(`Error al prestar artículo: ${err.message}`);
+                btn.disabled = false;
+                btn.textContent = "Prestar";
+            }
+        };
+
+       // DEVOLVER artículo (antes del check-out)
+        listaEl.onclick = async (e) => {
+            if (e.target.classList.contains('btn-devolver-articulo')) {
+                const btn = e.target;
+                const historialId = btn.dataset.historialId;
+                const itemId = btn.dataset.itemId;
+                
+                // --- INICIO DE LA MODIFICACIÓN ---
+                const result = await Swal.fire({
+                    title: 'Confirmar Devolución',
+                    text: '¿Está seguro de que desea marcar este artículo como devuelto?',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#1d4ed8', // El azul de tu app
+                    cancelButtonColor: '#d33',
+                    confirmButtonText: 'Sí, devolver',
+                    cancelButtonText: 'Cancelar'
+                });
+        
+                if (!result.isConfirmed) {
+                    return; // Si el usuario cancela, no hacemos nada
+                }
+                // --- FIN DE LA MODIFICACIÓN ---
+
+                btn.disabled = true;
+                
+                try {
+                    // 1. Llamar a la RPC para devolver al stock
+                    const { error: rpcError } = await supabase.rpc('recibir_articulo_devuelto', { p_item_id: itemId });
+                    if (rpcError) throw rpcError;
+
+                    // 2. Actualizar el historial
+                    const { error: updateError } = await supabase.from('historial_articulos_prestados')
+                        .update({ accion: 'devuelto' })
+                        .eq('id', historialId);
+                    if (updateError) throw updateError;
+                    
+                    // 3. Recargar el modal
+                    await showSeguimientoArticulosModal(room, supabase, currentUser, hotelId);
+                    
+                } catch (err) {
+                    alert(`Error al devolver artículo: ${err.message}`);
+                    btn.disabled = false;
+                }
+            }
+        };
+
+    } catch (err) {
+        hideGlobalLoading();
+        mostrarInfoModalGlobal(err.message, "Error", [], modalContainer);
     }
-};
-    // Renderizado inicial
-    renderListaArticulos();
 }
 // ===================== FIN DEL ARCHIVO =====================
