@@ -109,6 +109,7 @@ async function abrirTurno() {
 // js/modules/caja/caja.js
 
 
+// REEMPLAZA TU FUNCIÓN 'cerrarTurno' CON ESTA
 async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
   const turnoACerrar = turnoExterno || turnoActivo;
   const usuarioDelTurno = usuarioDelTurnoExterno || currentModuleUser;
@@ -127,7 +128,12 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
   showGlobalLoading(tituloLoading);
 
   try {
-    // ... (El resto de la lógica para obtener movimientos y generar el reporte no cambia) ...
+    // --- 1. Definimos la fecha de cierre una sola vez ---
+    const fechaCierreISO = new Date().toISOString();
+    const fechaAperturaISO = turnoACerrar.fecha_apertura;
+    const usuarioDelTurnoId = usuarioDelTurno.id;
+
+    // --- 2. Obtenemos los datos de CAJA (Como antes) ---
     const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance
       .from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
     if (metodosError) throw metodosError;
@@ -136,38 +142,99 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
       .from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoACerrar.id);
     if (movError) throw movError;
     
+    // --- 3. Obtenemos los LOGS del turno (Como antes) ---
+    
+    // Log de Amenidades
+    const { data: logAmenidades, error: amenidadesError } = await currentSupabaseInstance
+      .from('log_amenidades_uso')
+      .select('*, amenidades_inventario(nombre_item), habitaciones(nombre)')
+      .eq('usuario_id', usuarioDelTurnoId)
+      .gte('fecha_uso', fechaAperturaISO)
+      .lte('fecha_uso', fechaCierreISO);
+    if (amenidadesError) console.warn("Error cargando log de amenidades:", amenidadesError.message);
+
+    // Log de Lencería
+    const { data: logLenceria, error: lenceriaError } = await currentSupabaseInstance
+      .from('log_lenceria_uso')
+      .select('*, inventario_lenceria(nombre_item), habitaciones(nombre)')
+      .eq('usuario_id', usuarioDelTurnoId)
+      .gte('fecha_uso', fechaAperturaISO)
+      .lte('fecha_uso', fechaCierreISO);
+    if (lenceriaError) console.warn("Error cargando log de lencería:", lenceriaError.message);
+
+    // Log de Préstamos
+    const { data: logPrestamos, error: prestamosError } = await currentSupabaseInstance
+      .from('historial_articulos_prestados')
+      .select('*, habitaciones(nombre)')
+      .eq('usuario_id', usuarioDelTurnoId)
+      .gte('fecha_accion', fechaAperturaISO)
+      .lte('fecha_accion', fechaCierreISO);
+    if (prestamosError) console.warn("Error cargando log de préstamos:", prestamosError.message);
+
+    // --- 4. (NUEVO) Obtenemos el STOCK ACTUAL de Inventarios ---
+        
+    // Stock de Amenidades
+    const { data: stockAmenidades, error: stockAmenError } = await currentSupabaseInstance
+      .from('amenidades_inventario')
+      .select('nombre_item, stock_actual')
+      .eq('hotel_id', currentHotelId)
+      .order('nombre_item');
+    if (stockAmenError) console.warn("Error cargando stock de amenidades:", stockAmenError.message);
+
+    // Stock de Lencería
+    const { data: stockLenceria, error: stockLencError } = await currentSupabaseInstance
+      .from('inventario_lenceria')
+      .select('nombre_item, stock_limpio_almacen, stock_en_lavanderia, stock_total')
+      .eq('hotel_id', currentHotelId)
+      .order('nombre_item');
+    if (stockLencError) console.warn("Error cargando stock de lencería:", stockLencError.message);
+
+
+    // --- 5. Procesamos y generamos el HTML ---
     const reporte = procesarMovimientosParaReporte(movimientos);
     const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
     const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
     const totalGastos = calcularTotalFila(reporte.gastos);
     const balanceFinalEnCaja = reporte.apertura + totalIngresos - totalGastos;
     
-    const fechaCierre = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
+    const fechaCierreLocal = new Date(fechaCierreISO).toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
     const usuarioNombre = usuarioDelTurno?.nombre || usuarioDelTurno?.email || 'Sistema';
     
-    let asuntoEmail = `Cierre de Caja - ${usuarioNombre} - ${fechaCierre}`;
+    let asuntoEmail = `Cierre de Caja - ${usuarioNombre} - ${fechaCierreLocal}`;
     if (esCierreForzoso) {
       asuntoEmail += ` (Forzado por ${adminNombre})`;
     }
 
-    const htmlReporte = generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCierre);
+    // (NUEVO) Pasamos todos los logs Y los stocks a la función que genera el HTML
+    const htmlReporte = generarHTMLReporteCierre(
+        reporte, 
+        metodosDePago, 
+        usuarioNombre, 
+        fechaCierreLocal,
+        movimientos || [],         // <-- Detalle de caja
+        logAmenidades || [],     // <-- Detalle de amenidades
+        logLenceria || [],       // <-- Detalle de lencería
+        logPrestamos || [],      // <-- Detalle de préstamos
+        stockAmenidades || [],   // <-- NUEVO: Stock actual amenidades
+        stockLenceria || []      // <-- NUEVO: Stock actual lencería
+    );
+
     await enviarReporteCierreCaja({
       asunto: asuntoEmail,
       htmlReporte: htmlReporte,
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
 
-    // ▼▼▼ CORRECCIÓN CLAVE AQUÍ ▼▼▼
-    // Se elimina la línea 'forzado_cierre_por' para que el código coincida con tu base de datos.
+    // --- 6. Actualizamos el turno en la DB ---
     const { error: updateError } = await currentSupabaseInstance.from('turnos').update({
         estado: 'cerrado',
-        fecha_cierre: new Date().toISOString(),
+        fecha_cierre: fechaCierreISO, // Usamos la fecha ISO
         balance_final: balanceFinalEnCaja,
       }).eq('id', turnoACerrar.id);
-    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
 
     if (updateError) throw updateError;
     
+    // --- 7. Actualizamos la UI ---
     if (turnoActivo && turnoACerrar.id === turnoActivo.id) {
         showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), '¡Turno cerrado y reporte enviado!');
         turnoActivo = null;
@@ -1186,12 +1253,24 @@ async function popularMetodosPagoSelect(selectEl) {
   }
 }
 
-// REEMPLAZA TU FUNCIÓN generarHTMLReporteCierre CON ESTA
-// REEMPLAZA TU FUNCIÓN generarHTMLReporteCierre CON ESTA
-function generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCierre) {
-  // --- LÓGICA DE CÁLCULO Y GENERACIÓN DINÁMICA ---
+// REEMPLAZA TU FUNCIÓN 'generarHTMLReporteCierre' CON ESTA
+function generarHTMLReporteCierre(
+    reporte, 
+    metodosDePago, 
+    usuarioNombre, 
+    fechaCierre,
+    // (NUEVO) Recibimos los 4 listados de movimientos
+    movsCaja, 
+    movsAmenidades, 
+    movsLenceria, 
+    movsPrestamos,
+    // (NUEVO) Recibimos los 2 listados de STOCK
+    stockAmenidades, 
+    stockLenceria 
+) {
+  
+  // --- LÓGICA DE CÁLCULO (Sin cambios) ---
   const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
-
   const totalesPorMetodo = {};
   metodosDePago.forEach(metodo => {
     const nombreMetodo = metodo.nombre;
@@ -1202,16 +1281,17 @@ function generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCi
     const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
     totalesPorMetodo[nombreMetodo] = { ingreso: totalIngreso, gasto: totalGasto, balance: totalIngreso - totalGasto };
   });
-
   const totalIngresos = Object.values(totalesPorMetodo).reduce((acc, val) => acc + val.ingreso, 0);
   const totalGastos = Object.values(totalesPorMetodo).reduce((acc, val) => acc + val.gasto, 0);
   const balanceFinal = totalIngresos - totalGastos;
 
+  // --- ESTILOS HTML (Sin cambios) ---
   const styles = {
     body: `font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #333; background-color: #f8f9fa; margin: 0; padding: 20px;`,
     container: `max-width: fit-content; min-width: 800px; margin: 20px auto; padding: 25px; border: 1px solid #dee2e6; border-radius: 8px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.05);`,
     header: `color: #212529; font-size: 26px; text-align: center; margin-bottom: 10px; border-bottom: 2px solid #007bff; padding-bottom: 10px;`,
     subHeader: `font-size: 16px; color: #6c757d; text-align: center; margin-bottom: 25px;`,
+    headerDetalle: `color: #212529; font-size: 20px; text-align: left; margin-top: 35px; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 8px;`,
     table: `width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px;`,
     th: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; background-color: #f1f3f5; font-weight: 600;`,
     td: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: right;`,
@@ -1221,12 +1301,172 @@ function generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCi
     footer: `text-align: center; font-size: 12px; color: #adb5bd; margin-top: 30px; padding-top: 15px; border-top: 1px solid #e9ecef;`
   };
 
+  // --- GENERACIÓN DE TABLAS DE RESUMEN (Sin cambios) ---
   const thMetodos = metodosDePago.map(m => `<th style="${styles.th} text-align:right;">${m.nombre}</th>`).join('');
   const generarCeldasFila = (fila) => metodosDePago.map(m => `<td style="${styles.td}">${formatCurrency(fila.pagos[m.nombre] || 0)}</td>`).join('');
   const tdTotalesIngresos = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].ingreso)}</td>`).join('');
   const tdTotalesGastos = metodosDePago.map(m => `<td style="${styles.tdTotal} color:red;">(${formatCurrency(totalesPorMetodo[m.nombre].gasto)})</td>`).join('');
   const tdTotalesBalance = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].balance)}</td>`).join('');
   
+  // --- (NUEVO) GENERACIÓN DE TABLAS DE DETALLE ---
+
+  // 1. Detalle de Caja (Sin cambios)
+  const detalleCajaHtml = `
+    <h2 style="${styles.headerDetalle}">Detalle de Movimientos de Caja</h2>
+    <table style="${styles.table}">
+      <thead>
+        <tr>
+          <th style="${styles.th}">Fecha</th>
+          <th style="${styles.th}">Tipo</th>
+          <th style="${styles.th}">Concepto</th>
+          <th style="${styles.th}">Método</th>
+          <th style="${styles.th}">Monto</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(movsCaja && movsCaja.length > 0) ? movsCaja.map(mv => `
+          <tr>
+            <td style="${styles.td} text-align:left; min-width: 130px;">${formatDateTime(mv.creado_en)}</td>
+            <td style="${styles.tdConcepto}">${mv.tipo}</td>
+            <td style="${styles.tdConcepto}">${mv.concepto}</td>
+            <td style="${styles.tdConcepto}">${mv.metodos_pago?.nombre || 'N/A'}</td>
+            <td style="${styles.td} font-weight:bold; color:${mv.tipo === 'ingreso' ? 'green' : (mv.tipo === 'egreso' ? 'red' : 'inherit')};">
+              ${formatCurrency(mv.monto)}
+            </td>
+          </tr>
+        `).join('') : `<tr><td colspan="5" style="${styles.td} text-align:center;">No hay movimientos de caja.</td></tr>`}
+      </tbody>
+    </table>
+  `;
+
+  // 2. (MODIFICADO) Detalle de Amenidades (Agrupado)
+  const amenidadesAgrupadas = {};
+  if (movsAmenidades && movsAmenidades.length > 0) {
+    movsAmenidades.forEach(mv => {
+      const habitacionNombre = mv.habitaciones?.nombre || 'N/A (Registro Manual)';
+      const itemNombre = mv.amenidades_inventario?.nombre_item || 'N/A';
+      const cantidad = mv.cantidad_usada;
+      
+      if (!amenidadesAgrupadas[habitacionNombre]) {
+        amenidadesAgrupadas[habitacionNombre] = [];
+      }
+      amenidadesAgrupadas[habitacionNombre].push(`${itemNombre} (<b>${cantidad}</b>)`);
+    });
+  }
+  const detalleAmenidadesHtml = `
+    <h2 style="${styles.headerDetalle}">Registro de Amenidades (Agrupado por Habitación)</h2>
+    <table style="${styles.table}">
+      <thead>
+        <tr>
+          <th style="${styles.th}">Habitación</th>
+          <th style="${styles.th}">Artículos Entregados en el Turno</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(Object.keys(amenidadesAgrupadas).length > 0) ? Object.entries(amenidadesAgrupadas).map(([habitacion, items]) => `
+          <tr>
+            <td style="${styles.tdConcepto}">${habitacion}</td>
+            <td style="${styles.tdConcepto}">${items.join('<br>')}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="2" style="${styles.td} text-align:center;">No hay registros de amenidades.</td></tr>`}
+      </tbody>
+    </table>
+  `;
+
+
+  // 3. Detalle de Lencería (Sin cambios)
+  const detalleLenceriaHtml = `
+    <h2 style="${styles.headerDetalle}">Registro de Lencería (Ropa de Cama)</h2>
+    <table style="${styles.table}">
+      <thead>
+        <tr>
+          <th style="${styles.th}">Fecha</th>
+          <th style="${styles.th}">Habitación</th>
+          <th style="${styles.th}">Artículo</th>
+          <th style="${styles.th}">Cantidad</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(movsLenceria && movsLenceria.length > 0) ? movsLenceria.map(mv => `
+          <tr>
+            <td style="${styles.td} text-align:left; min-width: 130px;">${formatDateTime(mv.fecha_uso)}</td>
+            <td style="${styles.tdConcepto}">${mv.habitaciones?.nombre || 'N/A'}</td>
+            <td style="${styles.tdConcepto}">${mv.inventario_lenceria?.nombre_item || 'N/A'}</td>
+            <td style="${styles.td} text-align:center; font-weight:bold;">${mv.cantidad_usada}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de lencería.</td></tr>`}
+      </tbody>
+    </table>
+  `;
+
+  // 4. Detalle de Préstamos (Sin cambios)
+  const detallePrestamosHtml = `
+    <h2 style="${styles.headerDetalle}">Registro de Préstamos</h2>
+    <table style="${styles.table}">
+      <thead>
+        <tr>
+          <th style="${styles.th}">Fecha</th>
+          <th style="${styles.th}">Habitación</th>
+          <th style="${styles.th}">Artículo</th>
+          <th style="${styles.th}">Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(movsPrestamos && movsPrestamos.length > 0) ? movsPrestamos.map(mv => `
+          <tr>
+            <td style="${styles.td} text-align:left; min-width: 130px;">${formatDateTime(mv.fecha_accion)}</td>
+            <td style="${styles.tdConcepto}">${mv.habitaciones?.nombre || 'N/A'}</td>
+            <td style="${styles.tdConcepto}">${mv.articulo_nombre}</td>
+            <td style="${styles.tdConcepto}">${mv.accion}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de préstamos.</td></tr>`}
+      </tbody>
+    </table>
+  `;
+  
+  // 5. (NUEVO) Stock de Amenidades
+  const stockAmenidadesHtml = `
+    <h2 style="${styles.headerDetalle}">Stock Actual de Amenidades</h2>
+    <table style="${styles.table}">
+      <thead><tr><th style="${styles.th}">Artículo</th><th style="${styles.th}">Stock Actual</th></tr></thead>
+      <tbody>
+        ${(stockAmenidades && stockAmenidades.length > 0) ? stockAmenidades.map(item => `
+          <tr>
+            <td style="${styles.tdConcepto}">${item.nombre_item}</td>
+            <td style="${styles.td} text-align:center; font-weight:bold;">${item.stock_actual}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="2" style="${styles.td} text-align:center;">No hay datos de stock.</td></tr>`}
+      </tbody>
+    </table>
+  `;
+
+  // 6. (NUEVO) Stock de Lencería
+  const stockLenceriaHtml = `
+    <h2 style="${styles.headerDetalle}">Stock Actual de Lencería</h2>
+    <table style="${styles.table}">
+      <thead>
+        <tr>
+          <th style="${styles.th}">Artículo</th>
+          <th style="${styles.th}">Limpio (Almacén)</th>
+          <th style="${styles.th}">En Lavandería</th>
+          <th style="${styles.th}">Stock Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(stockLenceria && stockLenceria.length > 0) ? stockLenceria.map(item => `
+          <tr>
+            <td style="${styles.tdConcepto}">${item.nombre_item}</td>
+            <td style="${styles.td} text-align:center; font-weight:bold; color:green;">${item.stock_limpio_almacen || 0}</td>
+            <td style="${styles.td} text-align:center; color:#CA8A04;">${item.stock_en_lavanderia || 0}</td>
+            <td style="${styles.td} text-align:center; font-weight:bold;">${item.stock_total || 0}</td>
+          </tr>
+        `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay datos de stock.</td></tr>`}
+      </tbody>
+    </table>
+  `;
+
+
+  // --- ARMADO DEL HTML FINAL ---
   return `
     <body style="${styles.body}">
       <div style="${styles.container}">
@@ -1234,7 +1474,7 @@ function generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCi
         <p style="${styles.subHeader}">
           <strong>Realizado por:</strong> ${usuarioNombre}<br>
           <strong>Fecha de Cierre:</strong> ${fechaCierre}
-        </p>
+        </G>
         
         <table style="${styles.table}">
           <thead>
@@ -1291,10 +1531,21 @@ function generarHTMLReporteCierre(reporte, metodosDePago, usuarioNombre, fechaCi
             </tr>
           </tbody>
         </table>
+        
+        ${detalleCajaHtml}
+        ${detalleAmenidadesHtml} ${detalleLenceriaHtml}
+        ${detallePrestamosHtml}
+        
+        ${stockAmenidadesHtml}
+        ${stockLenceriaHtml}
+
         <div style="${styles.footer}">Este es un reporte automático generado por el sistema.</div>
       </div>
     </body>`;
 }
+
+
+
 async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
   const { data: config } = await currentSupabaseInstance
     .from('configuracion_hotel')

@@ -48,80 +48,43 @@ const faqData = [
   },
 
   
-  {
+{
   category: "Mapa de Habitaciones",
   icon: "🗺️",
   questions: [
     {
       q: "¿Qué es el Mapa de Habitaciones y para qué sirve?",
-      a: "Es la vista principal para gestionar el hotel de forma visual. Desde aquí puedes ver rápidamente el estado de todas las habitaciones (libre, ocupada, reservada, limpieza, mantenimiento, bloqueada, etc.) y acceder a todas las acciones importantes como alquilar, entregar reservas, ver información del huésped, facturar, y más."
+      a: "Es la vista principal para gestionar el hotel de forma visual. Desde aquí puedes ver el estado de todas las habitaciones y acceder a acciones como alquilar, facturar, gestionar artículos prestados y controlar la limpieza."
     },
     {
-  q: "¿Qué significan los colores y los estados en las tarjetas de las habitaciones?",
-  a: `<ul>
-    <li><b style="color:#22c55e">Verde (LIBRE):</b> Habitación disponible para alquilar.</li>
-    <li><b style="color:#facc15">Amarillo (OCUPADA):</b> Habitación actualmente ocupada por un cliente hospedado.</li>
-    <li><b style="color:#06b6d4">Celeste (LIMPIEZA):</b> Habitación pendiente de limpieza.</li>
-    <li><b style="color:#a78bfa">Morado (RESERVADA):</b> Habitación reservada para un cliente.</li>
-    <li><b style="color:#f87171">Rojo (TIEMPO AGOTADO o EXCEDIDO):</b> Se acabó o se excedió el tiempo de estadía; la habitación debe ser liberada.</li>
-    <li><b style="color:#6b7280">Gris (BLOQUEADA / MANTENIMIENTO):</b> Habitación no disponible por mantenimiento o bloqueo.</li>
-  </ul>`
-},
-
-    {
-      q: "¿Cómo alquilo una habitación directamente desde el mapa?",
-      a: "Haz clic sobre una tarjeta de habitación que esté en estado 'Libre' (color verde). Luego selecciona 'Alquilar Ahora', completa el formulario con los datos del huésped y el tipo de alquiler (por horas, noche, día completo, etc.) y confirma. La habitación cambiará automáticamente a 'Ocupada'."
+      q: "¿Qué significan los colores de las habitaciones?",
+      a: `<ul>
+        <li><b style="color:#22c55e">Verde (LIBRE):</b> Lista para alquilar.</li>
+        <li><b style="color:#facc15">Amarillo (OCUPADA):</b> Con cliente dentro.</li>
+        <li><b style="color:#06b6d4">Celeste (LIMPIEZA):</b> El cliente salió, requiere limpieza.</li>
+        <li><b style="color:#a78bfa">Morado (RESERVADA):</b> Reservada para una llegada próxima (menos de 3 horas).</li>
+        <li><b style="color:#f87171">Rojo (TIEMPO AGOTADO):</b> Se acabó el tiempo de estancia contratado.</li>
+        <li><b style="color:#3b82f6; border: 1px solid #3b82f6;">Borde Azul (TIEMPO LIBRE):</b> Habitación ocupada con modalidad de 'Duración Abierta'.</li>
+      </ul>`
     },
     {
-      q: "¿Qué hago cuando llega un cliente con reserva?",
-      a: "Ubica la habitación marcada como 'Reservada' (azul) y haz clic en ella. Selecciona la opción 'Entregar Reserva', verifica los datos del cliente y confirma el check-in. La habitación pasará a estado 'Ocupada'."
+      q: "¿Qué es la opción 'Duración Abierta' o 'Tiempo Libre'?",
+      a: "Es una modalidad de alquiler donde no se define una hora de salida fija al inicio. El sistema cuenta el tiempo transcurrido y, al momento de cobrar (botón 'Ver Consumos' o 'Entregar'), calcula el precio total basándose en las horas o bloques de tiempo consumidos hasta ese instante."
     },
     {
-      q: "¿Cómo agrego servicios o consumos a una habitación ocupada?",
-      a: "Haz clic en la habitación en estado 'Ocupada'. Selecciona la opción 'Ver consumos' o 'Servicios Adicionales'. Aquí podrás agregar productos, restaurante, lavandería, minibar, etc. Todos los consumos quedarán registrados y se sumarán a la factura al momento del check-out."
+      q: "¿Cómo funciona el cobro de consumos (Tienda/Restaurante) al hacer Check-out?",
+      a: "El sistema es ahora más inteligente. Al realizar el cobro final, el pago se <b>desglosa automáticamente</b> en la caja. Si el cliente paga $100.000 ($80.000 de habitación y $20.000 de tienda), el reporte de caja mostrará esos ingresos por separado para tener una contabilidad exacta."
     },
     {
-      q: "¿Puedo extender el tiempo de una habitación que está por vencer?",
-      a: "Sí. Si ves que una habitación ocupada está por agotarse (naranja o parpadeando), haz clic en ella y selecciona 'Extender tiempo'. Elige el nuevo tiempo o tarifa y confirma. El contador de tiempo se actualizará automáticamente."
+      q: "¿Qué es la gestión de 'Artículos Prestados'?",
+      a: "Es una nueva función accesible desde el botón 'Gestionar Artículos' en una habitación ocupada. Permite registrar si le prestaste algo al huésped (ej. un secador de pelo, plancha o toalla extra) para llevar un control y asegurar su devolución antes de la salida."
     },
     {
-      q: "¿Cómo facturo y libero una habitación?",
-      a: "Cuando el huésped se retira, haz clic en la habitación ocupada y selecciona 'Facturar/Check-out'. Verifica los cargos y consumos, selecciona el método de pago y finaliza la factura. Al terminar, la habitación pasará a estado 'Pendiente de limpieza'."
-    },
-    {
-      q: "¿Cómo marco una habitación como limpia después del check-out?",
-      a: "Cuando la habitación esté en estado 'Pendiente de limpieza' (amarillo), haz clic en ella y selecciona 'Marcar como limpia' después de que el personal haya terminado. La habitación volverá a estar 'Libre' y disponible para el siguiente huésped."
-    },
-    {
-      q: "¿Qué hago si una habitación necesita ser reparada o no debe ser usada?",
-      a: "Haz clic en la habitación y selecciona 'Enviar a mantenimiento' o 'Bloquear habitación'. Indica el motivo (si es necesario). La habitación quedará en gris y no podrá ser alquilada ni reservada hasta que la reabras manualmente."
-    },
-    {
-      q: "¿Cómo consulto los datos del huésped y el historial de la habitación?",
-      a: "Haz clic en cualquier habitación ocupada y elige 'Ver información del huésped'. Verás nombre, documento, fechas de ingreso/salida, consumos y notas. Para ver el historial completo de ocupaciones, selecciona 'Ver historial de habitación'."
-    },
-    {
-      q: "¿Por qué no puedo alquilar o reservar una habitación?",
-      a: "Verifica que la habitación no esté en estado 'Ocupada', 'Pendiente de limpieza', 'Mantenimiento' o 'Bloqueada'. Solo las habitaciones en estado 'Libre' pueden ser alquiladas o reservadas."
-    },
-    {
-      q: "¿Qué hago si el estado de una habitación no cambia o se ve incorrecto?",
-      a: "Recarga la página y verifica que el estado se actualice. Si el problema persiste, consulta con el administrador o soporte técnico. Puede deberse a una acción no finalizada (por ejemplo, falta facturar o limpiar)."
-    },
-    {
-      q: "¿Puedo mover a un huésped de una habitación a otra?",
-      a: "Sí. Haz clic en la habitación ocupada y selecciona 'Cambiar de habitación'. Elige la nueva habitación disponible y confirma. El sistema moverá toda la cuenta y consumos automáticamente."
-    },
-    {
-      q: "¿Cómo sé cuánto tiempo le queda a una habitación por horas?",
-      a: "Cada tarjeta muestra un contador visual (tiempo restante). Los colores cambian de verde a naranja y luego rojo según el tiempo. Si el tiempo se agota, la habitación cambiará a 'tiempo agotado' (rojo parpadeando) hasta que la factures o extiendas el tiempo."
-    },
-    {
-      q: "¿Qué debo hacer si un cliente se va antes de que acabe su tiempo?",
-      a: "Haz clic en la habitación, selecciona 'Facturar/Check-out', realiza el proceso de salida normal y la habitación pasará a pendiente de limpieza."
+      q: "¿Cómo libero una habitación después de cobrar?",
+      a: "Primero haz clic en 'Ver Consumos' o 'Liberar Habitación' para saldar la cuenta. Si el saldo llega a $0, el sistema te ofrecerá automáticamente un botón para <b>'Liberar y Limpieza'</b>. Al confirmar, la habitación pasa a estado 'Limpieza' y se notifica al personal encargado."
     }
   ]
-}
+},
 ,
  {
     category: "Reservas",
@@ -187,40 +150,24 @@ const faqData = [
     icon: "💰",
     questions: [
       {
-        q: "¿Qué es y para qué sirve el módulo de Caja?",
-        a: "Es el centro de control financiero de tu hotel. Cada vez que se recibe dinero (por un alquiler, una venta en la tienda) o se gasta dinero (compras a proveedores, gastos varios), debe quedar registrado aquí. Funciona con un sistema de 'turnos' para que siempre se sepa quién fue el responsable de las transacciones en un momento determinado."
+        q: "¿Qué información incluye el Reporte de Cierre de Caja?",
+        a: "El nuevo reporte es mucho más completo. Además del balance de dinero, ahora incluye: <br>1. <b>Desglose de Ingresos:</b> Separa cuánto entró por Habitaciones, Tienda, Restaurante y Servicios.<br>2. <b>Control de Inventario:</b> Muestra qué amenidades se gastaron y cuánta lencería se envió a lavandería durante tu turno.<br>3. <b>Artículos Prestados:</b> Un registro de los objetos prestados y devueltos en tu jornada."
       },
       {
         q: "¿Por qué es obligatorio abrir un turno?",
-        a: "Es una medida de seguridad y control indispensable. Sin un turno de caja activo, el sistema bloquea cualquier operación que involucre dinero (alquilar, vender, registrar gastos). Esto garantiza que cada peso que entra o sale esté asociado a un recepcionista y a un periodo de tiempo específico, lo que facilita los arqueos y la contabilidad."
+        a: "Sin un turno activo, el sistema bloquea cualquier operación de cobro o venta. Esto garantiza que cada peso y cada movimiento de inventario quede asociado a un responsable específico."
       },
       {
-        q: "¿Cómo abro un turno de caja?",
-        a: "Si no hay un turno activo, verás un botón grande que dice 'Abrir Turno'. Al hacer clic, el sistema te pedirá el 'monto inicial' o 'base' con el que comienzas a trabajar (el efectivo que tienes en el cajón). Una vez ingresado, el turno se abre y ya puedes realizar operaciones."
+        q: "¿Cómo registro un gasto o retiro de dinero?",
+        a: "En 'Agregar Nuevo Movimiento', selecciona 'Egreso'. Ahora puedes marcar casillas especiales como 'Registrar con fecha anterior' (para correcciones) o 'Fuera de turno' si es un ajuste administrativo."
       },
       {
-        q: "¿Cómo registro un gasto (egreso)?",
-        a: "En la sección 'Agregar Nuevo Movimiento', selecciona 'Egreso' en el tipo, escribe el monto, elige el método de pago (ej. 'Efectivo' si salió del cajón) y describe claramente el concepto (ej. 'Compra de productos de limpieza'). Luego, haz clic en 'Agregar Movimiento'."
+        q: "¿Puedo ver los movimientos que se han eliminado?",
+        a: "Sí, si tienes permisos de Administrador. El botón 'Ver Eliminados' muestra una auditoría completa de quién eliminó un movimiento, cuándo y el monto original, garantizando total transparencia."
       },
       {
-        q: "¿Cómo realizo el Corte de Caja (cierre de turno)?",
-        a: "Al final de tu jornada, haz clic en el botón 'Realizar Corte de Caja'. El sistema te mostrará un resumen detallado con todos los ingresos y egresos, desglosados por cada método de pago (Efectivo, Tarjeta, etc.). Revisa que todo esté correcto y luego presiona 'Confirmar Corte y Enviar'. Esto cerrará tu turno y enviará un reporte detallado por correo electrónico a los administradores."
-      },
-      {
-        q: "¿Qué es el 'Modo Supervisión' para administradores?",
-        a: "Es una función avanzada que permite a un administrador ver y gestionar el turno activo de otro recepcionista. Para usarlo, un administrador hace clic en 'Ver Turnos Abiertos', selecciona el turno de un empleado y elige 'Gestionar Turno'. La pantalla cambiará a una vista especial donde el administrador puede registrar movimientos o incluso forzar el cierre de ese turno si es necesario."
-      },
-      {
-        q: "¿Puedo eliminar un movimiento si me equivoqué?",
-        a: "Sí, pero solo los usuarios con rol de 'Administrador' pueden hacerlo. Al lado de cada movimiento, verán un ícono de bote de basura. Por seguridad, al eliminar un movimiento, este no desaparece por completo, sino que se mueve a un 'Historial de Movimientos Eliminados' para que siempre haya un registro de la acción."
-      },
-      {
-        q: "¿Dónde puedo ver los movimientos que se han eliminado?",
-        a: "Los administradores tienen un botón llamado 'Ver Eliminados'. Al hacer clic, se abre una ventana que muestra un registro de auditoría con cada movimiento que fue eliminado, quién lo eliminó y en qué fecha."
-      },
-      {
-        q: "¿Cómo imprimo el reporte de mi corte de caja?",
-        a: "Después de hacer clic en 'Realizar Corte de Caja' y antes de confirmar, verás un botón con un ícono de impresora (🖨️). Al presionarlo, se generará un ticket con el resumen del turno, formateado automáticamente para el tipo de impresora que tengas configurada (térmica de 58mm, 80mm o una impresora de tamaño carta)."
+        q: "¿Cómo imprimo el reporte de mi corte?",
+        a: "Al finalizar el corte, verás un resumen en pantalla. Haz clic en el botón 'Imprimir'. El sistema detectará automáticamente si usas una impresora de recibos (58mm/80mm) o una normal y ajustará el formato del ticket para que salga perfecto."
       }
     ]
   },
@@ -341,34 +288,33 @@ const faqData = [
     ]
   },
 
-  {
-    category: "Gestión de Limpieza",
+{
+    category: "Gestión de Limpieza e Inventario",
     icon: "🧹",
     questions: [
         {
-            q: "¿Para qué sirve el módulo de Limpieza?",
-            a: "Este módulo está diseñado para el personal de housekeeping. Su única función es mostrar una lista clara y actualizada de todas las habitaciones que necesitan ser limpiadas en el hotel, para que el equipo sepa exactamente dónde debe trabajar."
+            q: "¿Cómo confirmo que una habitación está limpia?",
+            a: "En la lista de pendientes, haz clic en <b>'Confirmar Limpieza'</b>. Ahora el sistema te pedirá registrar qué recursos usaste: <br><ul><li><b>Amenidades:</b> Jabones, champú, papel, etc. (se descuentan del stock).</li><li><b>Lencería:</b> Sábanas y toallas cambiadas (se mueven a 'Lavandería').</li></ul>"
         },
         {
-            q: "¿Cómo aparece una habitación en esta lista de pendientes?",
-            a: "Una habitación aparece aquí automáticamente justo después de que un huésped hace <b>check-out</b>. Cuando la recepción libera una habitación desde el 'Mapa de Habitaciones', el estado de esa habitación cambia a 'Limpieza', y se añade instantáneamente a esta lista."
+            q: "¿Para qué sirve el botón 'Gestión de Inventario Amenidades'?",
+            a: "(Solo Admins) Te permite ver el stock actual de consumibles, realizar compras (añadir stock) y definir las cantidades por defecto que se usan en cada limpieza para agilizar el trabajo del personal."
         },
         {
-            q: "Ya terminé de limpiar una habitación, ¿qué hago en el sistema?",
-            a: "Es muy sencillo. Junto a cada habitación pendiente, verás un botón verde grande que dice <b>'✔ Confirmar Limpieza'</b>. Simplemente haz clic en ese botón una vez que la habitación esté completamente lista."
+            q: "¿Cómo funciona el ciclo de Lavandería y Lencería?",
+            a: "El sistema maneja un ciclo completo: <br>1. <b>Uso:</b> Al limpiar una habitación, la ropa sucia se marca como 'Enviada a Lavandería'.<br>2. <b>Lavado:</b> Esas prendas se acumulan en el estado virtual 'En Lavandería'.<br>3. <b>Recepción:</b> Cuando la ropa regresa limpia, usas el botón 'Gestión Lavandería' -> 'Recibir Lote' para reingresarlas al almacén de limpios."
         },
         {
-            q: "¿Qué sucede exactamente cuando confirmo la limpieza?",
-            a: `Al hacer clic, el sistema realiza tres acciones automáticamente para agilizar el trabajo:
-               <ul>
-                   <li>La habitación <b>desaparece</b> de tu lista de pendientes.</li>
-                   <li>El estado de la habitación cambia a <b>'Libre'</b> en el Mapa de Habitaciones, dejándola disponible para un nuevo huésped.</li>
-                   <li>Se envía una <b>notificación automática a la recepción</b>, avisándoles que la habitación ya está lista para ser vendida.</li>
-               </ul>`
+            q: "¿Qué hago si se pierde o rompe una sábana o toalla?",
+            a: "En el módulo de 'Gestión Lavandería', usa el formulario de <b>'Reportar Pérdida/Daño'</b>. Esto descontará el artículo del inventario total y dejará un registro del motivo para auditoría."
         },
         {
-            q: "La pantalla dice '¡Todo limpio!', ¿qué significa?",
-            a: "¡Felicitaciones! Significa que no hay ninguna habitación pendiente de limpieza en todo el hotel. La lista se llenará de nuevo automáticamente en cuanto la recepción realice el próximo check-out."
+            q: "¿Cómo controlo los artículos prestados (ej. Planchas)?",
+            a: "Usa la sección 'Inventario Préstamos'. Aquí puedes definir qué objetos tiene el hotel para prestar (stock disponible). El personal de recepción podrá prestarlos desde el Mapa de Habitaciones, y el sistema controlará quién lo tiene y cuándo lo devuelve."
+        },
+        {
+            q: "¿Puedo imprimir una hoja para hacer conteo físico?",
+            a: "Sí. En el menú de acciones de administrador, selecciona <b>'Imprimir Conteo'</b>. Se generará una hoja con todo tu inventario actual (Sistema vs Físico) ideal para realizar auditorías manuales."
         }
     ]
   },

@@ -891,3 +891,62 @@ export function mostrarInfoModalGlobal(htmlContent, title = "Información", boto
         e.stopPropagation();
     };
 }
+// --- MODAL DE CONFIRMACIÓN PERSONALIZADO (Estilo Tailwind) ---
+export function mostrarConfirmacion(titulo, mensaje, tipo = 'danger') {
+    return new Promise((resolve) => {
+        // Colores según el tipo de acción (danger = rojo, info/primary = azul)
+        const colorClass = tipo === 'danger' ? 'red' : 'blue';
+        
+        // Icono SVG según el tipo
+        const icon = tipo === 'danger' 
+            ? `<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4"><svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>`
+            : `<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4"><svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>`;
+
+        // Crear el elemento contenedor
+        const modalEl = document.createElement('div');
+        modalEl.className = "fixed inset-0 z-[150] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-fadeIn";
+        modalEl.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative transform transition-all scale-100 border border-gray-200">
+                <div class="text-center">
+                    ${icon}
+                    <h3 class="text-lg leading-6 font-bold text-gray-900 mb-2">${titulo}</h3>
+                    <div class="mt-2">
+                        <p class="text-sm text-gray-500">${mensaje}</p>
+                    </div>
+                </div>
+                <div class="mt-6 flex gap-3 justify-center">
+                    <button id="btn-cancel-confirm" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none transition-colors">
+                        Cancelar
+                    </button>
+                    <button id="btn-accept-confirm" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-${colorClass}-600 text-base font-medium text-white hover:bg-${colorClass}-700 focus:outline-none transition-colors shadow-lg shadow-${colorClass}-500/30">
+                        Sí, confirmar
+                    </button>
+                </div>
+            </div>
+        `;
+        
+        // Agregar al DOM
+        document.body.appendChild(modalEl);
+
+        // Función de cierre
+        const close = (result) => {
+            modalEl.classList.add('opacity-0'); // Efecto visual de salida
+            setTimeout(() => {
+                if (document.body.contains(modalEl)) {
+                    document.body.removeChild(modalEl);
+                }
+            }, 200);
+            resolve(result);
+        };
+
+        // Listeners
+        const btnCancel = modalEl.querySelector('#btn-cancel-confirm');
+        const btnAccept = modalEl.querySelector('#btn-accept-confirm');
+
+        btnCancel.onclick = () => close(false);
+        btnAccept.onclick = () => close(true);
+
+        // Cerrar al hacer clic fuera (backdrop)
+        modalEl.onclick = (e) => { if(e.target === modalEl) close(false); };
+    });
+}
