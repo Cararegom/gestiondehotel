@@ -1004,13 +1004,23 @@ async function mostrarResumenCorteDeCaja() {
       }
     };
 
+   
+
     modal.querySelector('#btn-imprimir-corte-caja').onclick = () => {
+        // 1. Extraemos Ingresos
         const ingresosPorMetodo = {};
         metodosDePago.forEach(m => { ingresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.ingreso || 0 });
+        
+        // 2. Extraemos Egresos
         const egresosPorMetodo = {};
         metodosDePago.forEach(m => { egresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.gasto || 0 });
         
-        imprimirCorteCajaAdaptable(configHotel, movimientos, totalIngresos, totalGastos, balanceFinal, ingresosPorMetodo, egresosPorMetodo);
+        // 3. (NUEVO) Extraemos Balances (Lo que debe entregar)
+        const balancesPorMetodo = {};
+        metodosDePago.forEach(m => { balancesPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.balance || 0 });
+        
+        // Enviamos los 3 objetos a la función de imprimir
+        imprimirCorteCajaAdaptable(configHotel, movimientos, totalIngresos, totalGastos, balanceFinal, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo);
     };
     
   } catch (e) {
@@ -1024,11 +1034,10 @@ async function mostrarResumenCorteDeCaja() {
 
 
 
-// --- IMPRESIÓN ADAPTABLE POR TIPO DE IMPRESORA ---
-function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo) {
+// --- IMPRESIÓN ADAPTABLE POR TIPO DE IMPRESORA (ACTUALIZADA) ---
+function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo) {
   let tamano = (config?.tamano_papel || '').toLowerCase();
   let tipo = (config?.tipo_impresora || '').toLowerCase();
-  console.log('Tamaño papel recibido:', tamano);
   let esTermica = tipo === 'termica' || ['58mm', '80mm'].includes(tamano);
 
   // --- Header personalizable ---
@@ -1042,11 +1051,19 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
 
   let style = '';
   let html = '';
-  let anchoMax = '100%';
+  
+  // Generador de lista de balances para reutilizar
+  const generarListaBalances = (estiloLi) => {
+    return Object.entries(balancesPorMetodo).map(([k, v]) => {
+        // Resaltamos el Efectivo o balances positivos para mayor claridad visual
+        const esPositivo = v > 0;
+        const estiloValor = esPositivo ? 'font-weight:bold; color: #000;' : 'color: #555;';
+        return `<li style="${estiloLi}">${k}: <b style="${estiloValor}">${formatCurrency(v)}</b></li>`;
+    }).join('');
+  };
 
-  // === NUEVO FORMATO 58mm ===
+  // === FORMATO 58mm ===
   if (tamano === '58mm') {
-    anchoMax = '55mm';
     style = `
       @page { size: 58mm auto; margin: 0; }
       body{font-family:monospace;font-size:11px;max-width:55mm;margin:0;padding:0;}
@@ -1061,9 +1078,11 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
       .movs-table{width:100%;font-size:10px;border-collapse:collapse;}
       .movs-table th,.movs-table td{padding:1px 2px;}
       .pie{text-align:center;margin-top:4px;font-size:10px;}
+      .titulo-seccion{font-weight:bold; border-top: 1px solid #000; margin-top:5px; padding-top:2px;}
     `;
-    // Solo 5 últimos movimientos
-    let movsCortos = movimientos;
+    
+    let movsCortos = movimientos; // O puedes limitar movimientos.slice(-5)
+    
     html = `
       <div class="ticket">
         ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:45mm;max-height:30px;"></div>` : ''}
@@ -1073,144 +1092,129 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
         <div style="text-align:center;font-size:12px;"><b>CIERRE DE CAJA</b></div>
         <div style="text-align:center;font-size:10px;">${formatDateTime(new Date())}</div>
         <div class="line"></div>
+        
         <div class="totales">Apertura:<b>${formatCurrency(movsCortos.find(m => m.tipo === 'apertura')?.monto ?? 0)}</b></div>
         <div class="totales">Ingresos:<b>${formatCurrency(ingresos)}</b></div>
         <div class="totales">Egresos:<b>${formatCurrency(egresos)}</b></div>
-        <div class="totales">Balance:<b>${formatCurrency(balance)}</b></div>
+        <div class="totales" style="font-size:13px; border-top:1px solid #000; margin-top:2px; padding-top:2px;">TOTAL NETO:<b>${formatCurrency(balance)}</b></div>
+        
         <div class="line"></div>
-        <div><b>Ingresos x método:</b></div>
+        
+        <div class="titulo-seccion">A ENTREGAR (BALANCE):</div>
         <ul class="resumido">
-          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}<b>${formatCurrency(v)}</b></li>`).join('') || '<li>Sin ingresos</li>'}
+          ${generarListaBalances('')}
         </ul>
-        <div><b>Egresos x método:</b></div>
-        <ul class="resumido">
-          ${Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}<b>${formatCurrency(v)}</b></li>`).join('') || '<li>Sin egresos</li>'}
-        </ul>
+
         <div class="line"></div>
-        <div><b>Movimientos recientes:</b></div>
+        <div style="font-size:10px; margin-bottom:2px;"><b>Detalle Ingresos:</b></div>
+        <ul class="resumido" style="font-size:9px; color:#444;">
+          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}<span>${formatCurrency(v)}</span></li>`).join('') || '<li>Sin ingresos</li>'}
+        </ul>
+        
+        <div class="line"></div>
+        <div style="margin-top:5px;"><b>Movimientos:</b></div>
         <table class="movs-table">
-  <tr><th>Fec</th><th>Tp</th><th>Mon</th><th>Conc</th></tr>
-  ${movimientos.map(mv => `
-    <tr>
-      <td>${new Date(mv.creado_en).toLocaleDateString('es-CO', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
-      <td>${mv.tipo.charAt(0).toUpperCase()}</td>
-      <td>${formatCurrency(mv.monto)}</td>
-      <td>${(mv.concepto || '').slice(0, 11)}</td>
-    </tr>
-  `).join('')}
-</table>
+          <tr><th>Hora</th><th>Tp</th><th>Monto</th><th>Concep</th></tr>
+          ${movimientos.map(mv => `
+            <tr>
+              <td>${new Date(mv.creado_en).toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'})}</td>
+              <td>${mv.tipo.charAt(0).toUpperCase()}</td>
+              <td>${formatCurrency(mv.monto)}</td>
+              <td>${(mv.concepto || '').slice(0, 8)}</td>
+            </tr>
+          `).join('')}
+        </table>
         <div class="line"></div>
         ${pie ? `<div class="pie">${pie}</div>` : ''}
       </div>
     `;
   }
-  // === FORMATO PARA 80mm o Carta ===
-  else if (tamano === '80mm') {
-    anchoMax = '78mm'; style = `
-      body{font-family:monospace;font-size:12px;max-width:78mm;margin:0;padding:0;}
-      .ticket{max-width:78mm;margin:auto;}
-      table{width:100%;font-size:12px;}
+  // === FORMATO 80mm y CARTA ===
+  else {
+    // Usamos un ancho relativo para que sirva en 80mm y web
+    const maxW = tamano === '80mm' ? '78mm' : '850px';
+    const fontSize = tamano === '80mm' ? '12px' : '14px';
+    
+    style = `
+      body{font-family:monospace;font-size:${fontSize};max-width:${maxW};margin:0 auto;padding:0;}
+      .ticket{max-width:100%;margin:auto;}
+      table{width:100%;font-size:${fontSize};border-collapse:collapse;}
       th,td{padding:3px 2px;}
-      .title{font-size:15px;}
-      .totales span{font-size:13px;}
-      .linea{border-bottom:1px dashed #444;margin:4px 0;}
+      .title{font-size:1.2em; font-weight:bold; text-align:center;}
+      .totales span{display:inline-block; width:100%;}
+      .linea{border-bottom:1px dashed #444;margin:8px 0;}
+      .seccion-box { border: 2px solid #000; padding: 5px; margin: 5px 0; border-radius: 4px; }
     `;
+    
     html = `
       <div class="ticket">
-        ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:70mm;max-height:40px;"></div>` : ''}
-        <div class="title" style="text-align:center;font-weight:bold;">${hotelNombre}</div>
-        <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
-        ${encabezado ? `<div style="text-align:center;margin:2px 0 5px 0;">${encabezado}</div>` : ''}
+        ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:60%;max-height:50px;"></div>` : ''}
+        <div class="title">${hotelNombre}</div>
+        <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}</div>
         <div class="linea"></div>
-        <div style="font-size:13px;"><b>CIERRE DE CAJA</b></div>
+        <div style="text-align:center; font-weight:bold; font-size:1.1em;">RESUMEN DE CIERRE DE CAJA</div>
+        <div style="text-align:center; font-size:0.9em;">${formatDateTime(new Date())}</div>
         <div class="linea"></div>
+        
         <div class="totales">
-          <span>Ingresos: <b>${formatCurrency(ingresos)}</b></span><br>
-          <span>Egresos: <b>${formatCurrency(egresos)}</b></span><br>
-          <span>Balance: <b>${formatCurrency(balance)}</b></span>
+          <span>(+) Ingresos Totales: <b style="float:right">${formatCurrency(ingresos)}</b></span>
+          <span>(-) Egresos Totales: <b style="float:right">${formatCurrency(egresos)}</b></span>
+          <div style="border-top:1px solid #000; margin-top:4px; padding-top:4px; font-weight:bold; font-size:1.2em;">
+            <span>(=) BALANCE TOTAL: <b style="float:right">${formatCurrency(balance)}</b></span>
+          </div>
         </div>
+        
         <div class="linea"></div>
-        <div><b>Ingresos por método:</b></div>
-        <ul style="margin:0;padding-left:14px;">
-          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-        </ul>
-        <div><b>Egresos por método:</b></div>
-        <ul style="margin:0;padding-left:14px;">
-          ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-        </ul>
+        
+        <div class="seccion-box">
+            <div style="text-align:center; font-weight:bold; margin-bottom:5px; border-bottom:1px solid #ccc;">DINERO A ENTREGAR (POR MÉTODO)</div>
+            <ul style="margin:0;padding-left:5px; list-style:none;">
+              ${generarListaBalances('display:flex; justify-content:space-between; margin-bottom:2px;')}
+            </ul>
+        </div>
+
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <div style="flex:1;">
+                <b>Detalle Ingresos:</b>
+                <ul style="margin:0;padding-left:14px; font-size:0.9em;">
+                  ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+                </ul>
+            </div>
+            <div style="flex:1;">
+                <b>Detalle Egresos:</b>
+                <ul style="margin:0;padding-left:14px; font-size:0.9em;">
+                   ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
+                </ul>
+            </div>
+        </div>
+        
         <div class="linea"></div>
+        <div style="font-weight:bold;">Movimientos del Turno:</div>
         <table>
           <thead>
-            <tr><th>Fec</th><th>Tp</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
+            <tr style="border-bottom:1px solid #000;"><th>Hora</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
           </thead>
           <tbody>
             ${movimientos.map(mv => `
               <tr>
-                <td>${formatDateTime(mv.creado_en).slice(0, 10)}</td>
+                <td>${formatDateTime(mv.creado_en).slice(11, 16)}</td>
                 <td>${mv.tipo.charAt(0).toUpperCase()}</td>
-                <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#166534' : '#dc2626'};">${formatCurrency(mv.monto)}</td>
-                <td>${mv.concepto || ''}</td>
-                <td>${mv.metodos_pago?.nombre || 'N/A'}</td>
+                <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#000' : '#000'};">${formatCurrency(mv.monto)}</td>
+                <td>${(mv.concepto || '').slice(0, 15)}</td>
+                <td>${(mv.metodos_pago?.nombre || '').slice(0,3)}</td>
               </tr>
             `).join('')}
           </tbody>
         </table>
+        
         <div class="linea"></div>
-        ${pie ? `<div style="text-align:center;margin-top:6px;">${pie}</div>` : ''}
-      </div>
-    `;
-  } else {
-    anchoMax = '850px'; style = `
-      body{font-family:'Segoe UI',Arial,sans-serif;font-size:15px;max-width:850px;margin:0 auto;}
-      .ticket{max-width:850px;margin:auto;}
-      table{width:100%;font-size:15px;}
-      th,td{padding:6px 5px;}
-      .title{font-size:22px;}
-      .totales span{font-size:17px;}
-      .linea{border-bottom:1px solid #ccc;margin:10px 0;}
-    `;
-    html = `
-      <div class="ticket">
-        ${logoUrl ? `<div style="text-align:center;margin-bottom:8px;"><img src="${logoUrl}" style="max-width:120px;max-height:40px;"></div>` : ''}
-        <div class="title" style="text-align:center;font-weight:bold;">${hotelNombre}</div>
-        <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
-        ${encabezado ? `<div style="text-align:center;margin:2px 0 8px 0;">${encabezado}</div>` : ''}
-        <div class="linea"></div>
-        <div style="font-size:16px;"><b>CIERRE DE CAJA</b></div>
-        <div class="linea"></div>
-        <div class="totales">
-          <span>Ingresos: <b>${formatCurrency(ingresos)}</b></span><br>
-          <span>Egresos: <b>${formatCurrency(egresos)}</b></span><br>
-          <span>Balance: <b>${formatCurrency(balance)}</b></span>
+        <br/>
+        <div style="display:flex; justify-content:space-between; margin-top:20px;">
+            <div style="border-top:1px solid #000; width:40%; text-align:center; padding-top:5px;">Firma Recepcionista</div>
+            <div style="border-top:1px solid #000; width:40%; text-align:center; padding-top:5px;">Firma Admin/Supervisor</div>
         </div>
-        <div class="linea"></div>
-        <div><b>Ingresos por método:</b></div>
-        <ul style="margin:0;padding-left:14px;">
-          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-        </ul>
-        <div><b>Egresos por método:</b></div>
-        <ul style="margin:0;padding-left:14px;">
-          ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-        </ul>
-        <div class="linea"></div>
-        <table>
-          <thead>
-            <tr><th>Fec</th><th>Tp</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
-          </thead>
-          <tbody>
-            ${movimientos.map(mv => `
-              <tr>
-                <td>${formatDateTime(mv.creado_en).slice(0, 10)}</td>
-                <td>${mv.tipo.charAt(0).toUpperCase()}</td>
-                <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#166534' : '#dc2626'};">${formatCurrency(mv.monto)}</td>
-                <td>${mv.concepto || ''}</td>
-                <td>${mv.metodos_pago?.nombre || 'N/A'}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        <div class="linea"></div>
-        ${pie ? `<div style="text-align:center;margin-top:6px;">${pie}</div>` : ''}
+        
+        ${pie ? `<div style="text-align:center;margin-top:20px;font-size:0.8em;">${pie}</div>` : ''}
       </div>
     `;
   }

@@ -2678,7 +2678,7 @@ function crearOpcionesHoras(tiempos) {
     return opciones;
 }
 
-// REEMPLAZA esta función completa en tu archivo mapa-habitaciones.js
+// REEMPLAZA TU FUNCIÓN calcularDetallesEstancia CON ESTA VERSIÓN CORREGIDA
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
     let inicioAt = new Date();
     let finAt;
@@ -2699,13 +2699,12 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
         
         montoEstanciaBaseBruto = precioLibreValor;
-        montoDescuento = 0; // Forzamos el descuento a cero.
+        montoDescuento = 0; 
         precioFinalAntesDeImpuestos = precioLibreValor;
         descripcionEstancia = "Estancia (Precio Manual)";
         tipoCalculo = 'manual';
         cantidadCalculo = precioLibreValor;
 
-        // Se sigue calculando la fecha de fin para el registro
         if (nochesSeleccionadas > 0) {
             let fechaSalida = new Date(inicioAt);
             fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
@@ -2715,11 +2714,11 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         } else if (minutosSeleccionados > 0) {
             finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
         } else {
-            finAt = new Date(inicioAt); // Si no hay duración, no se mueve.
+            finAt = new Date(inicioAt); 
         }
 
     } else {
-        // --- LÓGICA DE CÁLCULO NORMAL (SI EL PRECIO MANUAL NO ESTÁ ACTIVO) ---
+        // --- LÓGICA DE CÁLCULO AUTOMÁTICO ---
         if (nochesSeleccionadas > 0) {
             tipoCalculo = 'noches';
             cantidadCalculo = nochesSeleccionadas;
@@ -2727,22 +2726,37 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
 
             let fechaSalida = new Date(inicioAt);
             fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
-            // 🐛 ERROR DE SINTAXIS CORREGIDO AQUÍ:
             const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
             fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
             finAt = fechaSalida;
             
+            // === AQUÍ ESTABA EL ERROR: Lógica de Precios Mejorada ===
             let precioBasePorNoche = 0;
             const cantidadHuespedes = parseInt(dataForm.cantidad_huespedes) || 1;
-            if (cantidadHuespedes === 1) precioBasePorNoche = room.precio_1_persona || 0;
-            else precioBasePorNoche = room.precio_2_personas || 0;
+            
+            // 1. Intentamos obtener el precio general (fallback)
+            const precioGeneral = Number(room.precio) || 0;
+            
+            // 2. Intentamos obtener precios específicos, si fallan, usamos el general
+            const precioUno = Number(room.precio_1_persona) || precioGeneral;
+            const precioDos = Number(room.precio_2_personas) || precioUno; // Si no hay precio de 2, cobra lo de 1 (o general)
 
+            if (cantidadHuespedes === 1) {
+                precioBasePorNoche = precioUno;
+            } else {
+                // Para 2 o más personas, base es precioDos
+                precioBasePorNoche = precioDos;
+            }
+
+            // 3. Sumar huéspedes extra (si son más de 2)
             if (cantidadHuespedes > 2) {
                 const huespedesAdicionales = cantidadHuespedes - 2;
-                const costoAdicional = room.precio_huesped_adicional || 0;
+                const costoAdicional = Number(room.precio_huesped_adicional) || 0;
                 precioBasePorNoche += huespedesAdicionales * costoAdicional;
             }
+            
             montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
+            // ========================================================
 
         } else if (minutosSeleccionados > 0) {
             tipoCalculo = 'horas';
@@ -2755,10 +2769,9 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         } else if (minutosSeleccionados === -1) { 
             tipoCalculo = 'abierta';
             cantidadCalculo = 0;
-            // Se establece una fecha de fin muy lejana para que el cronómetro cuente hacia arriba
             finAt = new Date(inicioAt.getTime() + 100 * 365 * 24 * 60 * 60 * 1000); 
             descripcionEstancia = "Duración Abierta";
-            montoEstanciaBaseBruto = 0; // El costo se calcula al final
+            montoEstanciaBaseBruto = 0; 
             
         } else {
             finAt = new Date(inicioAt);
@@ -2775,10 +2788,8 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         montoDescuento = Math.min(totalAntesDeDescuento, montoDescuento);
         precioFinalAntesDeImpuestos = totalAntesDeDescuento - montoDescuento;
     }
-    // --- FIN DE LA LÓGICA CORREGIDA ---
 
-
-    // --- CÁLCULO DE IMPUESTOS (COMÚN PARA AMBOS CASOS) ---
+    // --- CÁLCULO DE IMPUESTOS ---
     let montoImpuesto = 0;
     let precioFinalConImpuestos = precioFinalAntesDeImpuestos;
     const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal || 0);
@@ -2795,7 +2806,6 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     return {
         inicioAt,
         finAt,
-        // Si es duración abierta, el total es 0, de lo contrario, se usa el cálculo normal
         precioTotal: tipoCalculo === 'abierta' ? 0 : Math.round(precioFinalConImpuestos),
         montoDescontado: tipoCalculo === 'abierta' ? 0 : Math.round(montoDescuento),
         montoImpuesto: tipoCalculo === 'abierta' ? 0 : Math.round(montoImpuesto),
