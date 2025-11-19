@@ -3921,70 +3921,64 @@ modalContainer.style.display = "none";            modalContainer.innerHTML = '';
 
 
 function startCronometro(room, supabase, hotelId, listEl) {
-    // 1. DEFINICIÓN DE LA CONSULTA INTELIGENTE
-    // Preparamos la consulta base para buscar la última reserva
-    let query = supabase.from('reservas')
-        .select('id, fecha_fin, fecha_inicio, tipo_duracion, estado') // Traemos 'estado' también
+    // MODIFICACIÓN DE LA CONSULTA: Obtener fecha_inicio y tipo_duracion
+    supabase.from('reservas')
+        .select('id, fecha_fin, fecha_inicio, tipo_duracion') 
         .eq('habitacion_id', room.id)
+        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
         .order('fecha_inicio', { ascending: false })
-        .limit(1);
-
-    // LÓGICA DE SEGURIDAD (EL CAMBIO CLAVE):
-    // Si la habitación NO está en "tiempo agotado", filtramos solo las activas (comportamiento normal).
-    // PERO si está en "tiempo agotado", NO filtramos por estado. Traemos la última que exista para poder ver la hora de salida y cobrar.
-    if (room.estado !== 'tiempo agotado') {
-        query = query.in('estado', ['activa', 'ocupada', 'tiempo agotado']);
-    }
-
-    // 2. EJECUCIÓN DE LA CONSULTA
-    query.then(async ({ data: reservas, error: reservaError }) => {
+        .limit(1)
+        .then(async ({ data: reservas, error: reservaError }) => {
             const reservaActiva = (reservas && reservas.length > 0) ? reservas[0] : null;
             const cronometroDiv = listEl.querySelector(`#cronometro-${room.id}`);
-            const cronometroId = `cronometro-${room.id}`;
 
-            // 3. MANEJO DE ERRORES (VISUAL)
-            // Si aun con la consulta inteligente no hay reserva, mostramos error visual en lugar de dejarlo vacío
+            // === CÓDIGO DE AUTO-CORRECCIÓN MEJORADO ===
             if (reservaError || !reservaActiva) {
-                 console.warn(`[Cronómetro] No se encontró reserva para Hab ${room.id} (Estado: ${room.estado}).`);
+                 console.warn(`Inconsistencia detectada hab ${room.id}. Estado: ${room.estado} pero sin reserva activa.`);
+                 
+                 // OPCIÓN A: Mostrar mensaje visualmente
                  if(cronometroDiv) {
-                    // Esto te avisa visualmente que hay un hueco de datos, pero no rompe la app
-                    cronometroDiv.innerHTML = `<span class="text-xs text-gray-400 font-bold tracking-tight">⚠ Sin Ref. Reserva</span>`;
+                    cronometroDiv.innerHTML = `<span class="text-xs text-gray-400 font-bold">⚠ Error Datos</span>`;
                  }
-                 return; 
+
+                 // OPCIÓN B (Más agresiva): Auto-corregir en base de datos a 'limpieza' automáticamente
+                 /* await supabase.from('habitaciones')
+                    .update({ estado: 'limpieza' })
+                    .eq('id', room.id);
+                 */
+                 
+                 return;
             }
 
             const fechaFin = new Date(reservaActiva.fecha_fin);
             const fechaInicio = new Date(reservaActiva.fecha_inicio);
             const esDuracionAbierta = reservaActiva.tipo_duracion === 'abierta'; 
-            
-            // Evitamos que suene la alarma infinitamente cada vez que se renderiza
-            // Solo sonará si cambiamos el estado a 'tiempo agotado' en la base de datos desde aquí.
+            const cronometroId = `cronometro-${room.id}`;
             let tiempoAgotadoNotificado = room.estado === "tiempo agotado";
 
-            // Limpiamos intervalo previo si existe
             if (cronometrosInterval[cronometroId]) {
                 clearInterval(cronometrosInterval[cronometroId]);
             }
 
-            // 4. FUNCIÓN DE ACTUALIZACIÓN DEL DISPLAY
             function updateCronoDisplay() {
-                // Si el elemento ya no existe en el DOM (cambio de filtro o página), paramos el reloj
-                if (!document.getElementById(cronometroId)) {
+                if (!cronometroDiv) {
                     clearInterval(cronometrosInterval[cronometroId]);
                     return;
                 }
 
                 const now = new Date();
-                const cardElement = document.getElementById(cronometroId).closest('.room-card');
+                const cardElement = cronometroDiv.closest('.room-card');
                 
-                // A. LÓGICA PARA DURACIÓN ABIERTA (AZUL - CUENTA HACIA ARRIBA)
                 if (esDuracionAbierta) {
+                    // ==========================================
+                    // 1. ESTILO VISUAL PARA TIEMPO LIBRE (AZUL)
+                    // ==========================================
                     if (cardElement) {
-                        // Estilos Azul
-                        cardElement.classList.remove('border-yellow-500', 'border-red-600', 'border-green-500', 'ring-red-200');
-                        cardElement.classList.add('border-blue-500', 'ring-1', 'ring-blue-200');
+                        // Cambiar borde a Azul
+                        cardElement.classList.remove('border-yellow-500', 'border-red-600', 'border-green-500');
+                        cardElement.classList.add('border-blue-500', 'ring-1', 'ring-blue-200'); // Anillo suave azul
                         
-                        // Badge "TIEMPO LIBRE"
+                        // Cambiar Badge a "TIEMPO LIBRE"
                         const badgeEl = cardElement.querySelector('.badge');
                         if (badgeEl) {
                             badgeEl.className = 'badge bg-blue-100 text-blue-800 px-2.5 py-1 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm flex-shrink-0';
@@ -3995,78 +3989,65 @@ function startCronometro(room, supabase, hotelId, listEl) {
                         }
                     }
 
-                    // Cálculo tiempo transcurrido
+                    // Lógica de contador hacia arriba
                     const diffElapased = now - fechaInicio;
                     const h = String(Math.floor(diffElapased / 3600000)).padStart(2, '0');
                     const m = String(Math.floor((diffElapased % 3600000) / 60000)).padStart(2, '0');
                     const s = String(Math.floor((diffElapased % 60000) / 1000)).padStart(2, '0');
                     
+                    // Icono de infinito o reloj corriendo
                     const iconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-blue-600 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>`;
+                    
                     cronometroDiv.innerHTML = `${iconSVG}<span class="text-blue-700 font-bold text-lg tracking-wider">${h}:${m}:${s}</span>`;
 
-                } 
-                // B. LÓGICA NORMAL (TIEMPO FIJO - CUENTA HACIA ABAJO O NEGATIVO)
-                else {
+                } else {
+                    // ==========================================
+                    // LÓGICA NORMAL (TIEMPO FIJO)
+                    // ==========================================
                     const diff = fechaFin - now;
                     
-                    // SI EL TIEMPO SE ACABÓ (Negativo)
                     if (diff <= 0) {
-                        // Actualizar estado en BD si es la primera vez que detectamos el vencimiento
-                        if (!tiempoAgotadoNotificado && room.estado !== 'tiempo agotado') {
+                        if (!tiempoAgotadoNotificado) {
                             tiempoAgotadoNotificado = true;
                             supabase.from('habitaciones')
                                 .update({ estado: 'tiempo agotado' })
                                 .eq('id', room.id)
                                 .then(({ error }) => {
-                                    if (!error && typeof playPopSound === 'function') playPopSound();
+                                    if (!error) playPopSound && playPopSound();
                                 });
                         }
-
                         const diffPos = Math.abs(diff);
                         const h = String(Math.floor(diffPos / 3600000)).padStart(2, '0');
                         const m = String(Math.floor((diffPos % 3600000) / 60000)).padStart(2, '0');
                         const s = String(Math.floor((diffPos % 60000) / 1000)).padStart(2, '0');
-                        
-                        // Mostrar en ROJO y parpadeando
-                        cronometroDiv.innerHTML = `<span class="font-bold text-red-600 animate-pulse text-lg">⏰ -${h}:${m}:${s}</span>`;
+                        cronometroDiv.innerHTML = `<span class="font-bold text-red-600 animate-pulse">⏰ -${h}:${m}:${s}</span>`;
                         
                         if (cardElement) {
                             cardElement.classList.add('border-red-600', 'ring-2', 'ring-red-200');
-                            cardElement.classList.remove('border-yellow-500', 'border-green-500', 'border-blue-500');
-                            
-                            // Actualizar Badge visualmente a "Tiempo Agotado" si no lo está
-                            const badgeEl = cardElement.querySelector('.badge');
-                            if(badgeEl && !badgeEl.textContent.includes('AGOTADO')) {
-                                badgeEl.className = 'badge bg-red-100 text-red-700 px-2.5 py-1 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm flex-shrink-0';
-                                badgeEl.textContent = "TIEMPO AGOTADO";
-                            }
+                            cardElement.classList.remove('border-yellow-500');
                         }
 
-                    } 
-                    // SI AÚN QUEDA TIEMPO
-                    else {
+                    } else {
+                        // Tiempo restante normal
                         const h = String(Math.floor(diff / 3600000)).padStart(2, '0');
                         const m = String(Math.floor((diff % 3600000) / 60000)).padStart(2, '0');
                         const s = String(Math.floor((diff % 60000) / 1000)).padStart(2, '0');
 
                         let textColor = 'text-green-600';
-                        if (diff < 10 * 60 * 1000) textColor = 'text-red-500 font-bold'; // < 10 min
-                        else if (diff < 30 * 60 * 1000) textColor = 'text-orange-500 font-semibold'; // < 30 min
+                        if (diff < 10 * 60 * 1000) textColor = 'text-red-500 font-bold';
+                        else if (diff < 30 * 60 * 1000) textColor = 'text-orange-500 font-semibold';
                         
                         const iconSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
-                        cronometroDiv.innerHTML = `${iconSVG}<span class="${textColor} text-lg font-mono">${h}:${m}:${s}</span>`;
+                        cronometroDiv.innerHTML = `${iconSVG}<span class="${textColor}">${h}:${m}:${s}</span>`;
                     }
                 }
             }
             
-            // Iniciar inmediatamente y luego cada segundo
             updateCronoDisplay();
             cronometrosInterval[cronometroId] = setInterval(updateCronoDisplay, 1000);
         })
         .catch(err => {
-             // Ignorar errores si son de "no data found" específicos de Supabase, 
-             // pero loguear otros para depuración.
-             if (err.code !== 'PGRST116') console.error("Error en startCronometro:", err);
+             if (err.code !== 'PGRST116') console.error(err);
         });
 }
 
