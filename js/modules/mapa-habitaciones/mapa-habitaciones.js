@@ -3486,7 +3486,7 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
 
 
 
-// REEMPLAZA esta función en tu archivo mapa-habitaciones.js
+// REEMPLAZA la función registrarReservaYMovimientosCaja existente con esta versión corregida:
 
 async function registrarReservaYMovimientosCaja({ formData, detallesEstancia, pagos, room, supabase, currentUser, hotelId, mainAppContainer }) {
     // 1. OBTENER Y CREAR CLIENTE (SI ES NECESARIO)
@@ -3535,11 +3535,12 @@ async function registrarReservaYMovimientosCaja({ formData, detallesEstancia, pa
         monto_impuestos_estancia: detallesEstancia.montoImpuesto,
         descuento_aplicado_id: detallesEstancia.descuentoAplicado?.id || null,
         monto_descontado: detallesEstancia.montoDescontado,
-        notas: notasFinales // <-- Se usan las notas preparadas
+        notas: notasFinales 
     }).select().single();
+    
     if (errReserva) throw new Error('Error al crear la reserva: ' + errReserva.message);
 
-    // 4. LÓGICA POST-RESERVA (NO CAMBIA)
+    // 4. LÓGICA POST-RESERVA
     if (nuevaReserva.descuento_aplicado_id) {
         await registrarUsoDescuento(supabase, nuevaReserva.descuento_aplicado_id);
     }
@@ -3552,20 +3553,58 @@ async function registrarReservaYMovimientosCaja({ formData, detallesEstancia, pa
         fecha_fin: nuevaReserva.fecha_fin,
         activo: true
     });
+
     const turnoId = turnoService.getActiveTurnId ? turnoService.getActiveTurnId() : (await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId))?.id;
-    if (!turnoId) throw new Error("No hay un turno de caja activo para registrar el pago.");
+    
+    if (!turnoId) {
+        console.warn("No hay turno activo, se creó la reserva pero no se registró pago en caja.");
+    } else if (pagos && pagos.length > 0) {
+        // ============================================================================
+        // CORRECCIÓN APLICADA AQUÍ: INSERTAR EN PAGOS_RESERVA ANTES QUE EN CAJA
+        // ============================================================================
+        
+        // A. Registrar en la tabla pagos_reserva (ESTO FALTABA)
+        const pagosParaInsertar = pagos.map(p => ({
+            hotel_id: hotelId,
+            reserva_id: nuevaReserva.id,
+            monto: p.monto,
+            fecha_pago: new Date().toISOString(),
+            metodo_pago_id: p.metodo_pago_id,
+            usuario_id: currentUser.id,
+            concepto: `Alquiler Inicial Hab. ${room.nombre}`
+        }));
 
-    const movimientosCaja = pagos.map(pago => ({
-        hotel_id: hotelId, tipo: 'ingreso', monto: pago.monto,
-        concepto: `Alquiler Hab. ${room.nombre} (${detallesEstancia.descripcionEstancia})`,
-        fecha_movimiento: new Date().toISOString(), metodo_pago_id: pago.metodo_pago_id,
-        usuario_id: currentUser.id, reserva_id: nuevaReserva.id, turno_id: turnoId,
-    }));
-    const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
-    if (errCaja) throw new Error(`¡Reserva creada, pero error al registrar pago en caja! ${errCaja.message}`);
+        const { data: pagosData, error: errPagoRes } = await supabase
+            .from('pagos_reserva')
+            .insert(pagosParaInsertar)
+            .select('id');
 
-    document.getElementById('modal-container').style.display = 'none';
-    document.getElementById('modal-container').innerHTML = '';
+        if (errPagoRes) throw new Error(`Reserva creada, pero error al guardar detalle de pagos: ${errPagoRes.message}`);
+
+        // B. Registrar en Caja (Vinculando con el ID del pago creado arriba)
+        const movimientosCaja = pagos.map((pago, index) => ({
+            hotel_id: hotelId, 
+            tipo: 'ingreso', 
+            monto: pago.monto,
+            concepto: `Alquiler Hab. ${room.nombre} (${detallesEstancia.descripcionEstancia})`,
+            fecha_movimiento: new Date().toISOString(), 
+            metodo_pago_id: pago.metodo_pago_id,
+            usuario_id: currentUser.id, 
+            reserva_id: nuevaReserva.id, 
+            turno_id: turnoId,
+            pago_reserva_id: pagosData[index].id // <--- Vinculación importante
+        }));
+
+        const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
+        if (errCaja) throw new Error(`¡Reserva creada, pero error al registrar movimiento en caja! ${errCaja.message}`);
+    }
+
+    // Finalizar proceso UI
+    const modalContainer = document.getElementById('modal-container');
+    if(modalContainer) {
+        modalContainer.style.display = 'none';
+        modalContainer.innerHTML = '';
+    }
     mostrarInfoModalGlobal("¡Habitación alquilada con éxito!", "Alquiler Registrado");
     await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
 }
