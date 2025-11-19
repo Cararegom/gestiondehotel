@@ -1006,6 +1006,8 @@ async function mostrarResumenCorteDeCaja() {
 
    
 
+    // DENTRO DE: mostrarResumenCorteDeCaja
+
     modal.querySelector('#btn-imprimir-corte-caja').onclick = () => {
         // 1. Extraemos Ingresos
         const ingresosPorMetodo = {};
@@ -1015,12 +1017,30 @@ async function mostrarResumenCorteDeCaja() {
         const egresosPorMetodo = {};
         metodosDePago.forEach(m => { egresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.gasto || 0 });
         
-        // 3. (NUEVO) Extraemos Balances (Lo que debe entregar)
+        // 3. Extraemos Balances
         const balancesPorMetodo = {};
         metodosDePago.forEach(m => { balancesPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.balance || 0 });
         
-        // Enviamos los 3 objetos a la función de imprimir
-        imprimirCorteCajaAdaptable(configHotel, movimientos, totalIngresos, totalGastos, balanceFinal, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo);
+        // 4. DATOS DE CONTEXTO (Usuario y Fecha Local)
+        // Usamos 'turnoParaResumir' para obtener el nombre del usuario responsable del turno
+        const nombreUsuario = turnoParaResumir.usuarios?.nombre || turnoParaResumir.usuarios?.email || 'Usuario';
+        
+        // Generamos la fecha local. 'es-CO' asegura formato Colombia (dd/mm/yyyy), 'medium' incluye hora con segundos si se desea.
+        const fechaLocal = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'medium' });
+
+        // 5. Enviamos todo a la función de imprimir
+        imprimirCorteCajaAdaptable(
+            configHotel, 
+            movimientos, 
+            totalIngresos, 
+            totalGastos, 
+            balanceFinal, 
+            ingresosPorMetodo, 
+            egresosPorMetodo, 
+            balancesPorMetodo,
+            nombreUsuario, // <--- NUEVO
+            fechaLocal     // <--- NUEVO
+        );
     };
     
   } catch (e) {
@@ -1034,28 +1054,25 @@ async function mostrarResumenCorteDeCaja() {
 
 
 
-// --- IMPRESIÓN ADAPTABLE POR TIPO DE IMPRESORA (ACTUALIZADA) ---
-function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo) {
+// BUSCA LA FUNCIÓN imprimirCorteCajaAdaptable Y REEMPLÁZALA POR ESTA:
+function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo, usuarioNombre, fechaCierre) {
   let tamano = (config?.tamano_papel || '').toLowerCase();
   let tipo = (config?.tipo_impresora || '').toLowerCase();
-  let esTermica = tipo === 'termica' || ['58mm', '80mm'].includes(tamano);
 
   // --- Header personalizable ---
-  let encabezado = config?.encabezado_ticket || '';
-  let pie = config?.pie_ticket || '';
   let logoUrl = config?.mostrar_logo !== false && config?.logo_url ? config.logo_url : null;
   let hotelNombre = config?.nombre_hotel || '';
   let direccion = config?.direccion_fiscal || '';
   let nit = config?.nit_rut || '';
   let razon = config?.razon_social || '';
+  let pie = config?.pie_ticket || '';
 
   let style = '';
   let html = '';
   
-  // Generador de lista de balances para reutilizar
+  // Helper para lista de balances
   const generarListaBalances = (estiloLi) => {
     return Object.entries(balancesPorMetodo).map(([k, v]) => {
-        // Resaltamos el Efectivo o balances positivos para mayor claridad visual
         const esPositivo = v > 0;
         const estiloValor = esPositivo ? 'font-weight:bold; color: #000;' : 'color: #555;';
         return `<li style="${estiloLi}">${k}: <b style="${estiloValor}">${formatCurrency(v)}</b></li>`;
@@ -1079,9 +1096,10 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
       .movs-table th,.movs-table td{padding:1px 2px;}
       .pie{text-align:center;margin-top:4px;font-size:10px;}
       .titulo-seccion{font-weight:bold; border-top: 1px solid #000; margin-top:5px; padding-top:2px;}
+      .datos-cierre { font-size: 10px; margin-bottom: 4px; }
     `;
     
-    let movsCortos = movimientos; // O puedes limitar movimientos.slice(-5)
+    let movsCortos = movimientos; 
     
     html = `
       <div class="ticket">
@@ -1089,8 +1107,11 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
         <div class="hotel-title">${hotelNombre}</div>
         <div class="info">${direccion ? direccion + '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
         <div class="line"></div>
-        <div style="text-align:center;font-size:12px;"><b>CIERRE DE CAJA</b></div>
-        <div style="text-align:center;font-size:10px;">${formatDateTime(new Date())}</div>
+        <div style="text-align:center;font-size:12px;font-weight:bold;">CIERRE DE CAJA</div>
+        <div class="line"></div>
+        
+        <div class="datos-cierre"><b>Cajero:</b> ${usuarioNombre}</div>
+        <div class="datos-cierre"><b>Fecha:</b> ${fechaCierre}</div>
         <div class="line"></div>
         
         <div class="totales">Apertura:<b>${formatCurrency(movsCortos.find(m => m.tipo === 'apertura')?.monto ?? 0)}</b></div>
@@ -1099,7 +1120,6 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
         <div class="totales" style="font-size:13px; border-top:1px solid #000; margin-top:2px; padding-top:2px;">TOTAL NETO:<b>${formatCurrency(balance)}</b></div>
         
         <div class="line"></div>
-        
         <div class="titulo-seccion">A ENTREGAR (BALANCE):</div>
         <ul class="resumido">
           ${generarListaBalances('')}
@@ -1112,26 +1132,12 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
         </ul>
         
         <div class="line"></div>
-        <div style="margin-top:5px;"><b>Movimientos:</b></div>
-        <table class="movs-table">
-          <tr><th>Hora</th><th>Tp</th><th>Monto</th><th>Concep</th></tr>
-          ${movimientos.map(mv => `
-            <tr>
-              <td>${new Date(mv.creado_en).toLocaleTimeString('es-CO', {hour:'2-digit', minute:'2-digit'})}</td>
-              <td>${mv.tipo.charAt(0).toUpperCase()}</td>
-              <td>${formatCurrency(mv.monto)}</td>
-              <td>${(mv.concepto || '').slice(0, 8)}</td>
-            </tr>
-          `).join('')}
-        </table>
-        <div class="line"></div>
         ${pie ? `<div class="pie">${pie}</div>` : ''}
       </div>
     `;
   }
   // === FORMATO 80mm y CARTA ===
   else {
-    // Usamos un ancho relativo para que sirva en 80mm y web
     const maxW = tamano === '80mm' ? '78mm' : '850px';
     const fontSize = tamano === '80mm' ? '12px' : '14px';
     
@@ -1153,7 +1159,12 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
         <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}</div>
         <div class="linea"></div>
         <div style="text-align:center; font-weight:bold; font-size:1.1em;">RESUMEN DE CIERRE DE CAJA</div>
-        <div style="text-align:center; font-size:0.9em;">${formatDateTime(new Date())}</div>
+        <div class="linea"></div>
+        
+        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
+            <span><b>Cajero:</b> ${usuarioNombre}</span>
+            <span><b>Fecha:</b> ${fechaCierre}</span>
+        </div>
         <div class="linea"></div>
         
         <div class="totales">
@@ -1210,7 +1221,7 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
         <div class="linea"></div>
         <br/>
         <div style="display:flex; justify-content:space-between; margin-top:20px;">
-            <div style="border-top:1px solid #000; width:40%; text-align:center; padding-top:5px;">Firma Recepcionista</div>
+            <div style="border-top:1px solid #000; width:40%; text-align:center; padding-top:5px;">Firma Recepcionista (${usuarioNombre})</div>
             <div style="border-top:1px solid #000; width:40%; text-align:center; padding-top:5px;">Firma Admin/Supervisor</div>
         </div>
         
@@ -1219,22 +1230,8 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
     `;
   }
 
-  // --- Ventana de impresión ---
   let w = window.open('', '', `width=400,height=700`);
-  w.document.write(`
-    <html>
-      <head>
-        <title>Corte de Caja</title>
-        <style>
-          ${style}
-          @media print { .no-print {display:none;} }
-        </style>
-      </head>
-      <body>
-        ${html}
-      </body>
-    </html>
-  `);
+  w.document.write(`<html><head><title>Corte de Caja</title><style>${style}@media print {.no-print{display:none;}}</style></head><body>${html}</body></html>`);
   w.document.close();
   setTimeout(() => { w.focus(); w.print(); }, 250);
 }
