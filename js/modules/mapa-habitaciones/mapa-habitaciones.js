@@ -2678,7 +2678,8 @@ function crearOpcionesHoras(tiempos) {
     return opciones;
 }
 
-// REEMPLAZA TU FUNCIÓN calcularDetallesEstancia CON ESTA VERSIÓN CORREGIDA
+// REEMPLAZA TU FUNCIÓN calcularDetallesEstancia ACTUAL CON ESTA VERSIÓN CORREGIDA
+
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
     let inicioAt = new Date();
     let finAt;
@@ -2692,33 +2693,46 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     const nochesSeleccionadas = dataForm.noches ? parseInt(dataForm.noches) : 0;
     const minutosSeleccionados = dataForm.horas ? parseInt(dataForm.horas) : 0;
     
+    // Validamos si el toggle está encendido (buscando 'on' o simplemente que exista en dataForm)
     const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
-    const precioLibreValor = parseFloat(dataForm.precio_libre_valor);
+    const precioLibreInput = parseFloat(dataForm.precio_libre_valor);
+    // Si es NaN (campo vacío), asumimos 0.
+    const precioLibreValor = isNaN(precioLibreInput) ? 0 : precioLibreInput;
 
-    // --- INICIO DE LA LÓGICA CORREGIDA ---
-    if (precioLibreActivado && !isNaN(precioLibreValor) && precioLibreValor >= 0) {
+    // --- CORRECCIÓN APLICADA AQUÍ ---
+    // Prioridad absoluta al Toggle. Si está activado, ES manual.
+    if (precioLibreActivado) {
         
         montoEstanciaBaseBruto = precioLibreValor;
         montoDescuento = 0; 
         precioFinalAntesDeImpuestos = precioLibreValor;
-        descripcionEstancia = "Estancia (Precio Manual)";
+        descripcionEstancia = `Estancia (Precio Manual: ${precioLibreValor})`;
         tipoCalculo = 'manual';
-        cantidadCalculo = precioLibreValor;
+        cantidadCalculo = precioLibreValor; // Opcional: guardar el valor como cantidad
 
+        // Lógica para calcular FECHAS aunque el precio sea manual
         if (nochesSeleccionadas > 0) {
             let fechaSalida = new Date(inicioAt);
             fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
             const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
             fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
             finAt = fechaSalida;
+            descripcionEstancia = `${nochesSeleccionadas} Noche(s) [Precio Manual]`;
         } else if (minutosSeleccionados > 0) {
             finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
+            descripcionEstancia = `${formatHorasMin(minutosSeleccionados)} [Precio Manual]`;
         } else {
-            finAt = new Date(inicioAt); 
+            // Fallback si pone precio manual pero olvida seleccionar tiempo:
+            // Por defecto asignamos 24h o checkout para evitar errores de "Tiempo Agotado" inmediato.
+            let fechaSalida = new Date(inicioAt);
+            fechaSalida.setDate(fechaSalida.getDate() + 1); 
+            const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
+            fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
+            finAt = fechaSalida;
         }
 
     } else {
-        // --- LÓGICA DE CÁLCULO AUTOMÁTICO ---
+        // --- LÓGICA DE CÁLCULO AUTOMÁTICO (ESTÁNDAR) ---
         if (nochesSeleccionadas > 0) {
             tipoCalculo = 'noches';
             cantidadCalculo = nochesSeleccionadas;
@@ -2730,25 +2744,19 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
             fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
             finAt = fechaSalida;
             
-            // === AQUÍ ESTABA EL ERROR: Lógica de Precios Mejorada ===
             let precioBasePorNoche = 0;
             const cantidadHuespedes = parseInt(dataForm.cantidad_huespedes) || 1;
             
-            // 1. Intentamos obtener el precio general (fallback)
             const precioGeneral = Number(room.precio) || 0;
-            
-            // 2. Intentamos obtener precios específicos, si fallan, usamos el general
             const precioUno = Number(room.precio_1_persona) || precioGeneral;
-            const precioDos = Number(room.precio_2_personas) || precioUno; // Si no hay precio de 2, cobra lo de 1 (o general)
+            const precioDos = Number(room.precio_2_personas) || precioUno;
 
             if (cantidadHuespedes === 1) {
                 precioBasePorNoche = precioUno;
             } else {
-                // Para 2 o más personas, base es precioDos
                 precioBasePorNoche = precioDos;
             }
 
-            // 3. Sumar huéspedes extra (si son más de 2)
             if (cantidadHuespedes > 2) {
                 const huespedesAdicionales = cantidadHuespedes - 2;
                 const costoAdicional = Number(room.precio_huesped_adicional) || 0;
@@ -2756,7 +2764,6 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
             }
             
             montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
-            // ========================================================
 
         } else if (minutosSeleccionados > 0) {
             tipoCalculo = 'horas';
@@ -2793,6 +2800,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     let montoImpuesto = 0;
     let precioFinalConImpuestos = precioFinalAntesDeImpuestos;
     const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal || 0);
+    
     if (porcentajeImpuesto > 0) {
         if (hotelConfigGlobal?.impuestos_incluidos_en_precios) {
             const baseImponible = precioFinalAntesDeImpuestos / (1 + (porcentajeImpuesto / 100));
@@ -2806,7 +2814,8 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     return {
         inicioAt,
         finAt,
-        precioTotal: tipoCalculo === 'abierta' ? 0 : Math.round(precioFinalConImpuestos),
+        // Si es manual, respetamos el precio manual directo como total final (asumiendo impuestos incluidos o exentos por ser manual)
+        precioTotal: tipoCalculo === 'abierta' ? 0 : (precioLibreActivado ? precioLibreValor : Math.round(precioFinalConImpuestos)),
         montoDescontado: tipoCalculo === 'abierta' ? 0 : Math.round(montoDescuento),
         montoImpuesto: tipoCalculo === 'abierta' ? 0 : Math.round(montoImpuesto),
         precioBase: tipoCalculo === 'abierta' ? 0 : Math.round(montoEstanciaBaseBruto),
@@ -3301,10 +3310,20 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     });
     
     // Listeners de otros campos que afectan el cálculo
-    ['cantidad_huespedes', 'precio_libre_valor_alquiler'].forEach(id => {
-        const el = modalContainer.querySelector(`#${id}`);
-        if (el) el.addEventListener('input', recalcularYActualizarTotalAlquiler);
-    });
+    // Listeners de otros campos que afectan el cálculo
+    const cantidadHuespedesEl = modalContainer.querySelector('#cantidad_huespedes');
+    if (cantidadHuespedesEl) {
+        // Usamos 'change' para cantidad de huéspedes para evitar recálculos excesivos al escribir
+        cantidadHuespedesEl.addEventListener('change', recalcularYActualizarTotalAlquiler);
+    }
+
+    const precioLibreValorEl = modalContainer.querySelector('#precio_libre_valor_alquiler');
+    if (precioLibreValorEl) {
+        // Usamos 'input' para el precio manual para que se actualice en tiempo real mientras escribes
+        precioLibreValorEl.addEventListener('input', async () => {
+            await recalcularYActualizarTotalAlquiler();
+        });
+    }
     
     // Listener para el toggle de Precio Manual (que debe recalcular)
     togglePrecioLibreEl.addEventListener('change', async () => {
