@@ -2276,7 +2276,7 @@ async function registrarPagosYCierreReserva({ reservaActiva, room, supabase, cur
 // =========================================================================================
 
 
-// =================== BOTÓN ENTREGAR / LIBERAR (ACTUALIZADO) ===================
+// =================== BOTÓN ENTREGAR / LIBERAR (CON VALIDACIÓN DE PRÉSTAMOS) ===================
 setupButtonListener('btn-entregar', async (btn, room) => {
     
     const originalContent = btn.innerHTML;
@@ -2299,7 +2299,7 @@ setupButtonListener('btn-entregar', async (btn, room) => {
     showGlobalLoading(); 
 
     try {
-        // 2. Buscar reserva
+        // 2. Buscar reserva activa
         let reservaActiva = null;
         const { data, error } = await supabaseGlobal
             .from('reservas')
@@ -2312,6 +2312,55 @@ setupButtonListener('btn-entregar', async (btn, room) => {
         
         if (error || !data) throw new Error(`No se encontró reserva activa.`);
         reservaActiva = data;
+
+        // ========================================================================
+        // 🛑 VALIDACIÓN DE SEGURIDAD: ARTÍCULOS PRESTADOS
+        // ========================================================================
+        const { data: pendientes, error: errPendientes } = await supabaseGlobal
+            .from('historial_articulos_prestados')
+            .select('id, articulo_nombre')
+            .eq('reserva_id', reservaActiva.id)
+            .eq('accion', 'prestado'); // Solo buscamos los que siguen prestados
+
+        if (pendientes && pendientes.length > 0) {
+            hideGlobalLoading();
+            btn.disabled = false;
+            btn.innerHTML = originalContent;
+
+            const listaItemsHTML = pendientes.map(p => `<li class="text-red-700 font-bold">• ${p.articulo_nombre}</li>`).join('');
+
+            const accionDevolucion = await Swal.fire({
+                title: '⚠️ Artículos Pendientes',
+                html: `
+                    <div class="text-left bg-red-50 p-4 rounded border border-red-200">
+                        <p class="text-gray-800 mb-2">No se puede liberar la habitación. El huésped aún tiene los siguientes artículos prestados:</p>
+                        <ul class="mb-3 ml-4">
+                            ${listaItemsHTML}
+                        </ul>
+                        <p class="text-sm text-gray-600">Debe marcar la devolución para liberar el stock y permitir la salida.</p>
+                    </div>
+                `,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: '📦 Ir a Devoluciones',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#d97706'
+            });
+
+            if (accionDevolucion.isConfirmed) {
+                // Abrimos directamente el modal de gestión de artículos
+                // Cerramos el modal actual de opciones si está abierto
+                const modalOpciones = document.getElementById('modal-container').querySelector('.bg-white');
+                if (modalOpciones) {
+                     // Opcional: Ocultar el modal de opciones anterior o dejarlo de fondo
+                     // showSeguimientoArticulosModal se encargará de limpiar/usar el container
+                }
+                showSeguimientoArticulosModal(room, supabaseGlobal, currentUserGlobal, hotelIdGlobal);
+            }
+            
+            return; // ⛔ DETENEMOS EL PROCESO DE LIBERACIÓN AQUÍ
+        }
+        // ========================================================================
         
         // 3. Actualizar Tiempo Libre (si aplica)
         if (reservaActiva.tipo_duracion === 'abierta') {
@@ -2323,7 +2372,7 @@ setupButtonListener('btn-entregar', async (btn, room) => {
             reservaActiva.monto_total = calculo.precioAlojamientoCalculado;
         }
         
-        // 4. OBTENER SALDOS Y DESGLOSE (AQUÍ ESTÁ EL CAMBIO)
+        // 4. OBTENER SALDOS Y DESGLOSE
         const { totalDeTodosLosCargos, saldoPendiente, desglose } = await calcularSaldoReserva(supabaseGlobal, reservaActiva.id, hotelIdGlobal);
 
         hideGlobalLoading();
@@ -2358,7 +2407,7 @@ setupButtonListener('btn-entregar', async (btn, room) => {
             metodosPago.unshift({ id: "mixto", nombre: "Pago Mixto" });
             hideGlobalLoading();
 
-            // Callback al pagar (PASAMOS EL DESGLOSE)
+            // Callback al pagar
             const alConfirmarPago = async (pagosRealizados) => {
                 const modalPago = document.getElementById('modal-container-secondary'); 
                 if(modalPago) modalPago.style.display = 'none';
@@ -2368,7 +2417,7 @@ setupButtonListener('btn-entregar', async (btn, room) => {
                     hotelId: hotelIdGlobal, mainAppContainer, 
                     pagos: pagosRealizados, 
                     totalCosto: totalDeTodosLosCargos,
-                    desgloseDeuda: desglose // <--- PASAMOS EL DESGLOSE AQUÍ
+                    desgloseDeuda: desglose
                 });
             };
 
@@ -2385,7 +2434,6 @@ setupButtonListener('btn-entregar', async (btn, room) => {
             });
 
             if (confirmSalida.isConfirmed) {
-                // Pasamos pagos vacío pero el totalCosto para cerrar
                 await registrarPagosYCierreReserva({
                     reservaActiva, room, supabase: supabaseGlobal, currentUser: currentUserGlobal, 
                     hotelId: hotelIdGlobal, mainAppContainer, 
