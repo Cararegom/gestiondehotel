@@ -1054,186 +1054,182 @@ async function mostrarResumenCorteDeCaja() {
 
 
 
-// BUSCA LA FUNCIÓN imprimirCorteCajaAdaptable Y REEMPLÁZALA POR ESTA:
+// REEMPLAZA TU FUNCIÓN imprimirCorteCajaAdaptable CON ESTA VERSIÓN MEJORADA
 function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo, usuarioNombre, fechaCierre) {
   let tamano = (config?.tamano_papel || '').toLowerCase();
-  let tipo = (config?.tipo_impresora || '').toLowerCase();
+  // Detectar si es impresora térmica (58mm o 80mm) o Carta
+  const esTermica = tamano === '58mm' || tamano === '80mm';
+  const widthPage = tamano === '58mm' ? '58mm' : (tamano === '80mm' ? '78mm' : '100%');
+  const fontSize = tamano === '58mm' ? '10px' : (tamano === '80mm' ? '11px' : '12px');
 
-  // --- Header personalizable ---
+  // Datos del Encabezado
   let logoUrl = config?.mostrar_logo !== false && config?.logo_url ? config.logo_url : null;
-  let hotelNombre = config?.nombre_hotel || '';
+  let hotelNombre = config?.nombre_hotel || 'Hotel';
   let direccion = config?.direccion_fiscal || '';
   let nit = config?.nit_rut || '';
-  let razon = config?.razon_social || '';
   let pie = config?.pie_ticket || '';
 
-  let style = '';
-  let html = '';
-  
-  // Helper para lista de balances
-  const generarListaBalances = (estiloLi) => {
-    return Object.entries(balancesPorMetodo).map(([k, v]) => {
-        const esPositivo = v > 0;
-        const estiloValor = esPositivo ? 'font-weight:bold; color: #000;' : 'color: #555;';
-        return `<li style="${estiloLi}">${k}: <b style="${estiloValor}">${formatCurrency(v)}</b></li>`;
-    }).join('');
-  };
-
-  // === FORMATO 58mm ===
-  if (tamano === '58mm') {
-    style = `
-      @page { size: 58mm auto; margin: 0; }
-      body{font-family:monospace;font-size:11px;max-width:55mm;margin:0;padding:0;}
-      .ticket{max-width:55mm;margin:auto;}
-      .hotel-title{text-align:center;font-weight:bold;font-size:13px;}
-      .info{text-align:center;font-size:10px;}
-      .line{border-bottom:1px dashed #444;margin:3px 0;}
-      .totales{margin-bottom:2px;}
-      .totales b{float:right;}
-      ul.resumido{margin:0;padding-left:0;list-style:none;}
-      ul.resumido li{display:flex;justify-content:space-between;}
-      .movs-table{width:100%;font-size:10px;border-collapse:collapse;}
-      .movs-table th,.movs-table td{padding:1px 2px;}
-      .pie{text-align:center;margin-top:4px;font-size:10px;}
-      .titulo-seccion{font-weight:bold; border-top: 1px solid #000; margin-top:5px; padding-top:2px;}
-      .datos-cierre { font-size: 10px; margin-bottom: 4px; }
-    `;
+  // ESTILOS CSS
+  let style = `
+    @page { margin: ${esTermica ? '0' : '15mm'}; size: auto; }
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: ${fontSize};
+      margin: 0;
+      padding: ${esTermica ? '5px' : '20px'};
+      width: ${esTermica ? widthPage : 'auto'};
+      color: #000;
+    }
+    .container { width: 100%; max-width: ${esTermica ? '100%' : '800px'}; margin: 0 auto; }
     
-    let movsCortos = movimientos; 
+    /* Utilidades */
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .text-left { text-align: left; }
+    .bold { font-weight: bold; }
+    .mb-1 { margin-bottom: 5px; }
+    .mb-2 { margin-bottom: 10px; }
+    .mt-2 { margin-top: 10px; }
+    .border-bottom { border-bottom: 1px dashed #444; padding-bottom: 5px; margin-bottom: 5px; }
+    .border-top { border-top: 1px dashed #444; padding-top: 5px; margin-top: 5px; }
     
-    html = `
-      <div class="ticket">
-        ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:45mm;max-height:30px;"></div>` : ''}
-        <div class="hotel-title">${hotelNombre}</div>
-        <div class="info">${direccion ? direccion + '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}${razon ? '<br/>' + razon : ''}</div>
-        <div class="line"></div>
-        <div style="text-align:center;font-size:12px;font-weight:bold;">CIERRE DE CAJA</div>
-        <div class="line"></div>
-        
-        <div class="datos-cierre"><b>Cajero:</b> ${usuarioNombre}</div>
-        <div class="datos-cierre"><b>Fecha:</b> ${fechaCierre}</div>
-        <div class="line"></div>
-        
-        <div class="totales">Apertura:<b>${formatCurrency(movsCortos.find(m => m.tipo === 'apertura')?.monto ?? 0)}</b></div>
-        <div class="totales">Ingresos:<b>${formatCurrency(ingresos)}</b></div>
-        <div class="totales">Egresos:<b>${formatCurrency(egresos)}</b></div>
-        <div class="totales" style="font-size:13px; border-top:1px solid #000; margin-top:2px; padding-top:2px;">TOTAL NETO:<b>${formatCurrency(balance)}</b></div>
-        
-        <div class="line"></div>
-        <div class="titulo-seccion">A ENTREGAR (BALANCE):</div>
-        <ul class="resumido">
-          ${generarListaBalances('')}
-        </ul>
+    /* Tablas */
+    table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+    th { text-align: left; border-bottom: 1px solid #000; padding: 3px 0; font-weight: bold; text-transform: uppercase; font-size: 0.9em; }
+    td { padding: 4px 0; vertical-align: top; }
+    
+    /* Columnas Específicas de la Tabla de Movimientos */
+    .col-hora { width: 12%; }
+    .col-tipo { width: 8%; text-align: center; }
+    .col-concepto { width: 45%; padding-right: 5px; } /* Más espacio para concepto */
+    .col-metodo { width: 15%; }
+    .col-monto { width: 20%; text-align: right; }
 
-        <div class="line"></div>
-        <div style="font-size:10px; margin-bottom:2px;"><b>Detalle Ingresos:</b></div>
-        <ul class="resumido" style="font-size:9px; color:#444;">
-          ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}<span>${formatCurrency(v)}</span></li>`).join('') || '<li>Sin ingresos</li>'}
-        </ul>
-        
-        <div class="line"></div>
-        ${pie ? `<div class="pie">${pie}</div>` : ''}
+    /* Estilos especiales para Resumen */
+    .resumen-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    .balance-box { border: 1px solid #000; padding: 5px; margin: 10px 0; background-color: #f9f9f9; }
+    
+    @media print {
+      .no-print { display: none; }
+      body { -webkit-print-color-adjust: exact; }
+    }
+  `;
+
+  // LOGO HTML
+  let headerHtml = `
+    <div class="text-center mb-2">
+      ${logoUrl ? `<img src="${logoUrl}" style="max-width: 60%; max-height: 60px; object-fit: contain;">` : ''}
+      <div class="bold" style="font-size: 1.1em; margin-top:5px;">${hotelNombre}</div>
+      <div>${direccion}</div>
+      ${nit ? `<div>NIT: ${nit}</div>` : ''}
+    </div>
+    <div class="border-bottom text-center bold">CIERRE DE CAJA</div>
+    <div class="mb-2" style="font-size: 0.9em;">
+      <div class="resumen-row"><span>Cajero:</span> <span class="bold">${usuarioNombre}</span></div>
+      <div class="resumen-row"><span>Fecha:</span> <span>${fechaCierre}</span></div>
+    </div>
+  `;
+
+  // SECCIÓN DE TOTALES GENERALES
+  let totalesHtml = `
+    <div class="mb-2">
+      <div class="resumen-row"><span>(+) Ingresos Totales:</span> <span>${formatCurrency(ingresos)}</span></div>
+      <div class="resumen-row"><span>(-) Egresos Totales:</span> <span>${formatCurrency(egresos)}</span></div>
+      <div class="border-top resumen-row bold" style="font-size: 1.1em;">
+        <span>(=) BALANCE FINAL:</span> <span>${formatCurrency(balance)}</span>
       </div>
-    `;
-  }
-  // === FORMATO 80mm y CARTA ===
-  else {
-    const maxW = tamano === '80mm' ? '78mm' : '850px';
-    const fontSize = tamano === '80mm' ? '12px' : '14px';
-    
-    style = `
-      body{font-family:monospace;font-size:${fontSize};max-width:${maxW};margin:0 auto;padding:0;}
-      .ticket{max-width:100%;margin:auto;}
-      table{width:100%;font-size:${fontSize};border-collapse:collapse;}
-      th,td{padding:3px 2px;}
-      .title{font-size:1.2em; font-weight:bold; text-align:center;}
-      .totales span{display:inline-block; width:100%;}
-      .linea{border-bottom:1px dashed #444;margin:8px 0;}
-      .seccion-box { border: 2px solid #000; padding: 5px; margin: 5px 0; border-radius: 4px; }
-    `;
-    
-    html = `
-      <div class="ticket">
-        ${logoUrl ? `<div style="text-align:center;margin-bottom:4px;"><img src="${logoUrl}" style="max-width:60%;max-height:50px;"></div>` : ''}
-        <div class="title">${hotelNombre}</div>
-        <div style="text-align:center;">${direccion}${direccion ? '<br/>' : ''}${nit ? 'NIT: ' + nit : ''}</div>
-        <div class="linea"></div>
-        <div style="text-align:center; font-weight:bold; font-size:1.1em;">RESUMEN DE CIERRE DE CAJA</div>
-        <div class="linea"></div>
-        
-        <div style="display:flex; justify-content:space-between; margin-bottom:5px;">
-            <span><b>Cajero:</b> ${usuarioNombre}</span>
-            <span><b>Fecha:</b> ${fechaCierre}</span>
-        </div>
-        <div class="linea"></div>
-        
-        <div class="totales">
-          <span>(+) Ingresos Totales: <b style="float:right">${formatCurrency(ingresos)}</b></span>
-          <span>(-) Egresos Totales: <b style="float:right">${formatCurrency(egresos)}</b></span>
-          <div style="border-top:1px solid #000; margin-top:4px; padding-top:4px; font-weight:bold; font-size:1.2em;">
-            <span>(=) BALANCE TOTAL: <b style="float:right">${formatCurrency(balance)}</b></span>
-          </div>
-        </div>
-        
-        <div class="linea"></div>
-        
-        <div class="seccion-box">
-            <div style="text-align:center; font-weight:bold; margin-bottom:5px; border-bottom:1px solid #ccc;">DINERO A ENTREGAR (POR MÉTODO)</div>
-            <ul style="margin:0;padding-left:5px; list-style:none;">
-              ${generarListaBalances('display:flex; justify-content:space-between; margin-bottom:2px;')}
-            </ul>
-        </div>
+    </div>
+  `;
 
-        <div style="display:flex; gap:10px; margin-top:10px;">
-            <div style="flex:1;">
-                <b>Detalle Ingresos:</b>
-                <ul style="margin:0;padding-left:14px; font-size:0.9em;">
-                  ${Object.entries(ingresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-                </ul>
-            </div>
-            <div style="flex:1;">
-                <b>Detalle Egresos:</b>
-                <ul style="margin:0;padding-left:14px; font-size:0.9em;">
-                   ${Object.entries(egresosPorMetodo).length === 0 ? '<li>Sin egresos</li>' : Object.entries(egresosPorMetodo).map(([k, v]) => `<li>${k}: <b>${formatCurrency(v)}</b></li>`).join('')}
-                </ul>
-            </div>
-        </div>
-        
-        <div class="linea"></div>
-        <div style="font-weight:bold;">Movimientos del Turno:</div>
-        <table>
-          <thead>
-            <tr style="border-bottom:1px solid #000;"><th>Hora</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Método</th></tr>
-          </thead>
-          <tbody>
-            ${movimientos.map(mv => `
-              <tr>
-                <td>${formatDateTime(mv.creado_en).slice(11, 16)}</td>
-                <td>${mv.tipo.charAt(0).toUpperCase()}</td>
-                <td style="text-align:right;color:${mv.tipo === 'ingreso' ? '#000' : '#000'};">${formatCurrency(mv.monto)}</td>
-                <td>${(mv.concepto || '').slice(0, 15)}</td>
-                <td>${(mv.metodos_pago?.nombre || '').slice(0,3)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-        
-        <div class="linea"></div>
-        <br/>
-        <div style="display:flex; justify-content:space-between; margin-top:20px;">
-            <div style="border-top:1px solid #000; width:40%; text-align:center; padding-top:5px;">Firma Recepcionista (${usuarioNombre})</div>
-            <div style="border-top:1px solid #000; width:40%; text-align:center; padding-top:5px;">Firma Admin/Supervisor</div>
-        </div>
-        
-        ${pie ? `<div style="text-align:center;margin-top:20px;font-size:0.8em;">${pie}</div>` : ''}
-      </div>
-    `;
-  }
+  // SECCIÓN DINERO A ENTREGAR (BALANCES POR MÉTODO)
+  // Generamos una lista limpia
+  let listaBalances = Object.entries(balancesPorMetodo).map(([metodo, valor]) => {
+     if(valor === 0) return ''; // Opcional: Ocultar si es 0
+     return `<div class="resumen-row"><span>${metodo}:</span> <span class="bold">${formatCurrency(valor)}</span></div>`;
+  }).join('');
 
-  let w = window.open('', '', `width=400,height=700`);
-  w.document.write(`<html><head><title>Corte de Caja</title><style>${style}@media print {.no-print{display:none;}}</style></head><body>${html}</body></html>`);
+  let detalleEntregarHtml = `
+    <div class="balance-box">
+      <div class="bold text-center border-bottom mb-1">DINERO A ENTREGAR</div>
+      ${listaBalances || '<div class="text-center italic">Sin movimientos</div>'}
+    </div>
+  `;
+
+  // TABLA DE MOVIMIENTOS
+  // Nota: Eliminamos el .slice() para mostrar todo el texto
+  let filasMovimientos = movimientos.map(mv => {
+    let hora = formatDateTime(mv.creado_en).split(',')[1].trim().slice(0, 5); // Solo hora HH:MM
+    let tipoSigno = mv.tipo === 'ingreso' ? '+' : (mv.tipo === 'egreso' ? '-' : '•');
+    let colorMonto = mv.tipo === 'egreso' ? 'text-red-700' : ''; // Solo visible en pantalla/color print
+    
+    return `
+      <tr>
+        <td class="col-hora">${hora}</td>
+        <td class="col-tipo">${tipoSigno}</td>
+        <td class="col-concepto">${mv.concepto || 'Sin concepto'}</td>
+        <td class="col-metodo">${(mv.metodos_pago?.nombre || 'N/A')}</td>
+        <td class="col-monto ${colorMonto}">${formatCurrency(mv.monto)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  let tablaHtml = `
+    <div class="bold mt-2 border-bottom">DETALLE DE MOVIMIENTOS</div>
+    <table>
+      <thead>
+        <tr>
+          <th class="col-hora">Hora</th>
+          <th class="col-tipo">T</th>
+          <th class="col-concepto">Concepto</th>
+          <th class="col-metodo">Met</th>
+          <th class="col-monto">Monto</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filasMovimientos}
+      </tbody>
+    </table>
+  `;
+
+  // SECCIÓN DE FIRMAS
+  let firmasHtml = `
+    <div class="mt-2" style="margin-top: 30px; display: flex; justify-content: space-between; gap: 20px;">
+      <div class="text-center" style="flex: 1; border-top: 1px solid #000; padding-top: 5px;">Firma Cajero</div>
+      <div class="text-center" style="flex: 1; border-top: 1px solid #000; padding-top: 5px;">Firma Supervisor</div>
+    </div>
+  `;
+
+  // ARMADO FINAL DEL HTML
+  let fullHtml = `
+    <html>
+      <head>
+        <title>Corte de Caja - ${fechaCierre}</title>
+        <style>${style}</style>
+      </head>
+      <body>
+        <div class="container">
+          ${headerHtml}
+          ${totalesHtml}
+          ${detalleEntregarHtml}
+          ${tablaHtml}
+          ${firmasHtml}
+          ${pie ? `<div class="text-center mt-2 border-top" style="font-size:0.8em; padding-top:5px;">${pie}</div>` : ''}
+        </div>
+      </body>
+    </html>
+  `;
+
+  // EJECUCIÓN DE LA VENTANA
+  let w = window.open('', '_blank', `width=${esTermica ? '400' : '900'},height=700`);
+  w.document.write(fullHtml);
   w.document.close();
-  setTimeout(() => { w.focus(); w.print(); }, 250);
+  
+  // Esperar a que carguen imagenes/estilos antes de imprimir
+  setTimeout(() => { 
+    w.focus(); 
+    w.print(); 
+    // Opcional: w.close(); después de imprimir si lo deseas
+  }, 500);
 }
 
 // --- FUNCIONES AUXILIARES (Email, Métodos de Pago, etc.) ---
