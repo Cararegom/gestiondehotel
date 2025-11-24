@@ -109,8 +109,8 @@ async function abrirTurno() {
 // js/modules/caja/caja.js
 
 
-// REEMPLAZA TU FUNCIÓN 'cerrarTurno' CON ESTA
-async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
+// REEMPLAZA TU FUNCIÓN cerrarTurno CON ESTA VERSIÓN CORREGIDA
+async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, valoresReales = null) { // <--- AQUÍ ESTABA EL ERROR (FALTABA valoresReales)
   const turnoACerrar = turnoExterno || turnoActivo;
   const usuarioDelTurno = usuarioDelTurnoExterno || currentModuleUser;
 
@@ -128,12 +128,12 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
   showGlobalLoading(tituloLoading);
 
   try {
-    // --- 1. Definimos la fecha de cierre una sola vez ---
+    // --- 1. Definimos la fecha de cierre ---
     const fechaCierreISO = new Date().toISOString();
     const fechaAperturaISO = turnoACerrar.fecha_apertura;
     const usuarioDelTurnoId = usuarioDelTurno.id;
 
-    // --- 2. Obtenemos los datos de CAJA (Como antes) ---
+    // --- 2. Obtenemos los datos de CAJA ---
     const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance
       .from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
     if (metodosError) throw metodosError;
@@ -142,53 +142,38 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
       .from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoACerrar.id);
     if (movError) throw movError;
     
-    // --- 3. Obtenemos los LOGS del turno (Como antes) ---
+    // --- 3. Obtenemos los LOGS del turno ---
     
     // Log de Amenidades
-    const { data: logAmenidades, error: amenidadesError } = await currentSupabaseInstance
+    const { data: logAmenidades } = await currentSupabaseInstance
       .from('log_amenidades_uso')
       .select('*, amenidades_inventario(nombre_item), habitaciones(nombre)')
       .eq('usuario_id', usuarioDelTurnoId)
       .gte('fecha_uso', fechaAperturaISO)
       .lte('fecha_uso', fechaCierreISO);
-    if (amenidadesError) console.warn("Error cargando log de amenidades:", amenidadesError.message);
 
     // Log de Lencería
-    const { data: logLenceria, error: lenceriaError } = await currentSupabaseInstance
+    const { data: logLenceria } = await currentSupabaseInstance
       .from('log_lenceria_uso')
       .select('*, inventario_lenceria(nombre_item), habitaciones(nombre)')
       .eq('usuario_id', usuarioDelTurnoId)
       .gte('fecha_uso', fechaAperturaISO)
       .lte('fecha_uso', fechaCierreISO);
-    if (lenceriaError) console.warn("Error cargando log de lencería:", lenceriaError.message);
 
     // Log de Préstamos
-    const { data: logPrestamos, error: prestamosError } = await currentSupabaseInstance
+    const { data: logPrestamos } = await currentSupabaseInstance
       .from('historial_articulos_prestados')
       .select('*, habitaciones(nombre)')
       .eq('usuario_id', usuarioDelTurnoId)
       .gte('fecha_accion', fechaAperturaISO)
       .lte('fecha_accion', fechaCierreISO);
-    if (prestamosError) console.warn("Error cargando log de préstamos:", prestamosError.message);
 
-    // --- 4. (NUEVO) Obtenemos el STOCK ACTUAL de Inventarios ---
-        
-    // Stock de Amenidades
-    const { data: stockAmenidades, error: stockAmenError } = await currentSupabaseInstance
-      .from('amenidades_inventario')
-      .select('nombre_item, stock_actual')
-      .eq('hotel_id', currentHotelId)
-      .order('nombre_item');
-    if (stockAmenError) console.warn("Error cargando stock de amenidades:", stockAmenError.message);
+    // --- 4. Obtenemos el STOCK ACTUAL ---
+    const { data: stockAmenidades } = await currentSupabaseInstance
+      .from('amenidades_inventario').select('nombre_item, stock_actual').eq('hotel_id', currentHotelId);
 
-    // Stock de Lencería
-    const { data: stockLenceria, error: stockLencError } = await currentSupabaseInstance
-      .from('inventario_lenceria')
-      .select('nombre_item, stock_limpio_almacen, stock_en_lavanderia, stock_total')
-      .eq('hotel_id', currentHotelId)
-      .order('nombre_item');
-    if (stockLencError) console.warn("Error cargando stock de lencería:", stockLencError.message);
-
+    const { data: stockLenceria } = await currentSupabaseInstance
+      .from('inventario_lenceria').select('nombre_item, stock_limpio_almacen, stock_en_lavanderia, stock_total').eq('hotel_id', currentHotelId);
 
     // --- 5. Procesamos y generamos el HTML ---
     const reporte = procesarMovimientosParaReporte(movimientos);
@@ -205,19 +190,19 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
       asuntoEmail += ` (Forzado por ${adminNombre})`;
     }
 
-    // (NUEVO) Pasamos todos los logs Y los stocks a la función que genera el HTML
+    // Generar el HTML pasando los valoresReales (AQUÍ ES DONDE FALLABA ANTES)
     const htmlReporte = generarHTMLReporteCierre(
         reporte, 
         metodosDePago, 
         usuarioNombre, 
         fechaCierreLocal,
-        movimientos || [],         // <-- Detalle de caja
-        logAmenidades || [],     // <-- Detalle de amenidades
-        logLenceria || [],       // <-- Detalle de lencería
-        logPrestamos || [],      // <-- Detalle de préstamos
-        stockAmenidades || [],   // <-- NUEVO: Stock actual amenidades
-        stockLenceria || [],      // <-- NUEVO: Stock actual lencería
-        valoresReales 
+        movimientos || [],
+        logAmenidades || [],
+        logLenceria || [],
+        logPrestamos || [],
+        stockAmenidades || [],
+        stockLenceria || [],
+        valoresReales // <--- Ahora sí existe esta variable
     );
 
     await enviarReporteCierreCaja({
@@ -229,7 +214,7 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null) {
     // --- 6. Actualizamos el turno en la DB ---
     const { error: updateError } = await currentSupabaseInstance.from('turnos').update({
         estado: 'cerrado',
-        fecha_cierre: fechaCierreISO, // Usamos la fecha ISO
+        fecha_cierre: fechaCierreISO,
         balance_final: balanceFinalEnCaja,
       }).eq('id', turnoACerrar.id);
 
@@ -1068,7 +1053,7 @@ function renderizarModalArqueo(metodosDePago, onConfirm) {
     const firstInput = modalContainer.querySelector('input');
     if(firstInput) firstInput.focus();
   }, 100);
-}
+} 
 
 
 // REEMPLAZA TU FUNCIÓN mostrarResumenCorteDeCaja CON ESTA VERSIÓN (CON ARQUEO CIEGO)
