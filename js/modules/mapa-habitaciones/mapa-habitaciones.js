@@ -2726,8 +2726,7 @@ function crearOpcionesHoras(tiempos) {
     return opciones;
 }
 
-// REEMPLAZA TU FUNCIÓN calcularDetallesEstancia ACTUAL CON ESTA VERSIÓN CORREGIDA
-
+// REEMPLAZA TU FUNCIÓN calcularDetallesEstancia CON ESTA VERSIÓN CORREGIDA
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
     let inicioAt = new Date();
     let finAt;
@@ -2741,47 +2740,43 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     const nochesSeleccionadas = dataForm.noches ? parseInt(dataForm.noches) : 0;
     const minutosSeleccionados = dataForm.horas ? parseInt(dataForm.horas) : 0;
     
-    // Validamos si el toggle está encendido (buscando 'on' o simplemente que exista en dataForm)
+    // Asegurar que cantidadHuespedes sea mínimo 1
+    const cantidadHuespedes = Math.max(1, parseInt(dataForm.cantidad_huespedes) || 1);
+    
+    // Precio Manual
     const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
-    const precioLibreInput = parseFloat(dataForm.precio_libre_valor);
-    // Si es NaN (campo vacío), asumimos 0.
-    const precioLibreValor = isNaN(precioLibreInput) ? 0 : precioLibreInput;
+    const precioLibreValor = parseFloat(dataForm.precio_libre_valor) || 0;
 
-    // --- CORRECCIÓN APLICADA AQUÍ ---
-    // Prioridad absoluta al Toggle. Si está activado, ES manual.
+    // Obtenemos el precio adicional configurado en la habitación
+    const precioAdicionalPorPersona = Number(room.precio_huesped_adicional) || 0;
+
     if (precioLibreActivado) {
-        
+        // --- LÓGICA PRECIO MANUAL ---
         montoEstanciaBaseBruto = precioLibreValor;
-        montoDescuento = 0; 
         precioFinalAntesDeImpuestos = precioLibreValor;
-        descripcionEstancia = `Estancia (Precio Manual: ${precioLibreValor})`;
+        descripcionEstancia = `Estancia (Precio Manual: ${formatCurrency(precioLibreValor)})`;
         tipoCalculo = 'manual';
-        cantidadCalculo = precioLibreValor; // Opcional: guardar el valor como cantidad
+        cantidadCalculo = precioLibreValor;
 
-        // Lógica para calcular FECHAS aunque el precio sea manual
+        // Cálculo de fechas referenciales
         if (nochesSeleccionadas > 0) {
             let fechaSalida = new Date(inicioAt);
             fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
             const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
             fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
             finAt = fechaSalida;
-            descripcionEstancia = `${nochesSeleccionadas} Noche(s) [Precio Manual]`;
         } else if (minutosSeleccionados > 0) {
             finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
-            descripcionEstancia = `${formatHorasMin(minutosSeleccionados)} [Precio Manual]`;
         } else {
-            // Fallback si pone precio manual pero olvida seleccionar tiempo:
-            // Por defecto asignamos 24h o checkout para evitar errores de "Tiempo Agotado" inmediato.
             let fechaSalida = new Date(inicioAt);
             fechaSalida.setDate(fechaSalida.getDate() + 1); 
-            const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
-            fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
             finAt = fechaSalida;
         }
 
     } else {
-        // --- LÓGICA DE CÁLCULO AUTOMÁTICO (ESTÁNDAR) ---
+        // --- LÓGICA AUTOMÁTICA ---
         if (nochesSeleccionadas > 0) {
+            // === POR NOCHES ===
             tipoCalculo = 'noches';
             cantidadCalculo = nochesSeleccionadas;
             descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''}`;
@@ -2792,46 +2787,61 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
             fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
             finAt = fechaSalida;
             
-            let precioBasePorNoche = 0;
-            const cantidadHuespedes = parseInt(dataForm.cantidad_huespedes) || 1;
-            
             const precioGeneral = Number(room.precio) || 0;
             const precioUno = Number(room.precio_1_persona) || precioGeneral;
             const precioDos = Number(room.precio_2_personas) || precioUno;
 
+            let precioBasePorNoche = 0;
+
+            // Reglas de precio base según ocupación
             if (cantidadHuespedes === 1) {
                 precioBasePorNoche = precioUno;
             } else {
+                // 2 o más personas inician con la tarifa de 2
                 precioBasePorNoche = precioDos;
             }
 
+            // Sumar adicionales si hay más de 2 personas
             if (cantidadHuespedes > 2) {
                 const huespedesAdicionales = cantidadHuespedes - 2;
-                const costoAdicional = Number(room.precio_huesped_adicional) || 0;
-                precioBasePorNoche += huespedesAdicionales * costoAdicional;
+                precioBasePorNoche += (huespedesAdicionales * precioAdicionalPorPersona);
             }
             
             montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
 
         } else if (minutosSeleccionados > 0) {
+            // === POR HORAS ===
             tipoCalculo = 'horas';
             cantidadCalculo = minutosSeleccionados;
             finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
             descripcionEstancia = formatHorasMin(minutosSeleccionados);
+            
             const tiempoSeleccionado = tiempos.find(t => t.minutos === minutosSeleccionados);
-            montoEstanciaBaseBruto = tiempoSeleccionado?.precio || 0;
+            let precioTiempo = Number(tiempoSeleccionado?.precio) || 0;
+
+            // --- CORRECCIÓN: AHORA SÍ COBRAMOS EXTRA POR PERSONA EN HORAS ---
+            if (cantidadHuespedes > 2) {
+                 const huespedesAdicionales = cantidadHuespedes - 2;
+                 // Sumamos el costo adicional al precio base del tiempo
+                 precioTiempo += (huespedesAdicionales * precioAdicionalPorPersona);
+            }
+            // ---------------------------------------------------------------
+
+            montoEstanciaBaseBruto = precioTiempo;
         
         } else if (minutosSeleccionados === -1) { 
+            // === DURACIÓN ABIERTA ===
             tipoCalculo = 'abierta';
             cantidadCalculo = 0;
             finAt = new Date(inicioAt.getTime() + 100 * 365 * 24 * 60 * 60 * 1000); 
             descripcionEstancia = "Duración Abierta";
             montoEstanciaBaseBruto = 0; 
-            
         } else {
+            // Fallback
             finAt = new Date(inicioAt);
         }
 
+        // Descuentos
         const totalAntesDeDescuento = montoEstanciaBaseBruto;
         if (descuentoAplicado) {
             if (descuentoAplicado.tipo === 'fijo') {
@@ -2844,12 +2854,12 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         precioFinalAntesDeImpuestos = totalAntesDeDescuento - montoDescuento;
     }
 
-    // --- CÁLCULO DE IMPUESTOS ---
+    // Impuestos
     let montoImpuesto = 0;
     let precioFinalConImpuestos = precioFinalAntesDeImpuestos;
     const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal || 0);
     
-    if (porcentajeImpuesto > 0) {
+    if (porcentajeImpuesto > 0 && tipoCalculo !== 'abierta') {
         if (hotelConfigGlobal?.impuestos_incluidos_en_precios) {
             const baseImponible = precioFinalAntesDeImpuestos / (1 + (porcentajeImpuesto / 100));
             montoImpuesto = precioFinalAntesDeImpuestos - baseImponible;
@@ -2862,7 +2872,6 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     return {
         inicioAt,
         finAt,
-        // Si es manual, respetamos el precio manual directo como total final (asumiendo impuestos incluidos o exentos por ser manual)
         precioTotal: tipoCalculo === 'abierta' ? 0 : (precioLibreActivado ? precioLibreValor : Math.round(precioFinalConImpuestos)),
         montoDescontado: tipoCalculo === 'abierta' ? 0 : Math.round(montoDescuento),
         montoImpuesto: tipoCalculo === 'abierta' ? 0 : Math.round(montoImpuesto),
@@ -3166,6 +3175,7 @@ async function facturarElectronicaYMostrarResultado({
 
 
 
+// REEMPLAZA TU FUNCIÓN showAlquilarModal CON ESTA VERSIÓN (ACTUALIZACIÓN EN VIVO)
 async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
     if (!modalContainer) { console.error("Contenedor de modal no encontrado."); return; }
@@ -3177,7 +3187,6 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     // Obtención de datos iniciales
     let horarios, tiempos, metodosPagoDisponibles;
     try {
-        // [CÓDIGO ORIGINAL REVERTIDO] Solo cargar los 3 datos esenciales.
         [horarios, tiempos, metodosPagoDisponibles] = await Promise.all([
             getHorariosHotel(supabase, hotelId),
             getTiemposEstancia(supabase, hotelId),
@@ -3185,15 +3194,14 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         ]);
     } catch (err) {
         mostrarInfoModalGlobal("No se pudieron cargar los datos necesarios para el alquiler.", "Error de Carga");
-        console.error("Error en Promise.all de showAlquilarModal (sin getDescuentos):", err);
         return;
     }
     
     metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, room);
-    const opcionesHoras = crearOpcionesHoras(tiempos); // Contiene la opción "Duración Abierta" (-1)
+    const opcionesHoras = crearOpcionesHoras(tiempos);
 
-    // Creación del contenido HTML del modal (Se conservan los IDs para los wrappers)
+    // HTML del Modal
     const modalContent = document.createElement('div');
     modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-4xl mx-auto animate-fade-in-up overflow-hidden";
     
@@ -3229,7 +3237,10 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                     <div id="precio_libre_container_alquiler" class="mt-2" style="display:none;"><label for="precio_libre_valor_alquiler" class="font-semibold text-sm text-gray-700">Valor Total Estancia</label><input type="number" id="precio_libre_valor_alquiler" name="precio_libre_valor" class="form-control text-lg font-bold" placeholder="0"></div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
-                    <div><label class="form-label">Cant. Huéspedes*</label><input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" value="2" required></div>
+                    <div>
+                        <label class="form-label">Cant. Huéspedes*</label>
+                        <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" class="form-control" min="1" value="2" required>
+                    </div>
                     <div id="metodo-pago-wrapper">
                         <label class="form-label">Método de Pago*</label><select required name="metodo_pago_id" id="metodo_pago_id" class="form-control">${metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('')}</select>
                     </div>
@@ -3254,7 +3265,7 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     </div>`;
     modalContainer.appendChild(modalContent);
     
-    // 3. OBTENER REFERENCIAS Y LÓGICA DINÁMICA
+    // Referencias
     const formEl = modalContainer.querySelector('#alquilar-form-pos');
     const togglePrecioLibreEl = modalContainer.querySelector('#precio_libre_toggle_alquiler');
     const containerPrecioLibreEl = modalContainer.querySelector('#precio_libre_container_alquiler');
@@ -3265,8 +3276,8 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
     const metodoPagoWrapper = modalContainer.querySelector('#metodo-pago-wrapper');
     const descuentoWrapper = modalContainer.querySelector('#descuento-wrapper');
     const btnAlquilar = modalContainer.querySelector('#btn-alquilar-hab');
-
-    // FUNCIÓN CENTRAL PARA RECALCULAR Y MANEJAR VISIBILIDAD
+    
+    // FUNCIÓN DE CÁLCULO
     const recalcularYActualizarTotalAlquiler = async (codigoManual = null) => {
         const formData = Object.fromEntries(new FormData(formEl));
         const clienteId = formData.cliente_id || null;
@@ -3274,47 +3285,22 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         
         const minutosSeleccionados = parseInt(formData.horas) || 0;
         const nochesSeleccionadas = parseInt(formData.noches) || 0; 
-        
-        // 1. MANEJAR VISIBILIDAD PARA DURACIÓN ABIERTA (minutos: -1)
         const esDuracionAbierta = minutosSeleccionados === -1;
         
         if (esDuracionAbierta) {
-            // Deshabilitar/Ocultar Noches, Precio Manual, Pago y Descuento
-            selectNochesEl.value = ''; 
-            selectNochesEl.disabled = true;
-
-            togglePrecioLibreEl.checked = false;
-            togglePrecioLibreEl.disabled = true;
+            selectNochesEl.value = ''; selectNochesEl.disabled = true;
+            togglePrecioLibreEl.checked = false; togglePrecioLibreEl.disabled = true;
             containerPrecioLibreEl.style.display = 'none';
-
-            metodoPagoWrapper.style.display = 'none';
-            formEl.elements.metodo_pago_id.required = false;
-
-            descuentoWrapper.style.display = 'none';
-            codigoInputEl.value = '';
-            
-            // Texto del botón
+            metodoPagoWrapper.style.display = 'none'; formEl.elements.metodo_pago_id.required = false;
+            descuentoWrapper.style.display = 'none'; codigoInputEl.value = '';
             btnAlquilar.textContent = "Registrar Entrada";
-            feedbackDescuentoAlquilerEl.textContent = '';
-            descuentoAplicado = null;
+            feedbackDescuentoAlquilerEl.textContent = ''; descuentoAplicado = null;
         } else {
-            // Habilitar Noches y Modo Normal
-            selectNochesEl.disabled = false;
-            togglePrecioLibreEl.disabled = false;
+            selectNochesEl.disabled = false; togglePrecioLibreEl.disabled = false;
+            metodoPagoWrapper.style.display = 'block'; formEl.elements.metodo_pago_id.required = true;
+            descuentoWrapper.style.display = 'block'; btnAlquilar.textContent = "Confirmar y Registrar";
+            containerPrecioLibreEl.style.display = togglePrecioLibreEl.checked ? 'block' : 'none';
 
-            // Mostrar campos de Pago y Descuento
-            metodoPagoWrapper.style.display = 'block';
-            formEl.elements.metodo_pago_id.required = true;
-
-            descuentoWrapper.style.display = 'block';
-            btnAlquilar.textContent = "Confirmar y Registrar";
-
-            // Mostrar/Ocultar el campo de precio manual basado en el toggle
-             containerPrecioLibreEl.style.display = togglePrecioLibreEl.checked ? 'block' : 'none';
-
-
-            // Aplicar descuento si hay código
-            // ESTA FUNCIÓN ESTÁ DEFINIDA EN TU ARCHIVO Y NO REQUIERE LOS DATOS DE DESCUENTOS EN EL PROMISE.ALL
             descuentoAplicado = await buscarDescuentoParaAlquiler(supabase, hotelId, clienteId, room.id, codigo, minutosSeleccionados, nochesSeleccionadas, tiempos);
 
             if (descuentoAplicado) {
@@ -3328,10 +3314,8 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             }
         }
         
-        // 2. CALCULAR DETALLES 
         const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado); 
         
-        // 3. ACTUALIZAR RESUMEN
         const ticketResumenEl = modalContainer.querySelector('#ticket-resumen-container');
         const ticketTotalEl = modalContainer.querySelector('#ticket-total-price');
 
@@ -3345,45 +3329,27 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         ticketTotalEl.textContent = formatCurrency(detalles.precioTotal);
     };
 
-    // 4. LISTENERS
+    // --- LISTENERS (LA PARTE IMPORTANTE) ---
     
-    // Listeners de Duración (manejan el toggle)
-    selectNochesEl.addEventListener('change', async () => { 
-        if (selectNochesEl.value) { selectHorasEl.value = ''; } 
-        await recalcularYActualizarTotalAlquiler(); 
-    });
-    selectHorasEl.addEventListener('change', async () => { 
-        if (selectHorasEl.value) { selectNochesEl.value = ''; } 
-        await recalcularYActualizarTotalAlquiler(); 
-    });
+    selectNochesEl.addEventListener('change', async () => { if (selectNochesEl.value) { selectHorasEl.value = ''; } await recalcularYActualizarTotalAlquiler(); });
+    selectHorasEl.addEventListener('change', async () => { if (selectHorasEl.value) { selectNochesEl.value = ''; } await recalcularYActualizarTotalAlquiler(); });
     
-    // Listeners de otros campos que afectan el cálculo
-    // Listeners de otros campos que afectan el cálculo
+    // ⚠️ AQUÍ ESTÁ LA CORRECCIÓN PARA EL HUÉSPED ADICIONAL ⚠️
     const cantidadHuespedesEl = modalContainer.querySelector('#cantidad_huespedes');
     if (cantidadHuespedesEl) {
-        // Usamos 'change' para cantidad de huéspedes para evitar recálculos excesivos al escribir
-        cantidadHuespedesEl.addEventListener('change', recalcularYActualizarTotalAlquiler);
+        // Usamos 'input' para que detecte CADA cambio (teclado o flechas) en tiempo real
+        cantidadHuespedesEl.addEventListener('input', async () => {
+            await recalcularYActualizarTotalAlquiler();
+        });
     }
 
     const precioLibreValorEl = modalContainer.querySelector('#precio_libre_valor_alquiler');
     if (precioLibreValorEl) {
-        // Usamos 'input' para el precio manual para que se actualice en tiempo real mientras escribes
-        precioLibreValorEl.addEventListener('input', async () => {
-            await recalcularYActualizarTotalAlquiler();
-        });
+        precioLibreValorEl.addEventListener('input', async () => { await recalcularYActualizarTotalAlquiler(); });
     }
     
-    // Listener para el toggle de Precio Manual (que debe recalcular)
-    togglePrecioLibreEl.addEventListener('change', async () => {
-        await recalcularYActualizarTotalAlquiler();
-    });
-    
-    // Listener para botón de Aplicar Descuento
-    modalContainer.querySelector('#btn-aplicar-descuento-alquiler').onclick = async () => { 
-        await recalcularYActualizarTotalAlquiler();
-    };
-    
-    // Listeners de Interfaz
+    togglePrecioLibreEl.addEventListener('change', async () => { await recalcularYActualizarTotalAlquiler(); });
+    modalContainer.querySelector('#btn-aplicar-descuento-alquiler').onclick = async () => { await recalcularYActualizarTotalAlquiler(); };
     modalContainer.querySelector('#close-modal-alquilar').onclick = () => { modalContainer.style.display = "none"; modalContainer.innerHTML = ''; };
     modalContainer.querySelector('#btn-buscar-cliente-alquiler').onclick = () => {
         showClienteSelectorModal(supabase, hotelId, {
@@ -3397,7 +3363,7 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         });
     };
     
-    // 5. Lógica del submit
+    // Submit
     formEl.onsubmit = async (e) => {
         e.preventDefault();
         const submitBtn = formEl.querySelector('#btn-alquilar-hab');
@@ -3413,18 +3379,13 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             const totalCostoEstancia = detallesFinales.precioTotal;
             const metodoPagoId = formData.metodo_pago_id;
             
-            // Lógica para Duración Abierta o costo cero
             if (detallesFinales.tipoCalculo === 'abierta' || totalCostoEstancia <= 0) {
                  await registrarReservaYMovimientosCaja({ formData, detallesEstancia: detallesFinales, pagos: [], room, supabase, currentUser, hotelId, mainAppContainer });
-            } 
-            // Lógica para Pago Mixto
-            else if (metodoPagoId === "mixto") {
+            } else if (metodoPagoId === "mixto") {
                 showPagoMixtoModal(totalCostoEstancia, metodosPagoDisponibles, async (pagosMixtos) => {
                     await registrarReservaYMovimientosCaja({ formData, detallesEstancia: detallesFinales, pagos: pagosMixtos, room, supabase, currentUser, hotelId, mainAppContainer });
                 });
-            } 
-            // Lógica para Pago Único
-            else {
+            } else {
                 await registrarReservaYMovimientosCaja({ formData, detallesEstancia: detallesFinales, pagos: [{ metodo_pago_id: metodoPagoId, monto: totalCostoEstancia }], room, supabase, currentUser, hotelId, mainAppContainer });
             }
         } catch (err) {
@@ -3434,7 +3395,7 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             submitBtn.textContent = "Confirmar y Registrar";
         }
     };
-    // 6. Inicializar cálculo al cargar
+    
     await recalcularYActualizarTotalAlquiler();
 }
 
