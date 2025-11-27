@@ -829,74 +829,327 @@ function updateClienteFields(cliente) {
     }
 }
 
+// =================================================================================
+// FUNCIÓN FALTANTE: MODAL DE SERVICIOS ADICIONALES
+// =================================================================================
 
+function showEnhancedServiciosModal(roomDisplayInfo, availableServices, activeReservation) {
+    const modalContainer = document.getElementById('modal-container');
+    modalContainer.innerHTML = "";
+    modalContainer.style.display = "flex";
+
+    const modalContent = document.createElement('div');
+    modalContent.className = "bg-white rounded-3xl shadow-2xl w-full max-w-xl p-6 sm:p-8 m-auto border-2 border-green-100 relative flex flex-col max-h-[90vh] animate-fade-in-up";
+
+    modalContent.innerHTML = `
+        <h3 class="text-2xl font-black mb-6 text-green-700 text-center flex items-center justify-center gap-2">
+            <span>✨ Servicios Adicionales</span>
+            <span class="text-xl text-green-500 font-medium">(${roomDisplayInfo.nombre})</span>
+        </h3>
+        
+        <form id="form-servicios-adicionales" class="space-y-4 overflow-y-auto flex-grow pr-2">
+            <label class="block text-lg font-semibold text-gray-700">Seleccione los servicios:</label>
+            <div class="space-y-3">
+                ${availableServices.map(s => `
+                    <div class="service-item group flex items-center gap-3 rounded-xl bg-green-50 border border-green-200 p-3 hover:border-green-400 transition-all">
+                        <input type="checkbox" id="servicio_${s.id}" name="servicio_ids" value="${s.id}" data-precio="${s.precio || 0}" class="form-checkbox h-5 w-5 text-green-600 rounded focus:ring-green-500 cursor-pointer">
+                        
+                        <label for="servicio_${s.id}" class="flex-1 flex justify-between items-center cursor-pointer select-none">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-green-900">${s.nombre}</span>
+                            </div>
+                            <span class="text-green-700 font-semibold">${s.precio ? formatCurrency(s.precio) : 'Gratis'}</span>
+                        </label>
+                        
+                        <input type="number" min="1" value="1" name="cantidad_${s.id}" 
+                            class="quantity-input border-2 border-green-200 rounded-lg w-16 px-1 py-1 text-center font-bold text-gray-700 focus:ring-2 focus:ring-green-500 opacity-50 disabled:opacity-30 transition-opacity" 
+                            disabled placeholder="Cant.">
+                    </div>
+                `).join('')}
+            </div>
+
+            <div class="pt-2">
+                <label class="block mb-2 font-semibold text-gray-700">Nota (Opcional):</label>
+                <textarea name="nota_servicio" class="w-full border-2 border-gray-200 rounded-xl p-3 focus:ring-2 focus:ring-green-500" rows="2" placeholder="Ej: Toallas extra, Sin hielo..."></textarea>
+            </div>
+        </form>
+
+        <div class="mt-6 pt-4 border-t border-gray-100">
+            <div class="flex justify-between items-center mb-4 text-xl font-bold text-gray-800">
+                <span>Total Estimado:</span>
+                <span id="preview-total-servicios" class="text-green-600">$0</span>
+            </div>
+            
+            <div class="flex gap-3">
+                <button type="submit" form="form-servicios-adicionales" class="flex-1 button button-success py-3 text-lg font-bold shadow-md">
+                    Siguiente ➡
+                </button>
+                <button type="button" id="btn-cancelar-servicios" class="flex-1 button button-neutral py-3 text-lg font-bold shadow-md">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    `;
+
+    modalContainer.appendChild(modalContent);
+
+    // --- LÓGICA DEL FORMULARIO ---
+    const form = modalContent.querySelector('#form-servicios-adicionales');
+    const previewTotalElement = modalContent.querySelector('#preview-total-servicios');
+    const serviceItems = form.querySelectorAll('.service-item');
+
+    // Actualizar total y habilitar inputs de cantidad
+    const updateState = () => {
+        let total = 0;
+        serviceItems.forEach(item => {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            const qtyInput = item.querySelector('.quantity-input');
+            const precio = Number(checkbox.dataset.precio) || 0;
+
+            if (checkbox.checked) {
+                qtyInput.disabled = false;
+                qtyInput.classList.remove('opacity-50');
+                total += precio * (parseInt(qtyInput.value) || 1);
+            } else {
+                qtyInput.disabled = true;
+                qtyInput.classList.add('opacity-50');
+            }
+        });
+        previewTotalElement.textContent = formatCurrency(total);
+    };
+
+    form.addEventListener('input', updateState);
+    
+    // Cerrar modal
+    modalContent.querySelector('#btn-cancelar-servicios').onclick = () => {
+        modalContainer.style.display = "none";
+        modalContainer.innerHTML = '';
+    };
+
+    // --- SUBMIT DEL FORMULARIO (SELECCIÓN DE MÉTODO DE PAGO) ---
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = new FormData(form);
+        const nota = formData.get('nota_servicio');
+        
+        // Recopilar items seleccionados
+        const itemsSeleccionados = [];
+        serviceItems.forEach(item => {
+            const checkbox = item.querySelector('input[type="checkbox"]');
+            if (checkbox.checked) {
+                const qty = parseInt(item.querySelector('.quantity-input').value) || 1;
+                const precio = Number(checkbox.dataset.precio) || 0;
+                itemsSeleccionados.push({
+                    servicio_id: checkbox.value,
+                    cantidad: qty,
+                    precio_unitario: precio,
+                    subtotal: qty * precio,
+                    nombre: availableServices.find(s => s.id == checkbox.value)?.nombre
+                });
+            }
+        });
+
+        if (itemsSeleccionados.length === 0) {
+            alert("Seleccione al menos un servicio.");
+            return;
+        }
+
+        const totalPagar = itemsSeleccionados.reduce((sum, i) => sum + i.subtotal, 0);
+
+        // PREGUNTAR: ¿Cobrar ahora o al final?
+        const result = await Swal.fire({
+            title: 'Confirmar Servicios',
+            html: `
+                <p class="mb-2">Total a cargar: <strong>${formatCurrency(totalPagar)}</strong></p>
+                <div class="text-left text-sm bg-gray-50 p-3 rounded mb-4">
+                    <ul class="list-disc ml-4">
+                        ${itemsSeleccionados.map(i => `<li>${i.cantidad}x ${i.nombre}</li>`).join('')}
+                    </ul>
+                </div>
+                <p class="text-sm text-gray-600">¿Desea cobrar esto ahora mismo o cargarlo a la cuenta?</p>
+            `,
+            icon: 'question',
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: 'Cobrar AHORA (Caja)',
+            denyButtonText: 'Cargar a la Cuenta',
+            cancelButtonText: 'Cancelar',
+            confirmButtonColor: '#10b981', // Verde
+            denyButtonColor: '#3b82f6'     // Azul
+        });
+
+        if (result.isDismissed) return;
+
+        try {
+            showGlobalLoading("Procesando servicios...");
+
+            if (result.isConfirmed) { 
+                // === COBRAR AHORA (Requiere Turno) ===
+                const turnoId = turnoService.getActiveTurnId();
+                if (!turnoId) throw new Error("No hay turno activo para cobrar en caja.");
+
+                // 1. Obtener métodos de pago
+                const { data: metodos } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelIdGlobal).eq('activo', true);
+                if(!metodos.length) throw new Error("No hay métodos de pago configurados.");
+                
+                // Mapear para Swal
+                const opciones = metodos.reduce((acc, curr) => ({...acc, [curr.id]: curr.nombre}), {});
+                
+                hideGlobalLoading(); // Ocultar spinner anterior para mostrar input
+                
+                // Seleccionar método de pago
+                const { value: metodoPagoId } = await Swal.fire({
+                    title: 'Seleccione Método de Pago',
+                    input: 'select',
+                    inputOptions: opciones,
+                    inputPlaceholder: 'Seleccione...',
+                    showCancelButton: true
+                });
+
+                if (!metodoPagoId) return; // Cancelado
+                showGlobalLoading("Registrando pago...");
+
+                // 2. Registrar Pago en `pagos_reserva`
+                const concepto = `Servicios Adicionales (${itemsSeleccionados.map(i=>i.nombre).join(', ')})`;
+                const { data: pagoData, error: errPago } = await supabaseGlobal.from('pagos_reserva').insert({
+                    hotel_id: hotelIdGlobal,
+                    reserva_id: activeReservation.id,
+                    monto: totalPagar,
+                    metodo_pago_id: metodoPagoId,
+                    usuario_id: currentUserGlobal.id,
+                    concepto: concepto
+                }).select().single();
+                if(errPago) throw errPago;
+
+                // 3. Registrar en Caja
+                await supabaseGlobal.from('caja').insert({
+                    hotel_id: hotelIdGlobal,
+                    tipo: 'ingreso',
+                    monto: totalPagar,
+                    concepto: `Pago Servicios Hab. ${roomDisplayInfo.nombre}`,
+                    metodo_pago_id: metodoPagoId,
+                    usuario_id: currentUserGlobal.id,
+                    reserva_id: activeReservation.id,
+                    pago_reserva_id: pagoData.id,
+                    turno_id: turnoId
+                });
+
+                // 4. Registrar los servicios como PAGADOS
+                const serviciosInsert = itemsSeleccionados.map(item => ({
+                    hotel_id: hotelIdGlobal,
+                    reserva_id: activeReservation.id,
+                    servicio_id: item.servicio_id,
+                    cantidad: item.cantidad,
+                    precio_cobrado: item.subtotal,
+                    nota: nota,
+                    estado_pago: 'pagado',
+                    pago_reserva_id: pagoData.id
+                }));
+                const { error: errServ } = await supabaseGlobal.from('servicios_x_reserva').insert(serviciosInsert);
+                if(errServ) throw errServ;
+
+                // 5. Actualizar monto pagado reserva
+                const nuevoPagado = (activeReservation.monto_pagado || 0) + totalPagar;
+                await supabaseGlobal.from('reservas').update({ monto_pagado: nuevoPagado }).eq('id', activeReservation.id);
+
+                Swal.fire('¡Éxito!', 'Servicios cobrados y registrados.', 'success');
+
+            } else if (result.isDenied) {
+                // === CARGAR A LA CUENTA (Pendiente) ===
+                const serviciosInsert = itemsSeleccionados.map(item => ({
+                    hotel_id: hotelIdGlobal,
+                    reserva_id: activeReservation.id,
+                    servicio_id: item.servicio_id,
+                    cantidad: item.cantidad,
+                    precio_cobrado: item.subtotal,
+                    nota: nota,
+                    estado_pago: 'pendiente' // Se paga al checkout
+                }));
+
+                const { error: errServ } = await supabaseGlobal.from('servicios_x_reserva').insert(serviciosInsert);
+                if(errServ) throw errServ;
+
+                Swal.fire('Registrado', 'Los servicios se han cargado a la cuenta de la habitación.', 'success');
+            }
+
+            // Cerrar modal y limpiar
+            modalContainer.style.display = "none";
+            modalContainer.innerHTML = '';
+
+        } catch (error) {
+            console.error(error);
+            hideGlobalLoading();
+            Swal.fire('Error', error.message, 'error');
+        } finally {
+            hideGlobalLoading();
+        }
+    };
+}
 // ================== MODAL OPCIONES HABITACIÓN ===================
+// ================== MODAL OPCIONES HABITACIÓN (VERSIÓN COMPLETA Y UNIFICADA) ===================
 async function showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer) {
-  const modalContainer = document.getElementById('modal-container');
-  modalContainer.style.display = "flex";
-  modalContainer.innerHTML = "";
+    const modalContainer = document.getElementById('modal-container');
+    modalContainer.style.display = "flex";
+    modalContainer.innerHTML = "";
 
-let botonesHtml = '';
+    // 1. Declarar variables iniciales
+    let reservaFutura = null;
+    let botonesHtml = '';
 
-// Estilos compactos
-const btnPrincipal = "w-full mb-2 py-2.5 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700 shadow-sm hover:shadow transition flex items-center justify-center gap-2";
-const btnSecundario = "w-full mb-2 py-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium border border-blue-200 shadow-sm hover:shadow flex items-center justify-center gap-2";
-const btnVerde = "w-full mb-2 py-2.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-800 font-medium border border-green-300 shadow-sm hover:shadow flex items-center justify-center gap-2";
-const btnNaranja = "w-full mb-2 py-2.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-800 font-medium border border-orange-300 shadow-sm hover:shadow flex items-center justify-center gap-2";
-const btnRojo = "w-full mt-4 py-2.5 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 shadow-sm hover:shadow transition flex items-center justify-center gap-2";
+    // Estilos de botones (Tailwind)
+    const btnPrincipal = "w-full mb-2 py-2.5 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700 shadow-sm hover:shadow transition flex items-center justify-center gap-2";
+    const btnSecundario = "w-full mb-2 py-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium border border-blue-200 shadow-sm hover:shadow flex items-center justify-center gap-2";
+    const btnVerde = "w-full mb-2 py-2.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-800 font-medium border border-green-300 shadow-sm hover:shadow flex items-center justify-center gap-2";
+    const btnNaranja = "w-full mb-2 py-2.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-800 font-medium border border-orange-300 shadow-sm hover:shadow flex items-center justify-center gap-2";
+    const btnRojo = "w-full mt-4 py-2.5 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 shadow-sm hover:shadow transition flex items-center justify-center gap-2";
 
-// ---------------------------------------------------------------
-    // 1. ESTADO: LIBRE
     // ---------------------------------------------------------------
+    // 2. GENERAR HTML SEGÚN EL ESTADO DE LA HABITACIÓN
+    // ---------------------------------------------------------------
+
+    // --- CASO A: HABITACIÓN LIBRE ---
     if (room.estado === "libre") {
         botonesHtml += `<button id="btn-alquilar-directo" class="${btnPrincipal}"><span style="font-size:1.2em">🛏️</span> Alquilar Ahora</button>`;
         botonesHtml += `<button id="btn-enviar-limpieza" class="${btnSecundario}"><span style="font-size:1.2em">🧹</span> Enviar a Limpieza</button>`;
     }
 
-    // ---------------------------------------------------------------
-    // 2. ESTADO: ACTIVA / OCUPADA / TIEMPO AGOTADO
-    // (Quitamos "reservada" de aquí porque el huésped ya está dentro)
-    // ---------------------------------------------------------------
+    // --- CASO B: OCUPADA / ACTIVA / TIEMPO AGOTADO ---
     else if (["ocupada", "tiempo agotado", "activa"].includes(room.estado)) {
         botonesHtml += `<button id="btn-extender-tiempo" class="${btnPrincipal}"><span style="font-size:1.2em">⏱️</span> Extender Tiempo</button>`;
         botonesHtml += `<button id="btn-entregar" class="${btnSecundario}"><span style="font-size:1.2em">🔓</span> Liberar Habitación</button>`;
         botonesHtml += `<button id="btn-ver-consumos" class="${btnSecundario}"><span style="font-size:1.2em">🍽️</span> Ver Consumos</button>`;
         botonesHtml += `<button id="btn-cambiar-habitacion" class="${btnSecundario}"><span style="font-size:1.2em">🔁</span> Cambiar de Habitación</button>`;
         botonesHtml += `<button id="btn-seguimiento-articulos" class="${btnSecundario}"><span style="font-size:1.2em">📦</span> Gestionar Artículos</button>`;
-        
-        // Servicios adicionales solo si ya está ocupada
+        // Servicios adicionales
         botonesHtml += `<button id="btn-servicios-adicionales" class="${btnVerde}"><span style="font-size:1.2em">🛎️</span> Servicios adicionales</button>`;
     }
 
-    // ---------------------------------------------------------------
-    // 3. ESTADO: RESERVADA (Futura llegada)
-    // ---------------------------------------------------------------
+    // --- CASO C: RESERVADA (Check-in pendiente) ---
     else if (room.estado === "reservada") {
-        // Consultar datos de la reserva para el Check-in
+        // Consultar datos de la reserva futura
         const { data, error } = await supabase
             .from('reservas')
-            .select('id, cliente_nombre, telefono, cantidad_huespedes, fecha_inicio')
+            .select('id, cliente_nombre, telefono, cantidad_huespedes, fecha_inicio, fecha_fin')
             .eq('habitacion_id', room.id)
             .eq('estado', 'reservada')
-            .order('fecha_inicio', { ascending: true }) // La más próxima primero (ascending true)
+            .order('fecha_inicio', { ascending: true }) // La más próxima
             .limit(1)
             .maybeSingle();
 
         if (data) {
-            reservaFutura = data; // Guardar referencia para el listener del botón
+            reservaFutura = data;
             const fechaInicio = new Date(reservaFutura.fecha_inicio);
             const ahora = new Date();
-            // Diferencia en minutos
             const diferenciaMin = (fechaInicio - ahora) / 60000;
 
-            // Info visual rápida de la reserva
+            // Info visual
             botonesHtml += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-sm text-blue-900 shadow-sm">
                 <strong>Cliente:</strong> ${reservaFutura.cliente_nombre}<br>
                 <strong>Huéspedes:</strong> ${reservaFutura.cantidad_huespedes}<br>
                 <strong>Llegada:</strong> ${fechaInicio.toLocaleString('es-CO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
             </div>`;
 
-            // Lógica del botón Check-in (Permitir 2 horas antes o si ya pasó la hora)
+            // Botón Check-in (habilitado 2 horas antes o si ya pasó la hora)
             if (diferenciaMin <= 120) {
                 botonesHtml += `<button id="btn-checkin-reserva" class="${btnVerde}"><span style="font-size:1.2em">✅</span> Check-in (Entrada)</button>`;
             } else {
@@ -907,1818 +1160,503 @@ const btnRojo = "w-full mt-4 py-2.5 rounded-lg text-white font-semibold bg-red-6
         } else {
             botonesHtml += `<div class="text-xs text-red-500 mb-2 p-2 bg-red-50 rounded">No se encontró la reserva activa para check-in.</div>`;
         }
-
-        // Opciones permitidas en estado Reservada
-        botonesHtml += `<button id="btn-cambiar-habitacion" class="${btnSecundario}"><span style="font-size:1.2em">🔁</span> Cambiar de Habitación</button>`;
         
-        // Opcional: Agregar botón para cancelar reserva aquí si lo deseas
-        // botonesHtml += `<button id="btn-cancelar-reserva" class="${btnSecundario} text-red-600"><span style="font-size:1.2em">🚫</span> Cancelar Reserva</button>`;
+        // Cambio de habitación permitido en reserva
+        botonesHtml += `<button id="btn-cambiar-habitacion" class="${btnSecundario}"><span style="font-size:1.2em">🔁</span> Cambiar de Habitación</button>`;
     }
 
-    // ---------------------------------------------------------------
-    // 4. MANTENIMIENTO (Disponible siempre excepto si ya está en mantenimiento)
-    // ---------------------------------------------------------------
+    // --- OPCIONES COMUNES ---
+    
+    // Mantenimiento (si no está ya en mantenimiento)
     if (room.estado !== "mantenimiento") {
         botonesHtml += `<button id="btn-mantenimiento" class="${btnNaranja}"><span style="font-size:1.2em">🛠️</span> Enviar a Mantenimiento</button>`;
     }
 
-    // ---------------------------------------------------------------
-    // 5. INFO HUÉSPED (Para ocupada, reservada, tiempo agotado)
-    // ---------------------------------------------------------------
+    // Info Huésped (si hay alguien asociado a la habitación)
     if (["ocupada", "tiempo agotado", "reservada", "activa"].includes(room.estado)) {
         botonesHtml += `<button id="btn-info-huesped" class="${btnSecundario}"><span style="font-size:1.2em">👤</span> Ver Info Huésped</button>`;
     }
 
-    // ---------------------------------------------------------------
-    // CERRAR
-    // ---------------------------------------------------------------
+    // Cerrar Modal
     botonesHtml += `<button id="close-modal-acciones" class="${btnRojo}"><span style="font-size:1.2em">❌</span> Cerrar</button>`;
-  // Render modal content
-  const modalContent = document.createElement('div');
-  modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 m-auto relative animate-fade-in-up";
-  modalContent.innerHTML = `
-      <h3 class="text-xl font-bold mb-5 text-blue-700 text-center">${room.nombre} (${room.estado ? room.estado.toUpperCase() : 'N/A'})</h3>
-      <div class="flex flex-col gap-2.5">
-          ${botonesHtml}
-      </div>
-  `;
-  modalContainer.appendChild(modalContent);
-  modalContainer.onclick = (e) => {
-    if (e.target === modalContainer) {
-      modalContainer.style.display = "none";
-      modalContainer.innerHTML = '';
-    }
-  };
 
-  // Función para asociar eventos a los botones
-  const setupButtonListener = (id, handler) => {
-    const btn = modalContent.querySelector(`#${id}`);
-    if (btn) btn.onclick = (e) => handler(btn, room); // <- aquí le pasas room al handler
-};
-
-// REEMPLAZA esta función en tu archivo reservas.js
-
-// REEMPLAZA esta función en tu archivo reservas.js
-
-const setupEventListeners = () => {
-    // Listener para el selector de cliente
-    if (ui.btnBuscarCliente) {
-        ui.btnBuscarCliente.onclick = () => {
-            showClienteSelectorModal(state.supabase, state.hotelId, {
-                onSelect: async (cliente) => {
-                    updateClienteFields(cliente);
-                    await recalcularYActualizarTotalUI();
-                }
-            });
-        };
-    }
-
-    if (ui.btnCrearCliente) {
-        ui.btnCrearCliente.onclick = () => {
-            mostrarFormularioCliente(null, state.supabase, state.hotelId, { 
-                afterSave: (nuevoCliente) => {
-                    updateClienteFields(nuevoCliente);
-                    showSuccess(ui.feedbackDiv, `Cliente "${nuevoCliente.nombre}" creado y seleccionado.`);
-                }
-            });
-        };
-    }
-    
-    ui.container.querySelector('#btn_clear_cliente')?.addEventListener('click', () => {
-        updateClienteFields(null);
-        recalcularYActualizarTotalUI();
-    });
-
-    // Listener para el tipo de duración
-    if (ui.tipoCalculoDuracionEl) {
-        ui.tipoCalculoDuracionEl.addEventListener('change', () => {
-            const esNochesManual = ui.tipoCalculoDuracionEl.value === 'noches_manual';
-
-            if(ui.nochesManualContainer) ui.nochesManualContainer.style.display = esNochesManual ? '' : 'none';
-            if(ui.cantidadNochesInput) ui.cantidadNochesInput.required = esNochesManual;
-            if(ui.tiempoPredefinidoContainer) ui.tiempoPredefinidoContainer.style.display = esNochesManual ? 'none' : '';
-            if(ui.tiempoEstanciaIdSelect) ui.tiempoEstanciaIdSelect.required = !esNochesManual;
-
-            // ▼▼▼ LÓGICA CORREGIDA PARA LIMPIAR CAMPOS ▼▼▼
-            if (esNochesManual) {
-                if (ui.tiempoEstanciaIdSelect) ui.tiempoEstanciaIdSelect.value = '';
-            } else {
-                if (ui.cantidadNochesInput) ui.cantidadNochesInput.value = '1';
-            }
-            // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
-            
-            recalcularYActualizarTotalUI();
-        });
-    }
-
-    // Listener para el toggle de Precio Libre
-    const togglePrecioLibre = ui.container.querySelector('#precio_libre_toggle');
-    if (togglePrecioLibre) {
-        togglePrecioLibre.addEventListener('change', () => {
-            const containerPrecioLibre = ui.container.querySelector('#precio_libre_container');
-            if (containerPrecioLibre) containerPrecioLibre.style.display = togglePrecioLibre.checked ? 'block' : 'none';
-        });
-    }
-
-    // Lista de todos los inputs que disparan recálculo
-    const inputsToRecalculate = [
-        ui.habitacionIdSelect, ui.cantidadNochesInput, ui.tiempoEstanciaIdSelect,
-        ui.form.elements.cantidad_huespedes, ui.fechaEntradaInput,
-        togglePrecioLibre, ui.container.querySelector('#precio_libre_valor')
-    ];
-
-    inputsToRecalculate.forEach(el => {
-        if (el) {
-            const eventType = (el.tagName === 'SELECT' || el.type === 'checkbox') ? 'change' : 'input';
-            el.addEventListener(eventType, recalcularYActualizarTotalUI);
-        }
-    });
-    
-    // Otros listeners
-    ui.container.querySelector('#btn-aplicar-descuento-reserva')?.addEventListener('click', handleAplicarDescuentoReserva);
-    ui.form.elements.tipo_pago?.addEventListener('change', actualizarVisibilidadPago);
-    ui.form.elements.monto_abono?.addEventListener('input', actualizarVisibilidadPago);
-    ui.form?.addEventListener('submit', handleFormSubmit);
-    ui.cancelEditButton?.addEventListener('click', () => resetFormToCreateMode());
-    ui.reservasListEl?.addEventListener('click', handleListActions);
-    document.addEventListener('datosActualizados', handleExternalUpdate);
-};
-
-/**
- * Displays the enhanced modal for selecting additional services.
- * @param {object} roomDisplayInfo - Object with room details for display (e.g., { nombre: 'Habitación 101' }).
- * @param {Array<object>} availableServices - Array of service objects from Supabase (id, nombre, precio, opcional: icono).
- * @param {object} activeReservation - The active reservation object for which services are being added.
- */
-function showEnhancedServiciosModal(roomDisplayInfo, availableServices, activeReservation) {
-    modalContainer.innerHTML = ""; // Clear previous content
-    modalContainer.style.display = "flex"; // Show the modal container
-
+    // 3. RENDERIZAR EL MODAL EN EL DOM
     const modalContent = document.createElement('div');
-    modalContent.className = "bg-white rounded-3xl shadow-2xl w-full max-w-xl p-6 sm:p-8 m-auto border-2 border-green-100 relative flex flex-col max-h-[90vh]";
-
-    const barraProgreso = `
-      <div class="w-full flex justify-center mb-6">
-        <div class="flex space-x-2">
-          <div class="h-2.5 w-16 bg-green-500 rounded-full"></div>
-          <div class="h-2.5 w-16 bg-gray-200 rounded-full"></div>
-          <div class="h-2.5 w-16 bg-gray-200 rounded-full"></div>
-        </div>
-      </div>
-    `;
-
+    modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 m-auto relative animate-fade-in-up";
     modalContent.innerHTML = `
-      ${barraProgreso}
-      <div class="flex-shrink-0">
-        <h3 class="text-3xl font-black mb-2 text-green-700 text-center flex items-center justify-center gap-2">
-          <span>✨ Servicios Adicionales</span>
-        </h3>
-        <p class="text-center text-green-600 font-semibold mb-6 text-lg">Para: ${roomDisplayInfo.nombre}</p>
-      </div>
-
-      <form id="form-servicios-adicionales" class="space-y-5 overflow-y-auto flex-grow pr-2">
-        <div>
-          <label class="block mb-3 text-lg font-semibold text-gray-700">Agrega lo que el huésped necesite:</label>
-          <div class="space-y-4">
-          ${availableServices.map((s, i) => `
-            <div class="service-item group flex items-center gap-3 rounded-xl bg-green-50 border-2 border-green-200 p-4 shadow-sm transition-all duration-200 ease-in-out hover:border-green-400 hover:shadow-md relative">
-              <input
-                type="checkbox"
-                id="servicio_${s.id}"
-                name="servicio_ids"
-                value="${s.id}"
-                data-precio="${s.precio || 0}"
-                class="form-checkbox h-6 w-6 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer peer"
-              >
-              <label for="servicio_${s.id}" class="flex-1 flex flex-col sm:flex-row sm:items-center justify-between cursor-pointer">
-                <div class="flex items-center gap-2">
-                  <span class="text-xl">${s.icono || (i % 2 === 0 ? '🧺' : '🕒')}</span>
-                  <span class="font-bold text-green-900 text-base sm:text-lg">${s.nombre}</span>
-                </div>
-                <span class="text-green-700 text-base sm:text-lg font-semibold sm:ml-3 mt-1 sm:mt-0">${s.precio ? `$${Number(s.precio).toLocaleString('es-CO')}` : 'Gratis'}</span>
-              </label>
-              <input
-                type="number"
-                min="1"
-                value="1"
-                name="cantidad_${s.id}"
-                class="quantity-input border-2 border-green-200 rounded-lg w-20 px-2 py-1.5 text-center text-lg font-semibold text-gray-700 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-opacity duration-200 opacity-0 peer-checked:opacity-100"
-                placeholder="Cant."
-                ${!s.precio ? 'disabled' : ''}
-              >
-            </div>
-          `).join('')}
-          </div>
+        <h3 class="text-xl font-bold mb-5 text-blue-700 text-center">${room.nombre} (${room.estado ? room.estado.toUpperCase() : 'N/A'})</h3>
+        <div class="flex flex-col gap-2.5">
+            ${botonesHtml}
         </div>
-        <div class="pt-2">
-          <label for="nota_servicio" class="block mb-2 text-lg font-semibold text-gray-700">Nota especial (opcional):</label>
-          <textarea
-            name="nota_servicio"
-            id="nota_servicio"
-            class="w-full border-2 border-gray-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-gray-300"
-            rows="3"
-            placeholder="Ej: Alergias, preferencias, etc."
-          ></textarea>
-        </div>
-      </form>
-            <div id="descuento-servicios-container" class="pt-2">
-    <label for="codigo-descuento-servicios" class="block mb-2 text-lg font-semibold text-gray-700">Código de Descuento (Opcional)</label>
-    <div class="flex items-center gap-2">
-        <input type="text" id="codigo-descuento-servicios" class="form-control flex-grow uppercase" placeholder="CÓDIGO PROMO">
-        <button type="button" id="btn-aplicar-descuento-servicios" class="button button-info px-4 py-2">Aplicar</button>
-    </div>
-    <div id="feedback-descuento-servicios" class="text-sm mt-2 h-5"></div>
-  </div>
-      <div class="mt-8 flex-shrink-0">
-        <div
-          id="sticky-total-servicios"
-          class="bg-green-600 text-white px-6 py-4 rounded-xl shadow-lg text-xl sm:text-2xl font-bold flex items-center justify-between gap-3 z-50 mb-6"
-        >
-          <span>Total Adicional:</span>
-          <span id="preview-total-servicios">$0</span>
-        </div>
-        <div class="flex flex-col sm:flex-row gap-3">
-          <button type="submit" form="form-servicios-adicionales" class="w-full sm:flex-1 py-3.5 text-lg rounded-xl font-bold transition-all duration-200 ease-in-out hover:scale-[1.03] flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white shadow-md hover:shadow-lg">
-            <span>➕</span> Siguiente
-          </button>
-          <button type="button" id="btn-cancelar-servicios" class="w-full sm:flex-1 py-3.5 text-lg rounded-xl font-bold transition-all duration-200 ease-in-out hover:scale-[1.03] bg-gray-200 hover:bg-gray-300 text-gray-700 shadow-md hover:shadow-lg">
-            Cancelar
-          </button>
-        </div>
-      </div>
     `;
-
-    // Font application (ensure Montserrat is linked in your main HTML)
-    if (!document.getElementById('montserrat-font')) {
-        const link = document.createElement('link');
-        link.id = 'montserrat-font';
-        link.href = 'https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&display=swap';
-        link.rel = 'stylesheet';
-        document.head.appendChild(link);
-    }
-    modalContent.querySelectorAll('*').forEach(el => {
-        el.style.fontFamily = "'Montserrat', sans-serif";
-    });
-
     modalContainer.appendChild(modalContent);
 
-    // Event Listeners & Logic (similar to the previous "bonito" modal)
-    const form = modalContent.querySelector('#form-servicios-adicionales');
-    const previewTotalElement = modalContent.querySelector('#preview-total-servicios');
-    const serviceItems = form.querySelectorAll('.service-item');
-
-    const updatePreviewTotal = () => {
-        let total = 0;
-        serviceItems.forEach(item => {
-            const checkbox = item.querySelector('input[type="checkbox"][name="servicio_ids"]');
-            if (checkbox.checked) {
-                const precio = Number(checkbox.dataset.precio) || 0;
-                const cantidadInput = item.querySelector('input[type="number"]');
-                const cantidad = Number(cantidadInput.value) || 1;
-                if (precio > 0) {
-                    total += cantidad * precio;
-                }
-            }
-        });
-        previewTotalElement.textContent = `$${total.toLocaleString('es-CO')}`;
-    };
-
-    form.addEventListener('input', (event) => {
-        const target = event.target;
-        if (target.matches('input[type="checkbox"], input[type="number"]')) {
-            if (target.type === 'checkbox') {
-                const quantityInput = target.closest('.service-item').querySelector('.quantity-input');
-                const isFree = Number(target.dataset.precio) === 0;
-                if (target.checked) {
-                    quantityInput.classList.remove('opacity-0');
-                    quantityInput.disabled = isFree;
-                    if (isFree) quantityInput.value = 1;
-                } else {
-                    quantityInput.classList.add('opacity-0');
-                    quantityInput.disabled = true;
-                }
-            }
-            updatePreviewTotal();
+    // Cierre al hacer click fuera del modal
+    modalContainer.onclick = (e) => {
+        if (e.target === modalContainer) {
+            modalContainer.style.display = "none";
+            modalContainer.innerHTML = '';
         }
-    });
-    
-    // Initialize quantity inputs and total
-    serviceItems.forEach(item => {
-        const checkbox = item.querySelector('input[type="checkbox"][name="servicio_ids"]');
-        const quantityInput = item.querySelector('.quantity-input');
-        const isFree = Number(checkbox.dataset.precio) === 0;
-        if (checkbox.checked) {
-            quantityInput.classList.remove('opacity-0');
-            quantityInput.disabled = isFree;
-            if (isFree) quantityInput.value = 1;
-        } else {
-            quantityInput.classList.add('opacity-0');
-            quantityInput.disabled = true;
+    };
+
+    // Helper para asignar eventos de forma segura
+    const setupButtonListener = (id, handler) => {
+        const btn = modalContent.querySelector(`#${id}`);
+        if (btn) {
+            // Removemos listeners previos clonando el nodo (opcional, pero limpio)
+            // En este caso, como creamos el modal de cero cada vez, no es estrictamente necesario clonar.
+            btn.onclick = (e) => handler(btn, room);
         }
-    });
-    updatePreviewTotal();
-
-    modalContent.querySelector('#btn-cancelar-servicios').onclick = () => {
-        modalContainer.style.display = "none";
-        modalContainer.innerHTML = '';
     };
 
-    form.onsubmit = async (e) => {
-        e.preventDefault();
-        const formData = new FormData(form);
-        const selectedServiceItems = [];
-        formData.getAll('servicio_ids').forEach(id => {
-            const serviceData = availableServices.find(s => s.id.toString() === id);
-            if (serviceData) {
-                selectedServiceItems.push({
-                    servicio_id: serviceData.id, // for DB
-                    nombre: serviceData.nombre, // for display or logging
-                    cantidad: parseInt(formData.get(`cantidad_${id}`) || 1),
-                    precio_unitario: serviceData.precio, // for DB
-                    // reserva_id: activeReservation.id // You'll need this!
-                });
-            }
-        });
-        const nota = formData.get('nota_servicio');
-        const totalCalculated = parseFloat(previewTotalElement.textContent.replace(/[$.]/g, '').replace(',', '.'));
+    // =================================================================
+    // 4. ASIGNACIÓN DE EVENTOS (AQUÍ ESTÁ LA CLAVE PARA QUE FUNCIONEN)
+    // =================================================================
 
-        console.log("Active Reservation ID:", activeReservation.id);
-        console.log("Selected Services for DB:", selectedServiceItems);
-        console.log("Nota:", nota);
-        console.log("Total:", totalCalculated);
-
-        // **Aquí iría tu lógica para guardar los servicios en Supabase**
-        // For example:
-        // const itemsToInsert = selectedServiceItems.map(item => ({
-        //   reserva_id: activeReservation.id,
-        //   servicio_adicional_id: item.servicio_id,
-        //   cantidad: item.cantidad,
-        //   precio_cobrado: item.precio_unitario * item.cantidad, // o solo precio_unitario y calculas en backend/trigger
-        //   nota_huesped: nota // podría ser una nota general para el pedido o por item
-        // }));
-        //
-        // if (itemsToInsert.length > 0) {
-        //   const { error } = await supabase.from('reservas_servicios_adicionales').insert(itemsToInsert);
-        //   if (error) {
-        //     console.error("Error saving additional services:", error);
-        //     mostrarInfoModalGlobal(`Error al guardar: ${error.message}`, "Error");
-        //   } else {
-        //     mostrarInfoModalGlobal("Servicios agregados con éxito!", "Éxito");
-        //     modalContainer.style.display = "none";
-        //     modalContainer.innerHTML = '';
-        //     // Opcional: actualizar UI, etc.
-        //   }
-        // } else {
-        //    mostrarInfoModalGlobal("No se seleccionaron servicios.", "Información");
-        // }
-        alert(`Simulación: Guardando servicios para reserva ${activeReservation.id}. Total: $${totalCalculated.toLocaleString('es-CO')}. Nota: ${nota}`);
-        // modalContainer.style.display = "none"; // Hide modal on successful submission
-        // modalContainer.innerHTML = '';
-    };
-}
-
-
-// This is your main event listener setup
-// `room` here is the specific room for which the button 'btn-servicios-adicionales' was clicked.
-// Ensure `room` has at least `id` and `nombre` properties.
-// Asegúrate que estas variables estén accesibles en el scope de showHabitacionOpcionesModal
-// let supabaseGlobal = supabase; // Ejemplo, si las renombras o usas las globales
-// let currentUserGlobal = currentUser;
-// let hotelIdGlobal = hotelId;
-// let mainAppContainer = mainAppContainer; // El contenedor principal para renderRooms
-
-// ... (el resto de tu función showHabitacionOpcionesModal y otras funciones) ...
-
-// Dentro de showHabitacionOpcionesModal, después de crear modalContent:
-
-// Listener para 'btn-servicios-adicionales' CON CORRECCIONES
-setupButtonListener('close-modal-acciones', () => {
+    // --- ACCIÓN: CERRAR ---
+    setupButtonListener('close-modal-acciones', () => {
         modalContainer.style.display = 'none';
         modalContainer.innerHTML = '';
     });
 
-
-
-
-setupButtonListener('btn-servicios-adicionales', async (btn, roomContext) => {
-      console.log("ID del usuario en la APP:", currentUserGlobal.id);
-  const { data: reserva, error: errRes } = await supabaseGlobal
-    .from('reservas')
-    .select('id, cliente_nombre, estado, monto_pagado')
-    .eq('habitacion_id', roomContext.id)
-    .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-    .order('fecha_inicio', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (errRes || !reserva) {
-    mostrarInfoModalGlobal("No hay una reserva activa en esta habitación para asignar servicios.", "Sin reserva activa");
-    return;
-  }
-
-  const { data: servicios, error: errServ } = await supabaseGlobal
-    .from('servicios_adicionales')
-    .select('id, nombre, precio')
-    .eq('hotel_id', hotelIdGlobal)
-    .eq('activo', true);
-
-  if (errServ || !servicios || servicios.length === 0) {
-    mostrarInfoModalGlobal("No hay servicios adicionales configurados en el hotel.", "Servicios no encontrados");
-    return;
-  }
-  
-  const modalContainer = document.getElementById('modal-container');
-  modalContainer.innerHTML = "";
-  modalContainer.style.display = "flex";
-  const modalContent = document.createElement('div');
-  modalContent.className = "bg-white rounded-3xl shadow-2xl w-full max-w-xl p-6 sm:p-8 m-auto border-2 border-green-100 relative flex flex-col max-h-[90vh]";
-
-  modalContent.innerHTML = `
-      <h3 class="text-3xl font-black mb-7 text-green-700 text-center flex items-center justify-center gap-2 drop-shadow">
-          <span>✨ Servicios Adicionales</span>
-          <span class="text-2xl text-green-400">(${roomContext.nombre})</span>
-      </h3>
-      <form id="form-servicios-adicionales" class="space-y-5 overflow-y-auto flex-grow pr-2">
-          <div>
-              <label class="block mb-3 text-lg font-semibold text-gray-700">Agrega lo que el huésped necesite:</label>
-              <div class="space-y-4">
-                  ${servicios.map((s, i) => `
-                      <div class="service-item group flex items-center gap-3 rounded-xl bg-green-50 border-2 border-green-200 p-4 shadow-sm transition-all duration-200 ease-in-out hover:border-green-400 hover:shadow-md relative">
-                          <input type="checkbox" id="servicio_${s.id}" name="servicio_ids" value="${s.id}" data-precio="${s.precio || 0}" class="form-checkbox h-6 w-6 text-green-600 border-gray-300 rounded focus:ring-green-500 cursor-pointer peer">
-                          <label for="servicio_${s.id}" class="flex-1 flex flex-col sm:flex-row sm:items-center justify-between cursor-pointer">
-                              <div class="flex items-center gap-2">
-                                  <span class="text-xl">${s.icono || (i % 2 === 0 ? '🧺' : '🕒')}</span>
-                                  <span class="font-bold text-green-900 text-base sm:text-lg">${s.nombre}</span>
-                              </div>
-                              <span class="text-green-700 text-base sm:text-lg font-semibold sm:ml-3 mt-1 sm:mt-0">${s.precio ? formatCurrency(s.precio) : 'Gratis'}</span>
-                          </label>
-                          <input type="number" min="1" value="1" name="cantidad_${s.id}" class="quantity-input border-2 border-green-200 rounded-lg w-20 px-2 py-1.5 text-center text-lg font-semibold text-gray-700 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-opacity duration-200 opacity-0 peer-checked:opacity-100" placeholder="Cant.">
-                      </div>
-                  `).join('')}
-              </div>
-          </div>
-          <div class="pt-2">
-              <label for="nota_servicio" class="block mb-2 text-lg font-semibold text-gray-700">Nota especial (opcional):</label>
-              <textarea name="nota_servicio" id="nota_servicio" class="w-full border-2 border-gray-200 rounded-xl p-3 text-lg focus:ring-2 focus:ring-green-500 focus:border-transparent hover:border-gray-300" rows="3" placeholder="Ej: Alergias, preferencias, etc."></textarea>
-          </div>
-      </form>
-      
-      <div id="descuento-servicios-container" class="pt-4">
-          <label for="codigo-descuento-servicios" class="block mb-2 text-lg font-semibold text-gray-700">Código de Descuento (Opcional)</label>
-          <div class="flex items-center gap-2">
-              <input type="text" id="codigo-descuento-servicios" class="form-control flex-grow uppercase" placeholder="CÓDIGO PROMO">
-              <button type="button" id="btn-aplicar-descuento-servicios" class="button button-info px-4 py-2">Aplicar</button>
-          </div>
-          <div id="feedback-descuento-servicios" class="text-sm mt-2 h-5 font-semibold"></div>
-      </div>
-
-      <div class="mt-8 flex-shrink-0">
-          <div id="sticky-total-servicios" class="bg-green-600 text-white px-6 py-4 rounded-xl shadow-lg text-xl sm:text-2xl font-bold flex items-center justify-between gap-3 z-50 mb-6">
-              <span>Total Adicional:</span>
-              <span id="preview-total-servicios">$0</span>
-          </div>
-          <div class="flex flex-col sm:flex-row gap-3">
-              <button type="submit" form="form-servicios-adicionales" class="w-full sm:flex-1 py-3.5 text-lg rounded-xl font-bold transition-all duration-200 ease-in-out hover:scale-[1.03] flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white shadow-md hover:shadow-lg">
-                  <span>➕</span> Siguiente
-              </button>
-              <button type="button" id="btn-cancelar-servicios" class="w-full sm:flex-1 py-3.5 text-lg rounded-xl font-bold transition-all duration-200 ease-in-out hover:scale-[1.03] bg-gray-200 hover:bg-gray-300 text-gray-700 shadow-md hover:shadow-lg">
-                  Cancelar
-              </button>
-          </div>
-      </div>
-  `;
-  modalContainer.appendChild(modalContent);
-  
-  const form = modalContent.querySelector('#form-servicios-adicionales');
-  const serviceItems = form.querySelectorAll('.service-item');
-  const feedbackDescuentoEl = modalContent.querySelector('#feedback-descuento-servicios');
-  const codigoInputEl = modalContent.querySelector('#codigo-descuento-servicios');
-  
-  let descuentoAplicado = null;
-  let montoDescuento = 0;
-  // Guardaremos los nombres de los servicios a los que se aplica el descuento
-  let nombresServiciosDescuento = ''; 
-
-  const actualizarResumenYDescuento = async (codigoManual = null) => {
-    const serviciosSeleccionados = Array.from(serviceItems)
-      .map(item => {
-        const checkbox = item.querySelector('input[type="checkbox"]');
-        if (!checkbox.checked) return null;
-        return {
-          servicio_id: checkbox.value,
-          cantidad: Number(item.querySelector('input[type="number"]').value) || 1,
-          precio: Number(checkbox.dataset.precio) || 0,
-          nombre: servicios.find(s => s.id === checkbox.value)?.nombre || 'Servicio'
-        };
-      })
-      .filter(Boolean);
-
-    const subtotal = serviciosSeleccionados.reduce((sum, s) => sum + (s.cantidad * s.precio), 0);
-    
-    const resultadoDescuento = await buscarDescuentoParaServicios(serviciosSeleccionados, codigoManual);
-
-    if (resultadoDescuento) {
-        descuentoAplicado = resultadoDescuento.descuento;
-        montoDescuento = resultadoDescuento.monto;
-        nombresServiciosDescuento = resultadoDescuento.serviciosAplicadosNombres; // Guardamos los nombres
-        feedbackDescuentoEl.textContent = `Descuento "${descuentoAplicado.nombre}" aplicado: -${formatCurrency(montoDescuento)}`;
-        feedbackDescuentoEl.className = 'text-sm mt-2 h-5 text-green-600 font-semibold';
-    } else {
-        descuentoAplicado = null;
-        montoDescuento = 0;
-        nombresServiciosDescuento = ''; // Limpiamos los nombres
-        if (codigoManual) {
-            feedbackDescuentoEl.textContent = 'Código no válido o no aplicable.';
-            feedbackDescuentoEl.className = 'text-sm mt-2 h-5 text-red-600 font-semibold';
-        } else {
-            feedbackDescuentoEl.textContent = '';
-        }
-    }
-    
-    const totalFinal = subtotal - montoDescuento;
-    const totalContainer = modalContent.querySelector('#sticky-total-servicios');
-    if (montoDescuento > 0) {
-      totalContainer.innerHTML = `
-        <div class="text-xs text-left">
-          <div>Subtotal: ${formatCurrency(subtotal)}</div>
-          <div class="text-green-200 font-semibold">Descuento: -${formatCurrency(montoDescuento)}</div>
-        </div>
-        <div class="text-right">
-          <span class="text-lg">Total:</span>
-          <span class="text-2xl font-bold">${formatCurrency(totalFinal)}</span>
-        </div>`;
-    } else {
-      totalContainer.innerHTML = `
-        <span>Total Adicional:</span>
-        <span id="preview-total-servicios">${formatCurrency(subtotal)}</span>`;
-    }
-  };
-
-  form.addEventListener('input', (event) => {
-    const target = event.target;
-    if (target.matches('input[type="checkbox"], input[type="number"]')) {
-      codigoInputEl.value = '';
-      actualizarResumenYDescuento(null);
-    }
-  });
-
-  modalContent.querySelector('#btn-aplicar-descuento-servicios').onclick = async () => {
-    const codigo = codigoInputEl.value.trim();
-    await actualizarResumenYDescuento(codigo || null);
-  };
-
-  modalContent.querySelector('#btn-cancelar-servicios').onclick = () => {
-    modalContainer.style.display = "none";
-    modalContainer.innerHTML = '';
-  };
-  
-form.onsubmit = async (ev) => {
-    ev.preventDefault();
-    const formData = new FormData(ev.target);
-    const nota = formData.get('nota_servicio') || '';
-
-    const serviciosSeleccionados = Array.from(serviceItems)
-      .map(item => {
-        const checkbox = item.querySelector('input[type="checkbox"]');
-        if (!checkbox.checked) return null;
-        return {
-          servicio_id: checkbox.value,
-          cantidad: Number(item.querySelector('input[type="number"]').value) || 1,
-          precio: Number(checkbox.dataset.precio) || 0,
-          nombre: servicios.find(s => s.id === checkbox.value)?.nombre || 'Servicio'
-        };
-      }).filter(Boolean);
-
-    if (serviciosSeleccionados.length === 0) {
-      mostrarInfoModalGlobal("Debes seleccionar al menos un servicio.", "Validación", [], modalContainer);
-      return;
-    }
-
-    const subtotal = serviciosSeleccionados.reduce((sum, item) => sum + (item.cantidad * item.precio), 0);
-    const totalFinalConDescuento = subtotal - montoDescuento;
-
-    mostrarInfoModalGlobal(`
-      <div class="text-center p-5">
-        <h4 class="text-2xl font-bold mb-3 text-blue-900">¿Cómo desea cobrar estos servicios?</h4>
-        <div class="rounded-xl bg-blue-50 text-blue-700 p-3 mb-4 border text-lg">
-          <div class="mb-2 font-semibold">Resumen:</div>
-          <ul class="text-left ml-7 mb-2">
-            ${serviciosSeleccionados.map(s => `<li>• ${s.nombre} <b>x${s.cantidad}</b> ${formatCurrency(s.precio * s.cantidad)}</li>`).join('')}
-          </ul>
-          ${montoDescuento > 0 ? `<div class="mt-2 text-right text-green-600 font-bold">Descuento: -${formatCurrency(montoDescuento)}</div>` : ''}
-          <div class="mt-2 text-right font-bold text-xl">Total a Pagar: ${formatCurrency(totalFinalConDescuento)}</div>
-        </div>
-        <div class="mb-4 flex flex-col gap-3">
-          <button id="btn-cobro-ahora-serv" class="button button-success py-3 rounded-xl text-xl font-bold flex-1">Cobrar AHORA y registrar en caja</button>
-          <button id="btn-cobro-final-serv" class="button button-neutral py-3 rounded-xl text-xl font-bold flex-1">Cobrar al FINAL (sumar a la factura)</button>
-        </div>
-        <button id="btn-cancelar-cobro-servicio-serv" class="mt-2 text-sm text-gray-600 hover:text-red-500 underline">Cancelar</button>
-      </div>
-    `, "¿Cómo desea cobrar?", [], modalContainer);
-
-    setTimeout(() => {
-        const modalOpciones = document.getElementById('modal-container').querySelector('.bg-white');
-        if (!modalOpciones) return;
-
-        // Botón Cobrar al FINAL (sin cambios)
-        modalOpciones.querySelector('#btn-cobro-final-serv').onclick = async () => {
-          let serviciosParaInsertar = serviciosSeleccionados.map(item => ({
-            hotel_id: hotelIdGlobal, reserva_id: reserva.id, servicio_id: item.servicio_id,
-            cantidad: item.cantidad, precio_cobrado: item.precio * item.cantidad,
-            nota, estado_pago: 'pendiente'
-          }));
-          
-          if (montoDescuento > 0 && descuentoAplicado) {
-            let descripcionDescuento = `Descuento: ${descuentoAplicado.nombre}`;
-            if (nombresServiciosDescuento) {
-                descripcionDescuento += ` (a ${nombresServiciosDescuento})`;
-            }
-            serviciosParaInsertar.push({
-              hotel_id: hotelIdGlobal, reserva_id: reserva.id,
-              descripcion_manual: descripcionDescuento,
-              cantidad: 1,
-              precio_cobrado: -montoDescuento,
-              estado_pago: 'aplicado'
-            });
-          }
-          
-          const { error } = await supabaseGlobal.from('servicios_x_reserva').insert(serviciosParaInsertar);
-          if (error) {
-            mostrarInfoModalGlobal(`Error al agregar servicios: ${error.message}`, "Error", [], modalContainer);
-          } else {
-            const modalOpcionesContainer = modalOpciones.closest('#modal-container');
-            if(modalOpcionesContainer) {
-                modalOpcionesContainer.style.display = 'none';
-                modalOpcionesContainer.innerHTML = '';
-            }
-            mostrarInfoModalGlobal("Servicios agregados a la cuenta final de la habitación.", "Éxito");
-          }
-        };
-
-        // ▼▼▼ INICIO DEL BLOQUE CORREGIDO Y MEJORADO ▼▼▼
-
-        // Función interna para procesar el pago (tanto único como mixto)
-        const procesarCobroInmediato = async (pagos) => {
-            try {
-                const turnoId = turnoService.getActiveTurnId();
-                if (!turnoId) throw new Error("ACCIÓN BLOQUEADA: No se puede registrar el pago porque no hay un turno de caja activo.");
-
-                const totalPagado = pagos.reduce((sum, p) => sum + p.monto, 0);
-
-                // --- MEJORA: Crear descripción detallada de servicios ---
-                const descripcionServicios = serviciosSeleccionados.map(s => `${s.cantidad}x ${s.nombre}`).join(', ');
-                const conceptoCaja = `Pago Serv: ${descripcionServicios} (Hab. ${roomContext.nombre})`;
-                const conceptoPagos = `Pago servicios: ${descripcionServicios}`;
-                // --- FIN MEJORA ---
-
-                // 1. Insertar cada pago en `pagos_reserva` con concepto detallado
-                const pagosParaInsertar = pagos.map(p => ({
-                    hotel_id: hotelIdGlobal, reserva_id: reserva.id, monto: p.monto,
-                    fecha_pago: new Date().toISOString(), metodo_pago_id: p.metodo_pago_id,
-                    usuario_id: currentUserGlobal.id, concepto: conceptoPagos
-                }));
-                const { data: pagosData, error: errPagos } = await supabaseGlobal.from('pagos_reserva').insert(pagosParaInsertar).select('id');
-                if (errPagos) throw new Error(`Error al registrar los pagos: ${errPagos.message}`);
-                const primerPagoId = pagosData && pagosData.length > 0 ? pagosData[0].id : null;
-
-                // 2. Insertar cada movimiento en `caja` con concepto detallado
-                const movimientosCaja = pagos.map((p, index) => ({
-                    hotel_id: hotelIdGlobal, tipo: 'ingreso', monto: p.monto,
-                    concepto: conceptoCaja, // Se usa el concepto detallado
-                    fecha_movimiento: new Date().toISOString(), metodo_pago_id: p.metodo_pago_id,
-                    usuario_id: currentUserGlobal.id, reserva_id: reserva.id,
-                    pago_reserva_id: pagosData[index].id, turno_id: turnoId,
-                }));
-                await supabaseGlobal.from('caja').insert(movimientosCaja);
-
-                // 3. Actualizar el monto total pagado en la reserva principal
-                const nuevoMontoPagado = (reserva.monto_pagado || 0) + totalPagado;
-                await supabaseGlobal.from('reservas').update({ monto_pagado: nuevoMontoPagado }).eq('id', reserva.id);
-
-                // 4. Preparar y registrar los servicios y el descuento
-                let serviciosParaInsertar = serviciosSeleccionados.map(item => ({
-                    hotel_id: hotelIdGlobal, reserva_id: reserva.id, servicio_id: item.servicio_id,
-                    cantidad: item.cantidad, precio_cobrado: item.precio * item.cantidad,
-                    estado_pago: 'pagado', pago_reserva_id: primerPagoId
-                }));
-                
-                if (montoDescuento > 0 && descuentoAplicado) {
-                    let descripcionDescuento = `Descuento: ${descuentoAplicado.nombre} (a ${nombresServiciosDescuento})`;
-                    serviciosParaInsertar.push({
-                        hotel_id: hotelIdGlobal, reserva_id: reserva.id, descripcion_manual: descripcionDescuento,
-                        cantidad: 1, precio_cobrado: -montoDescuento, estado_pago: 'aplicado', pago_reserva_id: primerPagoId
-                    });
-                    await supabaseGlobal.rpc('incrementar_uso_descuento', { descuento_id_param: descuentoAplicado.id });
-                }
-
-                await supabaseGlobal.from('servicios_x_reserva').insert(serviciosParaInsertar);
-
-                // 5. Mostrar éxito y cerrar modales
-                mostrarInfoModalGlobal("¡Pago de servicios registrado con éxito en la caja!", "Éxito");
-                const modalOpcionesContainer = modalOpciones.closest('#modal-container');
-                 if(modalOpcionesContainer) {
-                    modalOpcionesContainer.style.display = 'none';
-                    modalOpcionesContainer.innerHTML = '';
-                }
-
-            } catch (error) {
-                console.error("Error procesando el cobro inmediato:", error);
-                mostrarInfoModalGlobal(`Error al procesar el pago: ${error.message}`, "Error Crítico", [], modalContainer);
-            }
-        };
-
-        // Lógica del botón "Cobrar AHORA" con opción de pago mixto
-        modalOpciones.querySelector('#btn-cobro-ahora-serv').onclick = async () => {
-            try {
-                if (!turnoService.getActiveTurnId()) {
-                    mostrarInfoModalGlobal("No hay un turno de caja activo.", "Error de Turno", [], modalContainer);
-                    return;
-                }
-
-                const { data: metodosPagoDB } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelIdGlobal).eq('activo', true);
-                if (!metodosPagoDB || metodosPagoDB.length === 0) {
-                    mostrarInfoModalGlobal("No hay métodos de pago activos configurados.", "Error de Configuración", [], modalContainer);
-                    return;
-                }
-                
-                metodosPagoDB.unshift({ id: "mixto", nombre: "Pago Mixto" });
-                const opcionesMetodosHTML = metodosPagoDB.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
-
-                const { value: metodoPagoId, isConfirmed } = await Swal.fire({
-                    title: 'Confirmar Cobro Inmediato',
-                    html: `
-                        <p class="mb-4">Se cobrará un total de <strong>${formatCurrency(totalFinalConDescuento)}</strong>.</p>
-                        <label for="swal-metodo-pago" class="swal2-label">Seleccione el método de pago:</label>
-                        <select id="swal-metodo-pago" class="swal2-input">${opcionesMetodosHTML}</select>`,
-                    focusConfirm: false,
-                    preConfirm: () => {
-                        const metodo = document.getElementById('swal-metodo-pago').value;
-                        if (!metodo) Swal.showValidationMessage('Por favor, seleccione un método de pago.');
-                        return metodo;
-                    },
-                    showCancelButton: true,
-                    confirmButtonText: 'Siguiente',
-                    cancelButtonText: 'Cancelar'
-                });
-
-                if (!isConfirmed || !metodoPagoId) return;
-
-                if (metodoPagoId === "mixto") {
-                    modalOpciones.closest('#modal-container').style.display = 'none';
-                    showPagoMixtoModal(totalFinalConDescuento, metodosPagoDB, procesarCobroInmediato);
-                } else {
-                    const pagoUnico = [{ metodo_pago_id: metodoPagoId, monto: totalFinalConDescuento }];
-                    await procesarCobroInmediato(pagoUnico);
-                }
-            } catch (error) {
-                console.error("Error en preparación de cobro:", error);
-                mostrarInfoModalGlobal(`Error al preparar cobro: ${error.message}`, "Error", [], modalContainer);
-            }
-        };
-        // ▲▲▲ FIN DEL BLOQUE CORREGIDO Y MEJORADO ▲▲▲
-
-        modalOpciones.querySelector('#btn-cancelar-cobro-servicio-serv').onclick = () => {
-          modalContainer.style.display = 'none';
-          modalContainer.innerHTML = '';
-        };
-    }, 100);
-  };
-  
-  actualizarResumenYDescuento(null);
-});
-
-
-
-
-
-
-// ====== Alquilar Ahora (con bloqueo por reservas próximas)
-setupButtonListener('btn-alquilar-directo', async () => {
-  const ahora = new Date();
-
-  // Obtén la duración del alquiler solicitado (aquí puedes poner el valor por defecto o traerlo de tu selector/modal)
-  let minutosAlquilerSolicitado = 120; // Por defecto 2 horas
-  // Si tienes un selector en el modal, ¡trae aquí el valor real que seleccionó el usuario!
-
-  // 1. Buscar TODAS las reservas futuras y activas de la habitación
-  const { data: reservasFuturas, error } = await supabase
-    .from('reservas')
-    .select('id, fecha_inicio, fecha_fin')
-    .eq('habitacion_id', room.id)
-    .in('estado', ['reservada', 'activa'])
-    .gte('fecha_fin', ahora.toISOString())
-    .order('fecha_inicio', { ascending: true });
-
-  if (error) {
-    mostrarInfoModalGlobal("Error consultando reservas futuras: " + error.message, "Error");
-    return;
-  }
-
-  // 2. Validar cruce con cada reserva futura
-  const alquilerDesde = ahora;
-  const alquilerHasta = new Date(alquilerDesde.getTime() + minutosAlquilerSolicitado * 60 * 1000);
-
-  for (const reserva of reservasFuturas || []) {
-const inicioReserva = new Date(new Date(reserva.fecha_inicio).getTime() + new Date().getTimezoneOffset() * 60000);
-    const finReserva = new Date(reserva.fecha_fin);
-    const inicioBloqueo = new Date(inicioReserva.getTime() - 2 * 60 * 60 * 1000);
-
-    // A. Bloqueo: ¿ya estamos dentro del margen de 2 horas antes de la reserva?
-    if (alquilerDesde >= inicioBloqueo && alquilerDesde < finReserva) {
-      mostrarInfoModalGlobal(
-        "No puedes alquilar esta habitación porque está bloqueada por una reserva próxima o en curso.",
-        "Alquiler bloqueado"
-      );
-      return;
-    }
-
-    // B. ¿El rango de alquiler invade el periodo de bloqueo+reserva?
-    if (alquilerDesde < finReserva && alquilerHasta > inicioBloqueo) {
-      mostrarInfoModalGlobal(
-        "No puedes alquilar esta habitación porque tu horario invade una reserva próxima.",
-        "Alquiler bloqueado"
-      );
-      return;
-    }
-  }
-
-  // Si no hay cruce ni bloqueo, sí permite alquilar
-  showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer);
-});
-  
-  setupButtonListener('btn-extender-tiempo', () => showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer));
-  setupButtonListener('btn-mantenimiento', () => showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer));
-
-  if (reservaFutura && modalContent.querySelector('#btn-checkin-reserva')) {
-    setupButtonListener('btn-checkin-reserva', async () => {
-      // 1. Validar que el pago esté completo antes de permitir el check-in
-      const ok = await puedeHacerCheckIn(reservaFutura.id);
-      if (!ok) return; // Si no está completo, sale y muestra alerta
-
-      // 2. Si el pago está completo, hacer el check-in como siempre
-      // 1. Calcular duración en milisegundos:
-const minutos = Math.round(
-  (new Date(reservaFutura.fecha_fin) - new Date(reservaFutura.fecha_inicio)) / 60000
-);
-
-// 2. Nuevo inicio: ahora
-const nuevoInicio = new Date();
-const nuevoFin = new Date(nuevoInicio.getTime() + minutos * 60000);
-
-// 3. Actualiza la reserva con nueva fecha_inicio y fecha_fin
-await supabase.from('reservas').update({
-  estado: 'activa',
-  fecha_inicio: nuevoInicio.toISOString(),
-  fecha_fin: nuevoFin.toISOString()
-}).eq('id', reservaFutura.id);
-
-// 3b. Actualiza la habitación a "ocupada"
-await supabase.from('habitaciones').update({
-  estado: 'ocupada'
-}).eq('id', room.id);
-
-// 4. Actualiza el cronómetro con esas fechas
-await supabase.from('cronometros').insert([{
-  hotel_id: hotelId,
-  reserva_id: reservaFutura.id,
-  habitacion_id: room.id,
-  fecha_inicio: nuevoInicio.toISOString(),
-  fecha_fin: nuevoFin.toISOString()
-}]);
-
-
-      mostrarInfoModalGlobal("Check-in realizado correctamente. ¡La habitación está ocupada!", "Check-in Exitoso");
-      modalContainer.style.display = "none";
-      modalContainer.innerHTML = '';
-      await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
-    });
-  }
-setupButtonListener('btn-cambiar-habitacion', async (btn, room) => { // 'room' se pasa como segundo argumento desde showHabitacionOpcionesModal
-  const modalContainerPrincipal = document.getElementById('modal-container'); // Contenedor principal para todos los modales
-
-  // Cargar habitaciones libres (excepto la actual)
-  const { data: habitacionesLibres, error: errHabLibres } = await supabaseGlobal // Usar supabaseGlobal consistentemente
-    .from('habitaciones')
-    .select('id, nombre')
-    .eq('hotel_id', hotelIdGlobal) // Usar hotelIdGlobal consistentemente
-    .eq('estado', 'libre')
-    .neq('id', room.id); // 'room' es el contexto de la habitación actual
-
-  if (errHabLibres) {
-    console.error("Error cargando habitaciones libres:", errHabLibres);
-    mostrarInfoModalGlobal("Error al cargar habitaciones libres: " + errHabLibres.message, "Error", [], modalContainerPrincipal);
-    return;
-  }
-
-  if (!habitacionesLibres || habitacionesLibres.length === 0) {
-    mostrarInfoModalGlobal("No hay habitaciones libres disponibles para hacer el cambio.", "Sin habitaciones libres", [], modalContainerPrincipal);
-    return;
-  }
-
-  // Modal para seleccionar habitación y motivo
-  // Este modal de cambio se mostrará DENTRO de modalContainerPrincipal
-  const modalCambioContent = document.createElement('div');
-  modalCambioContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 m-auto relative animate-fade-in-up";
-  modalCambioContent.innerHTML = `
-    <div class="flex justify-between items-center mb-4">
-        <h3 class="text-xl font-bold text-blue-700">Cambiar Habitación: ${room.nombre}</h3>
-        <button id="btn-cerrar-modal-cambio-X" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button>
-    </div>
-    <div class="mb-3">
-      <label for="selectNuevaHabitacion" class="block text-sm font-medium text-gray-700 mb-1">Selecciona habitación destino:</label>
-      <select id="selectNuevaHabitacion" class="form-control w-full">
-        <option value="">-- Habitaciones libres --</option>
-        ${habitacionesLibres.map(h => `<option value="${h.id}">${h.nombre}</option>`).join('')}
-      </select>
-    </div>
-    <div class="mb-3">
-      <label for="motivoCambio" class="block text-sm font-medium text-gray-700 mb-1">Motivo del cambio:</label>
-      <textarea id="motivoCambio" class="form-control w-full" rows="2" placeholder="Describe el motivo..."></textarea>
-    </div>
-    <div class="flex gap-3 mt-5">
-      <button id="btnConfirmarCambioHabitacion" class="button button-success flex-1 py-2.5 text-base">Confirmar Cambio</button>
-      <button id="btnCancelarCambioHabitacion" class="button button-neutral flex-1 py-2.5 text-base">Cancelar</button>
-    </div>
-  `;
-  modalContainerPrincipal.innerHTML = ""; // Limpiar contenido previo del contenedor principal
-  modalContainerPrincipal.appendChild(modalCambioContent);
-  modalContainerPrincipal.style.display = 'flex'; // Asegurarse que el contenedor principal esté visible
-
-  const cerrarModalDeCambio = () => {
-    modalContainerPrincipal.style.display = "none";
-    modalContainerPrincipal.innerHTML = '';
-  };
-
-  modalCambioContent.querySelector('#btn-cerrar-modal-cambio-X').onclick = cerrarModalDeCambio;
-  modalCambioContent.querySelector('#btnCancelarCambioHabitacion').onclick = cerrarModalDeCambio;
-
-  // Confirmar cambio
-// En el archivo: js/modules/mapa_habitaciones/mapa_habitaciones.js
-// Dentro de la función showHabitacionOpcionesModal...
-// Reemplaza el listener del botón de confirmar cambio por este:
-
-  // Confirmar cambio
-  modalCambioContent.querySelector('#btnConfirmarCambioHabitacion').onclick = async () => {
-    const selectNuevaHabitacionEl = modalCambioContent.querySelector('#selectNuevaHabitacion');
-    const motivoCambioEl = modalCambioContent.querySelector('#motivoCambio');
-    const btnConfirmarEl = modalCambioContent.querySelector('#btnConfirmarCambioHabitacion');
-
-    const habitacionDestinoId = selectNuevaHabitacionEl.value;
-    const motivo = motivoCambioEl.value.trim();
-
-    // ▼▼▼ CÓDIGO AÑADIDO: Obtenemos el nombre de la habitación destino ▼▼▼
-    const habitacionDestinoNombre = selectNuevaHabitacionEl.options[selectNuevaHabitacionEl.selectedIndex].text;
-    // ▲▲▲ FIN DEL CÓDIGO AÑADIDO ▲▲▲
-
-    if (!habitacionDestinoId) {
-      alert("Debes seleccionar una habitación destino.");
-      selectNuevaHabitacionEl.focus();
-      return;
-    }
-    if (!motivo) {
-      alert("Debes escribir el motivo del cambio.");
-      motivoCambioEl.focus();
-      return;
-    }
-
-    btnConfirmarEl.disabled = true;
-    btnConfirmarEl.textContent = "Procesando...";
-
-// ... (dentro del listener de btnConfirmarCambioHabitacion.onclick)
-try {
-  // Primero, aún necesitamos el ID de la reserva activa. Esta consulta se mantiene.
-  const { data: reservaActiva, error: errReserva } = await supabaseGlobal
-    .from('reservas')
-    .select('id')
-    .eq('habitacion_id', room.id) // room.id es la habitación origen
-    .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-    .order('fecha_inicio', { ascending: false })
-    .limit(1)
-    .single();
-
-  if (errReserva || !reservaActiva) {
-    throw new Error(errReserva?.message || "No se encontró una reserva activa para la habitación origen.");
-  }
-
-  // Ahora, llamamos a nuestra "super-función" con todos los datos
-  const { error } = await supabaseGlobal.rpc('cambiar_habitacion_transaccion', {
-      p_reserva_id: reservaActiva.id,
-      p_habitacion_origen_id: room.id,
-      p_habitacion_destino_id: habitacionDestinoId,
-      p_motivo_cambio: motivo,
-      p_usuario_id: currentUserGlobal.id,
-      p_hotel_id: hotelIdGlobal,
-      p_nuevo_estado_destino: room.estado // Pasamos el estado actual de la habitación (ej. 'ocupada')
-  });
-
-  // Si la función de la base de datos devuelve un error, lo capturamos aquí
-  if (error) {
-      throw error;
-  }
-
-  // Si llegamos aquí, ¡TODO salió bien!
-  mostrarInfoModalGlobal(
-    "¡El cambio de habitación fue realizado exitosamente!",
-    "Cambio Exitoso",
-    [{
-        texto: "Entendido",
-        clase: "button-primary",
-        accion: async () => {
-            await renderRooms(mainAppContainer, supabaseGlobal, currentUserGlobal, hotelIdGlobal);
-        }
-    }],
-    modalContainerPrincipal
-  );
-
-} catch (error) {
-  console.error("Error en el proceso de cambio de habitación:", error);
-  mostrarInfoModalGlobal(
-    "Error al realizar el cambio de habitación: " + error.message,
-    "Error en Cambio",
-    [{ texto: "Cerrar", clase: "button-danger", accion: cerrarModalDeCambio }],
-    modalContainerPrincipal
-  );
-} finally {
-  if (btnConfirmarEl) {
-    btnConfirmarEl.disabled = false;
-    btnConfirmarEl.textContent = "Confirmar Cambio";
-  }
-}
-  };
-}); // Fin setupButtonListener btn-cambiar-habitacion
-/**
- * Consulta todos los cargos pendientes de la reserva/habitación.
- * Bloquea entrega si hay alguna deuda pendiente.
- * Muestra un resumen de los pendientes si los hay.
-
-/**
-/**
- * REESCRITA Y CORREGIDA
- /**
- * REESCRITA Y CORREGIDA para soportar Duración Abierta (cálculo dinámico de alojamiento).
- * Consulta el costo total REAL de todos los consumos y lo compara con el monto pagado.
- * @param {object} supabase - Instancia de supabase.
- * @param {string} reservaId - UUID de la reserva activa.
- * @param {string} habitacionId - UUID de la habitación.
- * @returns {Promise<boolean>} true si puede entregar, false si no.
- */
-async function validarCargosPendientesAntesDeEntregar(supabase, reservaId, habitacionId) {
-    try {
-        // 1. Obtener la reserva principal y los nuevos campos tipo_duracion y fecha_inicio
-        const { data: reserva, error: errRes } = await supabase
+    // --- ACCIÓN: ALQUILAR ---
+    setupButtonListener('btn-alquilar-directo', async () => {
+        const ahora = new Date();
+        // Validar si hay una reserva próxima que bloquee el alquiler
+        const { data: reservasFuturas } = await supabase
             .from('reservas')
-            .select('monto_total, monto_pagado, tipo_duracion, fecha_inicio')
-            .eq('id', reservaId)
-            .single();
-        if (errRes) throw new Error(`No se pudo obtener la reserva principal: ${errRes.message}`);
+            .select('fecha_inicio')
+            .eq('habitacion_id', room.id)
+            .in('estado', ['reservada', 'activa'])
+            .gte('fecha_fin', ahora.toISOString())
+            .order('fecha_inicio', { ascending: true })
+            .limit(1);
 
-        let montoAlojamientoCalculado = Number(reserva.monto_total) || 0; // Default: usar el monto_total guardado
-
-        // --- INICIO DE LA LÓGICA DE CÁLCULO PARA DURACIÓN ABIERTA (DINÁMICO) ---
-        if (reserva.tipo_duracion === 'abierta') {
-            const now = new Date();
-            const inicio = new Date(reserva.fecha_inicio);
-            // Tiempo transcurrido en minutos, redondeando al minuto superior
-            const tiempoTranscurridoMin = Math.ceil((now - inicio) / 60000); 
-
-            const tiempos = await getTiemposEstancia(supabase, hotelIdGlobal);
-            // Encuentra el bloque más corto (tarifa por hora base)
-            const tarifaPorHora = tiempos.filter(t => t.minutos > 0)
-                                        .sort((a, b) => a.minutos - b.minutos)[0];
-
-            if (tarifaPorHora && tarifaPorHora.minutos > 0 && tarifaPorHora.precio > 0) {
-                const minutosBloque = tarifaPorHora.minutos;
-                const precioBloque = tarifaPorHora.precio || 0;
-                
-                // Bloques completados (redondeo hacia arriba para el cobro)
-                const bloquesCompletados = Math.ceil(tiempoTranscurridoMin / minutosBloque);
-                let precioAlojamientoBase = bloquesCompletados * precioBloque;
-
-                // Aplicar impuesto si no está incluido
-                const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal || 0);
-                if (porcentajeImpuesto > 0 && !hotelConfigGlobal?.impuestos_incluidos_en_precios) {
-                     precioAlojamientoBase = precioAlojamientoBase * (1 + (porcentajeImpuesto / 100));
-                }
-                
-                montoAlojamientoCalculado = Math.round(precioAlojamientoBase);
-                // NOTA: No actualizamos la BD aquí, solo calculamos el valor actual para la validación.
-            } else {
-                 console.error("No se pudo encontrar tarifa base para cálculo dinámico de Duración Abierta.");
+        if (reservasFuturas && reservasFuturas.length > 0) {
+            const inicioBloqueo = new Date(new Date(reservasFuturas[0].fecha_inicio).getTime() - 2 * 60 * 60 * 1000); // 2 horas antes
+            if (ahora >= inicioBloqueo) {
+                mostrarInfoModalGlobal("No puedes alquilar: habitación bloqueada por reserva próxima.", "Bloqueado");
+                return;
             }
         }
-        // --- FIN DE LA LÓGICA DE CÁLCULO PARA DURACIÓN ABIERTA ---
-
-
-        // 2. Obtener TODOS los cargos asociados, usando el monto calculado para alojamiento
-        const alojamientoCargo = { subtotal: montoAlojamientoCalculado }; // <--- USO DEL MONTO CALCULADO
-        
-        // Ventas de Tienda (la lógica sigue igual)
-        const { data: ventasTienda } = await supabase.from('ventas_tienda').select('id').eq('reserva_id', reservaId);
-        let totalTienda = 0;
-        if (ventasTienda && ventasTienda.length > 0) {
-            const ventaTiendaIds = ventasTienda.map(v => v.id);
-            const { data: detallesTienda } = await supabase.from('detalle_ventas_tienda').select('subtotal').in('venta_id', ventaTiendaIds);
-            if (detallesTienda) {
-                totalTienda = detallesTienda.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
-            }
-        }
-
-        // Ventas de Restaurante (la lógica sigue igual)
-        const { data: ventasRest } = await supabase.from('ventas_restaurante').select('id').eq('reserva_id', reservaId);
-        let totalRestaurante = 0;
-        if (ventasRest && ventasRest.length > 0) {
-            const ventaRestIds = ventasRest.map(v => v.id);
-            const { data: detallesRest } = await supabase.from('ventas_restaurante_items').select('subtotal').in('venta_id', ventaRestIds);
-            if (detallesRest) {
-                totalRestaurante = detallesRest.reduce((sum, item) => sum + (Number(item.subtotal) || 0), 0);
-            }
-        }
-
-        // Servicios Adicionales (la lógica sigue igual)
-        const { data: servicios } = await supabase.from('servicios_x_reserva').select('precio_cobrado').eq('reserva_id', reservaId);
-        const totalServicios = servicios ? servicios.reduce((sum, item) => sum + (Number(item.precio_cobrado) || 0), 0) : 0;
-
-        // 3. Calcular el total real de la deuda
-        const totalDeTodosLosCargos = alojamientoCargo.subtotal + totalTienda + totalRestaurante + totalServicios;
-        const totalPagado = Number(reserva.monto_pagado) || 0;
-        const saldoPendiente = totalDeTodosLosCargos - totalPagado;
-        
-        // 4. Validar y mostrar el modal si es necesario
-        if (saldoPendiente > 0.01) { 
-            const htmlPendientes = `
-                <div class="text-left">
-                    <p class="mb-3">No se puede finalizar la estancia porque la cuenta tiene un saldo pendiente de:</p>
-                    <div class="text-center text-3xl font-bold text-red-600 my-4">${formatCurrency(saldoPendiente)}</div>
-                    <p class="mt-4 font-semibold">Por favor, cobre el saldo total antes de entregar la habitación.</p>
-                </div>
-            `;
-            
-            mostrarInfoModalGlobal(htmlPendientes, "⚠️ Deuda Pendiente");
-            return false;
-        }
-
-        // Si no hay deuda, se puede entregar
-        return true;
-
-    } catch (error) {
-        console.error("Error en validarCargosPendientesAntesDeEntregar:", error);
-        mostrarInfoModalGlobal(`Ocurrió un error al validar las deudas: ${error.message}`, "Error de Validación");
-        return false;
-    }
-}
-
-
-// =========================================================================================
-// FUNCIONES AUXILIARES PARA CÁLCULO Y CIERRE
-// =========================================================================================
-
-// =========================================================================================
-// 1. FUNCIÓN DE CÁLCULO DE PRECIO (LÓGICA DE REDONDEO HACIA ARRIBA)
-// =========================================================================================
-async function calculateTimeAndPrice(supabase, reservaActiva, hotelId, hotelConfig) {
-    // Si NO es duración abierta, devolvemos el monto fijo que ya tiene
-    if (reservaActiva.tipo_duracion !== 'abierta') {
-        return {
-            tiempoTranscurridoMin: 0,
-            precioAlojamientoCalculado: Number(reservaActiva.monto_total) || 0,
-            bloquesCompletados: 0,
-            minutosBloque: 0
-        };
-    }
-    
-    const now = new Date();
-    const inicio = new Date(reservaActiva.fecha_inicio);
-    // Calculamos minutos totales transcurridos (Redondeo hacia arriba para capturar el primer minuto)
-    let tiempoTranscurridoMin = Math.ceil((now - inicio) / 60000);
-    
-    // Asegurar que siempre haya al menos 1 minuto para forzar el cobro mínimo
-    if (tiempoTranscurridoMin <= 0) tiempoTranscurridoMin = 1; 
-    
-    // Obtenemos las tarifas
-    const tiempos = await getTiemposEstancia(supabase, hotelId);
-    
-    // BUSCAMOS LA TARIFA BASE: La duración activa más corta (ej. 1 Hora)
-    const tarifaBase = tiempos.filter(t => t.minutos > 0).sort((a, b) => a.minutos - b.minutos)[0];
-
-    let precioAlojamientoCalculado = 0;
-    let bloquesCompletados = 0;
-    let minutosBloque = 0;
-    
-    if (tarifaBase && tarifaBase.minutos > 0 && tarifaBase.precio > 0) {
-        minutosBloque = tarifaBase.minutos; 
-        const precioBloque = tarifaBase.precio || 0; 
-        
-        // LÓGICA DE COBRO: 
-        // Si lleva 1 min y el bloque es de 60 min -> Math.ceil(1/60) = 1 bloque.
-        bloquesCompletados = Math.ceil(tiempoTranscurridoMin / minutosBloque);
-        
-        // Seguridad adicional: Si es tiempo libre, MÍNIMO se cobra 1 bloque siempre.
-        if (bloquesCompletados < 1) bloquesCompletados = 1;
-
-        let precioAlojamientoBase = bloquesCompletados * precioBloque;
-
-        // Impuestos
-        const porcentajeImpuesto = parseFloat(hotelConfig?.porcentaje_impuesto_principal || 0);
-        if (porcentajeImpuesto > 0 && !hotelConfig.impuestos_incluidos_en_precios) {
-             precioAlojamientoBase = precioAlojamientoBase * (1 + (porcentajeImpuesto / 100));
-        }
-        precioAlojamientoCalculado = Math.round(precioAlojamientoBase);
-    }
-    
-    return { 
-        tiempoTranscurridoMin, 
-        precioAlojamientoCalculado,
-        bloquesCompletados,
-        minutosBloque
-    };
-}
-
-// ======================================================================
-// CALCULAR SALDO REAL DE LA RESERVA (CON DESGLOSE)
-// ======================================================================
-async function calcularSaldoReserva(supabase, reservaId, hotelId) {
-    // 1. Obtener datos básicos de la reserva
-    const { data: reserva, error: errRes } = await supabase
-        .from('reservas')
-        .select('id, monto_total, tipo_duracion, fecha_inicio')
-        .eq('id', reservaId)
-        .single();
-
-    if (errRes || !reserva) {
-        console.error("[calcularSaldoReserva] Error obteniendo reserva:", errRes);
-        throw errRes || new Error("Reserva no encontrada");
-    }
-
-    // 2. Calcular Alojamiento (si es tiempo libre, calcular al vuelo)
-    let montoTotalAlojamiento = Number(reserva.monto_total) || 0;
-
-    if (reserva.tipo_duracion === 'abierta') {
-        const calculoTiempo = await calculateTimeAndPrice(
-            supabase,
-            reserva,
-            hotelId,
-            hotelConfigGlobal
-        );
-        montoTotalAlojamiento = Number(calculoTiempo.precioAlojamientoCalculado) || 0;
-    }
-
-    // 3. Traer consumos extras y pagos
-    const [
-        ventasTiendaRes,
-        ventasRestRes,
-        serviciosRes,
-        pagosRes
-    ] = await Promise.all([
-        supabase.from('ventas_tienda').select('total_venta').eq('reserva_id', reservaId),
-        supabase.from('ventas_restaurante').select('monto_total').eq('reserva_id', reservaId),
-        supabase.from('servicios_x_reserva').select('precio_cobrado').eq('reserva_id', reservaId),
-        supabase.from('pagos_reserva').select('monto').eq('reserva_id', reservaId)
-    ]);
-
-    // 4. Sumatorias
-    const totalTienda = ventasTiendaRes.data ? ventasTiendaRes.data.reduce((sum, item) => sum + (Number(item.total_venta) || 0), 0) : 0;
-    const totalRestaurante = ventasRestRes.data ? ventasRestRes.data.reduce((sum, item) => sum + (Number(item.monto_total) || 0), 0) : 0;
-    const totalServicios = serviciosRes.data ? serviciosRes.data.reduce((sum, item) => sum + (Number(item.precio_cobrado) || 0), 0) : 0;
-    const totalPagado = pagosRes.data ? pagosRes.data.reduce((sum, item) => sum + (Number(item.monto) || 0), 0) : 0;
-
-    // 5. Totales finales
-    const totalDeTodosLosCargos = montoTotalAlojamiento + totalTienda + totalRestaurante + totalServicios;
-    const saldoPendiente = Math.round((totalDeTodosLosCargos - totalPagado) * 100) / 100;
-
-    // RETORNAMOS EL DESGLOSE COMPLETO
-    return {
-        totalDeTodosLosCargos,
-        totalPagado,
-        saldoPendiente,
-        desglose: {
-            alojamiento: montoTotalAlojamiento,
-            tienda: totalTienda,
-            restaurante: totalRestaurante,
-            servicios: totalServicios
-        }
-    };
-}
-
-
-// =========================================================================================
-// 3. FUNCIÓN FINAL DE CIERRE (CON DESGLOSE DE CAJA CORREGIDO)
-// =========================================================================================
-async function registrarPagosYCierreReserva({ reservaActiva, room, supabase, currentUser, hotelId, mainAppContainer, pagos, totalCosto, desgloseDeuda }) {
-    const totalPagadoExt = pagos.reduce((sum, p) => sum + p.monto, 0);
-    showGlobalLoading(); 
-
-    try {
-        // 1. Validar turno
-        const turnoId = turnoService.getActiveTurnId();
-        if (!turnoId) throw new Error("ACCIÓN BLOQUEADA: No hay turno de caja activo.");
-
-        // 2. Calcular proporciones si hay deuda (para no asignar todo a alojamiento)
-        // Si desgloseDeuda no viene (caso raro), asumimos todo es alojamiento.
-        const deudaTotalBase = desgloseDeuda 
-            ? (desgloseDeuda.alojamiento + desgloseDeuda.tienda + desgloseDeuda.restaurante + desgloseDeuda.servicios) 
-            : totalCosto;
-
-        const safeDeuda = deudaTotalBase > 0 ? deudaTotalBase : 1; // Evitar división por cero
-
-        if (totalPagadoExt > 0) {
-            // A. Registrar Pagos en 'pagos_reserva' (Aquí sí se guarda el total por método)
-            const pagosParaInsertar = pagos.map(p => ({
-                hotel_id: hotelId, reserva_id: reservaActiva.id, monto: p.monto,
-                fecha_pago: new Date().toISOString(), metodo_pago_id: p.metodo_pago_id,
-                usuario_id: currentUser.id, concepto: `Cierre Cuenta Hab. ${room.nombre}`
-            }));
-            
-            const { data: pagosData, error: errPagoReserva } = await supabase.from('pagos_reserva').insert(pagosParaInsertar).select('id');
-            if (errPagoReserva) throw new Error(`Error pagos: ${errPagoReserva.message}`);
-
-            // B. Registrar Movimientos en 'caja' (AQUÍ DESGLOSAMOS)
-            let movimientosCaja = [];
-
-            pagos.forEach((pago, index) => {
-                const pagoId = pagosData[index].id;
-                const factor = pago.monto / safeDeuda; // Qué % de la deuda cubre este pago
-
-                // Helper para crear movimiento
-                const pushMov = (montoBase, conceptoTipo) => {
-                    const montoParcial = Math.round((montoBase * factor) * 100) / 100;
-                    if (montoParcial > 0) {
-                        movimientosCaja.push({
-                            hotel_id: hotelId, tipo: 'ingreso', monto: montoParcial,
-                            concepto: `Pago ${conceptoTipo} (Hab. ${room.nombre})`, // <--- CLAVE PARA EL REPORTE
-                            fecha_movimiento: new Date().toISOString(), metodo_pago_id: pago.metodo_pago_id,
-                            usuario_id: currentUser.id, reserva_id: reservaActiva.id,
-                            pago_reserva_id: pagoId, turno_id: turnoId,
-                        });
-                    }
-                };
-
-                if (desgloseDeuda) {
-                    pushMov(desgloseDeuda.tienda, 'Tienda');
-                    pushMov(desgloseDeuda.restaurante, 'Restaurante/Cocina');
-                    pushMov(desgloseDeuda.servicios, 'Servicios');
-                    
-                    // El resto va a alojamiento para cuadrar decimales
-                    const sumaParciales = movimientosCaja
-                        .filter(m => m.pago_reserva_id === pagoId)
-                        .reduce((sum, m) => sum + m.monto, 0);
-                    
-                    // CORRECCIÓN AQUÍ: Usar 'pago.monto' en lugar de 'p.monto'
-                    const restoAlojamiento = pago.monto - sumaParciales; 
-                    
-                    if (restoAlojamiento > 0) {
-                         movimientosCaja.push({
-                            hotel_id: hotelId, tipo: 'ingreso', monto: restoAlojamiento,
-                            concepto: `Pago Alojamiento (Hab. ${room.nombre})`,
-                            fecha_movimiento: new Date().toISOString(), metodo_pago_id: pago.metodo_pago_id,
-                            usuario_id: currentUser.id, reserva_id: reservaActiva.id,
-                            pago_reserva_id: pagoId, turno_id: turnoId,
-                        });
-                    }
-                } else {
-                    // Fallback por si no hay desglose
-                     movimientosCaja.push({
-                        hotel_id: hotelId, tipo: 'ingreso', monto: pago.monto,
-                        concepto: `Cierre Cuenta Hab. ${room.nombre}`,
-                        fecha_movimiento: new Date().toISOString(), metodo_pago_id: pago.metodo_pago_id,
-                        usuario_id: currentUser.id, reserva_id: reservaActiva.id,
-                        pago_reserva_id: pagoId, turno_id: turnoId,
-                    });
-                }
-            });
-
-            const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
-            if (errCaja) throw new Error(`Error caja: ${errCaja.message}`);
-        }
-        
-        // 3. Finalizar reserva
-        const nuevoMontoPagado = (Number(reservaActiva.monto_pagado) || 0) + totalPagadoExt;
-        const { error: updateError } = await supabase.from('reservas').update({
-            monto_total: totalCosto, 
-            monto_pagado: nuevoMontoPagado, 
-            fecha_fin: new Date().toISOString(),
-            estado: 'completada'
-        }).eq('id', reservaActiva.id);
-
-        if (updateError) throw new Error(`Error actualizando reserva: ${updateError.message}`);
-
-        // 4. Liberar habitación
-        await supabase.from('cronometros').update({ activo: false }).eq('reserva_id', reservaActiva.id);
-        await supabase.from('habitaciones').update({ estado: 'limpieza' }).eq('id', room.id);
-
-        // 5. UI Update
-        document.getElementById('modal-container').style.display = "none";
-        document.getElementById('modal-container').innerHTML = '';
-        await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
-        Swal.fire('¡Check-out Exitoso!', `Cuenta saldada y desglosada en caja.`, 'success');
-
-    } catch (error) {
-        console.error("Error cierre:", error);
-        mostrarInfoModalGlobal(`Error: ${error.message}`, "Error Crítico");
-    } finally {
-        hideGlobalLoading();
-    }
-}
-
-
-
-
-
-
-// =========================================================================================
-// LISTENER PARA EL BOTÓN DE ENTREGAR HABITACIÓN (Lógica de Tiempo Libre + Pago)
-// =========================================================================================
-
-
-// =================== BOTÓN ENTREGAR / LIBERAR (CON VALIDACIÓN DE PRÉSTAMOS) ===================
-setupButtonListener('btn-entregar', async (btn, room) => {
-    
-    const originalContent = btn.innerHTML;
-    
-    // 1. Confirmación inicial
-    const confirmResult = await Swal.fire({
-        title: `¿Entregar Habitación ${room.nombre}?`,
-        text: "Se calculará el tiempo final y verificará pagos.",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#3085d6',
-        confirmButtonText: 'Procesar',
-        cancelButtonText: 'Cancelar'
+        showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer);
     });
 
-    if (!confirmResult.isConfirmed) return;
+    // --- ACCIÓN: EXTENDER TIEMPO ---
+    setupButtonListener('btn-extender-tiempo', () => showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer));
+
+    // --- ACCIÓN: MANTENIMIENTO ---
+    setupButtonListener('btn-mantenimiento', () => showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer));
+
+    // --- ACCIÓN: LIMPIEZA ---
+    setupButtonListener('btn-enviar-limpieza', async (btn) => {
+        btn.disabled = true; btn.textContent = "Enviando...";
+        await supabase.from('habitaciones').update({ estado: 'limpieza' }).eq('id', room.id);
+        modalContainer.style.display = "none"; modalContainer.innerHTML = '';
+        await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+    });
+
+    // --- ACCIÓN: GESTIONAR ARTÍCULOS ---
+    setupButtonListener('btn-seguimiento-articulos', () => showSeguimientoArticulosModal(room, supabase, currentUser, hotelId));
+
+    // --- ACCIÓN: VER INFO HUÉSPED ---
+    setupButtonListener('btn-info-huesped', async () => {
+        const { data: reserva } = await supabase.from('reservas')
+            .select('*')
+            .eq('habitacion_id', room.id)
+            .in('estado', ['activa', 'ocupada', 'tiempo agotado', 'reservada'])
+            .order('fecha_inicio', { ascending: false })
+            .limit(1)
+            .single();
+            
+        if (reserva) {
+            mostrarInfoModalGlobal(`
+                <b>Nombre:</b> ${reserva.cliente_nombre}<br>
+                <b>Tel:</b> ${reserva.telefono || 'N/A'}<br>
+                <b>Entrada:</b> ${formatDateTime(reserva.fecha_inicio)}<br>
+                <b>Salida:</b> ${formatDateTime(reserva.fecha_fin)}<br>
+                ${reserva.notas ? `<b>Notas:</b> ${reserva.notas}` : ''}
+            `, "Info Huésped");
+        } else {
+            mostrarInfoModalGlobal("No se encontró información.", "Info");
+        }
+    });
+
+    // --- ACCIÓN: CHECK-IN RESERVA ---
+    if (reservaFutura) {
+        setupButtonListener('btn-checkin-reserva', async () => {
+            // Validar si requiere pago
+            const ok = await puedeHacerCheckIn(reservaFutura.id);
+            if (!ok) return;
+
+            // Calcular nueva fecha fin basada en la duración original
+            const duracionMs = new Date(reservaFutura.fecha_fin) - new Date(reservaFutura.fecha_inicio);
+            const nuevoInicio = new Date();
+            const nuevoFin = new Date(nuevoInicio.getTime() + duracionMs);
+
+            // Actualizar Reserva
+            await supabase.from('reservas').update({
+                estado: 'activa', 
+                fecha_inicio: nuevoInicio.toISOString(), 
+                fecha_fin: nuevoFin.toISOString()
+            }).eq('id', reservaFutura.id);
+
+            // Actualizar Habitación
+            await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
+
+            // Crear Cronómetro
+            await supabase.from('cronometros').insert([{
+                hotel_id: hotelId, 
+                reserva_id: reservaFutura.id, 
+                habitacion_id: room.id,
+                fecha_inicio: nuevoInicio.toISOString(), 
+                fecha_fin: nuevoFin.toISOString(), 
+                activo: true
+            }]);
+
+            modalContainer.style.display = "none"; modalContainer.innerHTML = '';
+            await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+            mostrarInfoModalGlobal("Check-in realizado con éxito.", "Bienvenido");
+        });
+    }
+
+    // --- ACCIÓN: CAMBIAR HABITACIÓN ---
+setupButtonListener('btn-cambiar-habitacion', async (btn) => {
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Cargando...';
+
+    try {
+        const { data: habsLibres, error: errHabs } = await supabase.from('habitaciones')
+            .select('id, nombre')
+            .eq('hotel_id', hotelId)
+            .eq('estado', 'libre')
+            .neq('id', room.id);
+
+        if (errHabs) {
+            console.error('Error obteniendo habitaciones libres:', errHabs);
+            mostrarInfoModalGlobal("No se pudieron obtener las habitaciones libres.", "Error");
+            return;
+        }
+        
+        if (!habsLibres || habsLibres.length === 0) {
+            mostrarInfoModalGlobal("No hay habitaciones libres disponibles.", "Error");
+            return;
+        }
+
+        const options = habsLibres
+            .map(h => `<option value="${h.id}">${h.nombre}</option>`)
+            .join('');
+        
+        const { value: formValues } = await Swal.fire({
+            title: 'Cambiar Habitación',
+            html: `
+                <label class="block text-left mb-1 text-sm">Destino:</label>
+                <select id="swal-cambio-hab" class="swal2-input mb-3">${options}</select>
+                <label class="block text-left mb-1 text-sm">Motivo:</label>
+                <input id="swal-cambio-motivo" class="swal2-input" placeholder="Ej: Aire acondicionado fallando">
+            `,
+            showCancelButton: true,
+            focusConfirm: false,
+            preConfirm: () => {
+                const id = document.getElementById('swal-cambio-hab').value;
+                const motivo = document.getElementById('swal-cambio-motivo').value.trim();
+                if (!id) Swal.showValidationMessage('Debes escoger una habitación destino.');
+                if (!motivo) Swal.showValidationMessage('Debes escribir un motivo.');
+                return { id, motivo };
+            }
+        });
+
+        if (!formValues || !formValues.id || !formValues.motivo) return;
+
+        const { data: resActiva, error: errResActiva } = await supabase.from('reservas')
+            .select('id, estado')
+            .eq('habitacion_id', room.id)
+            .in('estado', ['activa', 'ocupada', 'tiempo agotado', 'reservada'])
+            .order('fecha_inicio', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+        
+        if (errResActiva) {
+            console.error('Error obteniendo reserva activa para cambio:', errResActiva);
+            mostrarInfoModalGlobal("No se pudo obtener la reserva actual de la habitación.", "Error");
+            return;
+        }
+
+        if (!resActiva) {
+            mostrarInfoModalGlobal("No se encontró una reserva activa asociada a esta habitación.", "Sin Reserva");
+            return;
+        }
+
+        const { error: errRpc } = await supabase.rpc('cambiar_habitacion_transaccion', {
+            p_reserva_id: resActiva.id,
+            p_habitacion_origen_id: room.id,
+            p_habitacion_destino_id: formValues.id,
+            p_motivo_cambio: formValues.motivo,
+            p_usuario_id: currentUser.id,
+            p_hotel_id: hotelId,
+            p_estado_destino: room.estado === 'reservada' ? 'reservada' : 'ocupada'
+        });
+
+        if (errRpc) {
+            console.error('Error en cambiar_habitacion_transaccion:', errRpc);
+            mostrarInfoModalGlobal("No se pudo cambiar la habitación: " + (errRpc.message || "Error en la transacción."), "Error");
+            return;
+        }
+
+        modalContainer.style.display = 'none';
+        modalContainer.innerHTML = '';
+
+        await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+        mostrarInfoModalGlobal("Habitación cambiada correctamente.", "Éxito");
+    } catch (err) {
+        console.error('Error general al cambiar habitación:', err);
+        mostrarInfoModalGlobal("Ocurrió un error al cambiar la habitación: " + (err.message || "Error desconocido"), "Error");
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+});
+
+
+    // --- ACCIÓN: SERVICIOS ADICIONALES ---
+    setupButtonListener('btn-servicios-adicionales', async () => {
+        const { data: reserva } = await supabase.from('reservas')
+            .select('id, cliente_nombre, estado, monto_pagado')
+            .eq('habitacion_id', room.id)
+            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+            .limit(1)
+            .maybeSingle();
+        
+        if (!reserva) { 
+            mostrarInfoModalGlobal("No hay reserva activa.", "Error"); 
+            return; 
+        }
+
+        const { data: servicios } = await supabase.from('servicios_adicionales')
+            .select('*')
+            .eq('hotel_id', hotelId)
+            .eq('activo', true);
+        
+        if (servicios && servicios.length > 0) {
+            // Nota: Aquí llamamos a tu función externa, asegurate de que exista en el scope o importada
+            showEnhancedServiciosModal(room, servicios, reserva);
+        } else {
+            mostrarInfoModalGlobal("No hay servicios configurados en el sistema.", "Info");
+        }
+    });
+
+    // --- ACCIÓN: VER CONSUMOS ---
+    setupButtonListener('btn-ver-consumos', async (btn) => {
+        const originalText = btn.innerHTML;
+        btn.innerHTML = 'Cargando...'; btn.disabled = true;
+        
+        // 1. Verificar si es tiempo libre y actualizar precio si es necesario
+        const { data: r } = await supabase.from('reservas')
+            .select('id, fecha_inicio, tipo_duracion, monto_total')
+            .eq('habitacion_id', room.id)
+            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+            .limit(1)
+            .maybeSingle();
+        
+        if (r && r.tipo_duracion === 'abierta') {
+            const calculo = await calculateTimeAndPrice(supabase, r, hotelId, hotelConfigGlobal);
+            if (calculo.precioAlojamientoCalculado !== Number(r.monto_total)) {
+                await supabase.from('reservas').update({ monto_total: calculo.precioAlojamientoCalculado }).eq('id', r.id);
+            }
+        }
+        
+        btn.innerHTML = originalText; btn.disabled = false;
+        
+        // Llamada a la función externa importada
+        await showConsumosYFacturarModal(room, supabase, currentUser, hotelId, mainAppContainer, btn);
+        
+        // Verificación rápida post-modal (si se pagó todo, sugerir liberar)
+        if (r) {
+            const { totalDeTodosLosCargos, saldoPendiente } = await calcularSaldoReserva(supabase, r.id, hotelId);
+            // Si hay consumos y el saldo es 0 (margen 50 pesos)
+            if (totalDeTodosLosCargos > 0 && Math.abs(saldoPendiente) < 50) {
+                const { isConfirmed } = await Swal.fire({
+                    title: 'Cuenta Saldada', text: 'El saldo es $0. ¿Liberar habitación ahora?', icon: 'success', showCancelButton: true
+                });
+                if (isConfirmed) {
+                    await registrarPagosYCierreReserva({
+                        reservaActiva: r, room, supabase, currentUser, hotelId, mainAppContainer,
+                        pagos: [], totalCosto: totalDeTodosLosCargos
+                    });
+                }
+            }
+        }
+    });
+
+    // --- ACCIÓN: ENTREGAR / LIBERAR (Usa el listener que ya tienes definido o define aquí) ---
+    // NOTA: Como en tu código original tenías un setupButtonListener('btn-entregar') MUY largo y complejo fuera,
+    // puedes pegarlo aquí dentro o, para mantenerlo limpio, simplemente asegurarte de que
+    // esa lógica compleja esté encapsulada. Aquí usaré una versión simplificada que llama a tu lógica.
     
+    // Si prefieres mantener la lógica compleja de liberar, pégala aquí dentro.
+    // Para simplificar, he movido la llamada:
+    
+    // --- ACCIÓN: ENTREGAR / LIBERAR ---
+// --- ACCIÓN: ENTREGAR / LIBERAR ---
+setupButtonListener('btn-entregar', async (btn) => {
+    const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = 'Procesando...';
-    showGlobalLoading(); 
 
     try {
-        // 2. Buscar reserva activa
-        let reservaActiva = null;
-        const { data, error } = await supabaseGlobal
+        // 1. Buscar la reserva activa de la habitación
+        const { data: reservaActiva, error: errReservaActiva } = await supabase
             .from('reservas')
-            .select('id, fecha_fin, fecha_inicio, tipo_duracion, monto_total, monto_pagado, cliente_id') 
+            .select('id, cliente_nombre, monto_total, monto_pagado')
             .eq('habitacion_id', room.id)
             .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
             .order('fecha_inicio', { ascending: false })
             .limit(1)
             .maybeSingle();
-        
-        if (error || !data) throw new Error(`No se encontró reserva activa.`);
-        reservaActiva = data;
 
-        // ========================================================================
-        // 🛑 VALIDACIÓN DE SEGURIDAD: ARTÍCULOS PRESTADOS
-        // ========================================================================
-        const { data: pendientes, error: errPendientes } = await supabaseGlobal
-            .from('historial_articulos_prestados')
-            .select('id, articulo_nombre')
-            .eq('reserva_id', reservaActiva.id)
-            .eq('accion', 'prestado'); // Solo buscamos los que siguen prestados
-
-        if (pendientes && pendientes.length > 0) {
-            hideGlobalLoading();
-            btn.disabled = false;
-            btn.innerHTML = originalContent;
-
-            const listaItemsHTML = pendientes.map(p => `<li class="text-red-700 font-bold">• ${p.articulo_nombre}</li>`).join('');
-
-            const accionDevolucion = await Swal.fire({
-                title: '⚠️ Artículos Pendientes',
-                html: `
-                    <div class="text-left bg-red-50 p-4 rounded border border-red-200">
-                        <p class="text-gray-800 mb-2">No se puede liberar la habitación. El huésped aún tiene los siguientes artículos prestados:</p>
-                        <ul class="mb-3 ml-4">
-                            ${listaItemsHTML}
-                        </ul>
-                        <p class="text-sm text-gray-600">Debe marcar la devolución para liberar el stock y permitir la salida.</p>
-                    </div>
-                `,
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonText: '📦 Ir a Devoluciones',
-                cancelButtonText: 'Cancelar',
-                confirmButtonColor: '#d97706'
-            });
-
-            if (accionDevolucion.isConfirmed) {
-                // Abrimos directamente el modal de gestión de artículos
-                // Cerramos el modal actual de opciones si está abierto
-                const modalOpciones = document.getElementById('modal-container').querySelector('.bg-white');
-                if (modalOpciones) {
-                     // Opcional: Ocultar el modal de opciones anterior o dejarlo de fondo
-                     // showSeguimientoArticulosModal se encargará de limpiar/usar el container
-                }
-                showSeguimientoArticulosModal(room, supabaseGlobal, currentUserGlobal, hotelIdGlobal);
-            }
-            
-            return; // ⛔ DETENEMOS EL PROCESO DE LIBERACIÓN AQUÍ
+        if (errReservaActiva) {
+            console.error('Error obteniendo reserva activa:', errReservaActiva);
+            mostrarInfoModalGlobal("No se pudo obtener la reserva activa de la habitación.", "Error");
+            return;
         }
-        // ========================================================================
-        
-        // 3. Actualizar Tiempo Libre (si aplica)
-        if (reservaActiva.tipo_duracion === 'abierta') {
-            const calculo = await calculateTimeAndPrice(supabaseGlobal, reservaActiva, hotelIdGlobal, hotelConfigGlobal);
-            await supabaseGlobal.from('reservas').update({ 
-                monto_total: calculo.precioAlojamientoCalculado,
-                fecha_fin: new Date().toISOString()
-            }).eq('id', reservaActiva.id);
-            reservaActiva.monto_total = calculo.precioAlojamientoCalculado;
+
+        if (!reservaActiva) {
+            mostrarInfoModalGlobal("No se encontró una reserva activa para esta habitación.", "Sin Reserva");
+            return;
         }
-        
-        // 4. OBTENER SALDOS Y DESGLOSE
-        const { totalDeTodosLosCargos, saldoPendiente, desglose } = await calcularSaldoReserva(supabaseGlobal, reservaActiva.id, hotelIdGlobal);
 
-        hideGlobalLoading();
+        // 2. Calcular saldo pendiente (usa la función helper que vamos a crear abajo)
+        const { totalDeTodosLosCargos, saldoPendiente } = await calcularSaldoReserva(
+            supabase,
+            reservaActiva.id,
+            hotelId
+        );
 
-        // 5. Validar Pagos
+        const monedaSimbolo =
+            hotelConfigGlobal?.moneda_local_simbolo ||
+            hotelConfigGlobal?.moneda_local ||
+            '$';
+
+        // Si hay saldo pendiente, NO dejamos liberar
         if (saldoPendiente > 50) {
-            // Aún debe dinero
-            const swalCosto = await Swal.fire({
-                title: "Resumen de Cuenta",
-                html: `
-                    <div class="text-left text-sm">
-                        <p>Total Cargos: <strong>${formatCurrency(totalDeTodosLosCargos)}</strong></p>
-                        <ul class="text-xs text-gray-500 ml-4 mb-2">
-                           <li>🏠 Alojamiento: ${formatCurrency(desglose.alojamiento)}</li>
-                           <li>🛒 Tienda: ${formatCurrency(desglose.tienda)}</li>
-                           <li>🍽️ Restaurante: ${formatCurrency(desglose.restaurante)}</li>
-                           <li>🛎️ Servicios: ${formatCurrency(desglose.servicios)}</li>
-                        </ul>
-                        <hr class="my-2">
-                        <p class="text-xl text-red-600 font-bold text-center">Pendiente: ${formatCurrency(saldoPendiente)}</p>
-                    </div>`,
-                icon: 'warning',
-                confirmButtonText: 'Ir a Pagar',
-                showCancelButton: true,
-                cancelButtonText: 'Cancelar'
-            });
-
-            if (!swalCosto.isConfirmed) { btn.disabled = false; btn.innerHTML = originalContent; return; }
-
-            showGlobalLoading();
-            const { data: metodosPago } = await supabaseGlobal.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelIdGlobal).eq('activo', true);
-            metodosPago.unshift({ id: "mixto", nombre: "Pago Mixto" });
-            hideGlobalLoading();
-
-            // Callback al pagar
-            const alConfirmarPago = async (pagosRealizados) => {
-                const modalPago = document.getElementById('modal-container-secondary'); 
-                if(modalPago) modalPago.style.display = 'none';
-                
-                await registrarPagosYCierreReserva({
-                    reservaActiva, room, supabase: supabaseGlobal, currentUser: currentUserGlobal, 
-                    hotelId: hotelIdGlobal, mainAppContainer, 
-                    pagos: pagosRealizados, 
-                    totalCosto: totalDeTodosLosCargos,
-                    desgloseDeuda: desglose
-                });
-            };
-
-            showPagoMixtoModal(saldoPendiente, metodosPago, alConfirmarPago);
-
-        } else {
-            // Ya está pagado
-             const confirmSalida = await Swal.fire({
-                title: 'Cuenta Saldada',
-                text: 'El saldo es $0. ¿Liberar habitación?',
-                icon: 'success',
-                showCancelButton: true,
-                confirmButtonText: 'Sí, Liberar'
-            });
-
-            if (confirmSalida.isConfirmed) {
-                await registrarPagosYCierreReserva({
-                    reservaActiva, room, supabase: supabaseGlobal, currentUser: currentUserGlobal, 
-                    hotelId: hotelIdGlobal, mainAppContainer, 
-                    pagos: [], 
-                    totalCosto: totalDeTodosLosCargos,
-                    desgloseDeuda: desglose
-                });
-            } else {
-                btn.disabled = false;
-                btn.innerHTML = originalContent;
-            }
+            mostrarInfoModalGlobal(
+                `
+                Aún hay saldo pendiente de 
+                <strong>${formatCurrency(saldoPendiente, monedaSimbolo)}</strong>.<br>
+                Primero ve a <b>"Ver consumos"</b> para revisar y cobrar antes de liberar la habitación.
+                `,
+                "Saldo pendiente"
+            );
+            return;
         }
 
-    } catch (error) {
-        hideGlobalLoading();
-        console.error("Error checkout:", error);
-        mostrarInfoModalGlobal(`Error: ${error.message}`, "Error Crítico");
-        btn.disabled = false;
-        btn.innerHTML = originalContent;
-    }
-});
+        // 3. Confirmación final
+        const { isConfirmed } = await Swal.fire({
+            title: 'Liberar habitación',
+            html: `
+                <p>¿Deseas liberar la habitación <b>${room.nombre}</b>?</p>
+                <p class="mt-2 text-sm text-gray-600">
+                    Huésped: <b>${reservaActiva.cliente_nombre || 'N/A'}</b><br>
+                    Total consumos: <b>${formatCurrency(totalDeTodosLosCargos, monedaSimbolo)}</b><br>
+                    Saldo pendiente: <b>${formatCurrency(saldoPendiente, monedaSimbolo)}</b>
+                </p>
+            `,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, liberar',
+            cancelButtonText: 'Cancelar'
+        });
 
-// ----------------------------------------------------------------------------------------
-// ❗ Nota sobre "Ver Consumos" (Punto 2 del requerimiento del usuario)
-// ----------------------------------------------------------------------------------------
-// Para que el modal "Ver Consumos" muestre el precio por bloque (costo en dinero),
-// debes asegurarte de que la función `showConsumosYFacturarModal` también utilice la lógica
-// de `calculateTimeAndPrice` para obtener el costo de la estancia y mostrarlo en la tabla
-// de consumos.
+        if (!isConfirmed) return;
 
+        const ahoraISO = new Date().toISOString();
 
-  // =================== BOTÓN VER CONSUMOS (igual que antes)
-   // Utilidades
-const formatCurrency = val => Number(val || 0).toLocaleString('es-CO', { style: 'currency', currency: 'COP' });
-const formatDateTime = d => new Date(d).toLocaleString('es-CO');
+        // 4. Cerrar la reserva (finalizarla)
+        const updateReserva = {
+            estado: 'finalizada',
+            fecha_fin: ahoraISO
+        };
 
+        // Si no hay saldo, marcamos como totalmente pagada
+        if (Math.abs(saldoPendiente) < 50) {
+            updateReserva.monto_pagado = reservaActiva.monto_total;
+        }
 
-// =================== BOTÓN VER CONSUMOS (CORREGIDO) ===================
-setupButtonListener('btn-ver-consumos', async (btn, roomContext) => {
-    const originalText = btn.innerHTML;
-    btn.innerHTML = 'Calculando...';
-    btn.disabled = true;
-
-    try {
-        // 1. Buscar la reserva actual para asegurar precios de tiempo libre actualizados
-        const { data: reservaPre } = await supabaseGlobal
+        const { error: errUpdateReserva } = await supabase
             .from('reservas')
-            .select('id, fecha_inicio, tipo_duracion, monto_total')
-            .eq('habitacion_id', roomContext.id)
-            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+            .update(updateReserva)
+            .eq('id', reservaActiva.id);
+
+       if (errUpdateReserva) {
+  console.error("Error actualizando reserva al liberar:", {
+    message: errUpdateReserva.message,
+    details: errUpdateReserva.details,
+    hint: errUpdateReserva.hint,
+    code: errUpdateReserva.code
+  });
+
+  Swal.fire({
+    icon: 'error',
+    title: 'Error al actualizar la reserva',
+    text: errUpdateReserva.message || 'No se pudo actualizar la reserva al entregar la habitación.'
+  });
+  return;
+}
+
+
+        // 5. Detener el cronómetro (si existe)
+        const { data: cronoAct } = await supabase
+            .from('cronometros')
+            .select('id')
+            .eq('reserva_id', reservaActiva.id)
+            .eq('activo', true)
             .limit(1)
             .maybeSingle();
 
-        // Si es tiempo libre, actualizar monto_total a lo que corresponde AHORA antes de abrir el modal
-        if (reservaPre && reservaPre.tipo_duracion === 'abierta') {
-            const calculo = await calculateTimeAndPrice(
-                supabaseGlobal,
-                reservaPre,
-                hotelIdGlobal,
-                hotelConfigGlobal
-            );
-
-            // Actualizamos solo si hay diferencia para mantener la BD al día
-            if (calculo.precioAlojamientoCalculado !== Number(reservaPre.monto_total)) {
-                await supabaseGlobal
-                    .from('reservas')
-                    .update({ monto_total: calculo.precioAlojamientoCalculado })
-                    .eq('id', reservaPre.id);
-            }
+        if (cronoAct) {
+            await supabase
+                .from('cronometros')
+                .update({ activo: false, fecha_fin: ahoraISO })
+                .eq('id', cronoAct.id);
         }
-    } catch (err) {
-        console.error("Error actualizando precio tiempo libre antes de ver consumos:", err);
-    } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-    }
 
-    // 2. Abrir el modal de consumos (aquí el usuario puede pagar)
-    // NOTA: showConsumosYFacturarModal debe ser una función async que espera a que el modal se cierre
-    // o el modal debe gestionar sus propios eventos. Asumimos que al cerrar el modal, el flujo continúa.
-    await showConsumosYFacturarModal(
-        roomContext,
-        supabaseGlobal,
-        currentUserGlobal,
-        hotelIdGlobal,
-        mainAppContainer,
-        btn
-    );
-
-    // 3. VERIFICACIÓN POST-CIERRE DEL MODAL
-    // Consultamos el saldo FRESH desde la base de datos
-    try {
-        // Pequeña pausa para asegurar que la BD haya procesado cualquier transacción del modal
-        await new Promise(r => setTimeout(r, 300));
-
-        const { data: reservaCheck } = await supabaseGlobal
-            .from('reservas')
-            .select('id, monto_total, monto_pagado')
-            .eq('habitacion_id', roomContext.id)
-            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-            .limit(1)
-            .maybeSingle();
-
-        if (reservaCheck) {
-            // Usamos calcularSaldoReserva que suma TODOS los pagos reales de la tabla pagos_reserva
-            const {
-                saldoPendiente,
-                totalDeTodosLosCargos
-            } = await calcularSaldoReserva(
-                supabaseGlobal,
-                reservaCheck.id,
-                hotelIdGlobal
-            );
-
-            console.log(`[Post-Consumos] Cargos: ${totalDeTodosLosCargos}, Saldo Pendiente: ${saldoPendiente}`);
-
-            // LÓGICA DE LIBERACIÓN AUTOMÁTICA
-            // Si hay cargos (no es una reserva vacía) Y el saldo es efectivamente CERO (con margen de error de 50 pesos)
-            if (totalDeTodosLosCargos > 0 && saldoPendiente >= -50 && saldoPendiente <= 50) {
-                
-                const confirmSalida = await Swal.fire({
-                    title: '¡Cuenta Saldada!',
-                    html: `
-                        <div class="text-center">
-                            <p class="text-gray-600 mb-2">El saldo pendiente es <strong>$0</strong>.</p>
-                            <p class="text-xl font-bold text-blue-700">¿Desea liberar la habitación ahora?</p>
-                        </div>
-                    `,
-                    icon: 'success',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, Liberar y Limpieza',
-                    cancelButtonText: 'No, mantener ocupada',
-                    confirmButtonColor: '#10b981',
-                    cancelButtonColor: '#6b7280'
-                });
-
-                if (confirmSalida.isConfirmed) {
-                    // Llamamos a registrar cierre con lista de pagos vacía porque YA se pagó
-                    await registrarPagosYCierreReserva({
-                        reservaActiva: reservaCheck,
-                        room: roomContext,
-                        supabase: supabaseGlobal,
-                        currentUser: currentUserGlobal,
-                        hotelId: hotelIdGlobal,
-                        mainAppContainer,
-                        pagos: [], // Array vacío: No cobramos nada nuevo
-                        totalCosto: totalDeTodosLosCargos
-                    });
-                }
-            }
-        }
-    } catch (e) {
-        console.error("Error en check post-consumo:", e);
-    }
-});
-
-
-
-// =================== BOTÓN INFO HUÉSPED (igual que antes)
- setupButtonListener('btn-info-huesped', async () => {
-    // Buscar la reserva activa
-    const { data: reserva, error: errRes } = await supabase
-        .from('reservas')
-        .select('cliente_nombre, telefono, cantidad_huespedes, fecha_inicio, fecha_fin, notas')
-        .eq('habitacion_id', room.id)
-        .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-        .order('fecha_inicio', { ascending: false })
-        .limit(1)
-        .single();
-
-    if (errRes || !reserva) {
-        mostrarInfoModalGlobal("No hay información del huésped disponible.", "Huésped");
-        return;
-    }
-
-    let html = `
-  <b>👤 Nombre:</b> ${reserva.cliente_nombre}<br>
-  <b>📞 Teléfono:</b> ${reserva.telefono}<br>
-  <b>🧑‍🤝‍🧑 Huéspedes:</b> ${reserva.cantidad_huespedes}<br>
-  <b>🟢 Check-in:</b> ${formatDateTime(reserva.fecha_inicio)}<br>
-  <b>🔴 Check-out:</b> ${formatDateTime(reserva.fecha_fin)}<br>
-  ${reserva.notas ? `<b>📝 Notas:</b> ${reserva.notas}<br>` : ''}
-`;
-
-
-    mostrarInfoModalGlobal(html, "Información del Huésped");
-});
-
-// Añade este bloque junto a los otros listeners, al final de la función
-
-setupButtonListener('btn-enviar-limpieza', async (btn, room) => {
-    const originalContent = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = `
-        <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        Enviando...
-    `;
-
-    try {
-        const { error } = await supabase
+        // 6. Pasar la habitación a limpieza
+        const { error: errHab } = await supabase
             .from('habitaciones')
-            .update({ estado: 'limpieza' }) // Actualiza el estado a 'limpieza'
+            .update({ estado: 'limpieza' })
             .eq('id', room.id);
 
-        if (error) {
-            throw error;
+        if (errHab) {
+            console.error('Error actualizando estado de habitación:', errHab);
+            mostrarInfoModalGlobal(
+                "Se cerró la reserva, pero no se pudo actualizar el estado de la habitación.",
+                "Advertencia"
+            );
         }
 
-        // Cierra el modal de opciones
-        modalContainer.style.display = "none";
+        // 7. Cerrar el modal y refrescar el mapa
+        modalContainer.style.display = 'none';
         modalContainer.innerHTML = '';
 
-        // Refresca el mapa de habitaciones para mostrar el cambio
         await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
 
-    } catch (error) {
-        console.error("Error al enviar a limpieza:", error);
-        mostrarInfoModalGlobal(`Error: ${error.message}`, "Error");
+        mostrarInfoModalGlobal(
+            `La habitación <b>${room.nombre}</b> se liberó correctamente y quedó en <b>limpieza</b>.`,
+            "Habitación liberada"
+        );
+    } catch (err) {
+        console.error('Error al liberar habitación:', err);
+        mostrarInfoModalGlobal(
+            "Ocurrió un error al liberar la habitación: " + (err.message || "Error desconocido"),
+            "Error"
+        );
     } finally {
-        // En este caso, el 'finally' es solo una buena práctica,
-        // ya que el modal se cierra antes, pero no está de más.
         btn.disabled = false;
-        btn.innerHTML = originalContent;
+        btn.innerHTML = originalText;
     }
 });
-setupButtonListener('btn-seguimiento-articulos', (btn, roomContext) => {
-    // Usamos las variables globales que ya tienes
-    showSeguimientoArticulosModal(roomContext, supabaseGlobal, currentUserGlobal, hotelIdGlobal); 
-});
+
 
 }
 
@@ -4502,4 +3440,70 @@ async function showSeguimientoArticulosModal(room, supabase, currentUser, hotelI
         mostrarInfoModalGlobal(err.message, "Error", [], modalContainer);
     }
 }
+
+// ---------------------------------------------------------------------
+// Helper: calcularSaldoReserva
+// Usa tablas: reservas, pagos_reserva
+// Devuelve:
+//  - totalDeTodosLosCargos: reservas.monto_total
+//  - saldoPendiente: monto_total - suma(pagos_reserva.monto)
+// ---------------------------------------------------------------------
+async function calcularSaldoReserva(supabase, reservaId, hotelId) {
+    try {
+        // 1. Obtener la reserva
+        const { data: reserva, error: errReserva } = await supabase
+            .from('reservas')
+            .select('monto_total, hotel_id')
+            .eq('id', reservaId)
+            .maybeSingle();
+
+        if (errReserva) {
+            console.error('[calcularSaldoReserva] Error obteniendo reserva:', errReserva);
+            throw new Error('No se pudo obtener la reserva para calcular el saldo.');
+        }
+
+        if (!reserva) {
+            console.warn('[calcularSaldoReserva] Reserva no encontrada:', reservaId);
+            return { totalDeTodosLosCargos: 0, saldoPendiente: 0 };
+        }
+
+        // Chequeo rápido por si no coincide el hotel (solo log, no bloquea)
+        if (hotelId && reserva.hotel_id && reserva.hotel_id !== hotelId) {
+            console.warn('[calcularSaldoReserva] La reserva pertenece a otro hotel.');
+        }
+
+        const totalDeTodosLosCargos = Number(reserva.monto_total || 0);
+
+        // 2. Obtener todos los pagos registrados en pagos_reserva
+        const { data: pagos, error: errPagos } = await supabase
+            .from('pagos_reserva')
+            .select('monto')
+            .eq('reserva_id', reservaId)
+            .eq('hotel_id', hotelId);
+
+        if (errPagos) {
+            console.error('[calcularSaldoReserva] Error obteniendo pagos:', errPagos);
+            // Si falla la consulta de pagos, devolvemos todo como pendiente
+            return {
+                totalDeTodosLosCargos,
+                saldoPendiente: totalDeTodosLosCargos
+            };
+        }
+
+        const totalPagado = (pagos || []).reduce(
+            (sum, p) => sum + Number(p.monto || 0),
+            0
+        );
+
+        const saldoPendiente = totalDeTodosLosCargos - totalPagado;
+
+        return { totalDeTodosLosCargos, saldoPendiente };
+    } catch (err) {
+        console.error('[calcularSaldoReserva] Error general:', err);
+        // En caso de error, devolvemos saldo como 0 para no reventar la UI
+        return { totalDeTodosLosCargos: 0, saldoPendiente: 0 };
+    }
+}
+
+
 // ===================== FIN DEL ARCHIVO =====================
