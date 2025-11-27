@@ -1551,6 +1551,7 @@ async function renderInventario() {
   
   // El resto de la función no cambia...
   document.getElementById('btnHojaConteo').onclick = () => imprimirHojaDeConteo();
+  document.getElementById('btnHojaConteo').onclick = () => mostrarOpcionesHojaConteo();
   document.getElementById('btnDescargarInventario').onclick = () => mostrarModalDescarga();
   document.getElementById('btnNuevoProducto').onclick = () => showModalProducto();
   document.getElementById('btnVerMovimientos').onclick = () => showModalHistorial();
@@ -1570,6 +1571,89 @@ async function renderInventario() {
   renderTablaInventario('');
 }
 // Agrega estas TRES nuevas funciones al final de tu módulo
+
+/**
+ * Muestra un modal para elegir entre Imprimir o Descargar Excel para la Hoja de Conteo.
+ */
+function mostrarOpcionesHojaConteo() {
+  const modalContainer = document.getElementById('modalContainer');
+  modalContainer.style.display = 'flex';
+  modalContainer.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:28px 24px;width:95vw;max-width:450px;text-align:center;">
+      <h2 style="margin-top:0;margin-bottom:15px;color:#1e293b;">Hoja de Conteo de Inventario</h2>
+      <p style="margin-top:0;margin-bottom:25px;color:#475569;">¿Cómo deseas generar la hoja para la reconciliación física?</p>
+      
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <button id="btnImprimirHoja" style="background:#3b82f6;color:white;border:none;padding:12px 20px;border-radius:8px;font-size:1em;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+          🖨️ Imprimir (Vista Web/PDF)
+        </button>
+        <button id="btnExcelHoja" style="background:#107c41;color:white;border:none;padding:12px 20px;border-radius:8px;font-size:1em;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;">
+          📊 Descargar en Excel
+        </button>
+      </div>
+
+      <button onclick="window.closeModal()" style="margin-top:20px;background:none;border:none;color:#64748b;cursor:pointer;text-decoration:underline;">Cancelar</button>
+    </div>
+  `;
+
+  // Asignamos los eventos
+  document.getElementById('btnImprimirHoja').onclick = () => {
+    closeModal();
+    imprimirHojaDeConteo(); // Tu función existente
+  };
+
+  document.getElementById('btnExcelHoja').onclick = () => {
+    descargarHojaConteoExcel(); // La nueva función de Excel
+  };
+}
+
+/**
+ * Genera un Excel formateado específicamente para realizar conteo físico.
+ */
+function descargarHojaConteoExcel() {
+  closeModal();
+  
+  // Filtramos solo productos activos
+  const productosActivos = inventarioProductos.filter(p => p.activo);
+  
+  if (productosActivos.length === 0) {
+      alert("No hay productos activos para generar la hoja.");
+      return;
+  }
+
+  // Preparamos los datos dejando columnas vacías para que el usuario escriba
+  const dataParaExcel = productosActivos.map(p => ({
+    'Producto': p.nombre,
+    'Código': p.codigo_barras || '',
+    'Categoría': categoriasCache.find(c => c.id === p.categoria_id)?.nombre || '',
+    'Stock Sistema': Number(p.stock_actual), // Nos aseguramos que sea número
+    'Conteo Físico': '', // Columna vacía intencional
+    'Diferencia': '',    // Columna vacía intencional
+    'Notas': ''          // Columna vacía intencional
+  }));
+
+  // Crear libro y hoja
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.json_to_sheet(dataParaExcel);
+
+  // Ajustar anchos de columna (opcional pero recomendado para Excel)
+  const wscols = [
+    {wch: 30}, // Producto
+    {wch: 15}, // Código
+    {wch: 20}, // Categoría
+    {wch: 12}, // Stock Sistema
+    {wch: 15}, // Conteo Físico
+    {wch: 12}, // Diferencia
+    {wch: 30}  // Notas
+  ];
+  worksheet['!cols'] = wscols;
+
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Hoja de Conteo");
+
+  // Generamos nombre de archivo con fecha
+  const fecha = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(workbook, `Hoja_Conteo_Inventario_${fecha}.xlsx`);
+}
 
 /**
  * Muestra un modal para que el usuario elija el formato de descarga.
