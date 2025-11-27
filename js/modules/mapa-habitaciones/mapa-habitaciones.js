@@ -12,6 +12,78 @@ import { turnoService } from '../../services/turnoService.js';
 import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
 import { formatCurrency, showError, registrarUsoDescuento, showGlobalLoading, hideGlobalLoading, showConsumosYFacturarModal, imprimirTicketHabitacion, mostrarInfoModalGlobal } from '../../uiUtils.js';
 
+// ===================================================================
+// Cálculo de saldo pendiente de una reserva (estancia + servicios + tienda + restaurante - pagos)
+// ===================================================================
+async function calcularSaldoReserva(supabase, reservaId, hotelId) {
+  // Pedimos todo en paralelo
+  const [
+    { data: reserva, error: errReserva },
+    { data: servicios, error: errServicios },
+    { data: ventasTienda, error: errTienda },
+    { data: ventasRest, error: errRest },
+    { data: pagos, error: errPagos }
+  ] = await Promise.all([
+    supabase
+      .from('reservas')
+      .select('monto_total')
+      .eq('id', reservaId)
+      .maybeSingle(),
+
+    supabase
+      .from('servicios_x_reserva')
+      .select('precio_cobrado')
+      .eq('reserva_id', reservaId)
+      .eq('hotel_id', hotelId),
+
+    supabase
+      .from('ventas_tienda')
+      .select('total_venta')
+      .eq('reserva_id', reservaId)
+      .eq('hotel_id', hotelId),
+
+    supabase
+      .from('ventas_restaurante')
+      .select('monto_total, total_venta')
+      .eq('reserva_id', reservaId)
+      .eq('hotel_id', hotelId),
+
+    supabase
+      .from('pagos_reserva')
+      .select('monto')
+      .eq('reserva_id', reservaId)
+      .eq('hotel_id', hotelId)
+  ]);
+
+  // Si algo falló, lo mostramos en consola pero no rompemos la app
+  const errores = [errReserva, errServicios, errTienda, errRest, errPagos].filter(Boolean);
+  if (errores.length) {
+    console.error('Error calculando saldo de la reserva:', errores);
+  }
+
+  const totalEstancia   = Number((reserva && reserva.monto_total) || 0);
+  const totalServicios  = (servicios || []).reduce((acc, s) => acc + Number(s.precio_cobrado || 0), 0);
+  const totalTienda     = (ventasTienda || []).reduce((acc, v) => acc + Number(v.total_venta || 0), 0);
+  const totalRest       = (ventasRest || []).reduce((acc, v) => acc + Number(v.monto_total || v.total_venta || 0), 0);
+  const totalCargos     = totalEstancia + totalServicios + totalTienda + totalRest;
+  const totalPagado     = (pagos || []).reduce((acc, p) => acc + Number(p.monto || 0), 0);
+
+  const saldoPendiente  = totalCargos - totalPagado;
+
+  return {
+    totalDeTodosLosCargos: totalCargos,
+    totalPagado,
+    saldoPendiente
+  };
+}
+
+// Helper rápido para mostrar montos en COP
+function formatCOP(value) {
+  return new Intl.NumberFormat('es-CO', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  }).format(Math.round(Number(value) || 0));
+}
 
 
 const estadoColores = {
@@ -1446,216 +1518,280 @@ setupButtonListener('btn-cambiar-habitacion', async (btn) => {
         }
     });
 
-    // --- ACCIÓN: VER CONSUMOS ---
-    setupButtonListener('btn-ver-consumos', async (btn) => {
-        const originalText = btn.innerHTML;
-        btn.innerHTML = 'Cargando...'; btn.disabled = true;
-        
-        // 1. Verificar si es tiempo libre y actualizar precio si es necesario
-        const { data: r } = await supabase.from('reservas')
-            .select('id, fecha_inicio, tipo_duracion, monto_total')
-            .eq('habitacion_id', room.id)
-            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-            .limit(1)
-            .maybeSingle();
-        
-        if (r && r.tipo_duracion === 'abierta') {
-            const calculo = await calculateTimeAndPrice(supabase, r, hotelId, hotelConfigGlobal);
-            if (calculo.precioAlojamientoCalculado !== Number(r.monto_total)) {
-                await supabase.from('reservas').update({ monto_total: calculo.precioAlojamientoCalculado }).eq('id', r.id);
-            }
+// ===================================================================
+// Ver consumos (solo muestra el modal y actualiza monto_total si es abierta)
+// ===================================================================
+setupButtonListener('btn-ver-consumos', async (btn) => {
+  const originalText = btn.innerHTML;
+  btn.innerHTML = 'Cargando...';
+  btn.disabled = true;
+
+  try {
+    // 1. Buscar reserva activa de la habitación
+    const { data: r, error: errReserva } = await supabase
+      .from('reservas')
+      .select('id, fecha_inicio, tipo_duracion, monto_total')
+      .eq('habitacion_id', room.id)
+      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+      .limit(1)
+      .maybeSingle();
+
+    if (errReserva) {
+      console.error('Error buscando reserva para ver consumos:', errReserva);
+    }
+
+    // 2. Si es duración abierta, recalcular precio de estancia
+    if (r && r.tipo_duracion === 'abierta') {
+      try {
+        const calculo = await calculateTimeAndPrice(supabase, r, hotelId, hotelConfigGlobal);
+        if (calculo && calculo.precioAlojamientoCalculado !== Number(r.monto_total)) {
+          await supabase
+            .from('reservas')
+            .update({ monto_total: calculo.precioAlojamientoCalculado })
+            .eq('id', r.id);
         }
-        
-        btn.innerHTML = originalText; btn.disabled = false;
-        
-        // Llamada a la función externa importada
-        await showConsumosYFacturarModal(room, supabase, currentUser, hotelId, mainAppContainer, btn);
-        
-        // Verificación rápida post-modal (si se pagó todo, sugerir liberar)
-        if (r) {
-            const { totalDeTodosLosCargos, saldoPendiente } = await calcularSaldoReserva(supabase, r.id, hotelId);
-            // Si hay consumos y el saldo es 0 (margen 50 pesos)
-            if (totalDeTodosLosCargos > 0 && Math.abs(saldoPendiente) < 50) {
-                const { isConfirmed } = await Swal.fire({
-                    title: 'Cuenta Saldada', text: 'El saldo es $0. ¿Liberar habitación ahora?', icon: 'success', showCancelButton: true
-                });
-                if (isConfirmed) {
-                    await registrarPagosYCierreReserva({
-                        reservaActiva: r, room, supabase, currentUser, hotelId, mainAppContainer,
-                        pagos: [], totalCosto: totalDeTodosLosCargos
-                    });
-                }
-            }
-        }
+      } catch (e) {
+        console.error('Error recalculando estancia abierta:', e);
+      }
+    }
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+
+  // 3. Abrir el modal de consumos / facturación
+  await showConsumosYFacturarModal(room, supabase, currentUser, hotelId, mainAppContainer, btn);
+});
+
+
+// ===================================================================
+// ENTREGAR / LIBERAR HABITACIÓN
+// ===================================================================
+setupButtonListener('btn-entregar', async (btn) => {
+  const originalText = btn.innerHTML;
+  btn.innerHTML = 'Procesando...';
+  btn.disabled = true;
+
+  try {
+    // 1. Buscar reserva activa asociada a la habitación
+    const { data: reservaActiva, error: errReserva } = await supabase
+      .from('reservas')
+      .select('id, estado')
+      .eq('habitacion_id', room.id)
+      .eq('hotel_id', hotelId)
+      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+      .limit(1)
+      .maybeSingle();
+
+    if (errReserva) {
+      console.error('Error buscando reserva activa al liberar:', errReserva);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'No se pudo obtener la reserva activa de la habitación.'
+      });
+      return;
+    }
+
+    if (!reservaActiva) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Sin reserva activa',
+        text: 'La habitación no tiene una reserva activa para liberar.'
+      });
+      return;
+    }
+
+    // 2. Verificar artículos prestados sin devolver
+    const { data: historialArticulos, error: errHist } = await supabase
+      .from('historial_articulos_prestados')
+      .select('articulo_nombre, cantidad, accion')
+      .eq('hotel_id', hotelId)
+      .eq('habitacion_id', room.id)
+      .eq('reserva_id', reservaActiva.id);
+
+    if (errHist) {
+      console.error('Error consultando historial de artículos prestados:', errHist);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: 'No se pudo verificar los artículos prestados de la habitación.'
+      });
+      return;
+    }
+
+    // Calculamos saldo por artículo: prestado (+) / devuelto (−)
+    const saldoPorArticulo = {};
+    (historialArticulos || []).forEach((h) => {
+      const nombre = h.articulo_nombre || 'Artículo';
+      const cant = Number(h.cantidad || 0);
+      if (!saldoPorArticulo[nombre]) saldoPorArticulo[nombre] = 0;
+
+      if (h.accion === 'prestado') {
+        saldoPorArticulo[nombre] += cant;
+      } else if (h.accion === 'devuelto') {
+        saldoPorArticulo[nombre] -= cant;
+      }
     });
 
-    // --- ACCIÓN: ENTREGAR / LIBERAR (Usa el listener que ya tienes definido o define aquí) ---
-    // NOTA: Como en tu código original tenías un setupButtonListener('btn-entregar') MUY largo y complejo fuera,
-    // puedes pegarlo aquí dentro o, para mantenerlo limpio, simplemente asegurarte de que
-    // esa lógica compleja esté encapsulada. Aquí usaré una versión simplificada que llama a tu lógica.
-    
-    // Si prefieres mantener la lógica compleja de liberar, pégala aquí dentro.
-    // Para simplificar, he movido la llamada:
-    
-    // --- ACCIÓN: ENTREGAR / LIBERAR ---
-// --- ACCIÓN: ENTREGAR / LIBERAR ---
-setupButtonListener('btn-entregar', async (btn) => {
-    const originalText = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = 'Procesando...';
+    const articulosPendientes = Object.entries(saldoPorArticulo)
+      .filter(([_, saldo]) => saldo > 0);
 
-    try {
-        // 1. Buscar la reserva activa de la habitación
-        const { data: reservaActiva, error: errReservaActiva } = await supabase
-            .from('reservas')
-            .select('id, cliente_nombre, monto_total, monto_pagado')
-            .eq('habitacion_id', room.id)
-            .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
-            .order('fecha_inicio', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+    if (articulosPendientes.length > 0) {
+      const listaHTML = articulosPendientes
+        .map(([nombre, saldo]) => `• ${nombre} x${saldo}`)
+        .join('<br>');
 
-        if (errReservaActiva) {
-            console.error('Error obteniendo reserva activa:', errReservaActiva);
-            mostrarInfoModalGlobal("No se pudo obtener la reserva activa de la habitación.", "Error");
-            return;
-        }
-
-        if (!reservaActiva) {
-            mostrarInfoModalGlobal("No se encontró una reserva activa para esta habitación.", "Sin Reserva");
-            return;
-        }
-
-        // 2. Calcular saldo pendiente (usa la función helper que vamos a crear abajo)
-        const { totalDeTodosLosCargos, saldoPendiente } = await calcularSaldoReserva(
-            supabase,
-            reservaActiva.id,
-            hotelId
-        );
-
-        const monedaSimbolo =
-            hotelConfigGlobal?.moneda_local_simbolo ||
-            hotelConfigGlobal?.moneda_local ||
-            '$';
-
-        // Si hay saldo pendiente, NO dejamos liberar
-        if (saldoPendiente > 50) {
-            mostrarInfoModalGlobal(
-                `
-                Aún hay saldo pendiente de 
-                <strong>${formatCurrency(saldoPendiente, monedaSimbolo)}</strong>.<br>
-                Primero ve a <b>"Ver consumos"</b> para revisar y cobrar antes de liberar la habitación.
-                `,
-                "Saldo pendiente"
-            );
-            return;
-        }
-
-        // 3. Confirmación final
-        const { isConfirmed } = await Swal.fire({
-            title: 'Liberar habitación',
-            html: `
-                <p>¿Deseas liberar la habitación <b>${room.nombre}</b>?</p>
-                <p class="mt-2 text-sm text-gray-600">
-                    Huésped: <b>${reservaActiva.cliente_nombre || 'N/A'}</b><br>
-                    Total consumos: <b>${formatCurrency(totalDeTodosLosCargos, monedaSimbolo)}</b><br>
-                    Saldo pendiente: <b>${formatCurrency(saldoPendiente, monedaSimbolo)}</b>
-                </p>
-            `,
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonText: 'Sí, liberar',
-            cancelButtonText: 'Cancelar'
-        });
-
-        if (!isConfirmed) return;
-
-        const ahoraISO = new Date().toISOString();
-
-        // 4. Cerrar la reserva (finalizarla)
-        const updateReserva = {
-            estado: 'finalizada',
-            fecha_fin: ahoraISO
-        };
-
-        // Si no hay saldo, marcamos como totalmente pagada
-        if (Math.abs(saldoPendiente) < 50) {
-            updateReserva.monto_pagado = reservaActiva.monto_total;
-        }
-
-        const { error: errUpdateReserva } = await supabase
-            .from('reservas')
-            .update(updateReserva)
-            .eq('id', reservaActiva.id);
-
-       if (errUpdateReserva) {
-  console.error("Error actualizando reserva al liberar:", {
-    message: errUpdateReserva.message,
-    details: errUpdateReserva.details,
-    hint: errUpdateReserva.hint,
-    code: errUpdateReserva.code
-  });
-
-  Swal.fire({
-    icon: 'error',
-    title: 'Error al actualizar la reserva',
-    text: errUpdateReserva.message || 'No se pudo actualizar la reserva al entregar la habitación.'
-  });
-  return;
-}
-
-
-        // 5. Detener el cronómetro (si existe)
-        const { data: cronoAct } = await supabase
-            .from('cronometros')
-            .select('id')
-            .eq('reserva_id', reservaActiva.id)
-            .eq('activo', true)
-            .limit(1)
-            .maybeSingle();
-
-        if (cronoAct) {
-            await supabase
-                .from('cronometros')
-                .update({ activo: false, fecha_fin: ahoraISO })
-                .eq('id', cronoAct.id);
-        }
-
-        // 6. Pasar la habitación a limpieza
-        const { error: errHab } = await supabase
-            .from('habitaciones')
-            .update({ estado: 'limpieza' })
-            .eq('id', room.id);
-
-        if (errHab) {
-            console.error('Error actualizando estado de habitación:', errHab);
-            mostrarInfoModalGlobal(
-                "Se cerró la reserva, pero no se pudo actualizar el estado de la habitación.",
-                "Advertencia"
-            );
-        }
-
-        // 7. Cerrar el modal y refrescar el mapa
-        modalContainer.style.display = 'none';
-        modalContainer.innerHTML = '';
-
-        await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
-
-        mostrarInfoModalGlobal(
-            `La habitación <b>${room.nombre}</b> se liberó correctamente y quedó en <b>limpieza</b>.`,
-            "Habitación liberada"
-        );
-    } catch (err) {
-        console.error('Error al liberar habitación:', err);
-        mostrarInfoModalGlobal(
-            "Ocurrió un error al liberar la habitación: " + (err.message || "Error desconocido"),
-            "Error"
-        );
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = originalText;
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Artículos prestados pendientes',
+        html: `
+          Esta habitación tiene artículos prestados que aún no se han devuelto:<br><br>
+          ${listaHTML}<br><br>
+          Registra la devolución en el módulo de artículos prestados antes de liberar la habitación.
+        `
+      });
+      return; // 🔒 NO se libera
     }
+
+    // 3. Calcular saldo REAL (estancia + servicios + tienda + restaurante - pagos)
+    const { totalDeTodosLosCargos, saldoPendiente } =
+      await calcularSaldoReserva(supabase, reservaActiva.id, hotelId);
+
+    console.log('[LIBERAR] total cargos:', totalDeTodosLosCargos,
+                'saldo pendiente:', saldoPendiente);
+
+    const margen = 50; // margen en pesos para redondeos
+
+    if (totalDeTodosLosCargos > 0 && saldoPendiente > margen) {
+      // 🔒 NO PERMITIR LIBERAR CON SALDO
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Saldo pendiente',
+        html: `
+          La habitación tiene un saldo pendiente de
+          <b>$ ${formatCOP(saldoPendiente)}</b>.<br><br>
+          Por favor cobra el saldo desde "Ver consumos" antes de liberar la habitación.
+        `
+      });
+      return;
+    }
+
+    // 4. Confirmar liberación (saldo = 0 y sin artículos pendientes)
+    const { isConfirmed } = await Swal.fire({
+      icon: 'question',
+      title: 'Liberar habitación',
+      text: 'El saldo está en $0 y no hay artículos prestados pendientes. ¿Deseas liberar la habitación ahora?',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, liberar',
+      cancelButtonText: 'Cancelar'
+    });
+
+    if (!isConfirmed) return;
+
+    const ahoraISO = new Date().toISOString();
+
+    // 5. Cerrar reserva: estado finalizada, fecha_fin y monto_pagado igual a todos los cargos
+    const { error: errUpdateReserva } = await supabase
+      .from('reservas')
+      .update({
+        estado: 'finalizada',        // asegúrate de que este valor exista en tu enum
+        fecha_fin: ahoraISO,
+        monto_pagado: totalDeTodosLosCargos,
+        actualizado_en: ahoraISO
+      })
+      .eq('id', reservaActiva.id);
+
+    if (errUpdateReserva) {
+      console.error('Error actualizando reserva al liberar:', errUpdateReserva);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: errUpdateReserva.message || 'No se pudo actualizar la reserva al liberar.'
+      });
+      return;
+    }
+
+    // 6. Detener cronómetro (si existe)
+    const { error: errCrono } = await supabase
+      .from('cronometros')
+      .update({
+        activo: false,
+        fecha_fin: ahoraISO,
+        actualizado_en: ahoraISO
+      })
+      .eq('hotel_id', hotelId)
+      .eq('habitacion_id', room.id)
+      .eq('reserva_id', reservaActiva.id);
+
+    if (errCrono) {
+      console.error('Error actualizando cronómetro al liberar:', errCrono);
+      // No bloqueamos por esto, solo log.
+    }
+
+    // 7. Pasar habitación a estado "limpieza"
+    const { error: errHab } = await supabase
+      .from('habitaciones')
+      .update({
+        estado: 'limpieza',
+        actualizado_en: ahoraISO
+      })
+      .eq('id', room.id)
+      .eq('hotel_id', hotelId);
+
+    if (errHab) {
+      console.error('Error cambiando estado de habitación al liberar:', errHab);
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: errHab.message || 'No se pudo cambiar el estado de la habitación.'
+      });
+      return;
+    }
+
+    // 8. Registrar en bitácora
+    try {
+      await supabase.from('bitacora').insert({
+        hotel_id: hotelId,
+        usuario_id: currentUser.id,
+        modulo: 'reservas',
+        accion: 'liberar_habitacion',
+        detalles: {
+          habitacion_id: room.id,
+          reserva_id: reservaActiva.id,
+          total_cargos: totalDeTodosLosCargos,
+          saldo_pendiente: saldoPendiente
+        }
+      });
+    } catch (eBit) {
+      console.error('Error registrando en bitácora al liberar:', eBit);
+    }
+
+    // 9. Cerrar modal y recargar mapa de habitaciones
+    modalContainer.style.display = 'none';
+    modalContainer.innerHTML = '';
+    await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+
+    await Swal.fire({
+      icon: 'success',
+      title: 'Habitación liberada',
+      text: 'La habitación se ha pasado a estado Limpieza y la reserva quedó finalizada.'
+    });
+
+  } catch (e) {
+    console.error('Error general al liberar la habitación:', e);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Ocurrió un error al liberar la habitación.'
+    });
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
 });
+
+
 
 
 }
@@ -3441,69 +3577,6 @@ async function showSeguimientoArticulosModal(room, supabase, currentUser, hotelI
     }
 }
 
-// ---------------------------------------------------------------------
-// Helper: calcularSaldoReserva
-// Usa tablas: reservas, pagos_reserva
-// Devuelve:
-//  - totalDeTodosLosCargos: reservas.monto_total
-//  - saldoPendiente: monto_total - suma(pagos_reserva.monto)
-// ---------------------------------------------------------------------
-async function calcularSaldoReserva(supabase, reservaId, hotelId) {
-    try {
-        // 1. Obtener la reserva
-        const { data: reserva, error: errReserva } = await supabase
-            .from('reservas')
-            .select('monto_total, hotel_id')
-            .eq('id', reservaId)
-            .maybeSingle();
-
-        if (errReserva) {
-            console.error('[calcularSaldoReserva] Error obteniendo reserva:', errReserva);
-            throw new Error('No se pudo obtener la reserva para calcular el saldo.');
-        }
-
-        if (!reserva) {
-            console.warn('[calcularSaldoReserva] Reserva no encontrada:', reservaId);
-            return { totalDeTodosLosCargos: 0, saldoPendiente: 0 };
-        }
-
-        // Chequeo rápido por si no coincide el hotel (solo log, no bloquea)
-        if (hotelId && reserva.hotel_id && reserva.hotel_id !== hotelId) {
-            console.warn('[calcularSaldoReserva] La reserva pertenece a otro hotel.');
-        }
-
-        const totalDeTodosLosCargos = Number(reserva.monto_total || 0);
-
-        // 2. Obtener todos los pagos registrados en pagos_reserva
-        const { data: pagos, error: errPagos } = await supabase
-            .from('pagos_reserva')
-            .select('monto')
-            .eq('reserva_id', reservaId)
-            .eq('hotel_id', hotelId);
-
-        if (errPagos) {
-            console.error('[calcularSaldoReserva] Error obteniendo pagos:', errPagos);
-            // Si falla la consulta de pagos, devolvemos todo como pendiente
-            return {
-                totalDeTodosLosCargos,
-                saldoPendiente: totalDeTodosLosCargos
-            };
-        }
-
-        const totalPagado = (pagos || []).reduce(
-            (sum, p) => sum + Number(p.monto || 0),
-            0
-        );
-
-        const saldoPendiente = totalDeTodosLosCargos - totalPagado;
-
-        return { totalDeTodosLosCargos, saldoPendiente };
-    } catch (err) {
-        console.error('[calcularSaldoReserva] Error general:', err);
-        // En caso de error, devolvemos saldo como 0 para no reventar la UI
-        return { totalDeTodosLosCargos: 0, saldoPendiente: 0 };
-    }
-}
 
 
 // ===================== FIN DEL ARCHIVO =====================
