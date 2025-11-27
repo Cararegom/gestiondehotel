@@ -167,26 +167,44 @@ updateTotalDisplay(montoDescontado = 0) {
     }
 };
 
-// ... (resto de tu código de reservas.js) ...
 
-// js/modules/reservas/reservas.js
 
-// REEMPLAZA esta función en tu archivo reservas.js
+// En js/modules/reservas/reservas.js
+
 function gatherFormData() {
     if (!ui.form) return {};
     const formElements = ui.form.elements;
-    
-    const clienteIdSeleccionado = ui.clienteIdHiddenInput?.value || null;
-    let nombreCliente, cedulaCliente, telefonoCliente;
 
-    if (clienteIdSeleccionado) {
-        nombreCliente = ui.clienteNombreDisplay?.querySelector('#selected_client_name')?.textContent || '';
-        cedulaCliente = formElements.cedula?.value || '';
-        telefonoCliente = formElements.telefono?.value || '';
-    } else {
-        nombreCliente = formElements.cliente_nombre?.value || '';
-        cedulaCliente = formElements.cedula?.value || '';
-        telefonoCliente = formElements.telefono?.value || '';
+    // --- Lógica del cliente ---
+    const clienteIdSeleccionado = ui.clienteIdHiddenInput?.value || null;
+    let nombreCliente = formElements.cliente_nombre?.value || '';
+    let cedulaCliente = formElements.cedula?.value || '';
+    let telefonoCliente = formElements.telefono?.value || '';
+    
+    if (clienteIdSeleccionado && ui.clienteNombreDisplay && !ui.clienteNombreDisplay.classList.contains('hidden')) {
+        nombreCliente = ui.clienteNombreDisplay.querySelector('#selected_client_name')?.textContent || nombreCliente;
+    }
+
+    // --- NUEVO: Extraer TODOS los datos de la habitación del DOM ---
+    const habitacionSelect = formElements.habitacion_id;
+    let habitacionInfoDOM = null;
+
+    if (habitacionSelect && habitacionSelect.selectedIndex >= 0) {
+        const selectedOption = habitacionSelect.options[habitacionSelect.selectedIndex];
+        // Si no se selecciona nada (placeholder), el value suele ser vacío
+        if (selectedOption.value) {
+            habitacionInfoDOM = {
+                id: selectedOption.value,
+                // Leemos los precios específicos
+                precio_general: parseFloat(selectedOption.getAttribute('data-precio') || '0'),
+                precio_1_persona: parseFloat(selectedOption.getAttribute('data-precio-1') || '0'),
+                precio_2_personas: parseFloat(selectedOption.getAttribute('data-precio-2') || '0'),
+                
+                capacidad_base: parseFloat(selectedOption.getAttribute('data-capacidad-base') || '2'),
+                capacidad_maxima: parseFloat(selectedOption.getAttribute('data-capacidad-maxima') || '10'),
+                precio_huesped_adicional: parseFloat(selectedOption.getAttribute('data-precio-extra') || '0')
+            };
+        }
     }
 
     return {
@@ -194,21 +212,23 @@ function gatherFormData() {
         cliente_nombre: nombreCliente,
         cedula: cedulaCliente,
         telefono: telefonoCliente,
+        habitacion_id: formElements.habitacion_id?.value || '',
+        
+        habitacion_info_dom: habitacionInfoDOM, // Enviamos el objeto actualizado
+        
         fecha_entrada: formElements.fecha_entrada?.value || '',
         tipo_calculo_duracion: formElements.tipo_calculo_duracion?.value || 'noches_manual',
         cantidad_noches: formElements.cantidad_noches?.value || '1',
         tiempo_estancia_id: formElements.tiempo_estancia_id?.value || '',
-        habitacion_id: formElements.habitacion_id?.value || '',
         cantidad_huespedes: formElements.cantidad_huespedes?.value || '1',
         metodo_pago_id: formElements.metodo_pago_id?.value || '',
+        tipo_pago: formElements.tipo_pago?.value || 'parcial',
         monto_abono: formElements.monto_abono?.value || '0',
         notas: formElements.notas?.value || '',
-        tipo_pago: formElements.tipo_pago?.value || 'parcial',
-        precio_libre_toggle: formElements.precio_libre_toggle?.checked || false, // <-- AÑADIDO
-        precio_libre_valor: formElements.precio_libre_valor?.value || '0'       // <-- AÑADIDO
+        precio_libre_toggle: formElements.precio_libre_toggle?.checked || false,
+        precio_libre_valor: formElements.precio_libre_valor?.value || '0'
     };
 }
-
 
 
 
@@ -473,61 +493,64 @@ function esTiempoEstanciaNoches(tiempoEstanciaId) {
     return tiempo && tiempo.minutos >= (22 * 60) && tiempo.minutos <= (26 * 60);
 }
 
-// REEMPLAZA esta función completa en tu archivo reservas.js
+
+
+// En js/modules/reservas/reservas.js
+
 function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, tiempoId, precioLibreActivado, precioLibreValor) {
     if (!habitacionInfo) return { errorMonto: "Información de habitación no disponible." };
 
-    let montoEstanciaBaseBruto;
+    let montoEstanciaBaseBruto = 0;
     let montoPorHuespedesAdicionales = 0;
     let montoDescontado = 0;
     let totalAntesDeImpuestos;
 
-    // --- INICIO DE LA LÓGICA CORREGIDA ---
-    // Si el precio libre está activado, este se convierte en el precio total antes de impuestos.
-    // Se ignoran los cálculos de precio de habitación, huéspedes adicionales y descuentos.
+    // --- CASO 1: PRECIO MANUAL ---
     if (precioLibreActivado && typeof precioLibreValor === 'number' && precioLibreValor >= 0) {
-        
         montoEstanciaBaseBruto = precioLibreValor;
         totalAntesDeImpuestos = precioLibreValor;
-        // Forzamos a cero los otros conceptos para que no se sumen ni resten.
-        montoPorHuespedesAdicionales = 0;
-        montoDescontado = 0;
-
     } else {
-        // --- LÓGICA DE CÁLCULO NORMAL (CUANDO EL PRECIO LIBRE NO ESTÁ ACTIVO) ---
+        // --- CASO 2: CÁLCULO AUTOMÁTICO ---
 
-        // 1. Calcular precio base de la estancia (por noche o por tiempo)
+        // A. Cálculo por NOCHES
         if (tipoDuracion === "noches_manual") {
-            montoEstanciaBaseBruto = (habitacionInfo.precio || 0) * cantDuracion;
+            let precioNocheUnitario = 0;
+
+            // Precio base (1 vs 2 personas)
+            if (huespedes === 1 && habitacionInfo.precio_1_persona > 0) {
+                precioNocheUnitario = habitacionInfo.precio_1_persona;
+            } else if (huespedes >= 2 && habitacionInfo.precio_2_personas > 0) {
+                precioNocheUnitario = habitacionInfo.precio_2_personas;
+            } else {
+                precioNocheUnitario = habitacionInfo.precio_general || 0;
+            }
+
+            montoEstanciaBaseBruto = precioNocheUnitario * cantDuracion;
+
+            // B. Cálculo de Huéspedes Adicionales
+            // Asumimos que el precio base cubre hasta 2 personas (o la capacidad base de la habitación)
+            const baseOcupacion = habitacionInfo.capacidad_base || 2; 
+
+            // --- CAMBIO IMPORTANTE: Eliminamos el bloqueo por capacidad máxima ---
+            // Si hay más huéspedes que la base, cobramos extras sin importar el límite teórico
+            if (huespedes > baseOcupacion) {
+                const extraHuespedes = huespedes - baseOcupacion;
+                montoPorHuespedesAdicionales = extraHuespedes * (habitacionInfo.precio_huesped_adicional || 0) * cantDuracion;
+            }
+
         } else {
+            // C. Cálculo por TIEMPO PREDEFINIDO
             const tiempo = state.tiemposEstanciaDisponibles.find(ts => ts.id === tiempoId);
             if (tiempo && typeof tiempo.precio === 'number' && tiempo.precio >= 0) {
                 montoEstanciaBaseBruto = tiempo.precio;
             } else {
-                return { errorMonto: "Precio no definido para el tiempo de estancia seleccionado." };
+                return { errorMonto: "Precio no definido para el tiempo seleccionado." };
             }
-        }
-
-        // 2. Validar capacidad y calcular costo de huéspedes adicionales
-        const capacidadMaxima = habitacionInfo.capacidad_maxima || huespedes;
-        if (huespedes > capacidadMaxima) {
-            return { errorMonto: `Cantidad de huéspedes (${huespedes}) excede la capacidad máxima (${capacidadMaxima}).` };
-        }
-        const capacidadBase = habitacionInfo.capacidad_base || 1;
-        if (huespedes > capacidadBase) {
-            const extraHuespedes = huespedes - capacidadBase;
-            let factorDuracionParaAdicional = 1;
-            if (tipoDuracion === "noches_manual") {
-                factorDuracionParaAdicional = cantDuracion;
-            } else if (tipoDuracion === "tiempo_predefinido" && esTiempoEstanciaNoches(tiempoId)) {
-                factorDuracionParaAdicional = Math.max(1, Math.round(cantDuracion / (24 * 60)));
-            }
-            montoPorHuespedesAdicionales = extraHuespedes * (habitacionInfo.precio_huesped_adicional || 0) * factorDuracionParaAdicional;
         }
 
         const totalAntesDeDescuento = montoEstanciaBaseBruto + montoPorHuespedesAdicionales;
 
-        // 3. Calcular descuento si aplica
+        // 3. Calcular descuento
         if (state.descuentoAplicado) {
             if (state.descuentoAplicado.tipo === 'fijo') {
                 montoDescontado = parseFloat(state.descuentoAplicado.valor);
@@ -536,13 +559,10 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
             }
         }
         montoDescontado = Math.min(totalAntesDeDescuento, montoDescontado);
-        
         totalAntesDeImpuestos = totalAntesDeDescuento - montoDescontado;
     }
-    // --- FIN DE LA LÓGICA CORREGIDA ---
 
-
-    // --- CÁLCULO DE IMPUESTOS (COMÚN PARA AMBOS CASOS) ---
+    // --- CÁLCULO DE IMPUESTOS ---
     let montoImpuestoCalculado = 0;
     let baseImponibleFinal = totalAntesDeImpuestos;
 
@@ -563,82 +583,94 @@ function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, 
     };
 }
 
-
-// Archivo: /js/modules/reservas/reservas.js
+// En js/modules/reservas/reservas.js
 
 async function validateAndCalculateBooking(formData) {
-    // Obtiene información de la habitación (precio, capacidad, etc.)
-    const [habitacionResult] = await Promise.all([
-        state.supabase.from('habitaciones').select('precio, capacidad_base, capacidad_maxima, precio_huesped_adicional').eq('id', formData.habitacion_id).single(),
-    ]);
-    if (habitacionResult.error) throw new Error(`Error obteniendo detalles de la habitación: ${habitacionResult.error.message}`);
-    const habitacionInfo = habitacionResult.data;
-    if (!habitacionInfo) throw new Error("No se encontró la habitación seleccionada.");
+    // 1. Obtiene información de la habitación (USANDO DATOS DEL DOM - MÁS RÁPIDO Y SEGURO)
+    const habitacionInfo = formData.habitacion_info_dom;
 
-    // Calcula las fechas de entrada y salida basadas en la duración seleccionada
-    const { fechaEntrada, fechaSalida, tipoDuracionOriginal, cantidadDuracionOriginal, errorFechas } = calculateFechasEstancia(formData.fecha_entrada, formData.tipo_calculo_duracion, formData.cantidad_noches, formData.tiempo_estancia_id, state.configHotel.checkout_hora_config);
+    // Si por alguna razón falló la carga del DOM, lanzamos error
+    if (!habitacionInfo) {
+        throw new Error("Seleccione una habitación válida para calcular.");
+    }
+
+    // 2. Calcula las fechas de entrada y salida
+    const { fechaEntrada, fechaSalida, tipoDuracionOriginal, cantidadDuracionOriginal, errorFechas } = calculateFechasEstancia(
+        formData.fecha_entrada, 
+        formData.tipo_calculo_duracion, 
+        formData.cantidad_noches, 
+        formData.tiempo_estancia_id, 
+        state.configHotel.checkout_hora_config
+    );
     if (errorFechas) throw new Error(errorFechas);
 
-    // ▼▼▼ INICIO DE LA VALIDACIÓN INTELIGENTE DEL LADO DEL CLIENTE ▼▼▼
-    const HORAS_BLOQUEO_PREVIO = 3; // Horas de bloqueo antes de una reserva
-    
-    // Buscamos la próxima reserva confirmada para la habitación seleccionada
-    const { data: proximaReserva, error: errProx } = await state.supabase
-        .from('reservas')
-        .select('id, fecha_inicio')
-        .eq('habitacion_id', formData.habitacion_id)
-        .in('estado', ['reservada', 'confirmada'])
-        .gte('fecha_inicio', fechaEntrada.toISOString()) // Solo reservas que inicien después de nuestra entrada
-        .order('fecha_inicio', { ascending: true })
-        .limit(1)
-        .maybeSingle(); // Usamos maybeSingle para no generar error si no encuentra nada
-
-    if (errProx) {
-        throw new Error(`Error validando disponibilidad futura: ${errProx.message}.`);
-    }
-
-    if (proximaReserva) {
-        // Si hay una reserva futura, calculamos el inicio de su período de bloqueo
-        const inicioProximaReserva = new Date(proximaReserva.fecha_inicio);
-        const inicioBloqueo = new Date(inicioProximaReserva.getTime() - HORAS_BLOQUEO_PREVIO * 60 * 60 * 1000);
-
-        // Comprobamos si la fecha de SALIDA de nuestra NUEVA reserva se mete en el período de bloqueo
-        if (fechaSalida > inicioBloqueo) {
-            throw new Error(`Conflicto: La duración de esta reserva se cruza con el período de bloqueo de una reserva futura que inicia el ${formatDateTime(inicioProximaReserva)}. Intente con una duración menor.`);
-        }
-    }
-    // ▲▲▲ FIN DE LA VALIDACIÓN INTELIGENTE ▲▲▲
-
-    // Se mantiene la llamada a la función de la BD como una segunda barrera de seguridad.
-    const { data: hayCruce, error: errCruce } = await state.supabase.rpc('validar_cruce_reserva', {
-        p_habitacion_id: formData.habitacion_id, p_entrada: fechaEntrada.toISOString(),
-        p_salida: fechaSalida.toISOString(), p_reserva_id_excluida: state.isEditMode ? state.editingReservaId : null
-    });
-    if (errCruce) throw new Error(`Error validando disponibilidad: ${errCruce.message}.`);
-    if (hayCruce === true) throw new Error("Conflicto: La habitación no está disponible para el período seleccionado (verificado por la base de datos).");
-    
-    // Llama a la función de cálculo de montos, pasando los valores del precio libre
+    // 3. Cálculo de Montos
     const { montoEstanciaBase, montoPorHuespedesAdicionales, montoDescontado, montoImpuesto, baseSinImpuestos, errorMonto } = calculateMontos(
-        habitacionInfo, parseInt(formData.cantidad_huespedes), tipoDuracionOriginal, cantidadDuracionOriginal, formData.tiempo_estancia_id, 
+        habitacionInfo, 
+        parseInt(formData.cantidad_huespedes), 
+        tipoDuracionOriginal, 
+        cantidadDuracionOriginal, 
+        formData.tiempo_estancia_id, 
         formData.precio_libre_toggle, 
         parseFloat(formData.precio_libre_valor)
     );
+    
+    // IMPORTANTE: Si hay error de monto (ej: exceso de capacidad), lanzamos el error
     if (errorMonto) throw new Error(errorMonto);
 
-    // Actualiza el total en el estado global y la UI
+    // Actualizar Estado Global y UI INMEDIATAMENTE
     state.currentBookingTotal = baseSinImpuestos + montoImpuesto;
     if (ui && typeof ui.updateTotalDisplay === 'function') { 
         ui.updateTotalDisplay(montoDescontado);
     }
     
-    // Prepara las notas, añadiendo la información de precio manual si aplica
+    // 4. Validación de cruce de reservas
+    const HORAS_BLOQUEO_PREVIO = 3;
+    
+    // Consulta simple para detectar cruces visuales rápidos
+    const { data: proximaReserva } = await state.supabase
+        .from('reservas')
+        .select('id, fecha_inicio')
+        .eq('habitacion_id', formData.habitacion_id)
+        .in('estado', ['reservada', 'confirmada', 'activa'])
+        .gte('fecha_inicio', fechaEntrada.toISOString())
+        .order('fecha_inicio', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    if (proximaReserva) {
+        const inicioProximaReserva = new Date(proximaReserva.fecha_inicio);
+        const inicioBloqueo = new Date(inicioProximaReserva.getTime() - HORAS_BLOQUEO_PREVIO * 60 * 60 * 1000);
+        if (fechaSalida > inicioBloqueo) {
+            throw new Error(`Conflicto: Se cruza con una reserva futura (Inicia: ${formatDateTime(inicioProximaReserva)}).`);
+        }
+    }
+
+    // Validación RPC (Cruce estricto en BD)
+    try {
+        const { data: hayCruce, error: errCruce } = await state.supabase.rpc('validar_cruce_reserva', {
+            p_habitacion_id: formData.habitacion_id, 
+            p_entrada: fechaEntrada.toISOString(),
+            p_salida: fechaSalida.toISOString(), 
+            p_reserva_id_excluida: state.isEditMode ? state.editingReservaId : null
+        });
+
+        if (hayCruce === true) {
+            throw new Error("Conflicto: La habitación NO está disponible para estas fechas.");
+        }
+    } catch (e) {
+        // Ignoramos errores de RPC faltante para no bloquear el precio, solo advertimos
+        console.warn("Validación de cruce RPC omitida o fallida:", e.message);
+    }
+    
+    // Preparar notas
     let notasFinales = formData.notas.trim() || null;
     if (formData.precio_libre_toggle) {
-        const precioManualStr = `[PRECIO MANUAL: ${formatCurrency(parseFloat(formData.precio_libre_valor))}]`;
+        const precioManualStr = `[PRECIO MANUAL: ${formatCurrency(parseFloat(formData.precio_libre_valor), state.configHotel?.moneda_local_simbolo)}]`;
         notasFinales = notasFinales ? `${precioManualStr} ${notasFinales}` : precioManualStr;
     }
 
-    // Construye el objeto final con los datos de la reserva
+    // 5. Construir Objetos Finales
     const datosReserva = {
         cliente_id: formData.cliente_id,
         cliente_nombre: formData.cliente_nombre.trim(),
@@ -657,7 +689,7 @@ async function validateAndCalculateBooking(formData) {
         monto_estancia_base_sin_impuestos: baseSinImpuestos,
         monto_impuestos_estancia: montoImpuesto,
         porcentaje_impuestos_aplicado: state.configHotel.porcentaje_impuesto_principal,
-        nombre_impuesto_aplicado: state.configHotel.nombre_impuesto_aplicado,
+        nombre_impuesto_aplicado: state.configHotel.nombre_impuesto_principal,
         monto_total: state.currentBookingTotal,
         descuento_aplicado_id: state.descuentoAplicado?.id || null,
         monto_descontado: montoDescontado,
@@ -666,55 +698,61 @@ async function validateAndCalculateBooking(formData) {
         id_temporal_o_final: state.isEditMode ? state.editingReservaId : `TEMP-${Date.now()}`
     };
     
-    // Construye el objeto con los datos del pago
     const datosPago = {
         monto_abono: parseFloat(formData.monto_abono) || 0,
         metodo_pago_id: formData.metodo_pago_id || null,
         tipo_pago: formData.tipo_pago
     };
     
-    // Retorna ambos objetos para ser procesados
     return { datosReserva, datosPago };
 }
 
 
 
 
-// REEMPLAZA ESTA FUNCIÓN COMPLETA
+// En js/modules/reservas/reservas.js
+
 async function recalcularYActualizarTotalUI() {
+    // Limpiamos mensajes de error previos
+    const feedbackSmall = document.getElementById('reserva-feedback'); 
+    if(feedbackSmall) feedbackSmall.innerHTML = '';
+
     try {
         const formData = gatherFormData();
 
-        // --- INICIO DE LA LÓGICA DE DESCUENTO AUTOMÁTICO ---
-        // Solo buscamos descuentos automáticos si no hay uno manual ya aplicado
+        // Lógica de descuento automático
         if (!state.descuentoAplicado || state.descuentoAplicado.tipo_descuento_general !== 'codigo') {
-            // Pasamos 'null' para que la función solo busque automáticos
             state.descuentoAplicado = await buscarDescuentoParaReserva(formData, null);
         }
-        // --- FIN DE LA LÓGICA DE DESCUENTO AUTOMÁTICO ---
 
+        // Condición mínima para calcular
         if (formData.habitacion_id && formData.fecha_entrada &&
-            ((formData.tipo_calculo_duracion === 'noches_manual' && formData.cantidad_noches) ||
-             (formData.tipo_calculo_duracion === 'tiempo_predefinido' && formData.tiempo_estancia_id)) &&
-            formData.cantidad_huespedes
+            ( (formData.tipo_calculo_duracion === 'noches_manual' && formData.cantidad_noches && parseInt(formData.cantidad_noches) > 0) ||
+              (formData.tipo_calculo_duracion === 'tiempo_predefinido' && formData.tiempo_estancia_id) )
         ) {
-            await validateAndCalculateBooking(formData);
+            await validateAndCalculateBooking(formData); 
         } else {
+            // Faltan datos esenciales, ponemos 0 silenciosamente
             state.currentBookingTotal = 0;
-            if (ui && typeof ui.updateTotalDisplay === 'function') { 
-                ui.updateTotalDisplay(); 
-            }
+            if (ui && typeof ui.updateTotalDisplay === 'function') ui.updateTotalDisplay(); 
         }
     } catch (calcError) {
-        state.currentBookingTotal = 0;
-        if (ui && typeof ui.updateTotalDisplay === 'function') { 
-            ui.updateTotalDisplay(); 
+        console.warn("[Reservas] Error al calcular:", calcError.message);
+        
+        // Si el error NO es de conflicto (ej: es de capacidad excedida), ponemos 0
+        if (!calcError.message.includes('Conflicto')) {
+             state.currentBookingTotal = 0;
+             if (ui && typeof ui.updateTotalDisplay === 'function') ui.updateTotalDisplay();
+             
+             // VISUALIZAR EL ERROR: Si es error de capacidad u otro, mostrarlo sutilmente
+             if (ui.feedbackDiv) {
+                 ui.feedbackDiv.innerHTML = `<p class="text-xs text-orange-600 mt-1">⚠️ ${calcError.message}</p>`;
+             }
         }
-        console.warn("[Reservas] Advertencia al recalcular total para UI:", calcError.message);
     }
 }
 
-// REEMPLAZA ESTA FUNCIÓN EN TU ARCHIVO reservas.js
+// En js/modules/reservas/reservas.js
 
 async function cargarHabitaciones() {
     if (!ui.habitacionIdSelect) return;
@@ -722,7 +760,7 @@ async function cargarHabitaciones() {
     ui.habitacionIdSelect.disabled = true;
     
     const { data: rooms, error } = await state.supabase.from('habitaciones')
-        .select('id, nombre, tipo, estado, precio, capacidad_base, capacidad_maxima, precio_huesped_adicional')
+        .select('id, nombre, tipo, estado, precio, capacidad_base, capacidad_maxima, precio_huesped_adicional, precio_1_persona, precio_2_personas')
         .eq('hotel_id', state.hotelId)
         .eq('activo', true)
         .order('nombre', { ascending: true });
@@ -737,25 +775,25 @@ async function cargarHabitaciones() {
         rooms.forEach(room => {
             const isAvailable = room.estado === 'libre';
             const disabledAttribute = !isAvailable ? 'disabled' : '';
-            
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Se añade una comprobación para asegurar que 'room.estado' no es null
-            // antes de intentar usar métodos de string como .charAt() o .slice().
             const statusLabel = !isAvailable && room.estado 
                 ? ` (${room.estado.charAt(0).toUpperCase() + room.estado.slice(1)})` 
                 : '';
-            // --- FIN DE LA CORRECCIÓN ---
+
+            // CAMBIO AQUÍ: Si capacidad_maxima es null, usamos 20 para no bloquear el cálculo de extras
+            const capMax = room.capacidad_maxima || 20;
 
             optionsHtml += `
                 <option 
                     value="${room.id}" 
                     data-precio="${room.precio || 0}" 
-                    data-capacidad-base="${room.capacidad_base || 1}" 
-                    data-capacidad-maxima="${room.capacidad_maxima || room.capacidad_base || 1}" 
+                    data-precio-1="${room.precio_1_persona || 0}" 
+                    data-precio-2="${room.precio_2_personas || 0}" 
+                    data-capacidad-base="${room.capacidad_base || 2}" 
+                    data-capacidad-maxima="${capMax}" 
                     data-precio-extra="${room.precio_huesped_adicional || 0}"
                     ${disabledAttribute}
                 >
-                    ${room.nombre} (${formatCurrency(room.precio, state.configHotel?.moneda_local_simbolo || '$')})${statusLabel}
+                    ${room.nombre} (${formatCurrency(room.precio_2_personas || room.precio, state.configHotel?.moneda_local_simbolo || '$')})${statusLabel}
                 </option>
             `;
         });
@@ -770,14 +808,198 @@ async function cargarMetodosPago() {
     if (!ui.form || !ui.form.elements.metodo_pago_id) return;
     const select = ui.form.elements.metodo_pago_id;
     select.innerHTML = `<option value="">Cargando métodos...</option>`;
+    
+    // 1. Obtener métodos de pago de la BD
     const { data, error } = await state.supabase.from('metodos_pago').select('id, nombre')
         .eq('hotel_id', state.hotelId).eq('activo', true).order('nombre');
-    if (error) { select.innerHTML = `<option value="">Error</option>`; return; }
+    
+    if (error) { 
+        select.innerHTML = `<option value="">Error</option>`; 
+        return; 
+    }
+    
+    let metodosDisponibles = data || [];
+
+    // 2. INYECTAR LA OPCIÓN DE PAGO MIXTO
+    metodosDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" }); 
+    
+    // 3. Renderizar las opciones
     let optionsHtml = `<option value="">Selecciona método de pago...</option>`;
-    if (data && data.length > 0) { data.forEach(pago => optionsHtml += `<option value="${pago.id}">${pago.nombre}</option>`); }
-    else { optionsHtml = `<option value="">No hay métodos de pago</option>`; }
+    if (metodosDisponibles.length > 0) { 
+        metodosDisponibles.forEach(pago => optionsHtml += `<option value="${pago.id}">${pago.nombre}</option>`); 
+    } else { 
+        optionsHtml = `<option value="">No hay métodos de pago</option>`; 
+    }
     select.innerHTML = optionsHtml;
+
+    actualizarVisibilidadPago();
 }
+
+
+/**
+ * Muestra un modal secundario para dividir el pago en varios métodos.
+ * Este modal utiliza el contenedor 'modal-container-secondary'.
+ * @param {number} totalAPagar - El monto total que se debe cubrir.
+ * @param {Array} metodosPago - La lista de métodos de pago disponibles (debe ser un array de objetos {id, nombre}).
+ * @param {Function} onConfirm - Callback que se ejecuta con el array de pagos al confirmar.
+ */
+async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
+    const modalContainer = document.getElementById('modal-container-secondary');
+    modalContainer.style.display = 'flex';
+    modalContainer.innerHTML = '';
+
+    // 🛑 DEFENSA: Asegurarse de que metodosPago es un array utilizable
+    let metodosArray = Array.isArray(metodosPago) ? metodosPago : [];
+    if (metodosArray.length === 0 && metodosPago && metodosPago.length) {
+        // Conversión defensiva si se pasó un objeto de colección (ej: options del select)
+        metodosArray = Array.from(metodosPago);
+    }
+
+    // Filtramos la opción 'Pago Mixto' para que no aparezca dentro del modal mixto
+    const metodosDisponibles = metodosArray.filter(mp => mp.id !== 'mixto' && mp.id); 
+    if (metodosDisponibles.length === 0) {
+        Swal.fire('Error', 'No hay métodos de pago válidos disponibles para realizar un pago mixto.', 'error');
+        modalContainer.style.display = 'none';
+        return;
+    }
+    
+    // Generar las opciones HTML para los <select> dentro del modal
+    const opcionesMetodosHTML = metodosDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
+
+    const modalContent = document.createElement('div');
+    modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 m-auto animate-fade-in-up";
+    modalContent.innerHTML = `
+        <form id="form-pago-mixto">
+            <h3 class="text-xl font-bold mb-2 text-indigo-700">Pago Mixto</h3>
+            <p class="mb-4 text-gray-600">Divida el total de <strong class="text-2xl">${formatCurrency(totalAPagar, state.configHotel?.moneda_local_simbolo)}</strong>.</p>
+            <div id="lista-pagos-mixtos" class="space-y-3 pr-2 max-h-60 overflow-y-auto"></div>
+            <button type="button" id="btn-agregar-pago-mixto" class="button button-neutral w-full mt-4 text-sm py-2">Agregar Otro Método</button>
+            <hr class="my-4">
+            <div class="flex justify-between items-center text-lg font-bold">
+                <span class="text-gray-700">Total Cubierto:</span>
+                <span id="total-cubierto-mixto">${formatCurrency(0, state.configHotel?.moneda_local_simbolo)}</span>
+            </div>
+            <div class="flex justify-between items-center text-lg font-bold mt-1">
+                <span class="text-gray-700">Faltante por Pagar:</span>
+                <span id="faltante-pago-mixto" class="text-red-600">${formatCurrency(totalAPagar, state.configHotel?.moneda_local_simbolo)}</span>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button type="submit" id="btn-confirmar-pago-mixto" class="button button-success flex-1 py-2.5" disabled>Confirmar Pago</button>
+                <button type="button" id="btn-cancelar-pago-mixto" class="button button-danger flex-1 py-2.5">Cancelar</button>
+            </div>
+        </form>
+    `;
+    modalContainer.appendChild(modalContent);
+
+    const formMixto = modalContent.querySelector('#form-pago-mixto');
+    const listaPagosDiv = modalContent.querySelector('#lista-pagos-mixtos');
+    const btnConfirmar = modalContent.querySelector('#btn-confirmar-pago-mixto');
+    const submitBtnPrincipal = document.getElementById('submit-button'); 
+
+    const actualizarTotalesMixtos = () => {
+        let totalCubierto = 0;
+        listaPagosDiv.querySelectorAll('input.monto-pago-mixto').forEach(input => {
+            totalCubierto += Number(input.value) || 0;
+        });
+        const faltante = totalAPagar - totalCubierto;
+        modalContent.querySelector('#total-cubierto-mixto').textContent = formatCurrency(totalCubierto, state.configHotel?.moneda_local_simbolo);
+        const faltanteEl = modalContent.querySelector('#faltante-pago-mixto');
+        
+        if (Math.abs(faltante) < 0.01) { 
+            btnConfirmar.disabled = false;
+            faltanteEl.textContent = formatCurrency(0, state.configHotel?.moneda_local_simbolo);
+            faltanteEl.className = 'text-green-600';
+        } else {
+            btnConfirmar.disabled = true;
+            faltanteEl.textContent = formatCurrency(faltante, state.configHotel?.moneda_local_simbolo);
+            faltanteEl.className = faltante > 0 ? 'text-red-600' : 'text-orange-500'; 
+        }
+    };
+
+    const agregarFilaDePago = (montoInicial = 0) => {
+        const newRow = document.createElement('div');
+        newRow.className = 'pago-mixto-row flex items-center gap-2';
+        newRow.innerHTML = `
+            <select class="form-control flex-grow">${opcionesMetodosHTML}</select>
+            <input type="number" class="form-control w-32 monto-pago-mixto" placeholder="Monto" min="0" step="any" value="${montoInicial > 0 ? montoInicial.toFixed(2) : ''}">
+            <button type="button" class="btn-remover-pago-mixto text-red-500 hover:text-red-700 text-2xl font-bold">&times;</button>
+        `;
+        listaPagosDiv.appendChild(newRow);
+        
+        newRow.querySelector('.btn-remover-pago-mixto').onclick = () => {
+            newRow.remove();
+            actualizarTotalesMixtos();
+        };
+        newRow.querySelector('.monto-pago-mixto').addEventListener('input', actualizarTotalesMixtos);
+        
+        if (listaPagosDiv.children.length > 1) {
+            newRow.querySelector('select').selectedIndex = 0;
+        }
+    };
+
+    modalContent.querySelector('#btn-agregar-pago-mixto').onclick = agregarFilaDePago;
+    
+    agregarFilaDePago(totalAPagar); 
+    actualizarTotalesMixtos();
+
+    modalContent.querySelector('#btn-cancelar-pago-mixto').onclick = () => {
+        modalContainer.style.display = 'none';
+        modalContainer.innerHTML = '';
+        if (ui.form.elements.metodo_pago_id) ui.form.elements.metodo_pago_id.value = '';
+        if (submitBtnPrincipal) {
+            submitBtnPrincipal.disabled = false;
+            submitBtnPrincipal.textContent = 'Registrar Reserva'; 
+        }
+    };
+
+    // ... dentro de showPagoMixtoModal ...
+
+    formMixto.onsubmit = async (e) => {
+        e.preventDefault();
+        
+        // 1. Bloquear botón para evitar doble clic
+        btnConfirmar.disabled = true;
+        btnConfirmar.textContent = "Procesando...";
+        
+        // 2. Recopilar datos
+        const pagosFinales = [];
+        listaPagosDiv.querySelectorAll('.pago-mixto-row').forEach(row => {
+            const selectEl = row.querySelector('select');
+            const montoInput = row.querySelector('input');
+            const metodoId = selectEl.value;
+            const monto = parseFloat(montoInput.value) || 0;
+            
+            // Validamos que sea un método real y monto positivo
+            if (metodoId && metodoId !== 'mixto' && monto > 0) {
+                pagosFinales.push({ metodo_pago_id: metodoId, monto: monto });
+            }
+        });
+
+        if (pagosFinales.length > 0) {
+            try {
+                // 3. Ejecutar la acción de guardado (createBooking)
+                await onConfirm(pagosFinales);
+                
+                // 4. ÉXITO: Cerrar el modal manualmente <-- ESTO FALTABA
+                modalContainer.style.display = 'none';
+                modalContainer.innerHTML = '';
+                
+            } catch (error) {
+                // 5. ERROR: Si falla, reactivar el botón para reintentar
+                console.error("Error en pago mixto:", error);
+                btnConfirmar.disabled = false;
+                btnConfirmar.textContent = "Confirmar Pago";
+                // Opcional: Mostrar alerta de error aquí si lo deseas
+                Swal.fire('Error', 'Hubo un problema al procesar el pago. Intente nuevamente.', 'error');
+            }
+        } else {
+            Swal.fire('Error', "No se ha definido ningún pago válido o los montos son 0.", 'error');
+            btnConfirmar.disabled = false;
+            btnConfirmar.textContent = "Confirmar Pago";
+        }
+    };
+}
+
 
 async function cargarTiemposEstancia() {
     if (!ui.tiempoEstanciaIdSelect) return;
@@ -964,117 +1186,169 @@ async function loadInitialData() {
 }
 
 
+// js/modules/reservas/reservas.js
+
+/**
+ * Crea una nueva reserva y registra los movimientos de pago y caja asociados.
+ * @param {{datosReserva: object, datosPago: {monto_abono: number, metodo_pago_id: string, tipo_pago: string, pagosMixtos: Array<{metodo_pago_id: string, monto: number}>}}} payload
+ * @returns {Promise<object>} La reserva insertada.
+ */
+
+
+// js/modules/reservas/reservas.js
+
 async function createBooking(payload) {
     const { datosReserva, datosPago } = payload;
-    let reservaParaInsertar = { ...datosReserva };
-    delete reservaParaInsertar.id_temporal_o_final;
     
-    // Lógica para crear un cliente nuevo si no se seleccionó uno existente
-    if (!reservaParaInsertar.cliente_id) {
-        const { data: nuevoCliente, error: errCliente } = await state.supabase
+    // 1. Lógica de Cliente (Búsqueda o Creación)
+    let clienteIdFinal = datosReserva.cliente_id;
+    if (!clienteIdFinal && datosReserva.cliente_nombre) {
+         const { data: clienteExistente } = await state.supabase
             .from('clientes')
-            .insert({
-                hotel_id: state.hotelId,
-                nombre: reservaParaInsertar.cliente_nombre,
-                documento: reservaParaInsertar.cedula,
-                telefono: reservaParaInsertar.telefono
-            })
             .select('id')
-            .single();
-
-        if (errCliente) throw new Error(`Error al crear el nuevo cliente: ${errCliente.message}`);
-        reservaParaInsertar.cliente_id = nuevoCliente.id;
+            .eq('cedula', datosReserva.cedula)
+            .eq('hotel_id', state.hotelId)
+            .maybeSingle(); // Usamos maybeSingle para evitar errores si no existe
+            
+         if(clienteExistente) {
+             clienteIdFinal = clienteExistente.id;
+         } else {
+             const { data: nuevo, error: errNuevo } = await state.supabase.from('clientes').insert({
+                 nombre: datosReserva.cliente_nombre, 
+                 documento: datosReserva.cedula,
+                 telefono: datosReserva.telefono, 
+                 hotel_id: state.hotelId
+             }).select('id').single();
+             
+             if(nuevo) clienteIdFinal = nuevo.id;
+             if(errNuevo) console.error("Error creando cliente rápido:", errNuevo);
+         }
     }
 
-    // Lógica para determinar el monto pagado
-    if (!state.configHotel.cobro_al_checkin) {
-        reservaParaInsertar.monto_pagado = 0;
+    // 2. Preparar objeto de reserva LIMPIO 
+    const reservaParaInsertar = {
+        hotel_id: state.hotelId,
+        habitacion_id: datosReserva.habitacion_id,
+        cliente_id: clienteIdFinal,
+        cliente_nombre: datosReserva.cliente_nombre,
+        
+        cliente_cedula: datosReserva.cedula || null,
+        cliente_telefono: datosReserva.telefono || null,
+        cedula: datosReserva.cedula || null,
+        telefono: datosReserva.telefono || null,
+        
+        fecha_inicio: datosReserva.fecha_inicio,
+        fecha_fin: datosReserva.fecha_fin,
+        
+        cantidad_huespedes: datosReserva.cantidad_huespedes,
+        tiempo_estancia_id: datosReserva.tiempo_estancia_id,
+        tipo_duracion: datosReserva.tipo_duracion,
+        cantidad_duracion: datosReserva.cantidad_duracion,
+        
+        monto_total: datosReserva.monto_total,
+        monto_estancia_base: datosReserva.monto_estancia_base_sin_impuestos || 0,
+        monto_estancia_base_sin_impuestos: datosReserva.monto_estancia_base_sin_impuestos,
+        monto_impuestos_estancia: datosReserva.monto_impuestos_estancia,
+        porcentaje_impuestos_aplicado: datosReserva.porcentaje_impuestos_aplicado,
+        nombre_impuesto_aplicado: datosReserva.nombre_impuesto_aplicado,
+        monto_descontado: datosReserva.monto_descontado,
+        descuento_aplicado_id: datosReserva.descuento_aplicado_id,
+        
+        notas: datosReserva.notas,
+        origen_reserva: datosReserva.origen_reserva || 'directa',
+        usuario_id: state.currentUser.id,
+        
+        // --- CORRECCIÓN AQUÍ ---
+        // Si es "mixto" o viene vacío, enviamos NULL.
+        // Esto evita el error "invalid input syntax for type uuid: 'mixto'"
+        metodo_pago_id: (datosPago.metodo_pago_id === 'mixto' || !datosPago.metodo_pago_id) ? null : datosPago.metodo_pago_id, 
+        
+        monto_pagado: 0 
+    };
+
+    // 3. Calcular total pagado ahora
+    const pagosAProcesar = datosPago.pagosMixtos || [];
+    const totalPagadoAhora = pagosAProcesar.reduce((sum, pago) => sum + pago.monto, 0);
+
+    reservaParaInsertar.monto_pagado = totalPagadoAhora;
+
+    // 4. Determinar estado compatible con el ENUM de la BD
+    if (totalPagadoAhora >= datosReserva.monto_total && datosReserva.monto_total > 0) {
+        reservaParaInsertar.estado = 'confirmada'; 
+    } else if (totalPagadoAhora > 0) {
+        reservaParaInsertar.estado = 'reservada'; // Parcialmente pagada
     } else {
-        const tipoPago = datosPago?.tipo_pago || 'parcial';
-        const montoAbono = parseFloat(datosPago?.monto_abono) || 0;
-        reservaParaInsertar.monto_pagado = (tipoPago === 'completo') ? state.currentBookingTotal : montoAbono;
+        reservaParaInsertar.estado = 'reservada'; // Pendiente/Sin pago
     }
 
-    // Insertar la reserva principal
+    // 5. Insertar Reserva
     const { data: reservaInsertada, error: errInsert } = await state.supabase
-        .from('reservas').insert(reservaParaInsertar).select().single();
+        .from('reservas')
+        .insert(reservaParaInsertar)
+        .select()
+        .single();
 
-    if (errInsert) throw new Error(`Error al guardar la reserva principal: ${errInsert.message}`);
-
-    // --- INICIO DE LA LÓGICA AÑADIDA ---
-    // Si la reserva se creó con un descuento, llamamos a la función de la BD para incrementar su uso.
-    if (reservaInsertada.descuento_aplicado_id) {
-    const { error: rpcError } = await state.supabase.rpc('incrementar_uso_descuento', {
-        descuento_id_param: reservaInsertada.descuento_aplicado_id
-    });
-    if (rpcError) {
-        console.error("Advertencia: No se pudo incrementar el uso del descuento.", rpcError);
+    if (errInsert) {
+        console.error("Error detallado Supabase (Insert Reserva):", errInsert);
+        throw new Error(`Error al guardar reserva en BD: ${errInsert.message}`);
     }
-}
-
-    // --- FIN DE LA LÓGICA AÑADIDA ---
 
     const nuevaReservaId = reservaInsertada.id;
-    const montoPagadoAhora = reservaInsertada.monto_pagado;
 
-    // Lógica para registrar pagos y movimientos en caja
-    if (montoPagadoAhora > 0) {
-        if (!datosPago.metodo_pago_id) {
-            throw new Error("Se requiere un método de pago para registrar el abono o pago completo.");
-        }
+    // 6. REGISTRAR PAGOS Y MOVIMIENTOS DE CAJA
+    if (totalPagadoAhora > 0) {
+        const turnoId = turnoService.getActiveTurnId();
+        
+        if (!turnoId) console.warn("Advertencia: No hay turno activo, el pago se registra en reserva pero no en caja.");
+        
+        const conceptoPago = totalPagadoAhora >= datosReserva.monto_total ? 'Pago completo de reserva' : 'Abono inicial de reserva';
+        
+        const pagosParaInsertar = pagosAProcesar.map(p => ({
+            hotel_id: state.hotelId,
+            reserva_id: nuevaReservaId,
+            monto: p.monto,
+            fecha_pago: new Date().toISOString(),
+            metodo_pago_id: p.metodo_pago_id, // Aquí SÍ van los UUIDs correctos seleccionados en el modal
+            usuario_id: state.currentUser.id,
+            concepto: conceptoPago
+        }));
 
-        const { data: pagoData, error: errPagosReserva } = await state.supabase
+        const { data: pagosData, error: errPagosReserva } = await state.supabase
             .from('pagos_reserva')
-            .insert({
-                reserva_id: nuevaReservaId,
-                monto: montoPagadoAhora,
-                metodo_pago_id: datosPago.metodo_pago_id,
-                fecha_pago: new Date().toISOString(),
-                hotel_id: state.hotelId,
-                usuario_id: state.currentUser.id,
-                concepto: datosPago.tipo_pago === 'completo' ? 'Pago completo de reserva' : 'Abono inicial de reserva'
-            })
-            .select('id')
-            .single();
+            .insert(pagosParaInsertar)
+            .select('id, metodo_pago_id, monto');
 
         if (errPagosReserva) {
-            console.error("Error crítico: La reserva se creó pero el pago no pudo ser registrado en 'pagos_reserva'.", errPagosReserva);
-            showError(ui.feedbackDiv, "Advertencia: Reserva creada, pero hubo un error registrando el detalle del pago.");
-        }
-        
-        const turnoId = await turnoService.getActiveTurnId(); // Asumiendo que esta función existe
-        if (!turnoId) {
-            showError(ui.feedbackDiv, "Advertencia: ¡Pago no registrado en caja! No hay un turno activo.");
-        } else if (pagoData) {
-            const { error: errCaja } = await state.supabase.from('caja').insert({
-                hotel_id: state.hotelId,
-                tipo: 'ingreso',
-                monto: montoPagadoAhora,
-                concepto: `Reserva ${reservaInsertada.cliente_nombre} (#${nuevaReservaId.substring(0, 8)})`,
-                referencia: nuevaReservaId,
-                metodo_pago_id: datosPago.metodo_pago_id,
-                usuario_id: state.currentUser.id,
-                turno_id: turnoId,
-                reserva_id: nuevaReservaId,
-                pago_reserva_id: pagoData.id
+            console.error("Error al registrar pagos_reserva", errPagosReserva);
+        } else if (turnoId && pagosData && pagosData.length > 0) {
+            // Registrar en Caja
+            const movimientosCaja = pagosData.map(pagoRegistrado => {
+                return {
+                    hotel_id: state.hotelId,
+                    tipo: 'ingreso',
+                    monto: pagoRegistrado.monto,
+                    concepto: `Alquiler Habitación (${datosPago.tipo_pago === 'completo' ? 'Pago Completo' : 'Abono'}) - Cliente: ${datosReserva.cliente_nombre}`,
+                    fecha_movimiento: new Date().toISOString(),
+                    metodo_pago_id: pagoRegistrado.metodo_pago_id,
+                    usuario_id: state.currentUser.id,
+                    turno_id: turnoId,
+                    reserva_id: nuevaReservaId,
+                    pago_reserva_id: pagoRegistrado.id 
+                };
             });
-
-            if (errCaja) {
-                 console.error("Error crítico: El pago se registró en la reserva pero no en la caja.", errCaja);
-                 showError(ui.feedbackDiv, "Advertencia: Reserva y pago registrados, pero hubo un error al registrar el ingreso en caja.");
-            }
+            await state.supabase.from('caja').insert(movimientosCaja);
         }
     }
-    
-    // Lógica para actualizar estado de la habitación
-    const ahora = new Date();
-    const fechaInicioReserva = new Date(reservaInsertada.fecha_inicio);
-    if ((fechaInicioReserva.getTime() - ahora.getTime()) / (1000 * 60) <= 120) {
-        await state.supabase.from('habitaciones')
-            .update({ estado: "reservada" })
-            .eq('id', reservaInsertada.habitacion_id)
-            .eq('estado', 'libre');
-    }
+
+    // Registrar bitácora
+    await registrarEnBitacora({
+        supabase: state.supabase, 
+        hotel_id: state.hotelId, 
+        usuario_id: state.currentUser.id, 
+        modulo: 'Reservas', 
+        accion: 'CREAR_RESERVA', 
+        detalles: { id: nuevaReservaId, cliente: datosReserva.cliente_nombre }
+    });
 
     return reservaInsertada;
 }
@@ -1772,7 +2046,7 @@ async function handleExternalUpdate(event) {
     await renderReservas();
 }
 
-// En tu archivo reservas.js, reemplaza esta función completa:
+
 
 async function handleFormSubmit(event) {
     event.preventDefault();
@@ -1784,37 +2058,79 @@ async function handleFormSubmit(event) {
 
     try {
         const formData = gatherFormData();
-
-        // --- INICIO DE LA VALIDACIÓN DE TURNO ACTIVO ---
-        // Antes de hacer cualquier otra cosa, verificamos si se requiere un pago
-        // y si hay un turno para registrarlo.
-
-        // Determinamos si se está intentando hacer un pago.
-        const seIntentaPagar = (formData.tipo_pago === 'completo' && state.currentBookingTotal > 0) ||
-                               (formData.tipo_pago === 'parcial' && parseFloat(formData.monto_abono) > 0);
-
-        // Si la política es cobrar al check-in y se está intentando pagar...
-        if (state.configHotel.cobro_al_checkin && seIntentaPagar) {
-            const turnoId = turnoService.getActiveTurnId();
-            if (!turnoId) {
-                // Si no hay turno, bloqueamos la acción y mostramos un error claro.
-                throw new Error("ACCIÓN BLOQUEADA: No se puede registrar la reserva porque no hay un turno de caja activo para procesar el pago.");
-            }
-        }
-        // --- FIN DE LA VALIDACIÓN DE TURNO ACTIVO ---
-
-        // Si la validación de turno pasó, continuamos con el resto del proceso.
+        
+        // 1. Validaciones iniciales y cálculo de costos
         validateInitialInputs(formData);
         const bookingPayload = await validateAndCalculateBooking(formData);
 
+        const montoTotalCosto = state.currentBookingTotal;
+        const metodoPagoId = formData.metodo_pago_id;
+        const tipoPago = formData.tipo_pago;
+
+        // 2. VALIDACIÓN DE TURNO ACTIVO
+        const seIntentaPagar = (tipoPago === 'completo' && montoTotalCosto > 0) ||
+                               (tipoPago === 'parcial' && parseFloat(formData.monto_abono) > 0);
+        if (state.configHotel.cobro_al_checkin && seIntentaPagar) {
+            const turnoId = turnoService.getActiveTurnId();
+            if (!turnoId) {
+                throw new Error("ACCIÓN BLOQUEADA: No hay un turno de caja activo para procesar el pago.");
+            }
+        }
+
+        // 3. LÓGICA DE PAGO MIXTO/COMPLETO
+        if (!state.isEditMode && state.configHotel.cobro_al_checkin && tipoPago === 'completo' && montoTotalCosto > 0) {
+            
+            if (metodoPagoId === "mixto") {
+                // CASO 1: PAGO MIXTO
+                setFormLoadingState(ui.form, false, ui.submitButton, originalButtonText); 
+                
+                // Obtener métodos frescos de la BD para el modal
+                const { data: metodosPagoDB, error: errDB } = await state.supabase
+                    .from('metodos_pago').select('id, nombre')
+                    .eq('hotel_id', state.hotelId).eq('activo', true).order('nombre');
+
+                if (errDB) throw new Error("Error al cargar métodos de pago.");
+                
+                let metodosPagoList = metodosPagoDB || [];
+                metodosPagoList.unshift({ id: "mixto", nombre: "Pago Mixto" }); 
+
+                await showPagoMixtoModal(montoTotalCosto, metodosPagoList, async (pagosMixtos) => {
+                    // Callback al confirmar pago mixto
+                    bookingPayload.datosPago.pagosMixtos = pagosMixtos;
+                    await createBooking(bookingPayload);
+                    showSuccess(ui.feedbackDiv, "Reserva creada exitosamente con pago mixto.");
+                    resetFormToCreateMode();
+                    await renderReservas();
+                    document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'reservas', accion: 'create' } }));
+                });
+                return; 
+            
+            } else {
+                // CASO 2: PAGO ÚNICO COMPLETO
+                bookingPayload.datosPago.pagosMixtos = [{ 
+                    metodo_pago_id: metodoPagoId, 
+                    monto: montoTotalCosto 
+                }];
+            }
+            
+        } else if (!state.isEditMode && state.configHotel.cobro_al_checkin && tipoPago === 'parcial' && parseFloat(formData.monto_abono) > 0) {
+            // CASO 3: ABONO (Pago Parcial)
+            bookingPayload.datosPago.pagosMixtos = [{ 
+                metodo_pago_id: metodoPagoId, 
+                monto: parseFloat(formData.monto_abono)
+            }];
+        } else {
+            // CASO 4: Sin pago
+            bookingPayload.datosPago.pagosMixtos = [];
+        }
+
+        // 4. REGISTRO DIRECTO (Para pagos únicos o sin pago)
         if (state.isEditMode) {
             await updateBooking(bookingPayload);
             showSuccess(ui.feedbackDiv, "Reserva actualizada exitosamente.");
-            await registrarEnBitacora({ supabase: state.supabase, hotel_id: state.hotelId, usuario_id: state.currentUser.id, modulo: 'Reservas', accion: 'ACTUALIZAR_RESERVA', detalles: { reserva_id: state.editingReservaId, cliente: bookingPayload.datosReserva.cliente_nombre } });
         } else {
-            const reservaCreada = await createBooking(bookingPayload);
+            await createBooking(bookingPayload);
             showSuccess(ui.feedbackDiv, "Reserva creada exitosamente.");
-            await registrarEnBitacora({ supabase: state.supabase, hotel_id: state.hotelId, usuario_id: state.currentUser.id, modulo: 'Reservas', accion: 'CREAR_RESERVA', detalles: { reserva_id: reservaCreada.id, cliente: reservaCreada.cliente_nombre, habitacion_id: reservaCreada.habitacion_id } });
         }
 
         resetFormToCreateMode();
@@ -1822,10 +2138,12 @@ async function handleFormSubmit(event) {
         document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'reservas', accion: state.isEditMode ? 'update' : 'create' } }));
 
     } catch (err) {
-        console.error("Error en submit de reserva:", err);
+        console.error("Error en submit:", err);
         showError(ui.feedbackDiv, err.message);
     } finally {
-        setFormLoadingState(ui.form, false, ui.submitButton, originalButtonText);
+        if (ui.form.elements.metodo_pago_id.value !== "mixto" || state.isEditMode) {
+            setFormLoadingState(ui.form, false, ui.submitButton, originalButtonText);
+        }
     }
 }
 

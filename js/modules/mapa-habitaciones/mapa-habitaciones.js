@@ -553,13 +553,17 @@ async function renderRooms(gridEl, supabase, currentUser, hotelId) {
     }
     const filterContainer = document.getElementById('floor-filter-container');
 
+    // Limpiar intervalos de cronómetros anteriores para evitar fugas de memoria
     Object.values(cronometrosInterval).forEach(clearInterval);
     cronometrosInterval = {};
+
+    // Mostrar estado de carga
     gridEl.innerHTML = `<div class="col-span-full text-center text-slate-500 p-6">Cargando habitaciones...</div>`;
 
+    // Consulta a Supabase
     const { data: habitaciones, error } = await supabase
         .from('habitaciones')
-        .select('*, reservas(estado, fecha_inicio, historial_articulos_prestados(id, articulo_nombre, accion, item_prestable_id))')
+        .select('*, reservas(id, estado, fecha_inicio, fecha_fin, cliente_nombre, historial_articulos_prestados(id, articulo_nombre, accion, item_prestable_id))')
         .eq('hotel_id', hotelId)
         .order('nombre', { ascending: true });
 
@@ -570,53 +574,59 @@ async function renderRooms(gridEl, supabase, currentUser, hotelId) {
 
     currentRooms = habitaciones;
 
-    // ================== INICIO DE LA LÓGICA DE CORRECCIÓN ==================
-    // Aquí añadimos la lógica para verificar y cambiar el estado dinámicamente.
+    // ================== LÓGICA DE BLOQUEO (2 HORAS ANTES) ==================
+    const ahora = new Date();
+    const DOS_HORAS_MS = 2 * 60 * 60 * 1000; // 2 Horas en milisegundos
 
-   const ahora = new Date();
-const TRES_HORAS_MS = 3 * 60 * 60 * 1000;
+    currentRooms.forEach(room => {
+        // Inicializamos la propiedad para guardar la info de la próxima reserva
+        // Esto servirá para que 'roomCard' pueda pintar la fecha y hora
+        room.proximaReservaData = null;
 
-currentRooms.forEach(room => {
-  // Si no hay arreglo de reservas, no hacemos nada
-  if (!Array.isArray(room.reservas) || room.reservas.length === 0) return;
+        if (!Array.isArray(room.reservas) || room.reservas.length === 0) return;
 
-  // Tomamos la próxima reserva futura en estado 'reservada'
-  const proximaReserva = room.reservas
-    .filter(r => r.estado === 'reservada' && new Date(r.fecha_inicio) > ahora)
-    .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio))[0];
+        // 1. Filtrar reservas futuras relevantes (reservada o confirmada)
+        // Ignoramos las canceladas o las que ya pasaron
+        const reservasFuturas = room.reservas
+            .filter(r => 
+                (r.estado === 'reservada' || r.estado === 'confirmada') && 
+                new Date(r.fecha_inicio) > ahora
+            )
+            .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio));
 
-  if (!proximaReserva) return;
+        // 2. Si hay reservas futuras, tomamos la más cercana
+        if (reservasFuturas.length > 0) {
+            const proxima = reservasFuturas[0];
+            const inicioReserva = new Date(proxima.fecha_inicio);
+            const tiempoFaltante = inicioReserva.getTime() - ahora.getTime();
 
-  const inicioReserva = new Date(proximaReserva.fecha_inicio);
-  const diff = inicioReserva.getTime() - ahora.getTime();
+            // Guardamos la referencia de la reserva en el objeto habitación
+            room.proximaReservaData = proxima;
 
-  // Si faltan más de 3 horas: mostrar "LIBRE" (solo para la vista),
-  // excepto si realmente está ocupada/agotada/limpieza/mantenimiento.
-  if (diff > TRES_HORAS_MS) {
-    if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(room.estado)) {
-      room.estado = 'libre';
-    }
-    return;
-  }
+            // 3. Aplicar bloqueo visual si faltan 2 horas o menos
+            // Solo cambiamos el estado si la habitación no está ocupada, sucia o en mantenimiento
+            if (tiempoFaltante <= DOS_HORAS_MS && tiempoFaltante > 0) {
+                if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(room.estado)) {
+                    room.estado = 'reservada'; // Forzamos el estado visual para el mapa
+                }
+            }
+        }
+    });
+    // =================== FIN DE LÓGICA DE BLOQUEO ====================
 
-  // Si faltan entre 0 y 3 horas: mostrar "RESERVADA"
-  if (diff > 0 && diff <= TRES_HORAS_MS) {
-    room.estado = 'reservada';
-  }
-});
-    // =================== FIN DE LA LÓGICA DE CORRECCIÓN ====================
-
-
-    const mainAppContainer = gridEl;
-    
+    // Renderizar filtros de piso (Piso 1, Piso 2, etc.)
     renderFloorFilters(currentRooms, filterContainer, gridEl, supabase, currentUser, hotelId);
     
+    // Limpiar grid para renderizar tarjetas finales
     gridEl.innerHTML = ''; 
+    const mainAppContainer = gridEl;
+
     if (!currentRooms || currentRooms.length === 0) {
-        gridEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones.</div>`;
+        gridEl.innerHTML = `<div class="col-span-full text-gray-500 p-4 text-center">No hay habitaciones configuradas.</div>`;
         return;
     }
     
+    // Ordenar habitaciones numéricamente (101, 102, 201...) en lugar de alfabéticamente (1, 10, 100, 2)
     currentRooms.sort((a, b) => {
         const getNumber = nombre => {
             const match = String(nombre || '').match(/\d+/);
@@ -625,9 +635,12 @@ currentRooms.forEach(room => {
         return getNumber(a.nombre) - getNumber(b.nombre);
     });
 
+    // Generar las tarjetas
     currentRooms.forEach(room => {
-        // Ahora, cuando se llame a roomCard, algunas habitaciones ya tendrán su estado modificado a 'reservada'.
+        // Se pasa 'mainAppContainer' a roomCard para los modales
         gridEl.appendChild(roomCard(room, supabase, currentUser, hotelId, mainAppContainer));
+        
+        // Si la habitación está ocupada o tiempo agotado, iniciamos el cronómetro visual
         if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
             startCronometro(room, supabase, hotelId, gridEl);
         }
@@ -664,112 +677,125 @@ function getAmenityIcon(amenityText) {
 }
 
 
-// Reemplaza esta función completa en: js/modules/mapa_habitaciones/mapa_habitaciones.js
-
-// js/modules/mapa_habitaciones/mapa_habitaciones.js
+// En js/modules/mapa_habitaciones/mapa_habitaciones.js
 
 function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
     const card = document.createElement('div');
-    card.className = `room-card bg-white rounded-xl shadow-lg overflow-hidden transition-all duration-300 ease-in-out hover:shadow-cyan-200/50 hover:border-cyan-500 border-2 border-transparent flex flex-col group`;
+    // Añadimos 'relative' para posicionar elementos si fuera necesario
+    card.className = `room-card bg-white rounded-xl shadow-lg overflow-hidden transition-all duration-300 ease-in-out hover:shadow-cyan-200/50 hover:border-cyan-500 border-2 border-transparent flex flex-col group relative`;
 
-    // --- Lógica de estado y badge (sin cambios) ---
+    // --- Lógica de estado y badge ---
     let badgeBgClass = 'bg-slate-100 text-slate-700';
     let estadoText = room.estado ? room.estado.toUpperCase().replace(/_/g, " ") : 'DESCONOCIDO';
     if (estadoColores[room.estado]) {
         badgeBgClass = estadoColores[room.estado].badge;
+        // Si está reservada por el bloqueo de 2 horas, aseguramos el borde correcto
+        if(room.estado === 'reservada') {
+             card.classList.add('border-indigo-500');
+             card.classList.remove('border-transparent');
+        } else {
+             card.classList.add(estadoColores[room.estado].border.split(' ')[0]); // Añadir color de borde
+             card.classList.remove('border-transparent');
+        }
     }
     
-    // --- Lógica para mostrar la imagen (sin cambios) ---
     const imageBannerHTML = room.imagen_url
         ? `<div class="relative h-48 bg-slate-200"><img src="${room.imagen_url}" class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" alt="Habitación ${room.nombre}" /></div>`
         : '';
 
-    // --- INICIO DE LA NUEVA LÓGICA: Mostrar información de la reserva ---
+    // --- BLOQUE NUEVO: Mostrar Próxima Reserva ---
     let reservaInfoHTML = '';
-    if (room.estado === 'reservada' && Array.isArray(room.reservas) && room.reservas.length > 0) {
-        // Encontrar la primera reserva que tenga el estado 'reservada'
-        const reservaActiva = room.reservas.find(r => r.estado === 'reservada');
-        if (reservaActiva && reservaActiva.fecha_inicio) {
-            const iconCalendar = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`;
+    // Usamos el dato que calculamos en renderRooms (room.proximaReservaData)
+    // O si la habitación ya tiene estado 'reservada', buscamos en su array
+    if (room.proximaReservaData || (room.estado === 'reservada' && room.reservas && room.reservas.length > 0)) {
+        
+        // Preferimos el dato calculado, si no, buscamos fallback
+        const r = room.proximaReservaData || room.reservas.find(res => res.estado === 'reservada');
+        
+        if (r) {
+            const fechaObj = new Date(r.fecha_inicio);
+            const horaStr = fechaObj.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
+            const fechaStr = fechaObj.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+            
+            // Icono de reloj/calendario
+            const iconCal = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-indigo-600 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>`;
+            
             reservaInfoHTML = `
-                <div class="mt-3 pt-3 border-t border-slate-100 text-sm">
-                    <p class="flex items-center text-indigo-700 font-semibold">
-                        ${iconCalendar}
-                        <span>Llega: ${formatDateTime(reservaActiva.fecha_inicio)}</span>
-                    </p>
+                <div class="mt-2 mb-1 p-2 bg-indigo-50 border border-indigo-100 rounded-lg flex items-start flex-col animate-pulse">
+                    <div class="flex items-center w-full">
+                        ${iconCal}
+                        <span class="text-xs font-bold text-indigo-700 uppercase tracking-wide">Próxima Reserva</span>
+                    </div>
+                    <div class="pl-6 text-sm text-indigo-900 font-semibold">
+                        ${fechaStr} - ${horaStr}
+                    </div>
+                    <div class="pl-6 text-xs text-indigo-500 truncate w-full">
+                        ${r.cliente_nombre || 'Cliente'}
+                    </div>
                 </div>
             `;
         }
     }
-    // --- FIN DE LA NUEVA LÓGICA ---
 
-    // Nuevo (Bloque de Reemplazo)
-// --- INICIO DE NUEVA LÓGICA: Mostrar artículos en seguimiento ---
-const reservaOcupada = (Array.isArray(room.reservas) && room.reservas.length > 0)
-    ? room.reservas.find(r => ['ocupada', 'activa', 'tiempo agotado'].includes(r.estado))
-    : null;
+    // --- Resto de información (Artículos prestados) ---
+    const reservaOcupada = (Array.isArray(room.reservas) && room.reservas.length > 0)
+        ? room.reservas.find(r => ['ocupada', 'activa', 'tiempo agotado'].includes(r.estado))
+        : null;
 
-// Filtramos el historial para mostrar solo los que están 'prestados'
-const articulosEnSeguimiento = reservaOcupada?.historial_articulos_prestados?.filter(h => h.accion === 'prestado') || [];
-let articulosInfoHTML = '';
+    const articulosEnSeguimiento = reservaOcupada?.historial_articulos_prestados?.filter(h => h.accion === 'prestado') || [];
+    let articulosInfoHTML = '';
 
-if (articulosEnSeguimiento.length > 0) {
-    const iconEntrega = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5 text-blue-500" viewBox="0 0 20 20" fill="currentColor"><path d="M8 4a1 1 0 011 1v1H8a1 1 0 010-2zm0 3h2a1 1 0 011 1v2a1 1 0 01-1 1H8a1 1 0 01-1-1V8a1 1 0 011-1z" /><path fill-rule="evenodd" d="M4 3a2 2 0 012-2h8a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V3zm2 1h8v12H6V4z" clip-rule="evenodd" /></svg>`;
-    articulosInfoHTML = `
-        <div class="mt-3 pt-3 border-t border-slate-100 text-sm">
-            <p class="flex items-center text-blue-700 font-semibold mb-2">
-                ${iconEntrega}
-                <span>Artículos Prestados:</span>
-            </p>
-            <div class="flex flex-wrap gap-1.5">
-                ${articulosEnSeguimiento.map(item => `<span class="badge bg-blue-100 text-blue-800 px-2 py-0.5 text-xs font-medium rounded-full">${item.articulo_nombre}</span>`).join('')}
+    if (articulosEnSeguimiento.length > 0) {
+        const iconEntrega = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5 text-blue-500" viewBox="0 0 20 20" fill="currentColor"><path d="M8 4a1 1 0 011 1v1H8a1 1 0 010-2zm0 3h2a1 1 0 011 1v2a1 1 0 01-1 1H8a1 1 0 01-1-1V8a1 1 0 011-1z" /><path fill-rule="evenodd" d="M4 3a2 2 0 012-2h8a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V3zm2 1h8v12H6V4z" clip-rule="evenodd" /></svg>`;
+        articulosInfoHTML = `
+            <div class="mt-2 pt-2 border-t border-slate-100 text-sm">
+                <p class="flex items-center text-blue-700 font-semibold mb-1">
+                    ${iconEntrega} <span>Artículos:</span>
+                </p>
+                <div class="flex flex-wrap gap-1">
+                    ${articulosEnSeguimiento.map(item => `<span class="badge bg-blue-100 text-blue-800 px-2 py-0.5 text-[10px] font-medium rounded-full border border-blue-200">${item.articulo_nombre}</span>`).join('')}
+                </div>
             </div>
-        </div>
-    `;
-}
-// --- FIN DE LA NUEVA LÓGICA ---
+        `;
+    }
 
     card.innerHTML = `
         ${imageBannerHTML}
         <div class="p-4 flex-grow flex flex-col">
-            <div class="flex justify-between items-start mb-3"> 
+            <div class="flex justify-between items-start mb-2"> 
                 <div>
-                    <h3 class="text-lg font-bold text-slate-800">${room.nombre}</h3>
-                    <p class="text-sm text-slate-500 -mt-1">${room.tipo || 'No especificado'}</p>
+                    <h3 class="text-lg font-bold text-slate-800 leading-tight">${room.nombre}</h3>
+                    <p class="text-xs text-slate-500">${room.tipo || 'General'}</p>
                 </div>
-                <span class="badge ${badgeBgClass} px-2.5 py-1 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm flex-shrink-0">
+                <span class="badge ${badgeBgClass} px-2 py-1 text-[10px] uppercase font-bold rounded shadow-sm border border-black/5">
                     ${estadoText}
                 </span>
             </div>
 
-            ${reservaInfoHTML}
-           
-            ${reservaInfoHTML}
-
-            ${articulosInfoHTML}
+            ${reservaInfoHTML} ${articulosInfoHTML}
 
             ${room.amenidades && room.amenidades.length > 0 ? `
-            
-                <div class="mt-3 pt-3 border-t border-slate-100 flex-grow">
-                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                        ${room.amenidades.map(am => `<div class="flex items-center gap-1.5 text-sm text-slate-600">${getAmenityIcon(am)}<span class="capitalize">${am}</span></div>`).join('')}
+                <div class="mt-auto pt-3 border-t border-slate-100">
+                    <div class="flex flex-wrap items-center gap-2 text-slate-400">
+                        ${room.amenidades.slice(0, 4).map(am => getAmenityIcon(am)).join('')}
+                        ${room.amenidades.length > 4 ? '<span class="text-xs text-slate-400">+</span>' : ''}
                     </div>
                 </div>`
                 : '<div class="flex-grow"></div>'
             }
         </div>
-        <div class="bg-gray-50 border-t border-gray-200 px-4 py-1">
-             <div id="cronometro-${room.id}" class="cronometro-display text-right font-mono text-base flex items-center justify-end text-slate-600 h-6">
-                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                <span id="cronometro-text-${room.id}" class="w-full text-center"></span>
-            </div>
+        
+        <div class="bg-gray-50 border-t border-gray-200 px-4 py-1.5 flex justify-between items-center h-9">
+             <div id="cronometro-${room.id}" class="cronometro-display w-full text-right font-mono text-sm flex items-center justify-end text-slate-600">
+                </div>
         </div>
     `;
 
- card.onclick = () => showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer);
-    
+    card.onclick = () => showHabitacionOpcionesModal(room, supabase, currentUser, hotelId, mainAppContainer);
     return card;
 }
+
+
 function updateClienteFields(cliente) {
     const newClientFieldsContainer = ui.container.querySelector('#new-client-fields');
     const clienteNombreManualInput = ui.form.elements.cliente_nombre;
@@ -819,67 +845,94 @@ const btnVerde = "w-full mb-2 py-2.5 rounded-lg bg-green-100 hover:bg-green-200 
 const btnNaranja = "w-full mb-2 py-2.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-800 font-medium border border-orange-300 shadow-sm hover:shadow flex items-center justify-center gap-2";
 const btnRojo = "w-full mt-4 py-2.5 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 shadow-sm hover:shadow transition flex items-center justify-center gap-2";
 
-// LIBRE
-if (room.estado === "libre") {
-    botonesHtml += `<button id="btn-alquilar-directo" class="${btnPrincipal}"><span style="font-size:1.2em">🛏️</span> Alquilar Ahora</button>`;
-    botonesHtml += `<button id="btn-enviar-limpieza" class="${btnSecundario}"><span style="font-size:1.2em">🧹</span> Enviar a Limpieza</button>`;
-}
+// ---------------------------------------------------------------
+    // 1. ESTADO: LIBRE
+    // ---------------------------------------------------------------
+    if (room.estado === "libre") {
+        botonesHtml += `<button id="btn-alquilar-directo" class="${btnPrincipal}"><span style="font-size:1.2em">🛏️</span> Alquilar Ahora</button>`;
+        botonesHtml += `<button id="btn-enviar-limpieza" class="${btnSecundario}"><span style="font-size:1.2em">🧹</span> Enviar a Limpieza</button>`;
+    }
 
-// OCUPADA, RESERVADA, TIEMPO AGOTADO
-else if (["ocupada", "reservada", "tiempo agotado"].includes(room.estado)) {
-    botonesHtml += `<button id="btn-extender-tiempo" class="${btnPrincipal}"><span style="font-size:1.2em">⏱️</span> Extender Tiempo</button>`;
-    botonesHtml += `<button id="btn-entregar" class="${btnSecundario}"><span style="font-size:1.2em">🔓</span> Liberar Habitación</button>`;
-    botonesHtml += `<button id="btn-ver-consumos" class="${btnSecundario}"><span style="font-size:1.2em">🍽️</span> Ver Consumos</button>`;
-    botonesHtml += `<button id="btn-cambiar-habitacion" class="${btnSecundario}"><span style="font-size:1.2em">🔁</span> Cambiar de Habitación</button>`;
-    botonesHtml += `<button id="btn-seguimiento-articulos" class="${btnSecundario}"><span style="font-size:1.2em">📦</span> Gestionar Artículos</button>`;
-}
+    // ---------------------------------------------------------------
+    // 2. ESTADO: ACTIVA / OCUPADA / TIEMPO AGOTADO
+    // (Quitamos "reservada" de aquí porque el huésped ya está dentro)
+    // ---------------------------------------------------------------
+    else if (["ocupada", "tiempo agotado", "activa"].includes(room.estado)) {
+        botonesHtml += `<button id="btn-extender-tiempo" class="${btnPrincipal}"><span style="font-size:1.2em">⏱️</span> Extender Tiempo</button>`;
+        botonesHtml += `<button id="btn-entregar" class="${btnSecundario}"><span style="font-size:1.2em">🔓</span> Liberar Habitación</button>`;
+        botonesHtml += `<button id="btn-ver-consumos" class="${btnSecundario}"><span style="font-size:1.2em">🍽️</span> Ver Consumos</button>`;
+        botonesHtml += `<button id="btn-cambiar-habitacion" class="${btnSecundario}"><span style="font-size:1.2em">🔁</span> Cambiar de Habitación</button>`;
+        botonesHtml += `<button id="btn-seguimiento-articulos" class="${btnSecundario}"><span style="font-size:1.2em">📦</span> Gestionar Artículos</button>`;
+        
+        // Servicios adicionales solo si ya está ocupada
+        botonesHtml += `<button id="btn-servicios-adicionales" class="${btnVerde}"><span style="font-size:1.2em">🛎️</span> Servicios adicionales</button>`;
+    }
 
-// SERVICIOS ADICIONALES
-if (["ocupada", "tiempo agotado"].includes(room.estado)) {
-    botonesHtml += `<button id="btn-servicios-adicionales" class="${btnVerde}"><span style="font-size:1.2em">🛎️</span> Servicios adicionales</button>`;
-}
+    // ---------------------------------------------------------------
+    // 3. ESTADO: RESERVADA (Futura llegada)
+    // ---------------------------------------------------------------
+    else if (room.estado === "reservada") {
+        // Consultar datos de la reserva para el Check-in
+        const { data, error } = await supabase
+            .from('reservas')
+            .select('id, cliente_nombre, telefono, cantidad_huespedes, fecha_inicio')
+            .eq('habitacion_id', room.id)
+            .eq('estado', 'reservada')
+            .order('fecha_inicio', { ascending: true }) // La más próxima primero (ascending true)
+            .limit(1)
+            .maybeSingle();
 
-// MANTENIMIENTO
-if (["libre", "ocupada", "tiempo agotado", "limpieza", "reservada"].includes(room.estado)) {
-    botonesHtml += `<button id="btn-mantenimiento" class="${btnNaranja}"><span style="font-size:1.2em">🛠️</span> Enviar a Mantenimiento</button>`;
-}
+        if (data) {
+            reservaFutura = data; // Guardar referencia para el listener del botón
+            const fechaInicio = new Date(reservaFutura.fecha_inicio);
+            const ahora = new Date();
+            // Diferencia en minutos
+            const diferenciaMin = (fechaInicio - ahora) / 60000;
 
-// CHECK-IN
-let reservaFutura = null;
-if (room.estado === "reservada") {
-    const { data, error } = await supabase.from('reservas').select('*').eq('habitacion_id', room.id).eq('estado', 'reservada').order('fecha_inicio', { ascending: false }).limit(1).single();
+            // Info visual rápida de la reserva
+            botonesHtml += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-sm text-blue-900 shadow-sm">
+                <strong>Cliente:</strong> ${reservaFutura.cliente_nombre}<br>
+                <strong>Huéspedes:</strong> ${reservaFutura.cantidad_huespedes}<br>
+                <strong>Llegada:</strong> ${fechaInicio.toLocaleString('es-CO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
+            </div>`;
 
-    if (!error && data) {
-        reservaFutura = data;
-        const fechaInicio = new Date(reservaFutura.fecha_inicio);
-        const ahora = new Date();
-        const diferenciaMin = (fechaInicio - ahora) / 60000;
-
-        if (diferenciaMin <= 120) {
-            botonesHtml += `<button id="btn-checkin-reserva" class="${btnVerde}"><span style="font-size:1.2em">✅</span> Check-in ahora</button>`;
+            // Lógica del botón Check-in (Permitir 2 horas antes o si ya pasó la hora)
+            if (diferenciaMin <= 120) {
+                botonesHtml += `<button id="btn-checkin-reserva" class="${btnVerde}"><span style="font-size:1.2em">✅</span> Check-in (Entrada)</button>`;
+            } else {
+                botonesHtml += `<div class="text-center text-xs text-orange-600 font-bold mb-2 bg-orange-50 p-2 rounded border border-orange-200">
+                    ⏳ Check-in habilitado desde las ${new Date(fechaInicio.getTime() - 120 * 60000).toLocaleTimeString('es-CO', {hour: '2-digit', minute:'2-digit'})}
+                </div>`;
+            }
         } else {
-            botonesHtml += `<div class="text-center text-xs text-gray-500 mb-2"><span style="font-size:1.1em">⏳</span> Check-in habilitado desde: ${new Date(fechaInicio.getTime() - 120 * 60000).toLocaleString('es-CO')}</div>`;
+            botonesHtml += `<div class="text-xs text-red-500 mb-2 p-2 bg-red-50 rounded">No se encontró la reserva activa para check-in.</div>`;
         }
 
-        botonesHtml += `<div class="bg-gray-50 rounded p-2 mb-2 text-xs">
-            <b>Reserva:</b> ${reservaFutura.cliente_nombre}<br>
-            <b>Tel:</b> ${reservaFutura.telefono}<br>
-            <b>Huéspedes:</b> ${reservaFutura.cantidad_huespedes}<br>
-            <b>Llegada:</b> ${fechaInicio.toLocaleString('es-CO')}
-        </div>`;
-    } else {
-        botonesHtml += `<div class="text-xs text-red-500 mb-2">No se encontró la reserva activa para check-in.</div>`;
+        // Opciones permitidas en estado Reservada
+        botonesHtml += `<button id="btn-cambiar-habitacion" class="${btnSecundario}"><span style="font-size:1.2em">🔁</span> Cambiar de Habitación</button>`;
+        
+        // Opcional: Agregar botón para cancelar reserva aquí si lo deseas
+        // botonesHtml += `<button id="btn-cancelar-reserva" class="${btnSecundario} text-red-600"><span style="font-size:1.2em">🚫</span> Cancelar Reserva</button>`;
     }
-}
 
-// INFO HUÉSPED
-if (room.estado !== "libre" && room.estado !== "mantenimiento") {
-    botonesHtml += `<button id="btn-info-huesped" class="${btnSecundario}"><span style="font-size:1.2em">👤</span> Ver Info Huésped</button>`;
-}
+    // ---------------------------------------------------------------
+    // 4. MANTENIMIENTO (Disponible siempre excepto si ya está en mantenimiento)
+    // ---------------------------------------------------------------
+    if (room.estado !== "mantenimiento") {
+        botonesHtml += `<button id="btn-mantenimiento" class="${btnNaranja}"><span style="font-size:1.2em">🛠️</span> Enviar a Mantenimiento</button>`;
+    }
 
-// CERRAR
-botonesHtml += `<button id="close-modal-acciones" class="${btnRojo}"><span style="font-size:1.2em">❌</span> Cerrar</button>`;
+    // ---------------------------------------------------------------
+    // 5. INFO HUÉSPED (Para ocupada, reservada, tiempo agotado)
+    // ---------------------------------------------------------------
+    if (["ocupada", "tiempo agotado", "reservada", "activa"].includes(room.estado)) {
+        botonesHtml += `<button id="btn-info-huesped" class="${btnSecundario}"><span style="font-size:1.2em">👤</span> Ver Info Huésped</button>`;
+    }
 
+    // ---------------------------------------------------------------
+    // CERRAR
+    // ---------------------------------------------------------------
+    botonesHtml += `<button id="close-modal-acciones" class="${btnRojo}"><span style="font-size:1.2em">❌</span> Cerrar</button>`;
   // Render modal content
   const modalContent = document.createElement('div');
   modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 m-auto relative animate-fade-in-up";
