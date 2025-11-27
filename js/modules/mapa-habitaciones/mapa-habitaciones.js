@@ -333,19 +333,32 @@ async function obtenerReservaActivaIdDeHabitacion(habitacionId) {
 }
 
 // ---------------------------------------------------
-// Exporta la función para usarla desde los botones:
-
+// ===================================================================
+// IMPRESIÓN DE FACTURA / CUENTA DE COBRO (ADAPTABLE A IMPRESORA)
+// ===================================================================
 export async function imprimirConsumosHabitacion(supabase, hotelId, datosTicket) {
-  await imprimirTicketHabitacion({
-    supabase,
-    hotelId,
-    datosTicket,
-    tipoDocumento: 'Ticket de Consumo'
-  });
-}
+  try {
+    // 1. Cargamos la configuración del hotel para saber el tamaño de papel y datos fiscales
+    const { data: config, error } = await supabase
+      .from('configuracion_hotel')
+      .select('*')
+      .eq('hotel_id', hotelId)
+      .maybeSingle();
 
-// --- Funciones auxiliares de formato ---
-// REEMPLAZA TU FUNCIÓN formatCurrency ACTUAL CON ESTA VERSIÓN MEJORADA
+    if (error) {
+      console.error("Error cargando configuración para imprimir:", error);
+      alert("Error cargando configuración de impresión.");
+      return;
+    }
+
+    // 2. Llamamos a la función de construcción de HTML adaptable (estilo POS)
+    imprimirFacturaPosAdaptable(config, datosTicket);
+
+  } catch (err) {
+    console.error("Error en imprimirConsumosHabitacion:", err);
+    alert("Ocurrió un error al intentar generar la factura.");
+  }
+}
 
 
 
@@ -1519,7 +1532,7 @@ setupButtonListener('btn-cambiar-habitacion', async (btn) => {
     });
 
 // ===================================================================
-// Ver consumos (solo muestra el modal y actualiza monto_total si es abierta)
+// Ver consumos (MODIFICADO: Usa modal local para evitar facturación electrónica)
 // ===================================================================
 setupButtonListener('btn-ver-consumos', async (btn) => {
   const originalText = btn.innerHTML;
@@ -1527,40 +1540,46 @@ setupButtonListener('btn-ver-consumos', async (btn) => {
   btn.disabled = true;
 
   try {
-    // 1. Buscar reserva activa de la habitación
+    // 1. Buscar reserva activa
     const { data: r, error: errReserva } = await supabase
       .from('reservas')
-      .select('id, fecha_inicio, tipo_duracion, monto_total')
+      .select('*') // Traemos todo para tener datos del cliente
       .eq('habitacion_id', room.id)
       .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
       .limit(1)
       .maybeSingle();
 
-    if (errReserva) {
-      console.error('Error buscando reserva para ver consumos:', errReserva);
+    if (errReserva) console.error(errReserva);
+
+    if (!r) {
+        mostrarInfoModalGlobal("No hay reserva activa para ver consumos.", "Sin Reserva");
+        return;
     }
 
-    // 2. Si es duración abierta, recalcular precio de estancia
-    if (r && r.tipo_duracion === 'abierta') {
+    // 2. Si es duración abierta, actualizar precio (lógica original)
+    if (r.tipo_duracion === 'abierta') {
       try {
         const calculo = await calculateTimeAndPrice(supabase, r, hotelId, hotelConfigGlobal);
         if (calculo && calculo.precioAlojamientoCalculado !== Number(r.monto_total)) {
-          await supabase
+          const { error: upErr } = await supabase
             .from('reservas')
             .update({ monto_total: calculo.precioAlojamientoCalculado })
             .eq('id', r.id);
+          if(!upErr) r.monto_total = calculo.precioAlojamientoCalculado; 
         }
-      } catch (e) {
-        console.error('Error recalculando estancia abierta:', e);
-      }
+      } catch (e) { console.error(e); }
     }
+
+    // 3. LLAMAR A NUESTRA NUEVA VENTANA MODAL LOCAL
+    await mostrarModalConsumosLocal(room, r, supabase, currentUser, hotelId);
+
+  } catch (err) {
+      console.error(err);
+      mostrarInfoModalGlobal("Error al cargar consumos.", "Error");
   } finally {
     btn.innerHTML = originalText;
     btn.disabled = false;
   }
-
-  // 3. Abrir el modal de consumos / facturación
-  await showConsumosYFacturarModal(room, supabase, currentUser, hotelId, mainAppContainer, btn);
 });
 
 
@@ -2011,292 +2030,94 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
 }
 
 // =========================================================================================
+// FUNCIÓN MODIFICADA: "FACTURAR" AHORA IMPRIME TICKET POS (BYPASS ELECTRÓNICO)
+// =========================================================================================
 async function facturarElectronicaYMostrarResultado({
-    supabase,           // Instancia del cliente Supabase
-    hotelId,            // ID del hotel actual
-    reserva,            // Objeto de la reserva (debe incluir id, cliente_nombre, cedula, monto_total, y opcionalmente habitacion_nombre)
-    consumosTienda,     // Array de consumos de la tienda [{nombre, cantidad, subtotal}, ...]
-    consumosRest,       // Array de consumos del restaurante [{nombre, cantidad, subtotal}, ...]
-    consumosServicios,  // Array de servicios adicionales [{nombre, cantidad, subtotal}, ...]
-    metodoPagoIdLocal,  // ID del método de pago seleccionado en TU sistema (ej. el valor de 'metodoPagoFact')
-    // La variable 'room' (con room.nombre) debe estar accesible o su nombre debe pasarse en 'reserva.habitacion_nombre'
-    // para el detalle del ítem de la estancia. Usaremos reserva.habitacion_nombre como ejemplo.
+    supabase,
+    hotelId,
+    reserva,
+    consumosTienda,
+    consumosRest,
+    consumosServicios,
+    metodoPagoIdLocal
 }) {
-    const FN_NAME = "facturarElectronicaYMostrarResultado"; // Para logs
-    console.log(`${FN_NAME} | Iniciando para Reserva ID: ${reserva?.id}, Hotel ID: ${hotelId}`);
-    if (!reserva || !reserva.id) {
-        mostrarInfoModalGlobal("Datos de la reserva incompletos para facturación electrónica.", "Error Interno");
-        console.error(`${FN_NAME} | Objeto 'reserva' o 'reserva.id' no proporcionado.`);
-        return;
-    }
-    console.log(`${FN_NAME} | Datos Reserva:`, reserva);
-    console.log(`${FN_NAME} | Consumos Tienda:`, consumosTienda);
-    console.log(`${FN_NAME} | Consumos Restaurante:`, consumosRest);
-    console.log(`${FN_NAME} | Consumos Servicios:`, consumosServicios);
-    console.log(`${FN_NAME} | Método de Pago Local ID:`, metodoPagoIdLocal);
+    console.log("Generando Factura POS Local (Bypass Electrónico)...");
 
-    // 1. Cargar configuración de integración electrónica del hotel desde Supabase
-    let integracion;
     try {
-        const { data, error } = await supabase
-            .from('integraciones_hotel')
-            .select('facturador_nombre, facturador_usuario, facturador_api_key, facturador_api_url')
+        // 1. Cargar Configuración del Hotel (para tamaño papel y logos)
+        const { data: config } = await supabase
+            .from('configuracion_hotel')
+            .select('*')
             .eq('hotel_id', hotelId)
             .maybeSingle();
-        if (error) throw error;
-        integracion = data;
-    } catch (dbError) {
-        console.error(`${FN_NAME} | Error al cargar la configuración del facturador:`, dbError);
-        mostrarInfoModalGlobal(
-            `Error crítico al cargar la configuración del facturador: ${dbError.message}. Verifique la conexión o la configuración interna.`,
-            "Error Configuración Facturador"
-        );
-        return;
-    }
 
-    console.log(`${FN_NAME} | Datos de integración cargados:`, integracion);
+        // 2. Preparar los Ítems para el Ticket
+        const itemsParaTicket = [];
 
-    if (!integracion || !integracion.facturador_usuario || !integracion.facturador_api_key || !integracion.facturador_api_url) {
-        mostrarInfoModalGlobal(
-            "La configuración del facturador electrónico está incompleta (faltan usuario, API key o URL base). Vaya a Configuración -> Integraciones del Hotel y complete los datos.",
-            "Configuración Incompleta del Facturador"
-        );
-        return;
-    }
-
-    if (integracion.facturador_nombre && integracion.facturador_nombre.toLowerCase() !== 'alegra') {
-        mostrarInfoModalGlobal(
-            `Este sistema está configurado para facturar con Alegra, pero el proveedor configurado es '${integracion.facturador_nombre}'. No se puede procesar la factura electrónica.`,
-            "Proveedor de Facturación Incorrecto"
-        );
-        return;
-    }
-
-    // 2. Preparar token de autenticación Basic para Alegra
-    const tokenBasic = btoa(`${integracion.facturador_usuario}:${integracion.facturador_api_key}`);
-    // console.log(`${FN_NAME} | Token Basic generado.`); // No loguear el token en producción por seguridad
-
-    // 3. Preparar los ítems de la factura para el payload de Alegra
-    const itemsAlegra = [];
-
-    // Ítem principal: Costo de la estancia
-    if (reserva && typeof reserva.monto_total === 'number' && reserva.monto_total > 0) {
-        itemsAlegra.push({
-            name: `Estancia Habitación ${reserva.habitacion_nombre || 'Principal'}`, // Usar reserva.habitacion_nombre o un genérico
-            price: parseFloat(reserva.monto_total.toFixed(2)), // Precio total de la estancia como precio unitario del ítem
-            quantity: 1,
-            description: `Servicio de alojamiento principal.`,
-            // Opcional: Si tienes el ID de un producto/servicio "Estancia" configurado en Alegra:
-            // id: ID_PRODUCTO_ESTANCIA_EN_ALEGRA,
-            // Para impuestos: si el monto_total ya incluye impuestos y Alegra está configurado así, está bien.
-            // Si no, y quieres que Alegra los calcule, el ítem "Estancia" en Alegra debe tener los impuestos asociados.
-            // O puedes enviar el desglose aquí: tax: [{ id: ID_IMPUESTO_HOTELERIA_ALEGRA }]
-        });
-    }
-
-    // Ítems adicionales: Consumos
-    const todosLosConsumos = [
-        ...(consumosTienda || []),
-        ...(consumosRest || []),
-        ...(consumosServicios || [])
-    ];
-
-    todosLosConsumos.forEach(item => {
-        if (!item.nombre || typeof item.cantidad === 'undefined' || typeof item.subtotal === 'undefined') {
-            console.warn(`${FN_NAME} | Item de consumo omitido por datos incompletos:`, item);
-            return;
-        }
-        if (item.cantidad <= 0 && item.subtotal !== 0) {
-            console.warn(`${FN_NAME} | Item de consumo omitido por cantidad inválida para su subtotal:`, item);
-            return;
-        }
-        if (item.subtotal < 0) {
-            console.warn(`${FN_NAME} | Item de consumo omitido por subtotal negativo:`, item);
-            return;
-        }
-        // Solo agregar items con valor o cantidad. Si la cantidad es 0 y el subtotal es 0, no tiene sentido facturarlo.
-        if (item.cantidad > 0 || item.subtotal > 0) {
-            itemsAlegra.push({
-                name: item.nombre.substring(0, 150), // Limitar longitud
-                quantity: item.cantidad,
-                price: item.cantidad > 0 ? parseFloat((item.subtotal / item.cantidad).toFixed(2)) : 0, // Precio unitario
-                // Opcional: id: ID_PRODUCTO_EN_ALEGRA (si lo tienes mapeado)
-                // Opcional: tax: [{ id: ID_IMPUESTO_EN_ALEGRA }] (si necesitas especificarlo)
+        // A. Ítem de Estancia (Alojamiento)
+        if (reserva && typeof reserva.monto_total === 'number' && reserva.monto_total > 0) {
+            itemsParaTicket.push({
+                nombre: `Alojamiento: ${reserva.habitacion_nombre || 'Habitación'}`,
+                cantidad: 1,
+                precioUnitario: reserva.monto_total,
+                total: reserva.monto_total
             });
         }
-    });
 
-    if (itemsAlegra.length === 0) {
-        mostrarInfoModalGlobal(
-            "No hay ítems válidos (incluyendo estancia o consumos) para incluir en la factura electrónica. Verifique los montos y consumos.",
-            "Error en Ítems de Factura"
-        );
-        return;
-    }
-    console.log(`${FN_NAME} | Items preparados para Alegra:`, JSON.stringify(itemsAlegra, null, 2));
+        // B. Agregar Consumos (Tienda, Restaurante, Servicios)
+        const todosLosConsumos = [
+            ...(consumosTienda || []),
+            ...(consumosRest || []),
+            ...(consumosServicios || [])
+        ];
 
-    // 4. Mapear método de pago local a los esperados por Alegra
-    let paymentFormAlegra = "CASH"; // "CASH" (Contado), "CREDIT" (Crédito)
-    let paymentMethodAlegra = "CASH"; // "CASH", "TRANSFER", "CHECK", "CREDIT_CARD", "OTHER_PAYMENT_METHOD"
-
-    // Ejemplo básico de mapeo (debes ajustarlo a tus IDs y a los valores de Alegra)
-    // Este mapeo debería ser más robusto, quizás cargado desde una configuración.
-    if (metodoPagoIdLocal) {
-        // Asumimos que tienes una forma de saber si un método de pago local es "Crédito" o "Contado"
-        // y cuál es el método específico para Alegra.
-        // EJEMPLO MUY SIMPLIFICADO:
-        // if (metodoPagoIdLocal === 'ID_DE_TU_PAGO_TARJETA_CREDITO') {
-        //     paymentFormAlegra = "CREDIT"; // O podría seguir siendo CASH si es pago inmediato con tarjeta
-        //     paymentMethodAlegra = "CREDIT_CARD";
-        // } else if (metodoPagoIdLocal === 'ID_DE_TU_PAGO_TRANSFERENCIA') {
-        //     paymentFormAlegra = "CASH";
-        //     paymentMethodAlegra = "TRANSFER";
-        // } // ... etc.
-        console.log(`${FN_NAME} | Usando método de pago local ID ${metodoPagoIdLocal}. Mapeo pendiente para Alegra (actualmente defaulting a CASH).`);
-    }
-
-
-    // 5. Construir el payload completo para la API de Alegra
-    const payload = {
-        date: new Date().toISOString().slice(0,10),      // Fecha de emisión YYYY-MM-DD
-        dueDate: new Date().toISOString().slice(0,10),    // Fecha de vencimiento YYYY-MM-DD (misma para contado)
-        client: {
-            name: reserva.cliente_nombre ? reserva.cliente_nombre.substring(0, 100) : "Cliente Ocasional",
-            identification: reserva.cedula || "222222222222", // NIT genérico para consumidor final en Colombia
-            // Considera agregar 'identificationType' si es requerido por Alegra/DIAN para Colombia.
-            // Ejemplo: identificationObject: { type: "CC", number: "123456789" }
-            //         o simplemente identification: "123456789" y Alegra infiere o tiene un default.
-            //         Verifica la documentación de Alegra para el formato exacto.
-            // email: reserva.email_cliente || undefined, // Si tienes el email
-            // phonePrimary: reserva.telefono_cliente || undefined, // Si tienes el teléfono
-            // address: { street: reserva.direccion_cliente || undefined, city: reserva.ciudad_cliente || undefined } // Si tienes dirección
-        },
-        items: itemsAlegra,
-        paymentForm: paymentFormAlegra,
-        paymentMethod: paymentMethodAlegra,
-        stamp: { // Requerido para Colombia para que la factura sea electrónica y válida ante la DIAN.
-            generateStamp: true
-        },
-        notes: `Factura de servicios hoteleros. Reserva ID: ${reserva.id}. Gracias por su preferencia.`,
-        // Campos opcionales que podrían ser útiles:
-        // seller: { id: ID_DEL_VENDEDOR_EN_ALEGRA }, // Si usas vendedores en Alegra
-        // priceList: { id: ID_LISTA_PRECIOS_ALEGRA }, // Si usas listas de precios
-        // warehouse: { id: ID_BODEGA_ALEGRA }, // Si manejas inventario por bodegas
-        // observations: "Alguna observación pública en la factura",
-    };
-    console.log(`${FN_NAME} | Payload final para Alegra:`, JSON.stringify(payload, null, 2));
-
-    // 6. Realizar la llamada a la API de Alegra
-    let apiUrl = integracion.facturador_api_url;
-    if (apiUrl && !apiUrl.endsWith('/')) { // Asegurar que la URL base termine con '/'
-        apiUrl += '/';
-    }
-    apiUrl += 'invoices'; // Endpoint estándar para crear facturas en Alegra API v1
-
-    console.log(`${FN_NAME} | Enviando solicitud a API Alegra URL: ${apiUrl}`);
-
-    try {
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Basic ${tokenBasic}`,
-                'Content-Type': 'application/json',
-                'Accept': 'application/json' // Es buena práctica indicar que aceptas JSON
-            },
-            body: JSON.stringify(payload)
+        todosLosConsumos.forEach(item => {
+            if (item.cantidad > 0 || item.subtotal > 0) {
+                itemsParaTicket.push({
+                    nombre: item.nombre || 'Consumo',
+                    cantidad: item.cantidad || 1,
+                    precioUnitario: item.cantidad > 0 ? (item.subtotal / item.cantidad) : item.subtotal,
+                    total: item.subtotal
+                });
+            }
         });
 
-        const responseStatus = response.status;
-        const responseText = await response.text(); // Obtener la respuesta como texto para depuración
-        console.log(`${FN_NAME} | Respuesta de Alegra (Status ${responseStatus}):`, responseText);
+        // 3. Calcular Totales
+        const totalFactura = itemsParaTicket.reduce((sum, i) => sum + i.total, 0);
+        
+        // Obtenemos lo pagado. Si el objeto reserva no lo tiene actualizado, intentamos usar el totalFactura
+        // asumiendo que si le dieron a "Facturar" es porque ya cobraron.
+        // O mejor, mostramos lo que viene en la reserva.
+        const totalPagado = reserva.monto_pagado || 0; 
 
-        let resultJson;
-        try {
-            resultJson = JSON.parse(responseText); // Intentar parsear el texto como JSON
-        } catch (parseError) {
-            console.error(`${FN_NAME} | Error parseando respuesta JSON de Alegra:`, parseError);
-            mostrarInfoModalGlobal(
-                `Error al procesar la respuesta del facturador (no era JSON válido). Código ${responseStatus}. Respuesta: ${responseText.substring(0, 300)}`,
-                "Error Comunicación Facturador"
-            );
-            return { success: false, error: "Respuesta no JSON", details: responseText };
-        }
+        // 4. Construir objeto de datos para la función de impresión
+        const datosTicket = {
+            cliente: {
+                nombre: reserva.cliente_nombre || 'Cliente General',
+                documento: reserva.cedula || ''
+            },
+            reservaId: reserva.id,
+            habitacionNombre: reserva.habitacion_nombre || '',
+            items: itemsParaTicket,
+            total: totalFactura,
+            totalPagado: totalPagado,
+            // Si quieres mostrar impuestos desglosados (opcional, aquí simplificado):
+            impuestos: 0, 
+            descuento: reserva.monto_descontado || 0,
+            subtotal: totalFactura // Simplificado
+        };
 
-        if (responseStatus === 201 || responseStatus === 200) { // 201 (Created) o 200 (OK)
-            if (resultJson && resultJson.id) {
-                const numeroFacturaVisible = resultJson.number || resultJson.id; // 'number' suele ser el consecutivo
-                const alegraInvoiceId = resultJson.id; // ID interno de Alegra
-                const linkPdf = resultJson.pdfPath || (resultJson.metadata && resultJson.metadata.pdfPath) || null;
+        // 5. LLAMAR A LA FUNCIÓN DE IMPRESIÓN POS (La misma que usas en caja.js)
+        imprimirFacturaPosAdaptable(config, datosTicket);
 
-                let mensajeExito = `¡Factura electrónica generada con éxito en Alegra! Número: <b>${numeroFacturaVisible}</b>.`;
-                if (linkPdf) {
-                    mensajeExito += `<br><a href="${linkPdf}" target="_blank" class="text-blue-600 hover:underline">Ver PDF de la Factura</a>`;
-                }
-                mostrarInfoModalGlobal(mensajeExito, "Facturación Electrónica Exitosa");
+        // Retornamos éxito para que el modal de uiUtils se cierre o muestre éxito
+        return { success: true, mensaje: "Ticket generado correctamente" };
 
-                // **ACCIÓN IMPORTANTE: Guardar el ID/Número de factura de Alegra en tu BD local**
-                // Esto es crucial para tu control interno y evitar duplicados.
-                // Elige la tabla y la forma de identificar el registro a actualizar.
-                // Ejemplo: Actualizar la tabla 'reservas'.
-                try {
-                    const { error: updateDbError } = await supabase
-                        .from('reservas') // O tu tabla 'caja' si allí registras la venta final
-                        .update({
-                            id_factura_electronica: alegraInvoiceId,
-                            numero_factura_electronica: numeroFacturaVisible,
-                            // Puedes añadir un campo como 'estado_factura_electronica': 'GENERADA'
-                        })
-                        .eq('id', reserva.id); // Condición para encontrar la reserva correcta
-
-                    if (updateDbError) {
-                        console.error(`${FN_NAME} | Error al actualizar BD local con ID de Alegra:`, updateDbError);
-                        mostrarInfoModalGlobal(
-                            `Factura ${numeroFacturaVisible} generada en Alegra, pero hubo un error guardando la referencia en el sistema local: ${updateDbError.message}. Por favor, anote el número de factura.`,
-                            "Advertencia Post-Facturación"
-                        );
-                    } else {
-                        console.log(`${FN_NAME} | Referencia de factura Alegra (${numeroFacturaVisible}) guardada en BD local para reserva ID: ${reserva.id}`);
-                    }
-                } catch (dbCatchError) {
-                     console.error(`${FN_NAME} | Excepción al actualizar BD local con ID de Alegra:`, dbCatchError);
-                }
-                return { success: true, alegraInvoiceId: alegraInvoiceId, alegraInvoiceNumber: numeroFacturaVisible, pdfLink: linkPdf };
-
-            } else {
-                mostrarInfoModalGlobal(
-                    `Factura aparentemente creada en Alegra (Código ${responseStatus}), pero no se obtuvo un ID claro en la respuesta. Respuesta: ${responseText.substring(0, 300)}`,
-                    "Facturación Electrónica Incompleta"
-                );
-                return { success: false, error: "ID no encontrado en respuesta exitosa", details: resultJson };
-            }
-        } else if (responseStatus === 401) { // Unauthorized
-            mostrarInfoModalGlobal(
-                `Error de autenticación con Alegra (Código 401). Verifique que el correo y el token API estén correctos y activos en la configuración del hotel. Detalle: ${resultJson.message || responseText}`,
-                "Error Autenticación Facturador"
-            );
-        } else if (responseStatus === 400) { // Bad Request (problemas con el payload)
-             mostrarInfoModalGlobal(
-                `Error en los datos enviados a Alegra (Código 400): ${resultJson.message || responseText}. Revise los datos del cliente, los ítems y la estructura del payload enviado. Consulte la consola para más detalles.`,
-                "Error en Datos para Factura Electrónica"
-            );
-        } else { // Otros errores
-            mostrarInfoModalGlobal(
-                `Error al generar la factura electrónica en Alegra (Código ${responseStatus}). Mensaje: ${resultJson.message || responseText}`,
-                "Error Facturación Electrónica Desconocido"
-            );
-        }
-        return { success: false, error: `Error Alegra ${responseStatus}`, details: resultJson };
-
-    } catch (networkError) { // Errores de red o excepciones en el fetch
-        console.error(`${FN_NAME} | Excepción durante fetch a Alegra:`, networkError);
-        mostrarInfoModalGlobal(
-            "Error de red o comunicación con el servicio de facturación electrónica. Verifique su conexión a internet e inténtelo de nuevo. Detalle técnico: " + networkError.message,
-            "Error de Red (Facturación)"
-        );
-        return { success: false, error: "Error de red", details: networkError.message };
+    } catch (err) {
+        console.error("Error generando ticket POS:", err);
+        return { success: false, error: err.message };
     }
 }
-// ===================== FIN DE LA FUNCIÓN DE FACTURACIÓN ELECTRÓNICA =====================
 
 
 
@@ -3577,6 +3398,330 @@ async function showSeguimientoArticulosModal(room, supabase, currentUser, hotelI
     }
 }
 
+// ===================================================================
+// GENERADOR DE HTML PARA FACTURA POS (ADAPTABLE)
+// Poner esto al final de mapa-habitaciones.js
+// ===================================================================
+function imprimirFacturaPosAdaptable(config, datos) {
+  // 1. Detectar configuración de papel
+  let tamano = (config?.tamano_papel || '80mm').toLowerCase();
+  const esTermica = tamano === '58mm' || tamano === '80mm';
+  
+  // Ajustes de ancho y fuente
+  const widthPage = tamano === '58mm' ? '58mm' : (tamano === '80mm' ? '74mm' : '100%');
+  const fontSize = tamano === '58mm' ? '10px' : (tamano === '80mm' ? '11px' : '12px');
+  // En impresoras térmicas, el width 100% a veces falla, mejor fixed mm. En carta usamos 800px max.
+  const containerMaxWidth = esTermica ? '100%' : '800px'; 
 
+  // 2. Datos del Encabezado
+  let logoUrl = config?.mostrar_logo !== false && config?.logo_url ? config.logo_url : null;
+  let hotelNombre = config?.nombre_hotel || 'Hotel';
+  let direccion = config?.direccion_fiscal || '';
+  let nit = config?.nit_rut || '';
+  let telefono = config?.telefono_fiscal || '';
+  let pie = config?.pie_ticket || 'Gracias por su visita.';
+  let resolucion = config?.encabezado_ticket_l1 || ''; 
 
+  // 3. Datos del Cliente y Reserva
+  const clienteNombre = datos.cliente?.nombre || 'Consumidor Final';
+  const clienteDoc = datos.cliente?.documento || '';
+  const fechaEmision = new Date().toLocaleString('es-CO');
+  const reservaId = datos.reservaId ? datos.reservaId.split('-')[0].toUpperCase() : '---';
+  const habitacion = datos.habitacionNombre || 'General';
+
+  // 4. CSS
+  let style = `
+    @page { margin: ${esTermica ? '0' : '15mm'}; size: auto; }
+    body { 
+        font-family: 'Courier New', Courier, monospace; 
+        font-size: ${fontSize}; 
+        margin: 0; 
+        padding: ${esTermica ? '2px' : '20px'}; 
+        width: ${esTermica ? widthPage : 'auto'}; 
+        color: #000;
+        background: #fff;
+    }
+    .container { width: 100%; max-width: ${containerMaxWidth}; margin: 0 auto; }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .bold { font-weight: bold; }
+    .mb-1 { margin-bottom: 5px; }
+    .border-bottom { border-bottom: 1px dashed #000; padding-bottom: 5px; margin-bottom: 5px; }
+    .border-top { border-top: 1px dashed #000; padding-top: 5px; margin-top: 5px; }
+    
+    table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+    th { border-bottom: 1px solid #000; padding: 2px 0; font-size: 0.9em; text-align: left; }
+    td { padding: 2px 0; vertical-align: top; }
+    
+    .col-cant { width: 15%; text-align: center; }
+    .col-desc { width: 55%; text-align: left; }
+    .col-total { width: 30%; text-align: right; }
+    
+    @media print { .no-print { display: none; } }
+  `;
+
+  // 5. HTML Contenido
+  let headerHtml = `
+    <div class="text-center mb-1">
+      ${logoUrl ? `<img src="${logoUrl}" style="max-width: 50%; max-height: 60px; filter: grayscale(100%); margin-bottom:2px;">` : ''}
+      <div class="bold" style="font-size: 1.1em;">${hotelNombre}</div>
+      <div>NIT: ${nit}</div>
+      <div>${direccion}</div>
+      ${telefono ? `<div>Tel: ${telefono}</div>` : ''}
+      ${resolucion ? `<div style="font-size:0.8em; margin-top:2px;">${resolucion}</div>` : ''}
+    </div>
+    
+    <div class="border-bottom mb-1">
+        <div class="bold text-center">FACTURA POS / CUENTA</div>
+        <div style="display:flex; justify-content:space-between;"><span>F: ${fechaEmision}</span></div>
+        <div style="display:flex; justify-content:space-between;"><span>Reserva: #${reservaId}</span></div>
+        <div style="display:flex; justify-content:space-between;"><span>Hab: <b>${habitacion}</b></span></div>
+    </div>
+
+    <div class="border-bottom mb-1">
+        <div><b>Cliente:</b> ${clienteNombre}</div>
+        ${clienteDoc ? `<div><b>ID:</b> ${clienteDoc}</div>` : ''}
+    </div>
+  `;
+
+  // Items
+  let itemsHtml = '';
+  if (datos.items && datos.items.length > 0) {
+      const filas = datos.items.map(item => `
+        <tr>
+            <td class="col-cant">${item.cantidad}</td>
+            <td class="col-desc">${item.nombre}</td>
+            <td class="col-total">${formatCurrency(item.total)}</td>
+        </tr>
+      `).join('');
+      itemsHtml = `<table><thead><tr><th class="col-cant">Cant</th><th class="col-desc">Desc</th><th class="col-total">Total</th></tr></thead><tbody>${filas}</tbody></table>`;
+  } else {
+      itemsHtml = '<div class="text-center">Sin ítems.</div>';
+  }
+
+  // Totales
+  const total = datos.total || 0;
+  const pagado = datos.totalPagado || 0;
+  const saldo = total - pagado;
+
+  let footerHtml = `
+    <div class="border-top mt-2">
+        <div style="display:flex; justify-content:space-between; font-size:1.1em;" class="bold">
+            <span>TOTAL:</span><span>${formatCurrency(total)}</span>
+        </div>
+        ${pagado > 0 ? `<div style="display:flex; justify-content:space-between;"><span>Pagado:</span><span>${formatCurrency(pagado)}</span></div>` : ''}
+        ${saldo > 0 ? `<div style="display:flex; justify-content:space-between; color:red;" class="bold"><span>PENDIENTE:</span><span>${formatCurrency(saldo)}</span></div>` : ''}
+        ${saldo <= 0 ? `<div class="text-center bold" style="margin-top:5px;">¡GRACIAS POR SU PAGO!</div>` : ''}
+    </div>
+    <div class="text-center mt-2" style="font-size:0.85em;">${pie}</div>
+  `;
+
+  let fullHtml = `<html><head><title>Imprimir</title><style>${style}</style></head><body><div class="container">${headerHtml}${itemsHtml}${footerHtml}</div><script>window.onload=function(){window.print();window.focus();}</script></body></html>`;
+
+  let w = window.open('', '_blank', `width=${esTermica?400:800},height=600`);
+  w.document.write(fullHtml);
+  w.document.close();
+}
+
+// ===================================================================
+// MODAL DE CONSUMOS LOCAL (Versión Detallada para Factura POS)
+// ===================================================================
+async function mostrarModalConsumosLocal(room, reserva, supabase, user, hotelId) {
+    const modalContainer = document.getElementById('modal-container');
+    modalContainer.style.display = 'flex';
+    modalContainer.innerHTML = '<div class="text-white font-bold">Cargando detalles específicos...</div>';
+
+    try {
+        // 1. OBTENER DETALLES ESPECÍFICOS (Deep Fetching)
+        // Usamos !inner en las relaciones para filtrar por la reserva ID desde la tabla hija
+        const [serviciosRes, tiendaDetallesRes, restauranteDetallesRes, pagosRes] = await Promise.all([
+            
+            // A. Servicios: Traemos el nombre real del servicio desde el catálogo
+            supabase.from('servicios_x_reserva')
+                .select('*, servicio_catalogo:servicios_adicionales(nombre)')
+                .eq('reserva_id', reserva.id),
+
+            // B. Tienda: Consultamos los DETALLES de venta, no la cabecera
+            supabase.from('detalle_ventas_tienda')
+                .select('cantidad, subtotal, producto:productos_tienda(nombre), venta:ventas_tienda!inner(reserva_id)')
+                .eq('venta.reserva_id', reserva.id),
+
+            // C. Restaurante: Consultamos los DETALLES de venta (Platos/Bebidas)
+            // Nota: Asumimos que existe la relación 'plato' o 'producto'. Si falla, ajustaremos el nombre.
+            supabase.from('detalle_ventas_restaurante')
+                .select('cantidad, subtotal, nombre_producto, venta:ventas_restaurante!inner(reserva_id)')
+                .eq('venta.reserva_id', reserva.id),
+
+            // D. Pagos
+            supabase.from('pagos_reserva')
+                .select('*')
+                .eq('reserva_id', reserva.id)
+        ]);
+
+        const servicios = serviciosRes.data || [];
+        const detallesTienda = tiendaDetallesRes.data || [];
+        const detallesRestaurante = restauranteDetallesRes.data || [];
+        const pagos = pagosRes.data || [];
+
+        // 2. Calcular Totales
+        const totalEstancia = Number(reserva.monto_total || 0);
+        
+        // Sumar subtotales de los detalles
+        const totalServicios = servicios.reduce((sum, s) => sum + Number(s.precio_cobrado || 0), 0);
+        const totalTienda = detallesTienda.reduce((sum, t) => sum + Number(t.subtotal || 0), 0);
+        const totalRestaurante = detallesRestaurante.reduce((sum, r) => sum + Number(r.subtotal || 0), 0);
+        
+        const granTotal = totalEstancia + totalServicios + totalTienda + totalRestaurante;
+        const totalPagado = pagos.reduce((sum, p) => sum + Number(p.monto || 0), 0);
+        const saldo = granTotal - totalPagado;
+
+        // 3. Preparar lista de ítems DETALLADA
+        const listaItems = [];
+        
+        // --- Alojamiento ---
+        listaItems.push({ 
+            tipo: 'Hospedaje', 
+            detalle: `Estancia Hab. ${room.nombre}`, 
+            cant: 1, 
+            subtotal: totalEstancia 
+        });
+        
+        // --- Servicios (Nombre específico) ---
+        servicios.forEach(s => {
+            // Buscamos el nombre en el catálogo, o usamos la descripción manual, o un fallback
+            const nombreReal = s.servicio_catalogo?.nombre || s.descripcion_manual || 'Servicio Adicional';
+            listaItems.push({ 
+                tipo: 'Servicio', 
+                detalle: nombreReal, 
+                cant: s.cantidad || 1, 
+                subtotal: s.precio_cobrado 
+            });
+        });
+        
+        // --- Tienda (Productos específicos) ---
+        detallesTienda.forEach(t => {
+            const nombreProducto = t.producto?.nombre || 'Producto Tienda';
+            listaItems.push({ 
+                tipo: 'Tienda', 
+                detalle: nombreProducto, 
+                cant: t.cantidad || 1, 
+                subtotal: t.subtotal 
+            });
+        });
+        
+        // --- Restaurante (Platos específicos) ---
+        detallesRestaurante.forEach(r => {
+            // Intentamos obtener el nombre del producto guardado o genérico
+            const nombrePlato = r.nombre_producto || 'Consumo Restaurante';
+            listaItems.push({ 
+                tipo: 'Restaurante', 
+                detalle: nombrePlato, 
+                cant: r.cantidad || 1, 
+                subtotal: r.subtotal 
+            });
+        });
+
+        // 4. Construir HTML de la tabla para el Modal
+        const rowsHtml = listaItems.map(item => `
+            <tr class="border-b border-gray-100 hover:bg-gray-50">
+                <td class="p-2 text-xs text-gray-500 uppercase tracking-wide">${item.tipo}</td>
+                <td class="p-2 text-sm font-semibold text-gray-800">${item.detalle}</td>
+                <td class="p-2 text-sm text-center text-gray-600">${item.cant}</td>
+                <td class="p-2 text-sm text-right font-bold text-gray-700">${formatCurrency(item.subtotal)}</td>
+            </tr>
+        `).join('');
+
+        // 5. Renderizar Modal
+        const modalHtml = `
+            <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[85vh]">
+                <div class="bg-gray-50 px-6 py-4 border-b flex justify-between items-center flex-shrink-0">
+                    <div>
+                        <h3 class="text-lg font-bold text-gray-800">Detalle de Cuenta: ${room.nombre}</h3>
+                        <p class="text-sm text-gray-500">Cliente: <strong>${reserva.cliente_nombre || 'N/A'}</strong></p>
+                    </div>
+                    <button id="btn-cerrar-local" class="text-gray-400 hover:text-red-500 text-2xl transition">&times;</button>
+                </div>
+                
+                <div class="p-0 overflow-y-auto flex-grow custom-scrollbar">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-blue-50 text-blue-800 uppercase text-xs sticky top-0 shadow-sm">
+                            <tr>
+                                <th class="p-3 font-semibold">Origen</th>
+                                <th class="p-3 font-semibold">Descripción</th>
+                                <th class="p-3 text-center font-semibold">Cant.</th>
+                                <th class="p-3 text-right font-semibold">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${rowsHtml}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="bg-gray-50 px-6 py-4 border-t flex-shrink-0">
+                    <div class="flex justify-end flex-col items-end space-y-1 mb-4 border-b border-gray-200 pb-2">
+                        <div class="text-sm text-gray-600">Total Cargos: <span class="font-bold text-gray-900">${formatCurrency(granTotal)}</span></div>
+                        <div class="text-sm text-green-600">Total Pagado: <span class="font-bold">${formatCurrency(totalPagado)}</span></div>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div class="text-xl ${saldo > 0 ? 'text-red-600' : 'text-blue-600'}">
+                            Saldo: <span class="font-bold">${formatCurrency(saldo)}</span>
+                        </div>
+                        <div class="flex gap-3">
+                            <button id="btn-imprimir-pos-local" class="button button-success px-5 py-2 shadow-lg flex items-center gap-2 hover:scale-105 transition transform">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
+                                Imprimir Factura
+                            </button>
+                            <button id="btn-cerrar-local-2" class="button button-neutral px-4 py-2">Cerrar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        modalContainer.innerHTML = modalHtml;
+
+        // 6. Asignar Eventos
+        const cerrarModal = () => {
+            modalContainer.style.display = 'none';
+            modalContainer.innerHTML = '';
+        };
+        document.getElementById('btn-cerrar-local').onclick = cerrarModal;
+        document.getElementById('btn-cerrar-local-2').onclick = cerrarModal;
+
+        // 7. EVENTO IMPRIMIR (Aquí mandamos los datos específicos)
+        document.getElementById('btn-imprimir-pos-local').onclick = async () => {
+            // Construimos el objeto de datos con la lista DETALLADA
+            const datosParaImprimir = {
+                cliente: {
+                    nombre: reserva.cliente_nombre,
+                    documento: reserva.cedula
+                },
+                reservaId: reserva.id,
+                habitacionNombre: room.nombre,
+                // Mapeamos listaItems al formato que la impresora entiende
+                items: listaItems.map(i => ({
+                    nombre: i.detalle, // Ahora dice "Coca Cola", "Hamburguesa", etc.
+                    cantidad: i.cant,
+                    total: i.subtotal,
+                    precioUnitario: i.cant > 0 ? (i.subtotal / i.cant) : 0
+                })),
+                total: granTotal,
+                totalPagado: totalPagado,
+                impuestos: 0, 
+                descuento: reserva.monto_descontado || 0,
+                subtotal: granTotal
+            };
+
+            const { data: config } = await supabase.from('configuracion_hotel').select('*').eq('hotel_id', hotelId).maybeSingle();
+            
+            // Llamamos a la función de impresión que ya tienes al final del archivo
+            imprimirFacturaPosAdaptable(config || {}, datosParaImprimir);
+        };
+
+    } catch (error) {
+        console.error("Error en modal local detallado:", error);
+        modalContainer.innerHTML = `<div class="bg-white p-4 rounded text-red-600">Error cargando detalles: ${error.message} <button onclick="document.getElementById('modal-container').style.display='none'" class="ml-4 underline">Cerrar</button></div>`;
+    }
+}
 // ===================== FIN DEL ARCHIVO =====================
