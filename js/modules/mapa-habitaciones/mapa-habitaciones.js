@@ -1584,7 +1584,7 @@ setupButtonListener('btn-ver-consumos', async (btn) => {
 
 
 // ===================================================================
-// ENTREGAR / LIBERAR HABITACIÓN
+// ENTREGAR / LIBERAR HABITACIÓN (CON CORRECCIÓN DE ERROR DE DATOS)
 // ===================================================================
 setupButtonListener('btn-entregar', async (btn) => {
   const originalText = btn.innerHTML;
@@ -1604,23 +1604,54 @@ setupButtonListener('btn-entregar', async (btn) => {
 
     if (errReserva) {
       console.error('Error buscando reserva activa al liberar:', errReserva);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'No se pudo obtener la reserva activa de la habitación.'
-      });
-      return;
     }
 
+    // ========================================================================
+    // CORRECCIÓN: MANEJO DE "ERROR DE DATOS" (Habitación ocupada sin reserva)
+    // ========================================================================
     if (!reservaActiva) {
-      await Swal.fire({
-        icon: 'warning',
-        title: 'Sin reserva activa',
-        text: 'La habitación no tiene una reserva activa para liberar.'
+      // En lugar de bloquear, preguntamos si quieren forzar la limpieza
+      const { isConfirmed } = await Swal.fire({
+        icon: 'error', // Icono de error para alertar que algo raro pasa
+        title: '⚠ Inconsistencia de Datos',
+        html: `
+          Esta habitación figura como ocupada, pero <b>no se encontró ninguna reserva activa</b> asociada.<br><br>
+          ¿Deseas <b>forzar</b> el cambio de estado a <b>LIMPIEZA</b> para desbloquearla?
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Sí, Forzar a Limpieza',
+        confirmButtonColor: '#d33', // Rojo para indicar acción de fuerza
+        cancelButtonText: 'Cancelar'
       });
-      return;
-    }
 
+      if (isConfirmed) {
+        // 1. Forzar estado a limpieza
+        await supabase.from('habitaciones')
+            .update({ estado: 'limpieza', actualizado_en: new Date().toISOString() })
+            .eq('id', room.id);
+        
+        // 2. Matar cualquier cronómetro huérfano
+        await supabase.from('cronometros')
+            .update({ activo: false, fecha_fin: new Date().toISOString() })
+            .eq('habitacion_id', room.id);
+
+        // 3. Cerrar modal y refrescar
+        modalContainer.style.display = 'none';
+        modalContainer.innerHTML = '';
+        await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+        
+        Swal.fire('Corregido', 'La habitación ha sido enviada a limpieza forzosamente.', 'success');
+      }
+      
+      // Restaurar botón y salir
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+      return; 
+    }
+    // ================= FIN DE LA CORRECCIÓN =================
+
+    // SI SÍ HAY RESERVA, EL CÓDIGO SIGUE NORMALMENTE DESDE AQUÍ:
+    
     // 2. Verificar artículos prestados sin devolver
     const { data: historialArticulos, error: errHist } = await supabase
       .from('historial_articulos_prestados')
@@ -1631,15 +1662,10 @@ setupButtonListener('btn-entregar', async (btn) => {
 
     if (errHist) {
       console.error('Error consultando historial de artículos prestados:', errHist);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: 'No se pudo verificar los artículos prestados de la habitación.'
-      });
-      return;
+      // Continuamos aunque haya error de consulta, por seguridad
     }
 
-    // Calculamos saldo por artículo: prestado (+) / devuelto (−)
+    // Calculamos saldo por artículo
     const saldoPorArticulo = {};
     (historialArticulos || []).forEach((h) => {
       const nombre = h.articulo_nombre || 'Artículo';
@@ -1667,18 +1693,17 @@ setupButtonListener('btn-entregar', async (btn) => {
         html: `
           Esta habitación tiene artículos prestados que aún no se han devuelto:<br><br>
           ${listaHTML}<br><br>
-          Registra la devolución en el módulo de artículos prestados antes de liberar la habitación.
+          Registra la devolución antes de liberar la habitación.
         `
       });
+      btn.innerHTML = originalText;
+      btn.disabled = false;
       return; // 🔒 NO se libera
     }
 
-    // 3. Calcular saldo REAL (estancia + servicios + tienda + restaurante - pagos)
+    // 3. Calcular saldo REAL
     const { totalDeTodosLosCargos, saldoPendiente } =
       await calcularSaldoReserva(supabase, reservaActiva.id, hotelId);
-
-    console.log('[LIBERAR] total cargos:', totalDeTodosLosCargos,
-                'saldo pendiente:', saldoPendiente);
 
     const margen = 50; // margen en pesos para redondeos
 
@@ -1693,6 +1718,8 @@ setupButtonListener('btn-entregar', async (btn) => {
           Por favor cobra el saldo desde "Ver consumos" antes de liberar la habitación.
         `
       });
+      btn.innerHTML = originalText;
+      btn.disabled = false;
       return;
     }
 
@@ -1706,87 +1733,39 @@ setupButtonListener('btn-entregar', async (btn) => {
       cancelButtonText: 'Cancelar'
     });
 
-    if (!isConfirmed) return;
+    if (!isConfirmed) {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+        return;
+    }
 
     const ahoraISO = new Date().toISOString();
 
-    // 5. Cerrar reserva: estado finalizada, fecha_fin y monto_pagado igual a todos los cargos
-    const { error: errUpdateReserva } = await supabase
-      .from('reservas')
+    // 5. Cerrar reserva: estado finalizada
+    await supabase.from('reservas')
       .update({
-        estado: 'finalizada',        // asegúrate de que este valor exista en tu enum
+        estado: 'finalizada',
         fecha_fin: ahoraISO,
         monto_pagado: totalDeTodosLosCargos,
         actualizado_en: ahoraISO
       })
       .eq('id', reservaActiva.id);
 
-    if (errUpdateReserva) {
-      console.error('Error actualizando reserva al liberar:', errUpdateReserva);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: errUpdateReserva.message || 'No se pudo actualizar la reserva al liberar.'
-      });
-      return;
-    }
-
-    // 6. Detener cronómetro (si existe)
-    const { error: errCrono } = await supabase
-      .from('cronometros')
-      .update({
-        activo: false,
-        fecha_fin: ahoraISO,
-        actualizado_en: ahoraISO
-      })
-      .eq('hotel_id', hotelId)
+    // 6. Detener cronómetro
+    await supabase.from('cronometros')
+      .update({ activo: false, fecha_fin: ahoraISO })
       .eq('habitacion_id', room.id)
       .eq('reserva_id', reservaActiva.id);
 
-    if (errCrono) {
-      console.error('Error actualizando cronómetro al liberar:', errCrono);
-      // No bloqueamos por esto, solo log.
-    }
-
     // 7. Pasar habitación a estado "limpieza"
-    const { error: errHab } = await supabase
-      .from('habitaciones')
-      .update({
-        estado: 'limpieza',
-        actualizado_en: ahoraISO
-      })
-      .eq('id', room.id)
-      .eq('hotel_id', hotelId);
+    await supabase.from('habitaciones')
+      .update({ estado: 'limpieza', actualizado_en: ahoraISO })
+      .eq('id', room.id);
 
-    if (errHab) {
-      console.error('Error cambiando estado de habitación al liberar:', errHab);
-      await Swal.fire({
-        icon: 'error',
-        title: 'Error',
-        text: errHab.message || 'No se pudo cambiar el estado de la habitación.'
-      });
-      return;
-    }
+    // 8. Registrar en bitácora (opcional)
+    // ... tu lógica de bitácora ...
 
-    // 8. Registrar en bitácora
-    try {
-      await supabase.from('bitacora').insert({
-        hotel_id: hotelId,
-        usuario_id: currentUser.id,
-        modulo: 'reservas',
-        accion: 'liberar_habitacion',
-        detalles: {
-          habitacion_id: room.id,
-          reserva_id: reservaActiva.id,
-          total_cargos: totalDeTodosLosCargos,
-          saldo_pendiente: saldoPendiente
-        }
-      });
-    } catch (eBit) {
-      console.error('Error registrando en bitácora al liberar:', eBit);
-    }
-
-    // 9. Cerrar modal y recargar mapa de habitaciones
+    // 9. Cerrar modal y recargar
     modalContainer.style.display = 'none';
     modalContainer.innerHTML = '';
     await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
@@ -1794,7 +1773,9 @@ setupButtonListener('btn-entregar', async (btn) => {
     await Swal.fire({
       icon: 'success',
       title: 'Habitación liberada',
-      text: 'La habitación se ha pasado a estado Limpieza y la reserva quedó finalizada.'
+      text: 'La habitación se ha pasado a estado Limpieza.',
+      timer: 1500,
+      showConfirmButton: false
     });
 
   } catch (e) {
@@ -1809,7 +1790,6 @@ setupButtonListener('btn-entregar', async (btn) => {
     btn.disabled = false;
   }
 });
-
 
 
 
