@@ -101,7 +101,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
         <p class="mt-2 text-sm text-gray-600">Si el problema persiste, contacta a nuestro soporte técnico para asistencia. support@gestiondehotel.com</p>
     </div>
 
-    <form id="login-form" class="space-y-6">
+    <form id="login-form" class="space-y-6" onsubmit="event.preventDefault(); return false;">
         <div>
             <label for="email" class="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
             <input type="email" name="email" id="email" required
