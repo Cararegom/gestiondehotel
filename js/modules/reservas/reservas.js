@@ -624,16 +624,26 @@ async function validateAndCalculateBooking(formData) {
         ui.updateTotalDisplay(montoDescontado);
     }
     
-    // 4. Validación de cruce de reservas
+    // 4. Validación de cruce de reservas (CORREGIDO PARA EDICIÓN)
     const HORAS_BLOQUEO_PREVIO = 3;
     
-    // Consulta simple para detectar cruces visuales rápidos
-    const { data: proximaReserva } = await state.supabase
+    // Construimos la consulta base
+    let queryProxima = state.supabase
         .from('reservas')
         .select('id, fecha_inicio')
         .eq('habitacion_id', formData.habitacion_id)
         .in('estado', ['reservada', 'confirmada', 'activa'])
-        .gte('fecha_inicio', fechaEntrada.toISOString())
+        .gte('fecha_inicio', fechaEntrada.toISOString());
+
+    // --- CORRECCIÓN CRÍTICA AQUÍ ---
+    // Si estamos en modo edición, excluimos la reserva que estamos editando
+    // para que no se detecte como un conflicto consigo misma.
+    if (state.isEditMode && state.editingReservaId) {
+        queryProxima = queryProxima.neq('id', state.editingReservaId);
+    }
+    
+    // Ejecutamos la consulta construida
+    const { data: proximaReserva } = await queryProxima
         .order('fecha_inicio', { ascending: true })
         .limit(1)
         .maybeSingle();
@@ -652,6 +662,7 @@ async function validateAndCalculateBooking(formData) {
             p_habitacion_id: formData.habitacion_id, 
             p_entrada: fechaEntrada.toISOString(),
             p_salida: fechaSalida.toISOString(), 
+            // Esto ya estaba bien, pero es vital que siga aquí:
             p_reserva_id_excluida: state.isEditMode ? state.editingReservaId : null
         });
 
