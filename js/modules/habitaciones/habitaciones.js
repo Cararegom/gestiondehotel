@@ -194,23 +194,35 @@ async function cargarYRenderizarTiemposEstancia(tbodyEl, feedbackEl) {
   }
 }
 
+/**
+ * Rellena el formulario de Tiempos de Estancia para edición.
+ */
 function populateFormularioTiempoEstancia(formEl, tiempoData, btnCancelarEl) {
   if (!formEl) return;
-  formEl.reset();
-  formEl.elements.tiempoEstanciaIdEdit.value = tiempoData.id;
+  formEl.reset(); // Limpiar residuos anteriores
+  
+  // Asignar ID
+  const idInput = formEl.elements.tiempoEstanciaIdEdit;
+  if (idInput) idInput.value = tiempoData.id;
+
+  // Asignar valores
   formEl.elements.nombreTiempo.value = tiempoData.nombre;
   formEl.elements.minutosTiempo.value = tiempoData.minutos;
   formEl.elements.precioTiempo.value = tiempoData.precio || 0;
   formEl.elements.activoTiempo.checked = tiempoData.activo;
-  formEl.querySelector('#btn-guardar-tiempo-estancia').textContent = 'Actualizar Tiempo';
+
+  // Actualizar interfaz de botones
+  const btnGuardar = formEl.querySelector('#btn-guardar-tiempo-estancia');
+  if (btnGuardar) btnGuardar.textContent = 'Actualizar Tiempo';
   if (btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
   
-  // Si el nombre incluye "noche", deshabilitar minutos
+  // Lógica especial para "Noche": bloquea los minutos para evitar errores manuales
   if (tiempoData.nombre && tiempoData.nombre.toLowerCase().includes('noche')) {
     formEl.elements.minutosTiempo.disabled = true;
   } else {
     formEl.elements.minutosTiempo.disabled = false;
   }
+  
   formEl.elements.nombreTiempo.focus();
 }
 
@@ -225,83 +237,139 @@ function resetearFormularioTiempoEstancia(formEl, btnCancelarEl) {
   formEl.elements.nombreTiempo.focus();
 }
 
+/**
+ * Maneja el envío (creación o edición) de un Tiempo de Estancia.
+ */
 async function handleTiempoEstanciaSubmit(event, formEl, tbodyEl, feedbackEl, btnGuardarEl, btnCancelarEl) {
     event.preventDefault();
     if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
     
-    const formData = new FormData(formEl);
-    const nombreValue = formData.get('nombreTiempo')?.trim();
-    let minutosValue = formData.get('minutosTiempo');
-    const precioValue = parseFloat(formData.get('precioTiempo')) || 0;
-    const idEdit = formData.get('tiempoEstanciaIdEdit');
-    const activoValue = formEl.elements.activoTiempo.checked;
+    // 1. Obtener datos crudos, asegurando que leemos los disabled si es necesario
+    const nombreInput = formEl.elements.nombreTiempo;
+    const minutosInput = formEl.elements.minutosTiempo;
+    const precioInput = formEl.elements.precioTiempo;
+    const activoInput = formEl.elements.activoTiempo;
+    const idInput = formEl.elements.tiempoEstanciaIdEdit;
 
+    const nombreValue = nombreInput.value.trim();
+    // Importante: leer .value directo del elemento, no de formData, por si está disabled
+    let minutosValue = minutosInput.value; 
+    const precioValue = parseFloat(precioInput.value) || 0;
+    const idEdit = idInput.value;
+    const activoValue = activoInput.checked;
+
+    // 2. Calcular minutos si es noche, o parsear lo que hay
     let minutosParsed;
     if (nombreValue && nombreValue.toLowerCase().includes('noche')) {
       minutosParsed = calcularMinutosNocheDesdeConfig();
-      formEl.elements.minutosTiempo.value = minutosParsed; 
-      formEl.elements.minutosTiempo.disabled = true;
+      // Actualizamos visualmente el input aunque no se envíe
+      minutosInput.value = minutosParsed; 
     } else {
       minutosParsed = parseInt(minutosValue, 10);
-      formEl.elements.minutosTiempo.disabled = false;
     }
 
     const originalButtonText = btnGuardarEl.textContent;
     setFormLoadingState(formEl, true, btnGuardarEl, originalButtonText, 'Guardando...');
 
-    if (!nombreValue || isNaN(minutosParsed) || minutosParsed <= 0) {
-      showHabitacionesFeedback(feedbackEl, 'Nombre y duración válida (minutos > 0) son obligatorios.', 'error');
+    // 3. Validaciones
+    if (!nombreValue) {
+      showHabitacionesFeedback(feedbackEl, 'El nombre es obligatorio.', 'error');
       setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
-      if (!nombreValue) formEl.elements.nombreTiempo.focus();
-      else formEl.elements.minutosTiempo.focus();
+      nombreInput.focus();
       return;
     }
-    if (isNaN(precioValue) || precioValue < 0) {
-        showHabitacionesFeedback(feedbackEl, 'El precio debe ser un número no negativo.', 'error');
+    if (isNaN(minutosParsed) || minutosParsed <= 0) {
+        showHabitacionesFeedback(feedbackEl, 'La duración en minutos debe ser mayor a 0.', 'error');
         setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
-        formEl.elements.precioTiempo.focus();
+        minutosInput.disabled = false; // Habilitar para corregir
+        minutosInput.focus();
+        return;
+    }
+    if (precioValue < 0) {
+        showHabitacionesFeedback(feedbackEl, 'El precio no puede ser negativo.', 'error');
+        setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
+        precioInput.focus();
         return;
     }
 
+    // 4. Preparar Payload
     const payload = {
-      hotel_id: currentHotelId,
       nombre: nombreValue,
       minutos: minutosParsed,
       precio: precioValue,
       activo: activoValue,
-      user_id: currentModuleUser.id 
+      // No enviamos hotel_id ni user_id en el update payload para evitar conflictos de RLS si no cambiaron
     };
 
     try {
       let accionBitacora = '';
       let detallesBitacora = {};
+
       if (idEdit) {
-        const updateData = { ...payload };
-        delete updateData.user_id; delete updateData.hotel_id; 
-        const { error } = await currentSupabaseInstance.from('tiempos_estancia')
-          .update(updateData).eq('id', idEdit).eq('hotel_id', currentHotelId);
+        // --- MODO ACTUALIZACIÓN ---
+        console.log(`[Habitaciones] Actualizando ID: ${idEdit}`, payload);
+        
+        const { data, error } = await currentSupabaseInstance
+          .from('tiempos_estancia')
+          .update(payload)
+          .eq('id', idEdit)
+          .eq('hotel_id', currentHotelId) // Seguridad adicional
+          .select(); // <--- CRUCIAL: Esto verifica si realmente se actualizó algo
+
         if (error) throw error;
-        showHabitacionesFeedback(feedbackEl, 'Tiempo de estancia actualizado.', 'success');
+        
+        // Verificación de "Falso Positivo"
+        if (!data || data.length === 0) {
+            throw new Error("No se encontró el registro para actualizar. Puede que haya sido eliminado o el ID no coincida.");
+        }
+
+        showHabitacionesFeedback(feedbackEl, 'Tiempo de estancia actualizado correctamente.', 'success');
         accionBitacora = 'ACTUALIZAR_TIEMPO_ESTANCIA';
-        detallesBitacora = { tiempo_id: idEdit, nombre: nombreValue };
+        detallesBitacora = { tiempo_id: idEdit, nombre: nombreValue, precio: precioValue };
+
       } else {
-        const { data, error } = await currentSupabaseInstance.from('tiempos_estancia').insert(payload).select().single();
+        // --- MODO CREACIÓN ---
+        // Aquí sí necesitamos hotel_id y user_id
+        const insertPayload = {
+            ...payload,
+            hotel_id: currentHotelId,
+            user_id: currentModuleUser.id 
+        };
+
+        const { data, error } = await currentSupabaseInstance
+            .from('tiempos_estancia')
+            .insert(insertPayload)
+            .select()
+            .single();
+
         if (error) throw error; 
         showHabitacionesFeedback(feedbackEl, 'Tiempo de estancia creado.', 'success');
         accionBitacora = 'CREAR_TIEMPO_ESTANCIA';
         detallesBitacora = { tiempo_id: data.id, nombre: nombreValue };
       }
-      await registrarEnBitacora({ supabase: currentSupabaseInstance, hotel_id: currentHotelId, usuario_id: currentModuleUser.id, modulo: 'Habitaciones', accion: accionBitacora, detalles: detallesBitacora });
+
+      // Registro en bitácora (sin bloquear la UI)
+      registrarEnBitacora({ 
+          supabase: currentSupabaseInstance, 
+          hotel_id: currentHotelId, 
+          usuario_id: currentModuleUser.id, 
+          modulo: 'Habitaciones', 
+          accion: accionBitacora, 
+          detalles: detallesBitacora 
+      }).catch(err => console.error("Error bitácora", err));
+
       resetearFormularioTiempoEstancia(formEl, btnCancelarEl);
       await cargarYRenderizarTiemposEstancia(tbodyEl, feedbackEl);
+
     } catch (err) {
       console.error('Error guardando tiempo de estancia:', err); 
-      showHabitacionesFeedback(feedbackEl, `Error al guardar tiempo: ${err.message}`, 'error', 0);
+      showHabitacionesFeedback(feedbackEl, `Error al guardar: ${err.message}`, 'error', 0);
     } finally {
       setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
-       if (!nombreValue || !nombreValue.toLowerCase().includes('noche')) { // Re-enable if not "Noche"
-            formEl.elements.minutosTiempo.disabled = false;
-        }
+      // Asegurar que el input de minutos quede habilitado para futuras acciones si no es noche
+      if (!formEl.elements.nombreTiempo.value.toLowerCase().includes('noche')) {
+          formEl.elements.minutosTiempo.disabled = false;
+      }
     }
 }
 
