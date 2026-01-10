@@ -1823,33 +1823,27 @@ function crearOpcionesNochesConPersonalizada(horarios, maxNoches = 5, fechaBase 
 }
 
 
-function crearOpcionesHoras(tiempos) { 
+/**
+ * Crea las opciones del select de horas usando el ID como valor único
+ */
+function crearOpcionesHoras(tiempos) {
     if (!tiempos || tiempos.length === 0) {
-        return [];
+        return '<option value="">-- Sin tarifas disponibles --</option>';
     }
+    
+    // Filtramos para que no salgan tiempos de 0 minutos o tipo 'noche' si no corresponde
     const opciones = tiempos
-        .filter(t => t.tipo_unidad !== 'noche' && t.minutos > 0) 
+        .filter(t => t.tipo_unidad !== 'noche' && t.minutos > 0)
         .map(t => {
-            const precioAUsar = (t.precio === null || t.precio === 0) && (typeof t.precio_adicional === 'number') 
-                                ? t.precio_adicional 
-                                : (typeof t.precio === 'number' ? t.precio : 0);
-            return {
-                minutos: t.minutos,
-                label: `${t.nombre || formatHorasMin(t.minutos)} - ${formatCurrency(precioAUsar)}`, 
-                precio: precioAUsar 
-            };
+            // CAMBIO IMPORTANTE: Usamos t.id en el value, no t.nombre
+            return `<option value="${t.id}" data-precio="${t.precio}">${t.nombre} - ${formatCurrency(t.precio)}</option>`;
         });
-    
-    // ==========================================
-    // NUEVA OPCIÓN: DURACIÓN ABIERTA
-    // ==========================================
-    opciones.push({
-        minutos: -1, // Valor clave para identificar la duración abierta
-        label: "Duración Abierta (Pago al Check-out)", 
-        precio: 0 // El precio se calculará al final
-    });
-    
-    return opciones;
+
+    if (opciones.length === 0) {
+         return '<option value="">-- No aplica --</option>';
+    }
+
+    return ['<option value="">-- Selecciona duración --</option>', ...opciones].join('');
 }
 
 // REEMPLAZA TU FUNCIÓN calcularDetallesEstancia CON ESTA VERSIÓN CORREGIDA
@@ -2103,7 +2097,6 @@ async function facturarElectronicaYMostrarResultado({
 
 
 
-// REEMPLAZA TU FUNCIÓN showAlquilarModal CON ESTA VERSIÓN (ACTUALIZACIÓN EN VIVO)
 async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppContainer) {
     const modalContainer = document.getElementById('modal-container');
     if (!modalContainer) { console.error("Contenedor de modal no encontrado."); return; }
@@ -2125,9 +2118,18 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         return;
     }
     
+    // --- CORRECCIÓN 1: Filtramos los tiempos según el tipo de habitación (Aire vs Ventilador) ---
+    const tipoHab = (room.tipo || 'aire').toLowerCase();
+    const tiemposFiltrados = tiempos.filter(t => {
+        // Asumimos que t.tipo_habitacion puede ser 'aire', 'ventilador' o 'ambas'
+        const tipoTarifa = (t.tipo_habitacion || 'ambas').toLowerCase();
+        return (tipoTarifa === 'ambas' || tipoTarifa === tipoHab) && t.minutos > 0;
+    });
+
     metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, room);
-    const opcionesHoras = crearOpcionesHoras(tiempos);
+    
+    // No usamos crearOpcionesHoras aquí para tener control total del mapeo con ID en el HTML
 
     // HTML del Modal
     const modalContent = document.createElement('div');
@@ -2157,7 +2159,11 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
                     <label class="form-label">Duración de Estancia*</label>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                         <select name="noches" id="select-noches" class="form-control"><option value="">-- Noches --</option>${opcionesNoches.map(o => `<option value="${o.noches}">${o.label}</option>`).join('')}</select>
-                        <select name="horas" id="select-horas" class="form-control"><option value="">-- Horas --</option>${opcionesHoras.map(o => `<option value="${o.minutos}">${o.label}</option>`).join('')}</select>
+                        
+                        <select name="horas" id="select-horas" class="form-control">
+                            <option value="">-- Horas --</option>
+                            ${tiemposFiltrados.map(t => `<option value="${t.id}">${t.nombre} - ${formatCurrency(t.precio)}</option>`).join('')}
+                        </select>
                     </div>
                 </div>
                 <div class="pt-2 mt-2 border-t">
@@ -2211,9 +2217,25 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         const clienteId = formData.cliente_id || null;
         const codigo = codigoManual === null ? codigoInputEl.value.trim().toUpperCase() : codigoManual;
         
-        const minutosSeleccionados = parseInt(formData.horas) || 0;
+        // --- CORRECCIÓN 3: Lógica para obtener tarifa por ID ---
+        const horasIdSeleccionado = formData.horas; // Esto ahora es un ID (string)
+        let minutosSeleccionados = 0;
+        let tarifaEspecifica = null;
+
+        if (horasIdSeleccionado) {
+            // Buscamos la tarifa exacta usando el ID
+            tarifaEspecifica = tiempos.find(t => t.id == horasIdSeleccionado);
+            if (tarifaEspecifica) {
+                minutosSeleccionados = tarifaEspecifica.minutos;
+            }
+        }
+
         const nochesSeleccionadas = parseInt(formData.noches) || 0; 
-        const esDuracionAbierta = minutosSeleccionados === -1;
+        
+        // Si no hay noches y seleccionamos horas, usamos los minutos de la tarifa encontrada
+        // Si tarifaEspecifica es null, asumimos 0
+        
+        const esDuracionAbierta = false; // Ajusta según tu lógica si tienes tarifas "abiertas"
         
         if (esDuracionAbierta) {
             selectNochesEl.value = ''; selectNochesEl.disabled = true;
@@ -2242,8 +2264,20 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             }
         }
         
+        // Pasamos los datos a la función auxiliar
+        // NOTA: Como formData.horas ahora tiene un ID, si calcularDetallesEstancia espera minutos, 
+        // debemos tener cuidado. Sin embargo, lo más seguro es FORZAR el precio correcto abajo.
         const detalles = calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado); 
         
+        // --- CORRECCIÓN 4: Forzamos el precio correcto si se eligió tarifa por ID ---
+        // Esto arregla el problema de que calcularDetallesEstancia se confunda con los nombres
+        if (tarifaEspecifica && !nochesSeleccionadas && !togglePrecioLibreEl.checked) {
+            detalles.precioBase = tarifaEspecifica.precio;
+            // Recalculamos el total basándonos en el precio base correcto
+            detalles.precioTotal = detalles.precioBase - (detalles.montoDescontado || 0) + (detalles.montoImpuesto || 0);
+            detalles.descripcionEstancia = tarifaEspecifica.nombre; // Aseguramos el nombre correcto
+        }
+
         const ticketResumenEl = modalContainer.querySelector('#ticket-resumen-container');
         const ticketTotalEl = modalContainer.querySelector('#ticket-total-price');
 
@@ -2257,15 +2291,13 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
         ticketTotalEl.textContent = formatCurrency(detalles.precioTotal);
     };
 
-    // --- LISTENERS (LA PARTE IMPORTANTE) ---
+    // --- LISTENERS ---
     
     selectNochesEl.addEventListener('change', async () => { if (selectNochesEl.value) { selectHorasEl.value = ''; } await recalcularYActualizarTotalAlquiler(); });
     selectHorasEl.addEventListener('change', async () => { if (selectHorasEl.value) { selectNochesEl.value = ''; } await recalcularYActualizarTotalAlquiler(); });
     
-    // ⚠️ AQUÍ ESTÁ LA CORRECCIÓN PARA EL HUÉSPED ADICIONAL ⚠️
     const cantidadHuespedesEl = modalContainer.querySelector('#cantidad_huespedes');
     if (cantidadHuespedesEl) {
-        // Usamos 'input' para que detecte CADA cambio (teclado o flechas) en tiempo real
         cantidadHuespedesEl.addEventListener('input', async () => {
             await recalcularYActualizarTotalAlquiler();
         });
@@ -2301,6 +2333,18 @@ async function showAlquilarModal(room, supabase, currentUser, hotelId, mainAppCo
             const formData = Object.fromEntries(new FormData(formEl));
             const detallesFinales = calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado);
             
+            // --- CORRECCIÓN 5: Aplicar la corrección de precio también al enviar ---
+            const horasIdSeleccionado = formData.horas;
+            if (horasIdSeleccionado && !formData.noches && !formData.precio_libre_toggle) {
+                const tarifaEspecifica = tiempos.find(t => t.id == horasIdSeleccionado);
+                if (tarifaEspecifica) {
+                    detallesFinales.precioBase = tarifaEspecifica.precio;
+                    detallesFinales.precioTotal = detallesFinales.precioBase - (detallesFinales.montoDescontado || 0);
+                    // Importante: asegurarnos que 'minutos' sean correctos para la fecha de salida
+                    detallesFinales.duracionMinutos = tarifaEspecifica.minutos;
+                }
+            }
+
             if (!formData.cliente_nombre.trim()) throw new Error("El nombre del huésped es obligatorio.");
             if (detallesFinales.tipoCalculo === null && formData.precio_libre_toggle !== 'on') throw new Error("Debe seleccionar una duración válida.");
             

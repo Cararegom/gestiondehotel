@@ -1164,3 +1164,10 @@ function mostrarModalUpgradeHabitaciones(limite, planNombre) {
   }, 50);
 }
 
+/**
+ * Nueva función para obtener un tiempo de estancia específico por su ID.
+ * Agrégala al final de habitaciones.js
+ */
+export function obtenerTiempoEstanciaPorId(id) {
+    return todosLosTiemposEstanciaCache.find(t => t.id === id);
+}
