@@ -1846,162 +1846,178 @@ function crearOpcionesHoras(tiempos) {
     return ['<option value="">-- Selecciona duración --</option>', ...opciones].join('');
 }
 
-// REEMPLAZA TU FUNCIÓN calcularDetallesEstancia CON ESTA VERSIÓN CORREGIDA
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
-    let inicioAt = new Date();
-    let finAt;
-    let montoEstanciaBaseBruto = 0;
-    let montoDescuento = 0;
-    let descripcionEstancia = "Seleccione duración";
-    let tipoCalculo = null;
-    let cantidadCalculo = 0;
-    let precioFinalAntesDeImpuestos;
+  let inicioAt = new Date();
+  let finAt;
+  let montoEstanciaBaseBruto = 0;
+  let montoDescuento = 0;
+  let descripcionEstancia = "Seleccione duración";
+  let tipoCalculo = null;
+  let cantidadCalculo = 0;
+  let precioFinalAntesDeImpuestos = 0;
 
-    const nochesSeleccionadas = dataForm.noches ? parseInt(dataForm.noches) : 0;
-    const minutosSeleccionados = dataForm.horas ? parseInt(dataForm.horas) : 0;
-    
-    // Asegurar que cantidadHuespedes sea mínimo 1
-    const cantidadHuespedes = Math.max(1, parseInt(dataForm.cantidad_huespedes) || 1);
-    
-    // Precio Manual
-    const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
-    const precioLibreValor = parseFloat(dataForm.precio_libre_valor) || 0;
+  const nochesSeleccionadas = dataForm.noches ? parseInt(dataForm.noches, 10) : 0;
 
-    // Obtenemos el precio adicional configurado en la habitación
-    const precioAdicionalPorPersona = Number(room.precio_huesped_adicional) || 0;
+  // ✅ dataForm.horas puede venir como UUID (id) o como minutos ("120") o "-1"
+  const horasValor = (dataForm.horas ?? "").toString().trim();
 
-    if (precioLibreActivado) {
-        // --- LÓGICA PRECIO MANUAL ---
-        montoEstanciaBaseBruto = precioLibreValor;
-        precioFinalAntesDeImpuestos = precioLibreValor;
-        descripcionEstancia = `Estancia (Precio Manual: ${formatCurrency(precioLibreValor)})`;
-        tipoCalculo = 'manual';
-        cantidadCalculo = precioLibreValor;
+  let minutosSeleccionados = 0;
+  let tiempoSeleccionado = null;
 
-        // Cálculo de fechas referenciales
-        if (nochesSeleccionadas > 0) {
-            let fechaSalida = new Date(inicioAt);
-            fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
-            const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
-            fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
-            finAt = fechaSalida;
-        } else if (minutosSeleccionados > 0) {
-            finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
-        } else {
-            let fechaSalida = new Date(inicioAt);
-            fechaSalida.setDate(fechaSalida.getDate() + 1); 
-            finAt = fechaSalida;
-        }
-
+  if (horasValor) {
+    // Si es número (minutos o -1)
+    if (/^-?\d+$/.test(horasValor)) {
+      minutosSeleccionados = parseInt(horasValor, 10);
+      if (minutosSeleccionados > 0) {
+        tiempoSeleccionado =
+          tiempos.find((t) => Number(t.minutos) === minutosSeleccionados) || null;
+      }
     } else {
-        // --- LÓGICA AUTOMÁTICA ---
-        if (nochesSeleccionadas > 0) {
-            // === POR NOCHES ===
-            tipoCalculo = 'noches';
-            cantidadCalculo = nochesSeleccionadas;
-            descripcionEstancia = `${nochesSeleccionadas} noche${nochesSeleccionadas > 1 ? 's' : ''}`;
+      // Si NO es número, es UUID -> buscamos por id
+      tiempoSeleccionado = tiempos.find((t) => t.id == horasValor) || null;
+      minutosSeleccionados = Number(tiempoSeleccionado?.minutos) || 0;
+    }
+  }
 
-            let fechaSalida = new Date(inicioAt);
-            fechaSalida.setDate(fechaSalida.getDate() + nochesSeleccionadas);
-            const [checkoutH, checkoutM] = (horarios.checkout || "12:00").split(':').map(Number);
-            fechaSalida.setHours(checkoutH, checkoutM, 0, 0);
-            finAt = fechaSalida;
-            
-            const precioGeneral = Number(room.precio) || 0;
-            const precioUno = Number(room.precio_1_persona) || precioGeneral;
-            const precioDos = Number(room.precio_2_personas) || precioUno;
+  const tiempoEstanciaId = tiempoSeleccionado?.id || null;
 
-            let precioBasePorNoche = 0;
+  const cantidadHuespedes = Math.max(1, parseInt(dataForm.cantidad_huespedes, 10) || 1);
+  const precioAdicionalPorPersona = Number(room.precio_huesped_adicional) || 0;
 
-            // Reglas de precio base según ocupación
-            if (cantidadHuespedes === 1) {
-                precioBasePorNoche = precioUno;
-            } else {
-                // 2 o más personas inician con la tarifa de 2
-                precioBasePorNoche = precioDos;
-            }
+  const precioLibreActivado = dataForm.precio_libre_toggle === "on";
+  const precioLibreValor = parseFloat(dataForm.precio_libre_valor) || 0;
 
-            // Sumar adicionales si hay más de 2 personas
-            if (cantidadHuespedes > 2) {
-                const huespedesAdicionales = cantidadHuespedes - 2;
-                precioBasePorNoche += (huespedesAdicionales * precioAdicionalPorPersona);
-            }
-            
-            montoEstanciaBaseBruto = precioBasePorNoche * nochesSeleccionadas;
+  // 1) PRECIO MANUAL
+  if (precioLibreActivado) {
+    montoEstanciaBaseBruto = precioLibreValor;
+    precioFinalAntesDeImpuestos = precioLibreValor;
+    descripcionEstancia = `Estancia (Precio Manual: ${formatCurrency(precioLibreValor)})`;
+    tipoCalculo = "manual";
+    cantidadCalculo = precioLibreValor;
 
-        } else if (minutosSeleccionados > 0) {
-            // === POR HORAS ===
-            tipoCalculo = 'horas';
-            cantidadCalculo = minutosSeleccionados;
-            finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
-            descripcionEstancia = formatHorasMin(minutosSeleccionados);
-            
-            const tiempoSeleccionado = tiempos.find(t => t.minutos === minutosSeleccionados);
-            let precioTiempo = Number(tiempoSeleccionado?.precio) || 0;
+    // Fechas para cronómetro
+    if (nochesSeleccionadas > 0) {
+      finAt = calcularFechaFinPorNoches(inicioAt, nochesSeleccionadas, horarios.checkout, room);
+    } else if (minutosSeleccionados > 0) {
+      finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
+    } else {
+      finAt = new Date(inicioAt);
+    }
+  } else {
+    // 2) CALCULO NORMAL
 
-            // --- CORRECCIÓN: AHORA SÍ COBRAMOS EXTRA POR PERSONA EN HORAS ---
-            if (cantidadHuespedes > 2) {
-                 const huespedesAdicionales = cantidadHuespedes - 2;
-                 // Sumamos el costo adicional al precio base del tiempo
-                 precioTiempo += (huespedesAdicionales * precioAdicionalPorPersona);
-            }
-            // ---------------------------------------------------------------
+    // NOCHES
+    if (nochesSeleccionadas > 0) {
+      tipoCalculo = "noches";
+      cantidadCalculo = nochesSeleccionadas;
+      finAt = calcularFechaFinPorNoches(inicioAt, nochesSeleccionadas, horarios.checkout, room);
+      descripcionEstancia = `${nochesSeleccionadas} Noche(s)`;
 
-            montoEstanciaBaseBruto = precioTiempo;
-        
-        } else if (minutosSeleccionados === -1) { 
-            // === DURACIÓN ABIERTA ===
-            tipoCalculo = 'abierta';
-            cantidadCalculo = 0;
-            finAt = new Date(inicioAt.getTime() + 100 * 365 * 24 * 60 * 60 * 1000); 
-            descripcionEstancia = "Duración Abierta";
-            montoEstanciaBaseBruto = 0; 
-        } else {
-            // Fallback
-            finAt = new Date(inicioAt);
+      let precioNocheBase = Number(room.precio_2_personas) || 0;
+      if (cantidadHuespedes === 1) precioNocheBase = Number(room.precio_1_persona) || precioNocheBase;
+
+      let totalNoche = precioNocheBase * nochesSeleccionadas;
+      if (cantidadHuespedes > 2) {
+        totalNoche += ((cantidadHuespedes - 2) * precioAdicionalPorPersona) * nochesSeleccionadas;
+      }
+      montoEstanciaBaseBruto = totalNoche;
+    }
+    // HORAS
+    else if (minutosSeleccionados > 0) {
+      tipoCalculo = "horas";
+      cantidadCalculo = minutosSeleccionados;
+      finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
+      descripcionEstancia = tiempoSeleccionado?.nombre || formatHorasMin(minutosSeleccionados);
+
+      // precio desde tiempos_estancia
+      let precioTiempo = Number(tiempoSeleccionado?.precio) || 0;
+
+      // fallback: por si la tarifa no trae precio (usa precio_base_hora)
+      if (!precioTiempo) {
+        const baseHora = Number(room.precio_base_hora) || 0;
+        if (baseHora > 0) {
+          precioTiempo = (minutosSeleccionados / 60) * baseHora;
         }
+      }
 
-        // Descuentos
-        const totalAntesDeDescuento = montoEstanciaBaseBruto;
-        if (descuentoAplicado) {
-            if (descuentoAplicado.tipo === 'fijo') {
-                montoDescuento = parseFloat(descuentoAplicado.valor);
-            } else if (descuentoAplicado.tipo === 'porcentaje') {
-                montoDescuento = totalAntesDeDescuento * (parseFloat(descuentoAplicado.valor) / 100);
-            }
-        }
-        montoDescuento = Math.min(totalAntesDeDescuento, montoDescuento);
-        precioFinalAntesDeImpuestos = totalAntesDeDescuento - montoDescuento;
+      if (cantidadHuespedes > 2) {
+        precioTiempo += (cantidadHuespedes - 2) * precioAdicionalPorPersona;
+      }
+      montoEstanciaBaseBruto = precioTiempo;
+    }
+    // ABIERTA (-1) si la usas
+    else if (minutosSeleccionados === -1) {
+      tipoCalculo = "abierta";
+      cantidadCalculo = 0;
+      finAt = new Date(inicioAt);
+      descripcionEstancia = "Duración Abierta";
+      montoEstanciaBaseBruto = 0;
+    } else {
+      finAt = new Date(inicioAt);
     }
 
-    // Impuestos
-    let montoImpuesto = 0;
-    let precioFinalConImpuestos = precioFinalAntesDeImpuestos;
-    const porcentajeImpuesto = parseFloat(hotelConfigGlobal?.porcentaje_impuesto_principal || 0);
-    
-    if (porcentajeImpuesto > 0 && tipoCalculo !== 'abierta') {
-        if (hotelConfigGlobal?.impuestos_incluidos_en_precios) {
-            const baseImponible = precioFinalAntesDeImpuestos / (1 + (porcentajeImpuesto / 100));
-            montoImpuesto = precioFinalAntesDeImpuestos - baseImponible;
-        } else {
-            montoImpuesto = precioFinalAntesDeImpuestos * (porcentajeImpuesto / 100);
-            precioFinalConImpuestos += montoImpuesto;
-        }
+    // DESCUENTO
+    const totalAntesDeDescuento = montoEstanciaBaseBruto;
+
+    if (descuentoAplicado && totalAntesDeDescuento > 0) {
+      const val = Number(descuentoAplicado.valor) || 0;
+      if (descuentoAplicado.tipo === "porcentaje") {
+        montoDescuento = (totalAntesDeDescuento * val) / 100;
+      } else {
+        montoDescuento = val;
+      }
+      montoDescuento = Math.min(montoDescuento, totalAntesDeDescuento);
     }
 
-    return {
-        inicioAt,
-        finAt,
-        precioTotal: tipoCalculo === 'abierta' ? 0 : (precioLibreActivado ? precioLibreValor : Math.round(precioFinalConImpuestos)),
-        montoDescontado: tipoCalculo === 'abierta' ? 0 : Math.round(montoDescuento),
-        montoImpuesto: tipoCalculo === 'abierta' ? 0 : Math.round(montoImpuesto),
-        precioBase: tipoCalculo === 'abierta' ? 0 : Math.round(montoEstanciaBaseBruto),
-        descripcionEstancia,
-        tipoCalculo,
-        cantidadCalculo,
-        descuentoAplicado
-    };
+    precioFinalAntesDeImpuestos = totalAntesDeDescuento - montoDescuento;
+  }
+
+  // IMPUESTOS
+  const porcentajeImpuesto = Number(hotelConfigGlobal?.porcentaje_impuesto_principal) || 0;
+  const impuestosIncluidos = hotelConfigGlobal?.impuestos_incluidos_en_precios === true;
+
+  let montoImpuesto = 0;
+  let baseSinImpuesto = precioFinalAntesDeImpuestos;
+
+  if (porcentajeImpuesto > 0 && precioFinalAntesDeImpuestos > 0) {
+    const tasa = porcentajeImpuesto / 100;
+    if (impuestosIncluidos) {
+      baseSinImpuesto = precioFinalAntesDeImpuestos / (1 + tasa);
+      montoImpuesto = precioFinalAntesDeImpuestos - baseSinImpuesto;
+    } else {
+      montoImpuesto = precioFinalAntesDeImpuestos * tasa;
+      baseSinImpuesto = precioFinalAntesDeImpuestos;
+    }
+  }
+
+  const precioFinalConImpuestos = impuestosIncluidos
+    ? precioFinalAntesDeImpuestos
+    : (precioFinalAntesDeImpuestos + montoImpuesto);
+
+  const totalRedondeado =
+    tipoCalculo === "abierta"
+      ? 0
+      : (precioLibreActivado ? precioLibreValor : Math.round(precioFinalConImpuestos));
+
+  return {
+    inicioAt,
+    finAt,
+    precioBase: Math.round(montoEstanciaBaseBruto),
+    montoDescontado: Math.round(montoDescuento),
+    descuentoAplicado,
+    montoImpuesto: Math.round(montoImpuesto),
+    porcentajeImpuestos: porcentajeImpuesto,
+    nombreImpuesto: hotelConfigGlobal?.nombre_impuesto_principal || "IVA",
+    montoBaseSinImpuestos: Math.round(baseSinImpuesto),
+    precioTotal: totalRedondeado,
+    descripcionEstancia,
+    tipoCalculo,
+    cantidadCalculo,
+    tiempoEstanciaId,
+    minutosSeleccionados
+  };
 }
+
 
 // =========================================================================================
 // FUNCIÓN MODIFICADA: "FACTURAR" AHORA IMPRIME TICKET POS (BYPASS ELECTRÓNICO)
@@ -2496,128 +2512,242 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
 
 
 
-// REEMPLAZA la función registrarReservaYMovimientosCaja existente con esta versión corregida:
+async function registrarReservaYMovimientosCaja({
+  formData,
+  detallesEstancia,
+  pagos,
+  room,
+  supabase,
+  currentUser,
+  hotelId,
+  mainAppContainer
+}) {
+  // Helpers seguros para UI (por si alguna función no existe)
+  const showError = (msg) => {
+    console.error(msg);
+    if (typeof mostrarErrorModalGlobal === "function") {
+      mostrarErrorModalGlobal(msg, "Error");
+    } else if (typeof mostrarInfoModalGlobal === "function") {
+      mostrarInfoModalGlobal(msg, "Error");
+    } else {
+      alert(msg);
+    }
+  };
 
-async function registrarReservaYMovimientosCaja({ formData, detallesEstancia, pagos, room, supabase, currentUser, hotelId, mainAppContainer }) {
-    // 1. OBTENER Y CREAR CLIENTE (SI ES NECESARIO)
-    let clienteIdFinal = formData.cliente_id;
+  try {
+    // =========================
+    // 0) VALIDACIONES BÁSICAS
+    // =========================
+    const clienteNombre = (formData?.cliente_nombre ?? "").toString().trim();
+    if (!clienteNombre) throw new Error("Falta el nombre del cliente.");
+
+    if (!detallesEstancia?.inicioAt || !detallesEstancia?.finAt) {
+      throw new Error("No se pudo calcular la fecha de inicio/fin de la estancia.");
+    }
+
+    // Si es alquiler por horas, debe existir un cálculo válido
+    if (detallesEstancia.tipoCalculo === "horas") {
+      const minutos = Number(detallesEstancia.minutosSeleccionados || 0);
+      if (minutos <= 0) throw new Error("Debe seleccionar una duración válida (minutos inválidos).");
+    }
+
+    const cantidadHuespedes = Math.max(1, parseInt(formData?.cantidad_huespedes, 10) || 1);
+
+    // Normalizar pagos
+    const pagosLimpios = Array.isArray(pagos)
+      ? pagos
+          .map((p) => ({
+            monto: Number(p.monto) || 0,
+            metodo_pago_id: p.metodo_pago_id || null
+          }))
+          .filter((p) => p.monto > 0 && p.metodo_pago_id)
+      : [];
+
+    const totalPagado = pagosLimpios.reduce((sum, p) => sum + p.monto, 0);
+
+    // Si solo hay 1 pago, guardamos metodo_pago_id en la reserva
+    const metodoPagoReserva = pagosLimpios.length === 1 ? pagosLimpios[0].metodo_pago_id : null;
+
+    // =========================
+    // 1) OBTENER / CREAR CLIENTE
+    // =========================
+    let clienteIdFinal = formData?.cliente_id || null;
+
+    const cedula = (formData?.cedula ?? "").toString().trim() || null;
+    const telefono = (formData?.telefono ?? "").toString().trim() || null;
+
     if (!clienteIdFinal) {
-        const { data: nuevoCliente, error: errCliente } = await supabase
-            .from('clientes')
-            .insert({
-                hotel_id: hotelId,
-                nombre: formData.cliente_nombre.trim(),
-                documento: formData.cedula.trim() || null,
-                telefono: formData.telefono.trim() || null
-            })
-            .select('id')
-            .single();
-        if (errCliente) throw new Error(`Error al crear el nuevo cliente: ${errCliente.message}`);
-        clienteIdFinal = nuevoCliente.id;
+      const { data: nuevoCliente, error: errCliente } = await supabase
+        .from("clientes")
+        .insert({
+          hotel_id: hotelId,
+          nombre: clienteNombre,
+          documento: cedula,
+          telefono: telefono
+        })
+        .select("id")
+        .single();
+
+      if (errCliente) throw new Error(`Error al crear el nuevo cliente: ${errCliente.message}`);
+      clienteIdFinal = nuevoCliente.id;
     }
 
-    // 2. PREPARAR NOTAS (INCLUYENDO LA DE PRECIO MANUAL)
-    let notasFinales = formData.notas ? formData.notas.trim() : null;
-    if (formData.precio_libre_toggle === 'on') {
-        const precioManualStr = `[PRECIO MANUAL: ${formatCurrency(parseFloat(formData.precio_libre_valor))}]`;
-        notasFinales = notasFinales ? `${precioManualStr} ${notasFinales}` : precioManualStr;
+    // =========================
+    // 2) NOTAS (incluye precio manual)
+    // =========================
+    let notasFinales = formData?.notas ? formData.notas.toString().trim() : null;
+
+    if (formData?.precio_libre_toggle === "on") {
+      const precioManual = Number(formData?.precio_libre_valor) || 0;
+      const precioManualStr = `[PRECIO MANUAL: ${formatCurrency(precioManual)}]`;
+      notasFinales = notasFinales ? `${precioManualStr} ${notasFinales}` : precioManualStr;
     }
 
-    // 3. CREAR LA RESERVA PRINCIPAL
-    const totalPagado = pagos.reduce((sum, pago) => sum + pago.monto, 0);
-    const { data: nuevaReserva, error: errReserva } = await supabase.from('reservas').insert({
-        hotel_id: hotelId,
-        habitacion_id: room.id,
-        cliente_id: clienteIdFinal,
-        cliente_nombre: formData.cliente_nombre.trim(),
-        cedula: formData.cedula.trim() || null,
-        telefono: formData.telefono.trim() || null,
-        fecha_inicio: detallesEstancia.inicioAt.toISOString(),
-        fecha_fin: detallesEstancia.finAt.toISOString(),
-        cantidad_huespedes: parseInt(formData.cantidad_huespedes),
-        monto_total: detallesEstancia.precioTotal,
-        monto_pagado: totalPagado,
-        estado: 'ocupada',
-        tipo_duracion: detallesEstancia.tipoCalculo,
-        cantidad_duracion: detallesEstancia.cantidadCalculo,
-        usuario_id: currentUser.id,
-        monto_estancia_base_sin_impuestos: detallesEstancia.precioBase,
-        monto_impuestos_estancia: detallesEstancia.montoImpuesto,
-        descuento_aplicado_id: detallesEstancia.descuentoAplicado?.id || null,
-        monto_descontado: detallesEstancia.montoDescontado,
-        notas: notasFinales 
-    }).select().single();
-    
-    if (errReserva) throw new Error('Error al crear la reserva: ' + errReserva.message);
+    // =========================
+    // 3) CREAR RESERVA PRINCIPAL
+    // =========================
+    const reservaInsert = {
+      hotel_id: hotelId,
+      habitacion_id: room.id,
+      cliente_id: clienteIdFinal,
+      cliente_nombre: clienteNombre,
+      cedula: cedula,
+      telefono: telefono,
 
-    // 4. LÓGICA POST-RESERVA
+      // ✅ IMPORTANTÍSIMO: guardar el tiempo elegido (si existe)
+      tiempo_estancia_id: detallesEstancia?.tiempoEstanciaId || null,
+
+      fecha_inicio: detallesEstancia.inicioAt.toISOString(),
+      fecha_fin: detallesEstancia.finAt.toISOString(),
+
+      cantidad_huespedes: cantidadHuespedes,
+
+      monto_total: Number(detallesEstancia?.precioTotal) || 0,
+      monto_pagado: totalPagado,
+
+      metodo_pago_id: metodoPagoReserva,
+
+      estado: "ocupada",
+      tipo_duracion: detallesEstancia?.tipoCalculo || null,
+      cantidad_duracion: Number(detallesEstancia?.cantidadCalculo) || 0,
+
+      // Guardar base e impuestos correctamente
+      monto_estancia_base: Number(detallesEstancia?.precioBase) || 0,
+      monto_estancia_base_sin_impuestos:
+        Number(detallesEstancia?.montoBaseSinImpuestos) || Number(detallesEstancia?.precioBase) || 0,
+      monto_impuestos_estancia: Number(detallesEstancia?.montoImpuesto) || 0,
+      porcentaje_impuestos_aplicado: detallesEstancia?.porcentajeImpuestos ?? null,
+      nombre_impuesto_aplicado: detallesEstancia?.nombreImpuesto ?? null,
+
+      descuento_aplicado_id: detallesEstancia?.descuentoAplicado?.id || null,
+      monto_descontado: Number(detallesEstancia?.montoDescontado) || 0,
+
+      usuario_id: currentUser.id,
+      notas: notasFinales
+    };
+
+    const { data: nuevaReserva, error: errReserva } = await supabase
+      .from("reservas")
+      .insert(reservaInsert)
+      .select()
+      .single();
+
+    if (errReserva) throw new Error("Error al crear la reserva: " + errReserva.message);
+
+    // =========================
+    // 4) POST-RESERVA
+    // =========================
     if (nuevaReserva.descuento_aplicado_id) {
-        await registrarUsoDescuento(supabase, nuevaReserva.descuento_aplicado_id);
+      await registrarUsoDescuento(supabase, nuevaReserva.descuento_aplicado_id);
     }
-    await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
-    await supabase.from('cronometros').insert({
-        hotel_id: hotelId,
-        reserva_id: nuevaReserva.id,
-        habitacion_id: room.id,
-        fecha_inicio: nuevaReserva.fecha_inicio,
-        fecha_fin: nuevaReserva.fecha_fin,
-        activo: true
+
+    // Actualizar habitación
+    const { error: errHab } = await supabase
+      .from("habitaciones")
+      .update({ estado: "ocupada" })
+      .eq("id", room.id);
+
+    if (errHab) throw new Error(`Reserva creada, pero error al actualizar habitación: ${errHab.message}`);
+
+    // Crear cronómetro
+    const { error: errCrono } = await supabase.from("cronometros").insert({
+      hotel_id: hotelId,
+      reserva_id: nuevaReserva.id,
+      habitacion_id: room.id,
+      fecha_inicio: nuevaReserva.fecha_inicio,
+      fecha_fin: nuevaReserva.fecha_fin,
+      activo: true
     });
 
-    const turnoId = turnoService.getActiveTurnId ? turnoService.getActiveTurnId() : (await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId))?.id;
-    
+    if (errCrono) throw new Error(`Reserva creada, pero error al crear cronómetro: ${errCrono.message}`);
+
+    // Turno activo
+    const turnoId = turnoService.getActiveTurnId
+      ? turnoService.getActiveTurnId()
+      : (await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId))?.id;
+
     if (!turnoId) {
-        console.warn("No hay turno activo, se creó la reserva pero no se registró pago en caja.");
-    } else if (pagos && pagos.length > 0) {
-        // ============================================================================
-        // CORRECCIÓN APLICADA AQUÍ: INSERTAR EN PAGOS_RESERVA ANTES QUE EN CAJA
-        // ============================================================================
-        
-        // A. Registrar en la tabla pagos_reserva (ESTO FALTABA)
-        const pagosParaInsertar = pagos.map(p => ({
-            hotel_id: hotelId,
-            reserva_id: nuevaReserva.id,
-            monto: p.monto,
-            fecha_pago: new Date().toISOString(),
-            metodo_pago_id: p.metodo_pago_id,
-            usuario_id: currentUser.id,
-            concepto: `Alquiler Inicial Hab. ${room.nombre}`
-        }));
+      console.warn("No hay turno activo: se creó la reserva pero no se registró pago en caja.");
+    } else if (pagosLimpios.length > 0) {
+      // =========================
+      // 5) PAGOS: pagos_reserva -> caja
+      // =========================
+      const pagosParaInsertar = pagosLimpios.map((p) => ({
+        hotel_id: hotelId,
+        reserva_id: nuevaReserva.id,
+        monto: p.monto,
+        fecha_pago: new Date().toISOString(),
+        metodo_pago_id: p.metodo_pago_id,
+        usuario_id: currentUser.id,
+        concepto: `Alquiler Inicial Hab. ${room.nombre} (${detallesEstancia?.descripcionEstancia || ""})`
+      }));
 
-        const { data: pagosData, error: errPagoRes } = await supabase
-            .from('pagos_reserva')
-            .insert(pagosParaInsertar)
-            .select('id');
+      const { data: pagosData, error: errPagoRes } = await supabase
+        .from("pagos_reserva")
+        .insert(pagosParaInsertar)
+        .select("id");
 
-        if (errPagoRes) throw new Error(`Reserva creada, pero error al guardar detalle de pagos: ${errPagoRes.message}`);
+      if (errPagoRes) {
+        throw new Error(`Reserva creada, pero error al guardar pagos_reserva: ${errPagoRes.message}`);
+      }
 
-        // B. Registrar en Caja (Vinculando con el ID del pago creado arriba)
-        const movimientosCaja = pagos.map((pago, index) => ({
-            hotel_id: hotelId, 
-            tipo: 'ingreso', 
-            monto: pago.monto,
-            concepto: `Alquiler Hab. ${room.nombre} (${detallesEstancia.descripcionEstancia})`,
-            fecha_movimiento: new Date().toISOString(), 
-            metodo_pago_id: pago.metodo_pago_id,
-            usuario_id: currentUser.id, 
-            reserva_id: nuevaReserva.id, 
-            turno_id: turnoId,
-            pago_reserva_id: pagosData[index].id // <--- Vinculación importante
-        }));
+      // Caja (asumimos mismo orden del insert)
+      const movimientosCaja = pagosLimpios.map((p, index) => ({
+        hotel_id: hotelId,
+        tipo: "ingreso",
+        monto: p.monto,
+        concepto: `Alquiler Hab. ${room.nombre} (${detallesEstancia?.descripcionEstancia || ""})`,
+        fecha_movimiento: new Date().toISOString(),
+        metodo_pago_id: p.metodo_pago_id,
+        usuario_id: currentUser.id,
+        reserva_id: nuevaReserva.id,
+        turno_id: turnoId,
+        pago_reserva_id: pagosData?.[index]?.id || null
+      }));
 
-        const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
-        if (errCaja) throw new Error(`¡Reserva creada, pero error al registrar movimiento en caja! ${errCaja.message}`);
+      const { error: errCaja } = await supabase.from("caja").insert(movimientosCaja);
+      if (errCaja) throw new Error(`Reserva creada, pero error al registrar movimiento en caja: ${errCaja.message}`);
     }
 
-    // Finalizar proceso UI
-    const modalContainer = document.getElementById('modal-container');
-    if(modalContainer) {
-        modalContainer.style.display = 'none';
-        modalContainer.innerHTML = '';
+    // =========================
+    // 6) FINALIZAR UI
+    // =========================
+    const modalContainer = document.getElementById("modal-container");
+    if (modalContainer) {
+      modalContainer.style.display = "none";
+      modalContainer.innerHTML = "";
     }
+
     mostrarInfoModalGlobal("¡Habitación alquilada con éxito!", "Alquiler Registrado");
     await renderRooms(mainAppContainer, supabase, currentUser, hotelId);
+
+    return nuevaReserva; // útil por si la llamas desde otro lado
+  } catch (err) {
+    showError(err.message || "Ocurrió un error inesperado.");
+    throw err;
+  }
 }
+
 
 // ===================== MODAL EXTENDER TIEMPO (POS STYLE - COMPLETO) =====================
 

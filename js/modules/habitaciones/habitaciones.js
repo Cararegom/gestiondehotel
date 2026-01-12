@@ -404,10 +404,11 @@ async function renderHabitaciones(habitacionesContainer, feedbackEl) {
         const { data: habitaciones, error } = await currentSupabaseInstance
             .from('habitaciones')
             .select(`
-                id, nombre, tipo, estado, activo, amenidades, piso,
-                capacidad_maxima, precio_huesped_adicional,
-                precio_1_persona, precio_2_personas 
-            `)
+    id, nombre, tipo, estado, activo, amenidades, piso,
+    capacidad_maxima, precio_huesped_adicional,
+    precio_1_persona, precio_2_personas,
+    permite_reservas_por_horas, precio_base_hora
+`)
             .eq('hotel_id', currentHotelId)
             .order('nombre', { ascending: true });
         // --- FIN DE LA MODIFICACIÓN ---
@@ -649,116 +650,111 @@ function resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEl, btnGuardarE
 }
 
 
-// js/modules/habitaciones/habitaciones.js
+/**
+ * Maneja el envío del formulario de creación/edición de habitación.
+ */
+async function handleHabitacionSubmit(e) {
+    e.preventDefault(); // Evitar recarga de página
 
-async function handleHabitacionSubmit(event, formEl, selectTiemposEl, listaContainerEl, feedbackEl, btnGuardarEl, btnCancelarEdicionHabitacionEl, formTitleEl) {
-    event.preventDefault();
-    if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
+    // 1. Validaciones básicas
+    const nombre = document.getElementById('nombreHabitacion').value;
+    const tipo = document.getElementById('tipoHabitacion').value;
     
-    const formData = new FormData(formEl);
-    const editId = formData.get('habitacionIdEdit');
+    // Obtener el ID si estamos editando (puede estar en un dataset o variable global)
+    // Asumo que guardas el ID en el botón o en una variable 'currentEditingId'
+    const habitacionId = document.getElementById('btnGuardarHabitacion').dataset.id || null;
 
-    // ▼▼▼ INICIO DE LA CORRECCIÓN ▼▼▼
-    if (!editId && activePlanDetails) {
-        const limiteHabitaciones = activePlanDetails.funcionalidades.limite_habitaciones;
-        
-        // Condición Clave: Verificamos si 'limiteHabitaciones' es un número.
-        // Si es null, undefined, o cualquier otro valor, lo tratamos como ilimitado y no hacemos la verificación.
-        const debeVerificarLimite = typeof limiteHabitaciones === 'number';
-
-        if (debeVerificarLimite) {
-            const { data: conteo, error: errConteo } = await currentSupabaseInstance
-                .from('habitaciones')
-                .select('id', { count: 'exact', head: true })
-                .eq('hotel_id', currentHotelId);
-            
-            if (errConteo) {
-                showHabitacionesFeedback(feedbackEl, `Error verificando el límite: ${errConteo.message}`, 'error');
-                return;
-            }
-
-            // Esta comparación ahora solo se ejecuta si hay un límite numérico definido.
-            if (conteo >= limiteHabitaciones) {
-                mostrarModalUpgradeHabitaciones(limiteHabitaciones, activePlanDetails.nombre);
-                return;
-            }
-        }
-    }
-    // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
-    
-    const nombreHabitacion = formData.get('nombre')?.trim();
-    if (!nombreHabitacion) {
-        showHabitacionesFeedback(feedbackEl, 'El nombre de la habitación es obligatorio.', 'error');
-        formEl.elements.nombre.focus();
+    if (!nombre || !tipo) {
+        showError('El nombre y el tipo de habitación son obligatorios.');
         return;
     }
-    
-    const precio1Persona = parseFloat(formData.get('precio_1_persona'));
-    const precio2Personas = parseFloat(formData.get('precio_2_personas'));
-    if (isNaN(precio1Persona) || isNaN(precio2Personas) || precio1Persona < 0 || precio2Personas < 0) {
-        showHabitacionesFeedback(feedbackEl, 'Los precios para 1 y 2 personas deben ser números válidos y no negativos.', 'error');
-        return;
-    }
-    
-    const habitacionPayload = {
-      nombre: nombreHabitacion,
-      tipo: formData.get('tipo')?.trim() || null,
-      piso: parseInt(formData.get('piso')) || null,
-      capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || 2,
-      precio_huesped_adicional: parseFloat(formData.get('precio_huesped_adicional')) || 0,
-      amenidades: formData.get('amenidades')?.split(',').map(s => s.trim().toLowerCase()).filter(Boolean) || null,
-      hotel_id: currentHotelId,
-      activo: formEl.elements.activo.checked,
-      precio_1_persona: precio1Persona,
-      precio_2_personas: precio2Personas,
-      capacidad_base: 2 
-    };
 
-    if (!editId) {
-        habitacionPayload.estado = 'libre';
-    }
-    
-    const textoBotonGuardar = editId ? 'Actualizar Habitación' : '＋ Crear Habitación';
-    setFormLoadingState(formEl, true, btnGuardarEl, textoBotonGuardar, 'Guardando...');
-    
+    setFormLoadingState(true);
+
     try {
-      let savedRoomId = editId;
-      let accionBitacora = '';
-      let detallesBitacora = {};
+        // 2. Recopilar Amenidades (Checkboxes)
+        // Asumiendo que tus checkboxes de amenidades tienen la clase 'amenidad-check'
+        const amenidadesSeleccionadas = Array.from(document.querySelectorAll('.amenidad-check:checked'))
+            .map(cb => cb.value);
 
-      if (editId) {
-        const { data, error } = await currentSupabaseInstance.from('habitaciones')
-          .update(habitacionPayload).eq('id', editId).eq('hotel_id', currentHotelId)
-          .select('id').single();
+        // 3. Obtener valores numéricos con seguridad (evitando NaN)
+        const precioNoche = parseFloat(document.getElementById('precioNoche').value) || 0;
+        const capacidad = parseInt(document.getElementById('capacidadPersonas').value) || 2;
+        const piso = parseInt(document.getElementById('pisoHabitacion').value) || 1;
+        const precioAdicional = parseFloat(document.getElementById('precioAdicional').value) || 0;
+        
+        // --- AQUÍ ESTÁ LA CLAVE DEL PROBLEMA ---
+        // Capturamos explícitamente si permite horas y el precio base
+        const checkHoras = document.getElementById('checkReservasPorHoras');
+        const inputPrecioHora = document.getElementById('precioBaseHora');
+        
+        const permiteHoras = checkHoras ? checkHoras.checked : false; // Por defecto false si no existe el input
+        const precioHora = inputPrecioHora ? (parseFloat(inputPrecioHora.value) || 0) : 0;
+
+        // 4. Construir el objeto para Supabase
+        // Las claves deben coincidir EXACTAMENTE con tu esquema de base de datos
+        const datosHabitacion = {
+            hotel_id: currentHotelId, // Variable global del módulo
+            nombre: nombre,
+            tipo: tipo,
+            precio: precioNoche, // Precio base/noche
+            capacidad_maxima: capacidad,
+            piso: piso,
+            amenidades: amenidadesSeleccionadas,
+            precio_huesped_adicional: precioAdicional,
+            
+            // CAMPOS CRÍTICOS PARA EL MAPA:
+            permite_reservas_por_horas: permiteHoras,
+            precio_base_hora: precioHora,
+            
+            actualizado_en: new Date()
+        };
+
+        let data, error;
+
+        // 5. Decidir si es UPDATE o INSERT
+        if (habitacionId) {
+            // --- ACTUALIZAR ---
+            ({ data, error } = await currentSupabaseInstance
+                .from('habitaciones')
+                .update(datosHabitacion)
+                .eq('id', habitacionId)
+                .select());
+        } else {
+            // --- CREAR NUEVA ---
+            // Solo al crear añadimos el estado inicial si no existe
+            datosHabitacion.estado = 'libre';
+            datosHabitacion.activo = true;
+            
+            ({ data, error } = await currentSupabaseInstance
+                .from('habitaciones')
+                .insert(datosHabitacion)
+                .select());
+        }
+
         if (error) throw error;
-        savedRoomId = data.id;
-        showHabitacionesFeedback(feedbackEl, 'Habitación actualizada.', 'success');
-        accionBitacora = 'ACTUALIZAR_HABITACION';
-        detallesBitacora = { habitacion_id: savedRoomId, nombre: nombreHabitacion };
-      } else {
-        const { data, error } = await currentSupabaseInstance.from('habitaciones')
-          .insert(habitacionPayload).select('id').single();
-        if (error) throw error; 
-        savedRoomId = data.id;
-        showHabitacionesFeedback(feedbackEl, 'Habitación creada.', 'success');
-        accionBitacora = 'CREAR_HABITACION';
-        detallesBitacora = { habitacion_id: savedRoomId, nombre: nombreHabitacion };
-      }
 
-      await registrarEnBitacora({ supabase: currentSupabaseInstance, hotel_id: currentHotelId, usuario_id: currentModuleUser.id, modulo: 'Habitaciones', accion: accionBitacora, detalles: detallesBitacora });
-      
-      resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarEl, formTitleEl);
-      
-      await renderHabitaciones(listaContainerEl, feedbackEl);
+        // 6. Éxito
+        showSuccess(habitacionId ? 'Habitación actualizada correctamente' : 'Habitación creada correctamente');
+        
+        // Cerrar modal (ajusta según cómo gestiones tus modales, ej: bootstrap o custom)
+        const modalElement = document.getElementById('modalCrearHabitacion');
+        // Si usas Bootstrap 5 vanilla:
+        // const modalInstance = bootstrap.Modal.getInstance(modalElement);
+        // modalInstance.hide();
+        // O simplemente ocultar si es CSS puro:
+        if(modalElement) modalElement.style.display = 'none';
+
+        // Recargar la lista
+        await renderHabitaciones(); 
 
     } catch (err) {
-      console.error('Error guardando habitación:', err); 
-      showHabitacionesFeedback(feedbackEl, `Error al guardar habitación: ${err.message}`, 'error', 0);
+        console.error('Error guardando habitación:', err);
+        showError('Error al guardar: ' + err.message);
     } finally {
-      setFormLoadingState(formEl, false, btnGuardarEl, textoBotonGuardar);
+        setFormLoadingState(false);
     }
 }
-
 
 // --- Main Module Mount Function ---
 export async function mount(container, supabaseInst, user, hotelId, planDetails) { // <--- AÑADIDO planDetails
