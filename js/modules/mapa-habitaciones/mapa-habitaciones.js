@@ -1849,9 +1849,10 @@ function crearOpcionesHoras(tiempos) {
 function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
   let inicioAt = new Date();
   let finAt;
-  let montoEstanciaBaseBruto = 0;
+
+  let montoEstanciaBaseBruto = 0; // antes de descuento
   let montoDescuento = 0;
-  let descripcionEstancia = "Seleccione duración";
+  let descripcionEstancia = 'Seleccione duración';
   let tipoCalculo = null;
   let cantidadCalculo = 0;
   let precioFinalAntesDeImpuestos = 0;
@@ -1859,7 +1860,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
   const nochesSeleccionadas = dataForm.noches ? parseInt(dataForm.noches, 10) : 0;
 
   // ✅ dataForm.horas puede venir como UUID (id) o como minutos ("120") o "-1"
-  const horasValor = (dataForm.horas ?? "").toString().trim();
+  const horasValor = (dataForm.horas ?? '').toString().trim();
 
   let minutosSeleccionados = 0;
   let tiempoSeleccionado = null;
@@ -1884,33 +1885,45 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
   const cantidadHuespedes = Math.max(1, parseInt(dataForm.cantidad_huespedes, 10) || 1);
   const precioAdicionalPorPersona = Number(room.precio_huesped_adicional) || 0;
 
-  const precioLibreActivado = dataForm.precio_libre_toggle === "on";
+  const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
   const precioLibreValor = parseFloat(dataForm.precio_libre_valor) || 0;
+
+  // Helper: calcular fin por noches usando checkout
+  const calcularFinPorNoches = (inicio, noches, checkoutStr) => {
+    const fechaSalida = new Date(inicio);
+    fechaSalida.setDate(fechaSalida.getDate() + noches);
+    const [h, m] = (checkoutStr || '12:00').split(':').map(Number);
+    fechaSalida.setHours(h || 0, m || 0, 0, 0);
+    return fechaSalida;
+  };
 
   // 1) PRECIO MANUAL
   if (precioLibreActivado) {
     montoEstanciaBaseBruto = precioLibreValor;
     precioFinalAntesDeImpuestos = precioLibreValor;
     descripcionEstancia = `Estancia (Precio Manual: ${formatCurrency(precioLibreValor)})`;
-    tipoCalculo = "manual";
+    tipoCalculo = 'manual';
     cantidadCalculo = precioLibreValor;
 
     // Fechas para cronómetro
     if (nochesSeleccionadas > 0) {
-      finAt = calcularFechaFinPorNoches(inicioAt, nochesSeleccionadas, horarios.checkout, room);
+      finAt = calcularFinPorNoches(inicioAt, nochesSeleccionadas, horarios.checkout);
     } else if (minutosSeleccionados > 0) {
       finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
+    } else if (minutosSeleccionados === -1) {
+      // duración abierta
+      finAt = new Date(inicioAt.getTime() + 100 * 365 * 24 * 60 * 60 * 1000);
     } else {
       finAt = new Date(inicioAt);
     }
   } else {
-    // 2) CALCULO NORMAL
+    // 2) CÁLCULO NORMAL
 
     // NOCHES
     if (nochesSeleccionadas > 0) {
-      tipoCalculo = "noches";
+      tipoCalculo = 'noches';
       cantidadCalculo = nochesSeleccionadas;
-      finAt = calcularFechaFinPorNoches(inicioAt, nochesSeleccionadas, horarios.checkout, room);
+      finAt = calcularFinPorNoches(inicioAt, nochesSeleccionadas, horarios.checkout);
       descripcionEstancia = `${nochesSeleccionadas} Noche(s)`;
 
       let precioNocheBase = Number(room.precio_2_personas) || 0;
@@ -1924,7 +1937,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     }
     // HORAS
     else if (minutosSeleccionados > 0) {
-      tipoCalculo = "horas";
+      tipoCalculo = 'horas';
       cantidadCalculo = minutosSeleccionados;
       finAt = new Date(inicioAt.getTime() + minutosSeleccionados * 60 * 1000);
       descripcionEstancia = tiempoSeleccionado?.nombre || formatHorasMin(minutosSeleccionados);
@@ -1932,7 +1945,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
       // precio desde tiempos_estancia
       let precioTiempo = Number(tiempoSeleccionado?.precio) || 0;
 
-      // fallback: por si la tarifa no trae precio (usa precio_base_hora)
+      // fallback: si no trae precio, usa precio_base_hora de la habitación
       if (!precioTiempo) {
         const baseHora = Number(room.precio_base_hora) || 0;
         if (baseHora > 0) {
@@ -1940,17 +1953,19 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
         }
       }
 
+      // extra por persona (>2)
       if (cantidadHuespedes > 2) {
         precioTiempo += (cantidadHuespedes - 2) * precioAdicionalPorPersona;
       }
+
       montoEstanciaBaseBruto = precioTiempo;
     }
-    // ABIERTA (-1) si la usas
+    // ABIERTA (-1)
     else if (minutosSeleccionados === -1) {
-      tipoCalculo = "abierta";
+      tipoCalculo = 'abierta';
       cantidadCalculo = 0;
-      finAt = new Date(inicioAt);
-      descripcionEstancia = "Duración Abierta";
+      finAt = new Date(inicioAt.getTime() + 100 * 365 * 24 * 60 * 60 * 1000);
+      descripcionEstancia = 'Duración Abierta';
       montoEstanciaBaseBruto = 0;
     } else {
       finAt = new Date(inicioAt);
@@ -1961,7 +1976,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
 
     if (descuentoAplicado && totalAntesDeDescuento > 0) {
       const val = Number(descuentoAplicado.valor) || 0;
-      if (descuentoAplicado.tipo === "porcentaje") {
+      if (descuentoAplicado.tipo === 'porcentaje') {
         montoDescuento = (totalAntesDeDescuento * val) / 100;
       } else {
         montoDescuento = val;
@@ -1979,7 +1994,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
   let montoImpuesto = 0;
   let baseSinImpuesto = precioFinalAntesDeImpuestos;
 
-  if (porcentajeImpuesto > 0 && precioFinalAntesDeImpuestos > 0) {
+  if (porcentajeImpuesto > 0 && precioFinalAntesDeImpuestos > 0 && tipoCalculo !== 'abierta') {
     const tasa = porcentajeImpuesto / 100;
     if (impuestosIncluidos) {
       baseSinImpuesto = precioFinalAntesDeImpuestos / (1 + tasa);
@@ -1995,7 +2010,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     : (precioFinalAntesDeImpuestos + montoImpuesto);
 
   const totalRedondeado =
-    tipoCalculo === "abierta"
+    tipoCalculo === 'abierta'
       ? 0
       : (precioLibreActivado ? precioLibreValor : Math.round(precioFinalConImpuestos));
 
@@ -2007,7 +2022,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     descuentoAplicado,
     montoImpuesto: Math.round(montoImpuesto),
     porcentajeImpuestos: porcentajeImpuesto,
-    nombreImpuesto: hotelConfigGlobal?.nombre_impuesto_principal || "IVA",
+    nombreImpuesto: hotelConfigGlobal?.nombre_impuesto_principal || 'IVA',
     montoBaseSinImpuestos: Math.round(baseSinImpuesto),
     precioTotal: totalRedondeado,
     descripcionEstancia,
@@ -2017,6 +2032,7 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
     minutosSeleccionados
   };
 }
+
 
 
 // =========================================================================================
@@ -3681,201 +3697,554 @@ function imprimirFacturaPosAdaptable(config, datos) {
 // MODAL DE CONSUMOS LOCAL (Versión Detallada para Factura POS)
 // ===================================================================
 async function mostrarModalConsumosLocal(room, reserva, supabase, user, hotelId) {
-    const modalContainer = document.getElementById('modal-container');
-    modalContainer.style.display = 'flex';
-    modalContainer.innerHTML = '<div class="text-white font-bold">Cargando detalles específicos...</div>';
+  const modalContainer = document.getElementById('modal-container');
+  modalContainer.style.display = 'flex';
+  modalContainer.innerHTML = '<div class="text-white font-bold">Cargando consumos...</div>';
 
-    try {
-        // 1. OBTENER DETALLES ESPECÍFICOS (Deep Fetching)
-        // Usamos !inner en las relaciones para filtrar por la reserva ID desde la tabla hija
-        const [serviciosRes, tiendaDetallesRes, restauranteDetallesRes, pagosRes] = await Promise.all([
-            
-            // A. Servicios: Traemos el nombre real del servicio desde el catálogo
-            supabase.from('servicios_x_reserva')
-                .select('*, servicio_catalogo:servicios_adicionales(nombre)')
-                .eq('reserva_id', reserva.id),
+  const asNum = (v) => Number(v ?? 0);
+  const asInt = (v) => Math.round(asNum(v));
+  const money = (n) => (typeof formatCurrency === 'function'
+    ? formatCurrency(asInt(n))
+    : `$${asInt(n).toLocaleString('es-CO')}`);
 
-            // B. Tienda: Consultamos los DETALLES de venta, no la cabecera
-            supabase.from('detalle_ventas_tienda')
-                .select('cantidad, subtotal, producto:productos_tienda(nombre), venta:ventas_tienda!inner(reserva_id)')
-                .eq('venta.reserva_id', reserva.id),
+  const hasSwal = typeof Swal !== 'undefined';
+  const safeShowLoading = (msg) => (typeof showGlobalLoading === 'function' ? showGlobalLoading(msg) : null);
+  const safeHideLoading = () => (typeof hideGlobalLoading === 'function' ? hideGlobalLoading() : null);
 
-            // C. Restaurante: Consultamos los DETALLES de venta (Platos/Bebidas)
-            // Nota: Asumimos que existe la relación 'plato' o 'producto'. Si falla, ajustaremos el nombre.
-            supabase.from('detalle_ventas_restaurante')
-                .select('cantidad, subtotal, nombre_producto, venta:ventas_restaurante!inner(reserva_id)')
-                .eq('venta.reserva_id', reserva.id),
+  const cerrarModal = () => {
+    modalContainer.style.display = 'none';
+    modalContainer.innerHTML = '';
+  };
 
-            // D. Pagos
-            supabase.from('pagos_reserva')
-                .select('*')
-                .eq('reserva_id', reserva.id)
-        ]);
+  // ✅ Parse robusto de dinero: acepta "10000", "10.000", "10,000", "$ 10.000"
+  const parseMoneyInput = (val) => {
+    if (val === null || val === undefined) return 0;
+    const s = String(val).trim();
+    const digits = s.replace(/[^\d]/g, ''); // deja solo números
+    return asInt(digits || 0);
+  };
 
-        const servicios = serviciosRes.data || [];
-        const detallesTienda = tiendaDetallesRes.data || [];
-        const detallesRestaurante = restauranteDetallesRes.data || [];
-        const pagos = pagosRes.data || [];
-
-        // 2. Calcular Totales
-        const totalEstancia = Number(reserva.monto_total || 0);
-        
-        // Sumar subtotales de los detalles
-        const totalServicios = servicios.reduce((sum, s) => sum + Number(s.precio_cobrado || 0), 0);
-        const totalTienda = detallesTienda.reduce((sum, t) => sum + Number(t.subtotal || 0), 0);
-        const totalRestaurante = detallesRestaurante.reduce((sum, r) => sum + Number(r.subtotal || 0), 0);
-        
-        const granTotal = totalEstancia + totalServicios + totalTienda + totalRestaurante;
-        const totalPagado = pagos.reduce((sum, p) => sum + Number(p.monto || 0), 0);
-        const saldo = granTotal - totalPagado;
-
-        // 3. Preparar lista de ítems DETALLADA
-        const listaItems = [];
-        
-        // --- Alojamiento ---
-        listaItems.push({ 
-            tipo: 'Hospedaje', 
-            detalle: `Estancia Hab. ${room.nombre}`, 
-            cant: 1, 
-            subtotal: totalEstancia 
-        });
-        
-        // --- Servicios (Nombre específico) ---
-        servicios.forEach(s => {
-            // Buscamos el nombre en el catálogo, o usamos la descripción manual, o un fallback
-            const nombreReal = s.servicio_catalogo?.nombre || s.descripcion_manual || 'Servicio Adicional';
-            listaItems.push({ 
-                tipo: 'Servicio', 
-                detalle: nombreReal, 
-                cant: s.cantidad || 1, 
-                subtotal: s.precio_cobrado 
-            });
-        });
-        
-        // --- Tienda (Productos específicos) ---
-        detallesTienda.forEach(t => {
-            const nombreProducto = t.producto?.nombre || 'Producto Tienda';
-            listaItems.push({ 
-                tipo: 'Tienda', 
-                detalle: nombreProducto, 
-                cant: t.cantidad || 1, 
-                subtotal: t.subtotal 
-            });
-        });
-        
-        // --- Restaurante (Platos específicos) ---
-        detallesRestaurante.forEach(r => {
-            // Intentamos obtener el nombre del producto guardado o genérico
-            const nombrePlato = r.nombre_producto || 'Consumo Restaurante';
-            listaItems.push({ 
-                tipo: 'Restaurante', 
-                detalle: nombrePlato, 
-                cant: r.cantidad || 1, 
-                subtotal: r.subtotal 
-            });
-        });
-
-        // 4. Construir HTML de la tabla para el Modal
-        const rowsHtml = listaItems.map(item => `
-            <tr class="border-b border-gray-100 hover:bg-gray-50">
-                <td class="p-2 text-xs text-gray-500 uppercase tracking-wide">${item.tipo}</td>
-                <td class="p-2 text-sm font-semibold text-gray-800">${item.detalle}</td>
-                <td class="p-2 text-sm text-center text-gray-600">${item.cant}</td>
-                <td class="p-2 text-sm text-right font-bold text-gray-700">${formatCurrency(item.subtotal)}</td>
-            </tr>
-        `).join('');
-
-        // 5. Renderizar Modal
-        const modalHtml = `
-            <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[85vh]">
-                <div class="bg-gray-50 px-6 py-4 border-b flex justify-between items-center flex-shrink-0">
-                    <div>
-                        <h3 class="text-lg font-bold text-gray-800">Detalle de Cuenta: ${room.nombre}</h3>
-                        <p class="text-sm text-gray-500">Cliente: <strong>${reserva.cliente_nombre || 'N/A'}</strong></p>
-                    </div>
-                    <button id="btn-cerrar-local" class="text-gray-400 hover:text-red-500 text-2xl transition">&times;</button>
-                </div>
-                
-                <div class="p-0 overflow-y-auto flex-grow custom-scrollbar">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="bg-blue-50 text-blue-800 uppercase text-xs sticky top-0 shadow-sm">
-                            <tr>
-                                <th class="p-3 font-semibold">Origen</th>
-                                <th class="p-3 font-semibold">Descripción</th>
-                                <th class="p-3 text-center font-semibold">Cant.</th>
-                                <th class="p-3 text-right font-semibold">Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rowsHtml}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div class="bg-gray-50 px-6 py-4 border-t flex-shrink-0">
-                    <div class="flex justify-end flex-col items-end space-y-1 mb-4 border-b border-gray-200 pb-2">
-                        <div class="text-sm text-gray-600">Total Cargos: <span class="font-bold text-gray-900">${formatCurrency(granTotal)}</span></div>
-                        <div class="text-sm text-green-600">Total Pagado: <span class="font-bold">${formatCurrency(totalPagado)}</span></div>
-                    </div>
-                    <div class="flex justify-between items-center">
-                        <div class="text-xl ${saldo > 0 ? 'text-red-600' : 'text-blue-600'}">
-                            Saldo: <span class="font-bold">${formatCurrency(saldo)}</span>
-                        </div>
-                        <div class="flex gap-3">
-                            <button id="btn-imprimir-pos-local" class="button button-success px-5 py-2 shadow-lg flex items-center gap-2 hover:scale-105 transition transform">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" /></svg>
-                                Imprimir Factura
-                            </button>
-                            <button id="btn-cerrar-local-2" class="button button-neutral px-4 py-2">Cerrar</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        modalContainer.innerHTML = modalHtml;
-
-        // 6. Asignar Eventos
-        const cerrarModal = () => {
-            modalContainer.style.display = 'none';
-            modalContainer.innerHTML = '';
-        };
-        document.getElementById('btn-cerrar-local').onclick = cerrarModal;
-        document.getElementById('btn-cerrar-local-2').onclick = cerrarModal;
-
-        // 7. EVENTO IMPRIMIR (Aquí mandamos los datos específicos)
-        document.getElementById('btn-imprimir-pos-local').onclick = async () => {
-            // Construimos el objeto de datos con la lista DETALLADA
-            const datosParaImprimir = {
-                cliente: {
-                    nombre: reserva.cliente_nombre,
-                    documento: reserva.cedula
-                },
-                reservaId: reserva.id,
-                habitacionNombre: room.nombre,
-                // Mapeamos listaItems al formato que la impresora entiende
-                items: listaItems.map(i => ({
-                    nombre: i.detalle, // Ahora dice "Coca Cola", "Hamburguesa", etc.
-                    cantidad: i.cant,
-                    total: i.subtotal,
-                    precioUnitario: i.cant > 0 ? (i.subtotal / i.cant) : 0
-                })),
-                total: granTotal,
-                totalPagado: totalPagado,
-                impuestos: 0, 
-                descuento: reserva.monto_descontado || 0,
-                subtotal: granTotal
-            };
-
-            const { data: config } = await supabase.from('configuracion_hotel').select('*').eq('hotel_id', hotelId).maybeSingle();
-            
-            // Llamamos a la función de impresión que ya tienes al final del archivo
-            imprimirFacturaPosAdaptable(config || {}, datosParaImprimir);
-        };
-
-    } catch (error) {
-        console.error("Error en modal local detallado:", error);
-        modalContainer.innerHTML = `<div class="bg-white p-4 rounded text-red-600">Error cargando detalles: ${error.message} <button onclick="document.getElementById('modal-container').style.display='none'" class="ml-4 underline">Cerrar</button></div>`;
+  async function obtenerTurnoActivoId() {
+    if (typeof turnoService !== 'undefined' && typeof turnoService.getActiveTurnId === 'function') {
+      const tid = turnoService.getActiveTurnId();
+      if (tid) return tid;
     }
+    const { data, error } = await supabase
+      .from('turnos')
+      .select('id')
+      .eq('hotel_id', hotelId)
+      .eq('usuario_id', user.id)
+      .eq('estado', 'abierto')
+      .order('fecha_apertura', { ascending: false })
+      .limit(1);
+
+    if (error) throw error;
+    return data?.[0]?.id || null;
+  }
+
+  async function getTotalPagadoDb() {
+    const { data, error } = await supabase
+      .from('pagos_reserva')
+      .select('monto')
+      .eq('reserva_id', reserva.id);
+
+    if (error) throw error;
+    return asInt((data || []).reduce((s, p) => s + asInt(p.monto), 0));
+  }
+
+  async function elegirMetodoPagoId() {
+    const { data: metodos, error } = await supabase
+      .from('metodos_pago')
+      .select('id, nombre')
+      .eq('hotel_id', hotelId)
+      .eq('activo', true);
+
+    if (error) throw error;
+    if (!metodos || metodos.length === 0) throw new Error('No hay métodos de pago configurados.');
+
+    if (!hasSwal) return metodos[0].id;
+
+    const opciones = metodos.reduce((acc, curr) => ({ ...acc, [curr.id]: curr.nombre }), {});
+    const { value } = await Swal.fire({
+      title: 'Método de pago',
+      input: 'select',
+      inputOptions: opciones,
+      inputPlaceholder: 'Seleccione...',
+      showCancelButton: true
+    });
+
+    return value || null;
+  }
+
+  async function registrarPagoEnBD(monto, { liquidarTodo = false, deudaTotalActual = 0 } = {}) {
+    const montoInt = asInt(monto);
+    if (!montoInt || montoInt <= 0) throw new Error('Monto inválido.');
+
+    const turnoId = await obtenerTurnoActivoId();
+    if (!turnoId) throw new Error('No hay turno activo para registrar el pago en caja.');
+
+    const metodoPagoId = await elegirMetodoPagoId();
+    if (!metodoPagoId) return { cancelled: true };
+
+    const concepto = liquidarTodo
+      ? `Pago total saldo Hab. նոյ ${room.nombre}`
+      : `Abono saldo Hab. ${room.nombre}`;
+
+    safeShowLoading('Registrando pago...');
+
+    const { data: pagoData, error: errPago } = await supabase
+      .from('pagos_reserva')
+      .insert({
+        hotel_id: hotelId,
+        reserva_id: reserva.id,
+        monto: montoInt,
+        metodo_pago_id: metodoPagoId,
+        usuario_id: user.id,
+        concepto
+      })
+      .select()
+      .single();
+
+    if (errPago) {
+      safeHideLoading();
+      throw errPago;
+    }
+
+    const { error: errCaja } = await supabase.from('caja').insert({
+      hotel_id: hotelId,
+      tipo: 'ingreso',
+      monto: montoInt,
+      concepto,
+      metodo_pago_id: metodoPagoId,
+      usuario_id: user.id,
+      reserva_id: reserva.id,
+      pago_reserva_id: pagoData.id,
+      turno_id: turnoId
+    });
+
+    if (errCaja) {
+      safeHideLoading();
+      throw errCaja;
+    }
+
+    const totalPagadoDb = await getTotalPagadoDb();
+    const nuevoMontoPagado = Math.min(asInt(deudaTotalActual), totalPagadoDb);
+
+    const { error: errUpd } = await supabase
+      .from('reservas')
+      .update({ monto_pagado: nuevoMontoPagado })
+      .eq('id', reserva.id);
+
+    if (errUpd) {
+      safeHideLoading();
+      throw errUpd;
+    }
+
+    safeHideLoading();
+    return { cancelled: false, pagoReservaId: pagoData.id };
+  }
+
+  async function marcarPendientesComoPagados(pagoReservaId) {
+    await supabase
+      .from('servicios_x_reserva')
+      .update({ estado_pago: 'pagado', pago_reserva_id: pagoReservaId })
+      .eq('hotel_id', hotelId)
+      .eq('reserva_id', reserva.id)
+      .neq('estado_pago', 'pagado');
+
+    await supabase
+      .from('ventas_tienda')
+      .update({ estado_pago: 'pagado' })
+      .eq('hotel_id', hotelId)
+      .eq('reserva_id', reserva.id)
+      .neq('estado_pago', 'pagado');
+
+    await supabase
+      .from('ventas_restaurante')
+      .update({ estado_pago: 'pagado' })
+      .eq('hotel_id', hotelId)
+      .eq('reserva_id', reserva.id)
+      .neq('estado_pago', 'pagado');
+  }
+
+  async function cargarCuentaDetallada() {
+    const serviciosRes = await supabase
+      .from('servicios_x_reserva')
+      .select('id, cantidad, precio_cobrado, estado_pago, descripcion_manual, servicio:servicios_adicionales(nombre)')
+      .eq('reserva_id', reserva.id);
+
+    if (serviciosRes.error) throw serviciosRes.error;
+    const servicios = serviciosRes.data || [];
+
+    const ventasTiendaRes = await supabase
+      .from('ventas_tienda')
+      .select('id, total_venta, estado_pago')
+      .eq('hotel_id', hotelId)
+      .eq('reserva_id', reserva.id);
+
+    if (ventasTiendaRes.error) throw ventasTiendaRes.error;
+    const ventasTienda = ventasTiendaRes.data || [];
+    const ventaTiendaIds = ventasTienda.map(v => v.id);
+
+    let detallesTienda = [];
+    if (ventaTiendaIds.length > 0) {
+      const detTiendaRes = await supabase
+        .from('detalle_ventas_tienda')
+        .select('venta_id, cantidad, subtotal, producto:productos_tienda(nombre)')
+        .in('venta_id', ventaTiendaIds);
+
+      if (detTiendaRes.error) throw detTiendaRes.error;
+      detallesTienda = detTiendaRes.data || [];
+    }
+
+    const ventasRestRes = await supabase
+      .from('ventas_restaurante')
+      .select('id, monto_total, total_venta, estado_pago')
+      .eq('hotel_id', hotelId)
+      .eq('reserva_id', reserva.id);
+
+    if (ventasRestRes.error) throw ventasRestRes.error;
+    const ventasRest = ventasRestRes.data || [];
+    const ventaRestIds = ventasRest.map(v => v.id);
+
+    let itemsRest = [];
+    if (ventaRestIds.length > 0) {
+      const itemsRestRes = await supabase
+        .from('ventas_restaurante_items')
+        .select('venta_id, cantidad, subtotal, plato:platos(nombre)')
+        .in('venta_id', ventaRestIds);
+
+      if (itemsRestRes.error) throw itemsRestRes.error;
+      itemsRest = itemsRestRes.data || [];
+    }
+
+    const pagosRes = await supabase
+      .from('pagos_reserva')
+      .select('id, monto, fecha_pago')
+      .eq('reserva_id', reserva.id);
+
+    if (pagosRes.error) throw pagosRes.error;
+    const pagos = pagosRes.data || [];
+
+    const totalEstancia = asInt(reserva.monto_total);
+
+    const totalServiciosPend = asInt(servicios.reduce((s, x) => {
+      const pagado = (x.estado_pago || 'pendiente') === 'pagado';
+      return s + (pagado ? 0 : asInt(x.precio_cobrado));
+    }, 0));
+
+    const totalTiendaPend = asInt(ventasTienda.reduce((s, v) => {
+      const pagado = (v.estado_pago || 'pendiente') === 'pagado';
+      return s + (pagado ? 0 : asInt(v.total_venta));
+    }, 0));
+
+    const totalRestPend = asInt(ventasRest.reduce((s, v) => {
+      const pagado = (v.estado_pago || 'pendiente') === 'pagado';
+      const totalCab = asInt(v.monto_total ?? v.total_venta);
+      return s + (pagado ? 0 : totalCab);
+    }, 0));
+
+    const deudaTotal = asInt(totalEstancia + totalServiciosPend + totalTiendaPend + totalRestPend);
+    const totalPagado = asInt(pagos.reduce((s, p) => s + asInt(p.monto), 0));
+    const saldo = Math.max(0, asInt(deudaTotal - totalPagado));
+
+    const mapTiendaEstado = Object.fromEntries(ventasTienda.map(v => [v.id, (v.estado_pago || 'pendiente')]));
+    const mapRestEstado = Object.fromEntries(ventasRest.map(v => [v.id, (v.estado_pago || 'pendiente')]));
+
+    return {
+      servicios,
+      ventasTienda,
+      detallesTienda,
+      mapTiendaEstado,
+      ventasRest,
+      itemsRest,
+      mapRestEstado,
+      pagos,
+      totalEstancia,
+      deudaTotal,
+      totalPagado,
+      saldo
+    };
+  }
+
+  try {
+    const cuenta = await cargarCuentaDetallada();
+
+    const listaItems = [];
+
+    listaItems.push({
+      tipo: 'Hospedaje',
+      detalle: `Estancia Hab. ${room.nombre}`,
+      cant: 1,
+      subtotal: cuenta.totalEstancia,
+      estado: 'PENDIENTE'
+    });
+
+    (cuenta.servicios || []).forEach(s => {
+      const nombre = s?.servicio?.nombre || s.descripcion_manual || 'Servicio';
+      const pagado = (s.estado_pago || 'pendiente') === 'pagado';
+      listaItems.push({
+        tipo: 'Servicio',
+        detalle: nombre,
+        cant: asInt(s.cantidad) || 1,
+        subtotal: asInt(s.precio_cobrado),
+        estado: pagado ? 'PAGADO' : 'PENDIENTE'
+      });
+    });
+
+    (cuenta.detallesTienda || []).forEach(d => {
+      const estadoVenta = (cuenta.mapTiendaEstado?.[d.venta_id] || 'pendiente');
+      const pagado = estadoVenta === 'pagado';
+      listaItems.push({
+        tipo: 'Tienda',
+        detalle: d?.producto?.nombre || 'Producto Tienda',
+        cant: asInt(d.cantidad) || 1,
+        subtotal: asInt(d.subtotal),
+        estado: pagado ? 'PAGADO' : 'PENDIENTE'
+      });
+    });
+
+    (cuenta.itemsRest || []).forEach(it => {
+      const estadoVenta = (cuenta.mapRestEstado?.[it.venta_id] || 'pendiente');
+      const pagado = estadoVenta === 'pagado';
+      listaItems.push({
+        tipo: 'Restaurante',
+        detalle: it?.plato?.nombre || 'Plato',
+        cant: asInt(it.cantidad) || 1,
+        subtotal: asInt(it.subtotal),
+        estado: pagado ? 'PAGADO' : 'PENDIENTE'
+      });
+    });
+
+    const rowsHtml = listaItems.map(item => {
+      const badge = item.estado === 'PAGADO'
+        ? `<span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-bold">PAGADO</span>`
+        : `<span class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-bold">PENDIENTE</span>`;
+      return `
+        <tr class="border-b border-gray-100 hover:bg-gray-50">
+          <td class="p-2 text-xs text-gray-500 uppercase tracking-wide">${item.tipo}</td>
+          <td class="p-2 text-sm font-semibold text-gray-800 flex items-center justify-between gap-2">
+            <span>${item.detalle}</span>
+            ${badge}
+          </td>
+          <td class="p-2 text-sm text-center text-gray-600">${item.cant}</td>
+          <td class="p-2 text-sm text-right font-bold text-gray-700">${money(item.subtotal)}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const tieneSaldo = cuenta.saldo > 0;
+
+    modalContainer.innerHTML = `
+      <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[85vh]">
+        <div class="bg-gray-50 px-6 py-4 border-b flex justify-between items-center flex-shrink-0">
+          <div>
+            <h3 class="text-lg font-bold text-gray-800">Detalle de Cuenta: ${room.nombre}</h3>
+            <p class="text-sm text-gray-500">Cliente: <strong>${reserva.cliente_nombre || 'N/A'}</strong></p>
+          </div>
+          <button id="btn-cerrar-local" class="text-gray-400 hover:text-red-500 text-2xl transition">&times;</button>
+        </div>
+
+        <div class="p-0 overflow-y-auto flex-grow custom-scrollbar">
+          <table class="w-full text-left border-collapse">
+            <thead class="bg-blue-50 text-blue-800 uppercase text-xs sticky top-0 shadow-sm">
+              <tr>
+                <th class="p-3 font-semibold">Origen</th>
+                <th class="p-3 font-semibold">Descripción</th>
+                <th class="p-3 text-center font-semibold">Cant.</th>
+                <th class="p-3 text-right font-semibold">Total</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+
+        <div class="bg-gray-50 px-6 py-4 border-t flex-shrink-0">
+          <div class="flex justify-end flex-col items-end space-y-1 mb-4 border-b border-gray-200 pb-2">
+            <div class="text-sm text-gray-600">Deuda Total (pendiente):
+              <span class="font-bold text-gray-900">${money(cuenta.deudaTotal)}</span>
+            </div>
+            <div class="text-sm text-green-600">Pagos aplicados:
+              <span class="font-bold">${money(cuenta.totalPagado)}</span>
+            </div>
+          </div>
+
+          <div class="flex justify-between items-center">
+            <div class="text-xl ${cuenta.saldo > 0 ? 'text-red-600' : 'text-blue-600'}">
+              Saldo: <span class="font-bold">${money(cuenta.saldo)}</span>
+            </div>
+
+            <div class="flex gap-3">
+              ${tieneSaldo ? `
+                <button id="btn-abonar-saldo-local" class="button button-warning px-5 py-2 shadow-lg flex items-center gap-2 hover:scale-105 transition transform">
+                  ➕ Abonar
+                </button>
+                <button id="btn-pagar-saldo-local" class="button button-info px-5 py-2 shadow-lg flex items-center gap-2 hover:scale-105 transition transform">
+                  💳 Pagar todo
+                </button>
+              ` : ''}
+
+              <button id="btn-imprimir-pos-local" class="button button-success px-5 py-2 shadow-lg flex items-center gap-2 hover:scale-105 transition transform">
+                Imprimir Factura
+              </button>
+
+              <button id="btn-cerrar-local-2" class="button button-neutral px-4 py-2">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('btn-cerrar-local')?.addEventListener('click', cerrarModal);
+    document.getElementById('btn-cerrar-local-2')?.addEventListener('click', cerrarModal);
+
+    // ✅ PAGAR TODO
+    document.getElementById('btn-pagar-saldo-local')?.addEventListener('click', async () => {
+      try {
+        const cuentaActual = await cargarCuentaDetallada();
+        if (cuentaActual.saldo <= 0) {
+          if (hasSwal) await Swal.fire('Info', 'Esta cuenta ya está saldada.', 'info');
+          return mostrarModalConsumosLocal(room, reserva, supabase, user, hotelId);
+        }
+
+        if (hasSwal) {
+          const conf = await Swal.fire({
+            title: 'Confirmar pago',
+            text: `¿Deseas pagar TODO el saldo (${money(cuentaActual.saldo)})?`,
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: 'Sí, pagar todo',
+            cancelButtonText: 'Cancelar'
+          });
+          if (!conf.isConfirmed) return;
+        }
+
+        const resPago = await registrarPagoEnBD(cuentaActual.saldo, {
+          liquidarTodo: true,
+          deudaTotalActual: cuentaActual.deudaTotal
+        });
+        if (resPago?.cancelled) return;
+
+        await marcarPendientesComoPagados(resPago.pagoReservaId);
+
+        if (hasSwal) await Swal.fire('Listo', 'Pago registrado. Saldo en 0.', 'success');
+        await mostrarModalConsumosLocal(room, reserva, supabase, user, hotelId);
+      } catch (e) {
+        console.error(e);
+        safeHideLoading();
+        if (hasSwal) Swal.fire('Error', e.message || 'No se pudo registrar el pago.', 'error');
+      }
+    });
+
+    // ✅ ABONAR (ARREGLADO: input TEXT + parse, sin error de step)
+    document.getElementById('btn-abonar-saldo-local')?.addEventListener('click', async () => {
+      try {
+        const cuentaActual = await cargarCuentaDetallada();
+        if (cuentaActual.saldo <= 0) {
+          if (hasSwal) await Swal.fire('Info', 'Esta cuenta ya está saldada.', 'info');
+          return mostrarModalConsumosLocal(room, reserva, supabase, user, hotelId);
+        }
+
+        let montoAbono = 0;
+
+        if (hasSwal) {
+          const { value } = await Swal.fire({
+            title: 'Abonar a la deuda',
+            html: `Saldo actual: <b>${money(cuentaActual.saldo)}</b><br>¿Cuánto desea abonar? (Ej: 10000 o 10.000)`,
+            input: 'text',
+            inputValue: String(Math.min(cuentaActual.saldo, 10000)),
+            inputAttributes: {
+              inputmode: 'numeric',
+              autocapitalize: 'off',
+              autocomplete: 'off',
+              autocorrect: 'off',
+              spellcheck: 'false'
+            },
+            showCancelButton: true,
+            confirmButtonText: 'Registrar abono',
+            cancelButtonText: 'Cancelar',
+            preConfirm: (val) => {
+              const n = parseMoneyInput(val);
+              if (!n || n <= 0) return Swal.showValidationMessage('Ingresa un monto válido.');
+              if (n > cuentaActual.saldo) return Swal.showValidationMessage('El abono no puede ser mayor al saldo.');
+              return n;
+            }
+          });
+
+          if (!value) return;
+          montoAbono = asInt(value);
+        } else {
+          montoAbono = Math.min(cuentaActual.saldo, 10000);
+        }
+
+        const resPago = await registrarPagoEnBD(montoAbono, {
+          liquidarTodo: false,
+          deudaTotalActual: cuentaActual.deudaTotal
+        });
+        if (resPago?.cancelled) return;
+
+        if (hasSwal) await Swal.fire('Listo', `Abono registrado: ${money(montoAbono)}`, 'success');
+        await mostrarModalConsumosLocal(room, reserva, supabase, user, hotelId);
+      } catch (e) {
+        console.error(e);
+        safeHideLoading();
+        if (hasSwal) Swal.fire('Error', e.message || 'No se pudo registrar el abono.', 'error');
+      }
+    });
+
+    // IMPRIMIR (igual que antes)
+    document.getElementById('btn-imprimir-pos-local')?.addEventListener('click', async () => {
+      try {
+        if (typeof imprimirFacturaPosAdaptable !== 'function') {
+          if (hasSwal) return Swal.fire('Error', 'No existe imprimirFacturaPosAdaptable().', 'error');
+          return;
+        }
+
+        const { data: config, error } = await supabase
+          .from('configuracion_hotel')
+          .select('*')
+          .eq('hotel_id', hotelId)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        const datosParaImprimir = {
+          cliente: {
+            nombre: reserva.cliente_nombre,
+            documento: reserva.cedula || reserva.cliente_cedula || ''
+          },
+          reservaId: reserva.id,
+          habitacionNombre: room.nombre,
+          items: listaItems.map(i => ({
+            nombre: `${i.detalle} (${i.estado})`,
+            cantidad: i.cant,
+            total: i.subtotal,
+            precioUnitario: i.cant > 0 ? asInt(i.subtotal / i.cant) : 0
+          })),
+          total: cuenta.deudaTotal,
+          totalPagado: cuenta.totalPagado,
+          impuestos: 0,
+          descuento: asInt(reserva.monto_descontado),
+          subtotal: cuenta.deudaTotal
+        };
+
+        imprimirFacturaPosAdaptable(config || {}, datosParaImprimir);
+      } catch (e) {
+        console.error(e);
+        if (hasSwal) Swal.fire('Error', e.message || 'No se pudo imprimir.', 'error');
+      }
+    });
+
+  } catch (error) {
+    console.error('Error en mostrarModalConsumosLocal:', error);
+    modalContainer.innerHTML = `
+      <div class="bg-white p-4 rounded text-red-600">
+        Error cargando consumos: ${error.message || error}
+        <button id="btn-cerrar-error" class="ml-4 underline">Cerrar</button>
+      </div>
+    `;
+    document.getElementById('btn-cerrar-error')?.addEventListener('click', cerrarModal);
+  }
 }
+
 // ===================== FIN DEL ARCHIVO =====================
