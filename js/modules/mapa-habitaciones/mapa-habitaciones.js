@@ -1926,8 +1926,16 @@ function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAp
       finAt = calcularFinPorNoches(inicioAt, nochesSeleccionadas, horarios.checkout);
       descripcionEstancia = `${nochesSeleccionadas} Noche(s)`;
 
-      let precioNocheBase = Number(room.precio_2_personas) || 0;
-      if (cantidadHuespedes === 1) precioNocheBase = Number(room.precio_1_persona) || precioNocheBase;
+      // Precio base (NOCHES):
+// 1) Si manejas precio_1_persona / precio_2_personas, se usan.
+// 2) Si están en 0 o vacíos, se usa room.precio como respaldo (precio clásico por noche).
+const precioNocheRespaldo = Number(room.precio) || 0;
+
+let precioNocheBase = Number(room.precio_2_personas) || precioNocheRespaldo;
+if (cantidadHuespedes === 1) {
+  precioNocheBase = Number(room.precio_1_persona) || precioNocheRespaldo || precioNocheBase;
+}
+
 
       let totalNoche = precioNocheBase * nochesSeleccionadas;
       if (cantidadHuespedes > 2) {
