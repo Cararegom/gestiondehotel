@@ -2819,7 +2819,18 @@ async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mai
         metodosPagoExtension.unshift({ id: "mixto", nombre: "Pago Mixto" });
         const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('noche'));
         const opcionesNochesExt = crearOpcionesNochesConPersonalizada(horarios, 5, reservaActiva.fecha_fin, tarifaNocheUnicaExt, room);
-        const opcionesHorasExt = crearOpcionesHoras(tiempos);
+        const opcionesHorasExt = Array.isArray(tiempos)
+  ? tiempos
+      .filter(t => Number(t.minutos) > 0 && String(t.tipo_unidad || '').toLowerCase() !== 'noche')
+      .map(t => ({
+        minutos: parseInt(t.minutos, 10) || 0,
+        nombre: t.nombre || `${(parseInt(t.minutos, 10) || 0) / 60} hora(s)`,
+        precio: Number(t.precio) || 0
+      }))
+      .filter(t => t.minutos > 0)
+      .sort((a, b) => a.minutos - b.minutos)
+  : [];
+
 
         const modalContent = document.createElement('div');
         modalContent.className = "bg-gradient-to-br from-slate-50 to-gray-100 rounded-xl shadow-2xl w-full max-w-3xl p-0 m-auto animate-fade-in-up overflow-hidden";
@@ -2846,7 +2857,8 @@ async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mai
                             <label class="form-label">Extender Por:</label>
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 items-start">
                                 <select name="noches_extender" id="select-noches-ext" class="form-control"><option value="">-- Noches --</option>${opcionesNochesExt.map(o => `<option value="${o.noches}">${o.label}</option>`).join('')}</select>
-                                <select name="horas_extender" id="select-horas-ext" class="form-control"><option value="">-- Horas --</option>${opcionesHorasExt.map(o => `<option value="${o.minutos}">${o.label}</option>`).join('')}</select>
+                                <select name="horas_extender" id="select-horas-ext" class="form-control"><option value="">-- Horas --</option>${opcionesHorasExt.map(o => `<option value="${o.minutos}">${o.nombre || o.label || formatHorasMin(o.minutos)}</option>`).join('')}
+</select>
                             </div>
                         </div>
                         
