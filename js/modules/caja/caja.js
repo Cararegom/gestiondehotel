@@ -48,24 +48,47 @@ async function salirModoSupervision() {
 
 async function verificarTurnoActivo() {
   if (!currentModuleUser?.id || !currentHotelId) return null;
-  const { data, error } = await currentSupabaseInstance
+
+  // 1) Traer TODOS los turnos abiertos de ese usuario/hotel
+  const { data: turnosAbiertos, error } = await currentSupabaseInstance
     .from('turnos')
     .select('*')
     .eq('usuario_id', currentModuleUser.id)
     .eq('hotel_id', currentHotelId)
     .eq('estado', 'abierto')
-    .maybeSingle();
+    // 👇 importante: ordenar para quedarnos con el más nuevo
+    .order('creado_en', { ascending: false }); // si tu columna se llama diferente, mira nota abajo
+
   if (error) {
     console.error("Error verificando turno activo:", error);
-    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No se pudo verificar el estado del turno.');
+    showError(
+      currentContainerEl.querySelector('#turno-global-feedback'),
+      'No se pudo verificar el estado del turno.'
+    );
     return null;
   }
-  if (data) {
-    turnoService.setActiveTurn(data.id);
-  }
-  return data;
-}
 
+  // 2) Si no hay turnos abiertos
+  if (!turnosAbiertos || turnosAbiertos.length === 0) {
+    return null;
+  }
+
+  // 3) Si hay MÁS de 1, lo reportamos (para que sepas que hay duplicados)
+  if (turnosAbiertos.length > 1) {
+    console.warn(
+      `[Caja] Hay ${turnosAbiertos.length} turnos abiertos para este usuario. Tomaré el más reciente. IDs:`,
+      turnosAbiertos.map(t => t.id)
+    );
+  }
+
+  // 4) Tomamos el más reciente
+  const turnoActivo = turnosAbiertos[0];
+
+  // 5) Guardar el turno activo en tu service
+  turnoService.setActiveTurn(turnoActivo.id);
+
+  return turnoActivo;
+}
 async function abrirTurno() {
   const montoInicialStr = prompt("¿Cuál es el monto inicial de caja?");
   const montoInicial = parseFloat(montoInicialStr);
