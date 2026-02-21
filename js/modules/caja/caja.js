@@ -50,14 +50,15 @@ async function verificarTurnoActivo() {
   if (!currentModuleUser?.id || !currentHotelId) return null;
 
   // 1) Traer TODOS los turnos abiertos de ese usuario/hotel
+  // 1) Traer TODOS los turnos abiertos de ese usuario/hotel
   const { data: turnosAbiertos, error } = await currentSupabaseInstance
     .from('turnos')
     .select('*')
     .eq('usuario_id', currentModuleUser.id)
     .eq('hotel_id', currentHotelId)
     .eq('estado', 'abierto')
-    // 👇 importante: ordenar para quedarnos con el más nuevo
-    .order('creado_en', { ascending: false }); // si tu columna se llama diferente, mira nota abajo
+    // 👇 Se cambia 'creado_en' por 'fecha_apertura'
+    .order('fecha_apertura', { ascending: false });
 
   if (error) {
     console.error("Error verificando turno activo:", error);
@@ -280,7 +281,9 @@ async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId) {
             .select('id,tipo,monto,concepto,creado_en,usuario_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre)')
             .eq('hotel_id', currentHotelId)
             .eq('turno_id', turnoId)
-            .order('creado_en', { ascending: false });
+            // 👇 Cambiamos 'fecha_apertura' por 'creado_en' (ascending: true para ver del más antiguo al más nuevo)
+            .order('creado_en', { ascending: true }); 
+            // 👇 ¡Y eliminamos el .limit(1) para que carguen TODOS los movimientos!
 
         if (error) throw error;
         
