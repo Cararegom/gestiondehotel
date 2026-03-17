@@ -12,6 +12,9 @@ const USD_PRICES = {
   max: 60
 };
 let CURRENCY_RATE_CACHE = { rate: 4000, last: 0 };
+const PROMO_BIENVENIDA_INICIO = new Date('2026-03-17T00:00:00-05:00');
+const PROMO_BIENVENIDA_MESES = 3;
+const PROMO_BIENVENIDA_DESCUENTO = 0.5;
 
 // =======================================================================
 // ========================== FUNCIONES DE UTILIDAD ========================
@@ -81,6 +84,97 @@ async function getUsdToCopRate() {
   return 4000;
 }
 
+function getPositiveSubscriptionPayments(pagos = []) {
+  return (Array.isArray(pagos) ? pagos : []).filter((pago) => {
+    const monto = Number(pago?.monto ?? 0);
+    return Number.isFinite(monto) && monto > 0 && Boolean(pago?.plan);
+  });
+}
+
+function getPromoBienvenidaStatus(hotel, pagos = []) {
+  const trialStart = hotel?.trial_inicio ? new Date(hotel.trial_inicio) : null;
+  const elegiblePorFecha = Boolean(
+    trialStart &&
+    !Number.isNaN(trialStart.getTime()) &&
+    trialStart >= PROMO_BIENVENIDA_INICIO
+  );
+  const ahora = Date.now();
+  const promoWindowEnd = trialStart ? new Date(trialStart) : null;
+  if (promoWindowEnd) {
+    promoWindowEnd.setDate(promoWindowEnd.getDate() + 120);
+  }
+  const vigentePorTiempo = Boolean(
+    promoWindowEnd &&
+    !Number.isNaN(promoWindowEnd.getTime()) &&
+    ahora <= promoWindowEnd.getTime()
+  );
+  const pagosRegistrados = getPositiveSubscriptionPayments(pagos).length;
+  const pagosUsados = Math.min(PROMO_BIENVENIDA_MESES, pagosRegistrados);
+  const mesesRestantes = Math.max(0, PROMO_BIENVENIDA_MESES - pagosUsados);
+
+  return {
+    aplica: elegiblePorFecha && vigentePorTiempo && mesesRestantes > 0,
+    elegiblePorFecha,
+    vigentePorTiempo,
+    pagosRegistrados,
+    pagosUsados,
+    mesesRestantes,
+    siguienteMesPromo: pagosUsados + 1,
+    porcentaje: Math.round(PROMO_BIENVENIDA_DESCUENTO * 100),
+    aplicaEnPeriodo(periodo) {
+      return this.aplica && periodo === 'mensual';
+    }
+  };
+}
+
+function getBasePlanAmounts(plan, periodo = 'mensual') {
+  const planKey = plan?.nombre?.trim().toLowerCase() || '';
+  const baseCOP = periodo === 'anual'
+    ? Number(plan?.precio_mensual || 0) * 10
+    : Number(plan?.precio_mensual || 0);
+  let baseUSD = USD_PRICES[planKey] || 0;
+  if (periodo === 'anual') {
+    baseUSD *= 10;
+  }
+  return { baseCOP, baseUSD };
+}
+
+function applyPromoBienvenida({ baseCOP = 0, baseUSD = 0, periodo = 'mensual', promoStatus }) {
+  const promoAplica = Boolean(promoStatus?.aplicaEnPeriodo?.(periodo));
+  const factor = promoAplica ? (1 - PROMO_BIENVENIDA_DESCUENTO) : 1;
+  const finalCOP = Number((baseCOP * factor).toFixed(2));
+  const finalUSD = Number((baseUSD * factor).toFixed(2));
+  const ahorroCOP = Number((baseCOP - finalCOP).toFixed(2));
+  const ahorroUSD = Number((baseUSD - finalUSD).toFixed(2));
+  return { promoAplica, baseCOP, baseUSD, finalCOP, finalUSD, ahorroCOP, ahorroUSD };
+}
+
+function getPromoBienvenidaHTML(promoStatus, periodoActual) {
+  if (!promoStatus?.aplica) {
+    return '';
+  }
+
+  const mensajePeriodo = periodoActual === 'mensual'
+    ? `Tu siguiente mensualidad se cobrara con <b>${promoStatus.porcentaje}% OFF</b>.`
+    : `El ${promoStatus.porcentaje}% OFF aplica solo en pagos mensuales. Si eliges anual, se mantienen los 2 meses gratis del plan anual.`;
+
+  return `
+    <div class="mb-6 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-lime-50 p-4 shadow-sm">
+      <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <div class="text-sm font-semibold uppercase tracking-wide text-amber-700">Promocion de bienvenida activa</div>
+          <div class="mt-1 text-base font-semibold text-slate-800">Primer mes gratis + 3 meses al 50% para cuentas nuevas.</div>
+          <div class="mt-1 text-sm text-slate-600">${mensajePeriodo}</div>
+        </div>
+        <div class="rounded-xl bg-white px-4 py-3 text-sm shadow-sm border border-amber-100">
+          <div class="font-semibold text-slate-800">Te quedan ${promoStatus.mesesRestantes} de ${PROMO_BIENVENIDA_MESES} meses promocionales</div>
+          <div class="text-slate-500">El siguiente seria tu mes promocional ${promoStatus.siguienteMesPromo}.</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 // =======================================================================
 // ========================== FUNCIÃ“N PRINCIPAL (MOUNT) ====================
 // =======================================================================
@@ -93,6 +187,7 @@ export async function mount(container, supabase, user, hotelId) {
   const { data: plans } = await supabase.from('planes').select('*').order('precio_mensual', { ascending: true });
   const { data: pagos = [] } = await supabase.from('pagos').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false });
   const pagosSafe = Array.isArray(pagos) ? pagos : [];
+  const promoBienvenida = getPromoBienvenidaStatus(hotel, pagosSafe);
   const { data: cambiosPlan = [] } = await supabase.from('cambios_plan').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false });
   const cambiosPlanSafe = Array.isArray(cambiosPlan) ? cambiosPlan : [];
 
@@ -178,6 +273,7 @@ try {
         </div>
       </div>
       ${alertaVencimientoHTML(diasRestantes, hotel.estado_suscripcion, enGracia)}
+      <div id="promo-bienvenida-banner">${getPromoBienvenidaHTML(promoBienvenida, periodoActual)}</div>
       <div class="bg-white shadow rounded-2xl p-6 mb-8">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           <div>
@@ -209,6 +305,11 @@ try {
             </div>
           </div>
         </div>
+        ${promoBienvenida.aplica ? `
+          <div class="mt-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <b>Promo solo para cuentas nuevas:</b> el primer mes ya fue gratis. Tus siguientes ${promoBienvenida.mesesRestantes} mensualidades elegibles pueden salir al ${promoBienvenida.porcentaje}% del valor normal.
+          </div>
+        ` : ''}
         <div class="flex flex-wrap gap-4 mt-6">
           <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-blue-600 to-indigo-500 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnCambiarCorreo">
             <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-envelope-at-fill"></i></span>
@@ -269,7 +370,6 @@ try {
                 <th>Recompensa</th>
               </tr>
             </thead>
-            console.log("ðŸ§¾ Renderizando referidos en tabla:", referidosSafe);
             <tbody>
               ${referidosSafe.length === 0 ? `
                 <tr><td colspan="4" class="text-gray-400 py-3 text-center">AÃºn no tienes hoteles referidos. Â¡Comparte tu enlace!</td></tr>
@@ -337,6 +437,7 @@ try {
   const monedaSelector = container.querySelector('#monedaSelector');
   const tipoPagoSelector = container.querySelector('#tipoPagoSelector');
   const planesList = container.querySelector('#planes-list');
+  const promoBanner = container.querySelector('#promo-bienvenida-banner');
 
   async function iniciarProcesoDePago(plan, tipo, montoPagarCOP, montoPagarUSD) {
     if (monedaActual === 'USD') {
@@ -440,14 +541,17 @@ try {
             modal.classList.add('hidden');
         });
     } else if (tipo === 'downgrade') {
-        let planKey = planSeleccionado.nombre.trim().toLowerCase();
-        let precioRenovacionCOP = periodoActual === 'anual' ? planSeleccionado.precio_mensual * 10 : planSeleccionado.precio_mensual;
-        let precioRenovacionUSD = USD_PRICES[planKey] || 0;
-        if (periodoActual === 'anual') {
-            precioRenovacionUSD *= 10;
-        }
-        
+        const baseAmounts = getBasePlanAmounts(planSeleccionado, periodoActual);
+        const promoAplicada = applyPromoBienvenida({
+            ...baseAmounts,
+            periodo: periodoActual,
+            promoStatus: promoBienvenida
+        });
+        const precioRenovacionCOP = promoAplicada.finalCOP;
+        const precioRenovacionUSD = promoAplicada.finalUSD;
         const montoAPagar = monedaActual === 'USD' ? precioRenovacionUSD : precioRenovacionCOP;
+        const ahorroPromo = monedaActual === 'USD' ? promoAplicada.ahorroUSD : promoAplicada.ahorroCOP;
+        const baseMostrar = monedaActual === 'USD' ? promoAplicada.baseUSD : promoAplicada.baseCOP;
 
         modal.querySelector('#modalPlanName').innerHTML = `De <b>${planActivo.nombre}</b> a <b class="text-orange-600">${planSeleccionado.nombre}</b>`;
         modal.querySelector('.text-blue-700').textContent = 'Confirmar pago para prÃ³ximo ciclo';
@@ -459,6 +563,17 @@ try {
               <span>Total a pagar ahora:</span>
               <span class="text-green-700">${formatMoneda(montoAPagar, monedaActual)}</span>
             </div>
+            ${promoAplicada.promoAplica ? `
+              <div class="p-3 bg-amber-50 border-l-4 border-amber-400 text-amber-900 rounded">
+                <p><b>Promo de bienvenida aplicada.</b> Este sera tu mes ${promoBienvenida.siguienteMesPromo} de ${PROMO_BIENVENIDA_MESES} al ${promoBienvenida.porcentaje}%.</p>
+                <p class="mt-1">Precio normal: <b>${formatMoneda(baseMostrar, monedaActual)}</b>. Ahorro en esta compra: <b>${formatMoneda(ahorroPromo, monedaActual)}</b>.</p>
+              </div>
+            ` : ''}
+            ${promoBienvenida.aplica && periodoActual === 'anual' ? `
+              <div class="p-3 bg-slate-50 border-l-4 border-slate-300 text-slate-700 rounded">
+                La promo del ${promoBienvenida.porcentaje}% aplica solo a pagos mensuales. En anual se conservan los 2 meses gratis.
+              </div>
+            ` : ''}
             <div class="p-3 bg-blue-50 border-l-4 border-blue-500 text-blue-800 rounded">
               <p>Tu plan actual <b class="font-semibold">${planActivo.nombre}</b> seguirÃ¡ activo hasta el <b class="font-semibold">${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>.</p>
               <p class="mt-1">El nuevo plan <b class="font-semibold">${planSeleccionado.nombre}</b> se activarÃ¡ automÃ¡ticamente despuÃ©s de esa fecha.</p>
@@ -485,21 +600,21 @@ try {
   
   async function renderPlanes(conteoHabitacionesActual, conteoUsuariosActual) {
     planesList.innerHTML = '';
+    if (promoBanner) {
+      promoBanner.innerHTML = getPromoBienvenidaHTML(promoBienvenida, periodoActual);
+    }
     
     (plans || []).forEach(plan => {
-        let planKey = plan.nombre.trim().toLowerCase();
-        let price = 0;
-        let label = '';
-
-        if (monedaActual === 'USD') {
-            let priceUSD = USD_PRICES[planKey] || 30;
-            price = periodoActual === 'anual' ? priceUSD * 10 : priceUSD;
-            label = periodoActual === 'anual' ? 'aÃ±o' : 'mes';
-        } else {
-            price = plan.precio_mensual;
-            if (periodoActual === 'anual') price *= 10;
-            label = periodoActual === 'anual' ? 'aÃ±o' : 'mes';
-        }
+        const baseAmounts = getBasePlanAmounts(plan, periodoActual);
+        const promoAplicada = applyPromoBienvenida({
+            ...baseAmounts,
+            periodo: periodoActual,
+            promoStatus: promoBienvenida
+        });
+        const label = periodoActual === 'anual' ? 'ano' : 'mes';
+        const price = monedaActual === 'USD' ? promoAplicada.finalUSD : promoAplicada.finalCOP;
+        const precioBase = monedaActual === 'USD' ? promoAplicada.baseUSD : promoAplicada.baseCOP;
+        const ahorroPromo = monedaActual === 'USD' ? promoAplicada.ahorroUSD : promoAplicada.ahorroCOP;
 
         const esPlanActual = plan.id === planActivo?.id;
         
@@ -537,6 +652,17 @@ try {
                     <div class="font-bold text-blue-700 text-lg mb-2 flex items-center gap-1">${plan.nombre.charAt(0).toUpperCase() + plan.nombre.slice(1).toLowerCase()} ${esPlanActual ? '<span class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-600 text-xs font-semibold rounded">Actual</span>' : ''}</div>
                     <div class="text-gray-600 text-sm mb-2">${plan.descripcion || ''}</div>
                     <div class="text-xl font-bold text-green-600 mb-2">${formatMoneda(price, monedaActual)} <span class="text-sm text-gray-400 font-normal">/${label}</span></div>
+                    ${promoAplicada.promoAplica ? `
+                      <div class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        <div class="font-semibold">Nuevo cliente: mes ${promoBienvenida.siguienteMesPromo} de ${PROMO_BIENVENIDA_MESES} al ${promoBienvenida.porcentaje}%.</div>
+                        <div>Precio normal ${formatMoneda(precioBase, monedaActual)}. Ahorras ${formatMoneda(ahorroPromo, monedaActual)} en este pago.</div>
+                      </div>
+                    ` : ''}
+                    ${promoBienvenida.aplica && periodoActual === 'anual' ? `
+                      <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                        La promo de bienvenida al ${promoBienvenida.porcentaje}% aplica solo en mensual. En anual se mantienen 2 meses gratis.
+                      </div>
+                    ` : ''}
                     <ul class="list-disc pl-4 text-gray-500 text-xs mb-3 space-y-1">${(plan.funcionalidades?.descripcion_features || []).map(f => `<li>${f}</li>`).join('')}</ul>
                 </div>
                 ${botonHTML}
@@ -555,6 +681,21 @@ try {
             }
         });
     });
+
+    const btnRenovarPlan = container.querySelector('#btnRenovarPlan');
+    if (btnRenovarPlan) {
+      if (promoBienvenida.aplicaEnPeriodo(periodoActual)) {
+        btnRenovarPlan.innerHTML = `
+          <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-stars"></i></span>
+          Renovar con ${promoBienvenida.porcentaje}% OFF
+        `;
+      } else {
+        btnRenovarPlan.innerHTML = `
+          <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-arrow-repeat"></i></span>
+          Renovar / Pagar Plan
+        `;
+      }
+    }
   }
 
   monedaSelector.addEventListener('change', (e) => {
@@ -577,13 +718,13 @@ try {
 
   container.querySelector('#btnRenovarPlan')?.addEventListener('click', () => {
       if (planActivo) {
-          const planKey = planActivo.nombre.toLowerCase();
-          const precioRenovacionCOP = periodoActual === 'anual' ? planActivo.precio_mensual * 10 : planActivo.precio_mensual;
-          let precioRenovacionUSD = USD_PRICES[planKey] || 0;
-          if (periodoActual === 'anual') {
-              precioRenovacionUSD *= 10;
-          }
-          iniciarProcesoDePago(planActivo, 'renew', precioRenovacionCOP, precioRenovacionUSD);
+          const baseAmounts = getBasePlanAmounts(planActivo, periodoActual);
+          const promoAplicada = applyPromoBienvenida({
+            ...baseAmounts,
+            periodo: periodoActual,
+            promoStatus: promoBienvenida
+          });
+          iniciarProcesoDePago(planActivo, 'renew', promoAplicada.finalCOP, promoAplicada.finalUSD);
       }
   });
 
