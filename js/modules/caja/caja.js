@@ -1160,24 +1160,59 @@ async function mostrarTurnosAbiertos(event) {
     const rect = boton.getBoundingClientRect();
     const top = rect.bottom + window.scrollY + 5;
     const right = window.innerWidth - rect.right;
+    const isMobile = window.innerWidth < 640;
 
     const modalContainer = document.createElement('div');
     modalContainer.id = "modal-turnos-abiertos";
-    modalContainer.style.position = 'absolute';
-    modalContainer.style.top = `${top}px`;
-    modalContainer.style.right = `${right}px`;
-    modalContainer.style.zIndex = '1000';
-    modalContainer.className = "bg-white rounded-lg shadow-xl border w-full max-w-sm text-center";
-    modalContainer.innerHTML = `<div class="p-4"><p>Buscando turnos abiertos...</p></div>`;
+    modalContainer.style.zIndex = '10000';
+    modalContainer.className = isMobile
+        ? "fixed inset-0 bg-black/50 p-4 flex items-start justify-center overflow-y-auto"
+        : "fixed inset-0";
+
+    const modalPanel = document.createElement('div');
+    modalPanel.className = "bg-white rounded-2xl shadow-xl border w-full text-center overflow-hidden";
+    modalPanel.style.maxWidth = isMobile ? '28rem' : '24rem';
+    modalPanel.style.maxHeight = isMobile ? 'calc(100vh - 2rem)' : 'min(75vh, 34rem)';
+
+    if (isMobile) {
+        modalPanel.style.marginTop = '1rem';
+    } else {
+        modalPanel.style.position = 'absolute';
+        modalPanel.style.top = `${top}px`;
+        modalPanel.style.right = `${right}px`;
+    }
+
+    modalPanel.innerHTML = `<div class="p-4"><p>Buscando turnos abiertos...</p></div>`;
+    modalContainer.appendChild(modalPanel);
     document.body.appendChild(modalContainer);
 
+    const closeModal = () => {
+        modalContainer.remove();
+        document.removeEventListener('click', closeOnClickOutside);
+        document.removeEventListener('keydown', closeOnEscape);
+    };
+
     const closeOnClickOutside = (e) => {
-        if (!modalContainer.contains(e.target) && e.target !== boton) {
-            modalContainer.remove();
-            document.removeEventListener('click', closeOnClickOutside);
+        if (isMobile) {
+            if (e.target === modalContainer) {
+                closeModal();
+            }
+            return;
+        }
+
+        if (!modalPanel.contains(e.target) && e.target !== boton) {
+            closeModal();
         }
     };
+
+    const closeOnEscape = (e) => {
+        if (e.key === 'Escape') {
+            closeModal();
+        }
+    };
+
     setTimeout(() => document.addEventListener('click', closeOnClickOutside), 0);
+    document.addEventListener('keydown', closeOnEscape);
     
     try {
         const { data: turnos, error } = await currentSupabaseInstance
@@ -1217,7 +1252,7 @@ async function mostrarTurnosAbiertos(event) {
                 <h3 class="text-md font-bold text-gray-700">Turnos Abiertos</h3>
                 <button id="btn-cerrar-turnos-modal" class="text-gray-500 hover:text-red-600 text-xl">&times;</button>
             </div>
-            <div class="overflow-y-auto">
+            <div class="overflow-y-auto" style="max-height: ${isMobile ? 'calc(100vh - 8.5rem)' : '22rem'};">
                 <table class="w-full text-left">
                     <tbody>
                         ${tableRowsHtml}
@@ -1225,19 +1260,15 @@ async function mostrarTurnosAbiertos(event) {
                 </table>
             </div>
         `;
-        modalContainer.innerHTML = modalContent;
+        modalPanel.innerHTML = modalContent;
         
-        modalContainer.querySelector('#btn-cerrar-turnos-modal').onclick = () => {
-            modalContainer.remove();
-            document.removeEventListener('click', closeOnClickOutside);
-        };
+        modalPanel.querySelector('#btn-cerrar-turnos-modal').onclick = closeModal;
         
-        modalContainer.querySelectorAll('button[data-turno-id]').forEach(btn => {
+        modalPanel.querySelectorAll('button[data-turno-id]').forEach(btn => {
             btn.onclick = async (e) => {
                 const turnoId = e.currentTarget.dataset.turnoId;
                 const turnoData = turnosAbiertosCache.get(String(turnoId));
-                document.removeEventListener('click', closeOnClickOutside);
-                modalContainer.remove();
+                closeModal();
                 if (!turnoData) {
                     showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No se pudo cargar el turno seleccionado.');
                     return;
@@ -1247,7 +1278,7 @@ async function mostrarTurnosAbiertos(event) {
         });
 
     } catch (err) {
-        modalContainer.innerHTML = `<div class="p-4 text-red-600">Error: ${escapeHtml(err.message)}</div>`;
+        modalPanel.innerHTML = `<div class="p-4 text-red-600">Error: ${escapeHtml(err.message)}</div>`;
     }
 }
 
