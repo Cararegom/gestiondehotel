@@ -13,20 +13,6 @@ import {
 import { turnoService } from '../../services/turnoService.js';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
-import { syncReservasConGoogleCalendar as syncReservasConGoogleCalendarModule } from './reservas-sync.js';
-import {
-    calculateFechasEstancia as calculateFechasEstanciaModule,
-    calculateMontos as calculateMontosModule,
-    validateAndCalculateBooking as validateAndCalculateBookingModule
-} from './reservas-calculos.js';
-import { buscarDescuentoParaReserva as buscarDescuentoParaReservaModule } from './reservas-descuentos.js';
-import {
-    cargarHabitaciones as cargarHabitacionesModule,
-    cargarMetodosPago as cargarMetodosPagoModule,
-    cargarTiemposEstancia as cargarTiemposEstanciaModule,
-    loadInitialData as loadInitialDataModule
-} from './reservas-data.js';
-import { escapeHtml } from '../../security.js';
 // --- MÓDULO DE ESTADO GLOBAL ---
 const state = {
     isModuleMounted: false,
@@ -35,17 +21,6 @@ const state = {
     editingOriginalHabitacionId: null,
     descuentoAplicado: null,
     tiemposEstanciaDisponibles: [],
-    reservasHistorialUsuarios: [],
-    reservasHistorialTurnos: [],
-    reservaFiltros: {
-        busqueda: '',
-        fechaDesde: '',
-        fechaHasta: '',
-        recepcionistaId: '',
-        turnoId: '',
-        estado: '',
-        modoFecha: 'registro'
-    },
     currentUser: null,
     hotelId: null,
     supabase: null,
@@ -57,7 +32,6 @@ const state = {
         impuestos_incluidos_en_precios: false,
         porcentaje_impuesto_principal: 0,
         nombre_impuesto_principal: null,
-        tipo_turno_global: 12,
         moneda_local_simbolo: '$',      // Nuevo, con default
         moneda_codigo_iso_info: 'COP',  // Nuevo, con default
         moneda_decimales_info: '0'      // Nuevo, con default
@@ -72,16 +46,6 @@ const ui = {
     cantidadNochesInput: null, tiempoPredefinidoContainer: null, tiempoEstanciaIdSelect: null,
     habitacionIdSelect: null, totalReservaDisplay: null,
     fieldsetPago: null,
-    reservasFiltrosForm: null,
-    reservasSearchInput: null,
-    reservasFechaModoSelect: null,
-    reservasFechaDesdeInput: null,
-    reservasFechaHastaInput: null,
-    reservasRecepcionistaSelect: null,
-    reservasTurnoSelect: null,
-    reservasEstadoSelect: null,
-    reservasClearFiltersButton: null,
-    reservasSummaryEl: null,
     // Aquí declaramos las variables para los nuevos elementos del selector de clientes
     clienteSearchInput: null,
     btnBuscarCliente: null,
@@ -111,16 +75,6 @@ const ui = {
         this.habitacionIdSelect = containerEl.querySelector('#habitacion_id');
         this.totalReservaDisplay = containerEl.querySelector('#total-reserva-calculado-display');
         this.fieldsetPago = containerEl.querySelector('#fieldset-pago-adicionales');
-        this.reservasFiltrosForm = containerEl.querySelector('#reservas-history-filters');
-        this.reservasSearchInput = containerEl.querySelector('#reservas_search');
-        this.reservasFechaModoSelect = containerEl.querySelector('#reservas_fecha_modo');
-        this.reservasFechaDesdeInput = containerEl.querySelector('#reservas_fecha_desde');
-        this.reservasFechaHastaInput = containerEl.querySelector('#reservas_fecha_hasta');
-        this.reservasRecepcionistaSelect = containerEl.querySelector('#reservas_recepcionista');
-        this.reservasTurnoSelect = containerEl.querySelector('#reservas_turno');
-        this.reservasEstadoSelect = containerEl.querySelector('#reservas_estado_filter');
-        this.reservasClearFiltersButton = containerEl.querySelector('#btn-limpiar-filtros-reservas');
-        this.reservasSummaryEl = containerEl.querySelector('#reservas-history-summary');
         this.cedulaInput = containerEl.querySelector('#cedula');
         this.clienteSearchInput = containerEl.querySelector('#cliente_search_input'); // Nuevo input de búsqueda
         this.btnBuscarCliente = containerEl.querySelector('#btn_buscar_cliente');     // Botón de búsqueda
@@ -180,26 +134,6 @@ updateTotalDisplay(montoDescontado = 0) {
     }
     this.totalReservaDisplay.innerHTML += ` <small class="text-gray-500 text-xs ml-1">${impuestoMsg}</small>`;
 
-    const totalSupportEl = document.getElementById('reserva-total-support');
-    if (totalSupportEl) {
-        if (state.currentBookingTotal > 0) {
-            if (state.descuentoAplicado && montoDescontado > 0) {
-                totalSupportEl.textContent = `Descuento aplicado por ${formatCurrency(montoDescontado, state.configHotel?.moneda_local_simbolo || '$')}.`;
-            } else if (impuestoMsg) {
-                totalSupportEl.textContent = impuestoMsg.replace(/[()]/g, '');
-            } else {
-                totalSupportEl.textContent = 'Total listo para registrar o cobrar.';
-            }
-        } else {
-            totalSupportEl.textContent = 'Completa los datos principales para calcular el valor.';
-        }
-    }
-
-    const totalCaptionEl = document.getElementById('reserva-total-caption');
-    if (totalCaptionEl) {
-        totalCaptionEl.textContent = state.isEditMode ? 'Total estimado de la reserva editada' : 'Total estimado de la reserva';
-    }
-
     // Actualiza el total en el modal de pago
     const valorTotalPagoEl = document.getElementById('valor-total-pago');
     if (valorTotalPagoEl) {
@@ -230,25 +164,8 @@ updateTotalDisplay(montoDescontado = 0) {
             if (metodoPagoEl) metodoPagoEl.value = '';
             if (montoAbonoEl) montoAbonoEl.value = '';
         }
-
-        const policyPill = document.getElementById('reservas-policy-pill');
-        if (policyPill) {
-            policyPill.textContent = visible ? 'Cobro al Check-in' : 'Cobro al Check-out';
-        }
     }
 };
-
-async function showReservaSuccessModal(message) {
-    if (typeof Swal !== 'undefined') {
-        await Swal.fire('\u00c9xito', message, 'success');
-        return;
-    }
-    if (typeof ui.showInfoModal === 'function') {
-        ui.showInfoModal(message, '\u00c9xito');
-        return;
-    }
-    alert(`\u00c9xito\n\n${message}`);
-}
 
 
 
@@ -467,15 +384,6 @@ function parseEventoICal(evento, habitaciones) {
 // REEMPLAZA ESTA FUNCIÓN EN: js/modules/reservas/reservas.js
 
 async function syncReservasConGoogleCalendar(state) {
-  return syncReservasConGoogleCalendarModule({
-    supabase: state?.supabase,
-    hotelId: state?.hotelId,
-    currentUserId: state?.currentUser?.id,
-    onNewReservations: renderReservas
-  });
-}
-
-async function syncReservasConGoogleCalendarLegacy(state) {
   try {
     if (!state.hotelId) return;
 
@@ -554,17 +462,6 @@ async function syncReservasConGoogleCalendarLegacy(state) {
 
 //------------------fin de reservas google---------------------//
 function calculateFechasEstancia(fechaEntradaStr, tipoCalculo, cantidadNochesStr, tiempoEstanciaId, checkoutHoraConfig) {
-    return calculateFechasEstanciaModule(
-        fechaEntradaStr,
-        tipoCalculo,
-        cantidadNochesStr,
-        tiempoEstanciaId,
-        checkoutHoraConfig,
-        state.tiemposEstanciaDisponibles
-    );
-}
-
-function calculateFechasEstanciaLegacy(fechaEntradaStr, tipoCalculo, cantidadNochesStr, tiempoEstanciaId, checkoutHoraConfig) {
     const fechaEntrada = new Date(fechaEntradaStr);
     if (isNaN(fechaEntrada.getTime())) return { errorFechas: "La fecha de entrada no es válida." };
     let fechaSalida, cantidadDuracionOriginal;
@@ -601,21 +498,6 @@ function esTiempoEstanciaNoches(tiempoEstanciaId) {
 // En js/modules/reservas/reservas.js
 
 function calculateMontos(habitacionInfo, huespedes, tipoDuracion, cantDuracion, tiempoId, precioLibreActivado, precioLibreValor) {
-    return calculateMontosModule({
-        habitacionInfo,
-        huespedes,
-        tipoDuracion,
-        cantDuracion,
-        tiempoId,
-        precioLibreActivado,
-        precioLibreValor,
-        tiemposEstanciaDisponibles: state.tiemposEstanciaDisponibles,
-        descuentoAplicado: state.descuentoAplicado,
-        configHotel: state.configHotel
-    });
-}
-
-function calculateMontosLegacy(habitacionInfo, huespedes, tipoDuracion, cantDuracion, tiempoId, precioLibreActivado, precioLibreValor) {
     if (!habitacionInfo) return { errorMonto: "Información de habitación no disponible." };
 
     let montoEstanciaBaseBruto = 0;
@@ -704,18 +586,6 @@ function calculateMontosLegacy(habitacionInfo, huespedes, tipoDuracion, cantDura
 // En js/modules/reservas/reservas.js
 
 async function validateAndCalculateBooking(formData) {
-    return validateAndCalculateBookingModule({
-        formData,
-        state,
-        updateTotalDisplay: (montoDescontado) => {
-            if (ui && typeof ui.updateTotalDisplay === 'function') {
-                ui.updateTotalDisplay(montoDescontado);
-            }
-        }
-    });
-}
-
-async function validateAndCalculateBookingLegacy(formData) {
     // 1. Obtiene información de la habitación (USANDO DATOS DEL DOM - MÁS RÁPIDO Y SEGURO)
     const habitacionInfo = formData.habitacion_info_dom;
 
@@ -896,15 +766,6 @@ async function recalcularYActualizarTotalUI() {
 // En js/modules/reservas/reservas.js
 
 async function cargarHabitaciones() {
-    return cargarHabitacionesModule({
-        supabase: state.supabase,
-        hotelId: state.hotelId,
-        ui,
-        state
-    });
-}
-
-async function cargarHabitacionesLegacy() {
     if (!ui.habitacionIdSelect) return;
     ui.habitacionIdSelect.innerHTML = `<option value="">Cargando habitaciones...</option>`;
     ui.habitacionIdSelect.disabled = true;
@@ -955,15 +816,6 @@ async function cargarHabitacionesLegacy() {
 }
 
 async function cargarMetodosPago() {
-    return cargarMetodosPagoModule({
-        supabase: state.supabase,
-        hotelId: state.hotelId,
-        ui,
-        onPaymentVisibilityChange: actualizarVisibilidadPago
-    });
-}
-
-async function cargarMetodosPagoLegacy() {
     if (!ui.form || !ui.form.elements.metodo_pago_id) return;
     const select = ui.form.elements.metodo_pago_id;
     select.innerHTML = `<option value="">Cargando métodos...</option>`;
@@ -1161,15 +1013,6 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
 
 
 async function cargarTiemposEstancia() {
-    return cargarTiemposEstanciaModule({
-        supabase: state.supabase,
-        hotelId: state.hotelId,
-        ui,
-        state
-    });
-}
-
-async function cargarTiemposEstanciaLegacy() {
     if (!ui.tiempoEstanciaIdSelect) return;
     const { data, error } = await state.supabase
         .from('tiempos_estancia')
@@ -1228,15 +1071,6 @@ async function cargarTiemposEstanciaLegacy() {
 // En reservas.js, reemplaza esta función completa
 
 async function buscarDescuentoParaReserva(formData, codigoManual = null) {
-    return buscarDescuentoParaReservaModule({
-        supabase: state.supabase,
-        hotelId: state.hotelId,
-        formData,
-        codigoManual
-    });
-}
-
-async function buscarDescuentoParaReservaLegacy(formData, codigoManual = null) {
     if (!formData.habitacion_id && !codigoManual && !formData.cliente_id) return null;
 
     const ahora = new Date().toISOString();
@@ -1315,18 +1149,6 @@ async function handleAplicarDescuentoReserva() {
 }
 
 async function loadInitialData() {
-    return loadInitialDataModule({
-        supabase: state.supabase,
-        hotelId: state.hotelId,
-        state,
-        ui,
-        showError,
-        renderReservas,
-        onPaymentVisibilityChange: actualizarVisibilidadPago
-    });
-}
-
-async function loadInitialDataLegacy() {
     if (!ui.habitacionIdSelect || !ui.form?.elements.metodo_pago_id || !ui.tiempoEstanciaIdSelect) {
         console.error("[Reservas] Elementos de UI para carga inicial no encontrados.");
         return;
@@ -1815,338 +1637,7 @@ async function puedeHacerCheckIn(reservaId) {
     return totalPagado >= r.monto_total;
 }
 
-function getReservaRegistroISO(reserva) {
-    return reserva?.creado_en || reserva?.created_at || reserva?.fecha_creacion || reserva?.actualizado_en || reserva?.fecha_inicio || null;
-}
-
-function getReservaFilterDateISO(reserva, modoFecha) {
-    if (modoFecha === 'llegada') return reserva?.fecha_inicio || getReservaRegistroISO(reserva);
-    if (modoFecha === 'salida') return reserva?.fecha_fin || getReservaRegistroISO(reserva);
-    return getReservaRegistroISO(reserva) || reserva?.fecha_inicio || reserva?.fecha_fin || null;
-}
-
-function getDateMsSafe(dateLike) {
-    const ms = new Date(dateLike).getTime();
-    return Number.isFinite(ms) ? ms : 0;
-}
-
-function buildDateBoundary(fecha, endOfDay = false) {
-    if (!fecha) return null;
-    return new Date(`${fecha}T${endOfDay ? '23:59:59' : '00:00:00'}`);
-}
-
-function hasActiveReservaFilters() {
-    const filtros = state.reservaFiltros;
-    return Boolean(
-        filtros.busqueda ||
-        filtros.fechaDesde ||
-        filtros.fechaHasta ||
-        filtros.recepcionistaId ||
-        filtros.turnoId ||
-        filtros.estado ||
-        (filtros.modoFecha && filtros.modoFecha !== 'registro')
-    );
-}
-
-async function ensureReservasHistorialUsuarios() {
-    if (state.reservasHistorialUsuarios.length > 0 || !state.supabase || !state.hotelId) {
-        return state.reservasHistorialUsuarios;
-    }
-
-    const { data, error } = await state.supabase
-        .from('usuarios')
-        .select('id, nombre, correo, activo')
-        .eq('hotel_id', state.hotelId)
-        .eq('activo', true)
-        .order('nombre', { ascending: true });
-
-    if (error) {
-        console.warn('[Reservas] No se pudo cargar la lista de recepcionistas/usuarios:', error.message);
-        state.reservasHistorialUsuarios = [];
-        return [];
-    }
-
-    state.reservasHistorialUsuarios = data || [];
-    return state.reservasHistorialUsuarios;
-}
-
-function getRecepcionistaDisplayName(usuarioId) {
-    if (!usuarioId) return 'Usuario no disponible';
-    const usuario = state.reservasHistorialUsuarios.find((item) => item.id === usuarioId);
-    return usuario?.nombre || usuario?.correo || `ID: ${String(usuarioId).slice(0, 8)}...`;
-}
-
-async function cargarTurnosParaReservas(reservas) {
-    if (!state.supabase || !state.hotelId) return [];
-
-    const timestamps = (reservas || [])
-        .map((reserva) => getReservaRegistroISO(reserva))
-        .filter(Boolean)
-        .map((fechaIso) => new Date(fechaIso).getTime())
-        .filter(Number.isFinite);
-
-    if (timestamps.length === 0) {
-        state.reservasHistorialTurnos = [];
-        return [];
-    }
-
-    const minDate = new Date(Math.min(...timestamps) - (36 * 60 * 60 * 1000));
-    const maxDate = new Date(Math.max(...timestamps) + (36 * 60 * 60 * 1000));
-
-    const { data, error } = await state.supabase
-        .from('turnos')
-        .select('id, usuario_id, fecha_apertura, fecha_cierre, estado')
-        .eq('hotel_id', state.hotelId)
-        .gte('fecha_apertura', minDate.toISOString())
-        .lte('fecha_apertura', maxDate.toISOString())
-        .order('fecha_apertura', { ascending: false });
-
-    if (error) {
-        console.warn('[Reservas] No se pudieron cargar los turnos para el historial:', error.message);
-        state.reservasHistorialTurnos = [];
-        return [];
-    }
-
-    state.reservasHistorialTurnos = data || [];
-    return state.reservasHistorialTurnos;
-}
-
-function getFallbackTurnoLabel(fechaIso) {
-    if (!fechaIso) return '';
-    const fecha = new Date(fechaIso);
-    if (!Number.isFinite(fecha.getTime())) return '';
-
-    const hora = fecha.getHours();
-    if (state.configHotel?.tipo_turno_global === 8) {
-        if (hora >= 6 && hora < 14) return 'Manana';
-        if (hora >= 14 && hora < 22) return 'Tarde';
-        return 'Noche';
-    }
-
-    return hora >= 6 && hora < 18 ? 'Dia' : 'Noche';
-}
-
-function encontrarTurnoParaReserva(reserva, turnos = []) {
-    const registroIso = getReservaRegistroISO(reserva);
-    if (!registroIso || !reserva?.usuario_id) return null;
-
-    const registroMs = new Date(registroIso).getTime();
-    if (!Number.isFinite(registroMs)) return null;
-
-    return turnos.find((turno) => {
-        if (!turno || turno.usuario_id !== reserva.usuario_id || !turno.fecha_apertura) return false;
-        const aperturaMs = new Date(turno.fecha_apertura).getTime();
-        const cierreMs = turno.fecha_cierre
-            ? new Date(turno.fecha_cierre).getTime()
-            : new Date().getTime();
-
-        return Number.isFinite(aperturaMs) && registroMs >= aperturaMs && registroMs <= cierreMs;
-    }) || null;
-}
-
-function buildTurnoDisplay(turno) {
-    if (!turno) return '';
-    const recepcionista = getRecepcionistaDisplayName(turno.usuario_id);
-    const apertura = formatDateTime(turno.fecha_apertura);
-    const cierre = turno.fecha_cierre ? formatDateTime(turno.fecha_cierre) : 'Turno abierto';
-    return `${recepcionista} | ${apertura} - ${cierre}`;
-}
-
-function enriquecerReservasConHistorial(reservas, turnos) {
-    return (reservas || []).map((reserva) => {
-        const turno = encontrarTurnoParaReserva(reserva, turnos);
-        const registroIso = getReservaRegistroISO(reserva);
-        return {
-            ...reserva,
-            __registroFecha: registroIso,
-            __recepcionistaNombre: getRecepcionistaDisplayName(reserva.usuario_id),
-            __turnoId: turno?.id || '',
-            __turnoApertura: turno?.fecha_apertura || null,
-            __turnoLabel: turno ? buildTurnoDisplay(turno) : getFallbackTurnoLabel(registroIso || reserva?.fecha_inicio)
-        };
-    });
-}
-
-function filtrarReservasHistorial(reservas) {
-    const filtros = state.reservaFiltros;
-    const texto = String(filtros.busqueda || '').trim().toLowerCase();
-    const desde = buildDateBoundary(filtros.fechaDesde, false);
-    const hasta = buildDateBoundary(filtros.fechaHasta, true);
-
-    return (reservas || []).filter((reserva) => {
-        const fechaBaseIso = getReservaFilterDateISO(reserva, filtros.modoFecha);
-        const fechaBase = fechaBaseIso ? new Date(fechaBaseIso) : null;
-
-        if (desde && (!fechaBase || fechaBase < desde)) return false;
-        if (hasta && (!fechaBase || fechaBase > hasta)) return false;
-        if (filtros.recepcionistaId && reserva.usuario_id !== filtros.recepcionistaId) return false;
-        if (filtros.turnoId && reserva.__turnoId !== filtros.turnoId) return false;
-        if (filtros.estado && reserva.estado !== filtros.estado) return false;
-
-        if (texto) {
-            const hayMatch = [
-                reserva.cliente_nombre,
-                reserva.cedula,
-                reserva.telefono,
-                reserva.habitaciones?.nombre,
-                reserva.habitaciones?.tipo,
-                reserva.notas,
-                reserva.__recepcionistaNombre,
-                reserva.__turnoLabel
-            ]
-                .filter(Boolean)
-                .some((valor) => String(valor).toLowerCase().includes(texto));
-
-            if (!hayMatch) return false;
-        }
-
-        return true;
-    });
-}
-
-function poblarRecepcionistasFiltro() {
-    if (!ui.reservasRecepcionistaSelect) return;
-
-    const valorActual = state.reservaFiltros.recepcionistaId || '';
-    let optionsHtml = '<option value="">Todas</option>';
-    state.reservasHistorialUsuarios.forEach((usuario) => {
-        const displayName = usuario.nombre || usuario.correo || usuario.id;
-        optionsHtml += `<option value="${usuario.id}">${displayName}</option>`;
-    });
-    ui.reservasRecepcionistaSelect.innerHTML = optionsHtml;
-    ui.reservasRecepcionistaSelect.value = valorActual;
-}
-
-function poblarTurnosFiltro(reservas) {
-    if (!ui.reservasTurnoSelect) return;
-
-    const valorActual = state.reservaFiltros.turnoId || '';
-    const turnosUnicos = [];
-    const seen = new Set();
-
-    (reservas || []).forEach((reserva) => {
-        if (!reserva.__turnoId || seen.has(reserva.__turnoId)) return;
-        seen.add(reserva.__turnoId);
-        turnosUnicos.push({
-            id: reserva.__turnoId,
-            apertura: reserva.__turnoApertura,
-            label: reserva.__turnoLabel
-        });
-    });
-
-    turnosUnicos.sort((a, b) => getDateMsSafe(b.apertura) - getDateMsSafe(a.apertura));
-
-    let optionsHtml = '<option value="">Todos</option>';
-    turnosUnicos.forEach((turno) => {
-        optionsHtml += `<option value="${turno.id}">${turno.label}</option>`;
-    });
-
-    ui.reservasTurnoSelect.innerHTML = optionsHtml;
-    ui.reservasTurnoSelect.value = valorActual;
-}
-
-function updateReservasHistorySummary(totalReservas, reservasFiltradas) {
-    if (!ui.reservasSummaryEl) return;
-
-    const filtrosActivos = hasActiveReservaFilters();
-    if (!filtrosActivos) {
-        ui.reservasSummaryEl.innerHTML = `<span class="text-slate-600">Historial disponible: <strong>${totalReservas}</strong> reservas cargadas.</span>`;
-        return;
-    }
-
-    ui.reservasSummaryEl.innerHTML = `
-        <span class="text-slate-700">
-            Mostrando <strong>${reservasFiltradas.length}</strong> de <strong>${totalReservas}</strong> reservas segun los filtros aplicados.
-        </span>
-    `;
-}
-
-function updateReservasExperiencePanels(reservas = []) {
-    const activas = reservas.filter((reserva) => ['reservada', 'confirmada', 'activa'].includes(reserva.estado)).length;
-    const historial = reservas.filter((reserva) => ['cancelada', 'completada', 'no_show', 'cancelada_mantenimiento', 'finalizada_auto'].includes(reserva.estado)).length;
-    const pendientes = reservas.filter((reserva) => Number(reserva.pendiente || 0) > 0).length;
-
-    const hoy = new Date();
-    const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime();
-    const finHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate(), 23, 59, 59).getTime();
-    const llegadasHoy = reservas.filter((reserva) => {
-        const llegadaMs = getDateMsSafe(reserva.fecha_inicio);
-        return llegadaMs >= inicioHoy && llegadaMs <= finHoy;
-    }).length;
-
-    const kpiActivas = document.getElementById('reservas-kpi-activas');
-    const kpiLlegadas = document.getElementById('reservas-kpi-llegadas');
-    const kpiPendientes = document.getElementById('reservas-kpi-pendientes');
-    const kpiHistorial = document.getElementById('reservas-kpi-historial');
-    const policyPill = document.getElementById('reservas-policy-pill');
-    const lastUpdate = document.getElementById('reservas-last-update');
-
-    if (kpiActivas) kpiActivas.textContent = String(activas);
-    if (kpiLlegadas) kpiLlegadas.textContent = String(llegadasHoy);
-    if (kpiPendientes) kpiPendientes.textContent = String(pendientes);
-    if (kpiHistorial) kpiHistorial.textContent = String(historial);
-
-    if (policyPill) {
-        policyPill.textContent = state.configHotel.cobro_al_checkin ? 'Cobro al Check-in' : 'Cobro al Check-out';
-    }
-    if (lastUpdate) {
-        lastUpdate.textContent = formatDateTime(new Date().toISOString());
-    }
-}
-
-let reservasSearchDebounceTimer = null;
-
-function syncReservaFiltersFromUI() {
-    if (!ui.container) return;
-
-    state.reservaFiltros.busqueda = ui.reservasSearchInput?.value?.trim() || '';
-    state.reservaFiltros.fechaDesde = ui.reservasFechaDesdeInput?.value || '';
-    state.reservaFiltros.fechaHasta = ui.reservasFechaHastaInput?.value || '';
-    state.reservaFiltros.recepcionistaId = ui.reservasRecepcionistaSelect?.value || '';
-    state.reservaFiltros.turnoId = ui.reservasTurnoSelect?.value || '';
-    state.reservaFiltros.estado = ui.reservasEstadoSelect?.value || '';
-    state.reservaFiltros.modoFecha = ui.reservasFechaModoSelect?.value || 'registro';
-}
-
-function applyReservaFiltersToUI() {
-    if (ui.reservasSearchInput) ui.reservasSearchInput.value = state.reservaFiltros.busqueda || '';
-    if (ui.reservasFechaDesdeInput) ui.reservasFechaDesdeInput.value = state.reservaFiltros.fechaDesde || '';
-    if (ui.reservasFechaHastaInput) ui.reservasFechaHastaInput.value = state.reservaFiltros.fechaHasta || '';
-    if (ui.reservasRecepcionistaSelect) ui.reservasRecepcionistaSelect.value = state.reservaFiltros.recepcionistaId || '';
-    if (ui.reservasTurnoSelect) ui.reservasTurnoSelect.value = state.reservaFiltros.turnoId || '';
-    if (ui.reservasEstadoSelect) ui.reservasEstadoSelect.value = state.reservaFiltros.estado || '';
-    if (ui.reservasFechaModoSelect) ui.reservasFechaModoSelect.value = state.reservaFiltros.modoFecha || 'registro';
-}
-
-function scheduleReservasFilterRender() {
-    syncReservaFiltersFromUI();
-    clearTimeout(reservasSearchDebounceTimer);
-    reservasSearchDebounceTimer = setTimeout(() => {
-        renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error));
-    }, 220);
-}
-
-async function handleReservasFiltersSubmit(event) {
-    event.preventDefault();
-    syncReservaFiltersFromUI();
-    await renderReservas();
-}
-
-async function resetReservasFilters() {
-    state.reservaFiltros = {
-        busqueda: '',
-        fechaDesde: '',
-        fechaHasta: '',
-        recepcionistaId: '',
-        turnoId: '',
-        estado: '',
-        modoFecha: 'registro'
-    };
-    applyReservaFiltersToUI();
-    await renderReservas();
-}
-
-async function renderReservasLegacy() {
+async function renderReservas() {
      if (!state.isModuleMounted) {
         console.log("[Reservas] renderReservas abortado porque el módulo ya no está montado.");
         return; 
@@ -2258,146 +1749,8 @@ async function renderReservasLegacy() {
     }
 }
 
-async function renderReservas() {
-    if (!state.isModuleMounted) {
-        console.log("[Reservas] renderReservas abortado porque el modulo ya no esta montado.");
-        return;
-    }
-    if (!ui.reservasListEl) {
-        console.error("[Reservas] reservasListEl no encontrado en UI para renderizar.");
-        return;
-    }
 
-    showLoading(ui.reservasListEl, "Cargando reservas...");
-    clearFeedback(ui.reservasListEl);
-
-    await ensureReservasHistorialUsuarios();
-    poblarRecepcionistasFiltro();
-
-    const estadosVisibles = ['reservada', 'confirmada', 'activa', 'cancelada', 'completada', 'no_show', 'cancelada_mantenimiento', 'finalizada_auto'];
-
-    const { data: rs, error } = await state.supabase
-        .from('reservas')
-        .select(`
-            *,
-            habitaciones(nombre, tipo),
-            pagos_reserva(monto),
-            cancelador:cancelado_por_usuario_id(nombre)
-        `)
-        .eq('hotel_id', state.hotelId)
-        .in('estado', estadosVisibles)
-        .order('fecha_inicio', { ascending: false })
-        .limit(500);
-
-    if (error) {
-        showError(ui.reservasListEl, `Error cargando reservas: ${error.message}`);
-        console.error("[Reservas] Render: Error detallado en la consulta:", error);
-        return;
-    }
-
-    const estadosHistorialPorDefecto = ['cancelada', 'no_show', 'cancelada_mantenimiento'];
-    let htmlGeneral = '';
-    if (rs && rs.length > 0) {
-        rs.forEach((reserva) => {
-            const abonado = reserva.pagos_reserva ? reserva.pagos_reserva.reduce((suma, pago) => suma + Number(pago.monto), 0) : 0;
-            reserva.abonado = abonado;
-            reserva.pendiente = Math.max((reserva.monto_total || 0) - abonado, 0);
-        });
-
-        const turnos = await cargarTurnosParaReservas(rs);
-        const reservasEnriquecidas = enriquecerReservasConHistorial(rs, turnos);
-        updateReservasExperiencePanels(reservasEnriquecidas);
-        poblarTurnosFiltro(reservasEnriquecidas);
-
-        const reservasFiltradas = filtrarReservasHistorial(reservasEnriquecidas);
-        updateReservasHistorySummary(reservasEnriquecidas.length, reservasFiltradas);
-
-        if (hasActiveReservaFilters()) {
-            const resultadosOrdenados = [...reservasFiltradas].sort((a, b) => {
-                return getDateMsSafe(getReservaFilterDateISO(b, state.reservaFiltros.modoFecha)) - getDateMsSafe(getReservaFilterDateISO(a, state.reservaFiltros.modoFecha));
-            });
-
-            htmlGeneral += `<div class="mb-10"><div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Resultados</p><h2 class="text-2xl font-black tracking-tight text-slate-900">Busqueda e historial</h2></div><span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-600">${resultadosOrdenados.length} coincidencia${resultadosOrdenados.length === 1 ? '' : 's'}</span></div>`;
-            if (resultadosOrdenados.length > 0) {
-                htmlGeneral += renderReservasGrupo('Coincidencias', resultadosOrdenados);
-            } else {
-                htmlGeneral += `<div class="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-slate-500">No se encontraron reservas con esos filtros.</div>`;
-            }
-            htmlGeneral += `</div>`;
-        } else {
-            const reservasActivas = reservasEnriquecidas
-                .filter((reserva) => ['reservada', 'confirmada', 'activa'].includes(reserva.estado))
-                .sort((a, b) => getDateMsSafe(a.fecha_inicio) - getDateMsSafe(b.fecha_inicio));
-
-            const reservasHistorial = reservasEnriquecidas
-                .filter((reserva) => estadosHistorialPorDefecto.includes(reserva.estado))
-                .sort((a, b) => {
-                    const fechaB = getReservaRegistroISO(b) || b.fecha_cancelacion || b.fecha_fin;
-                    const fechaA = getReservaRegistroISO(a) || a.fecha_cancelacion || a.fecha_fin;
-                    return getDateMsSafe(fechaB) - getDateMsSafe(fechaA);
-                });
-            const reservasCompletadasOcultas = reservasEnriquecidas.filter((reserva) => ['completada', 'finalizada_auto'].includes(reserva.estado)).length;
-
-            htmlGeneral += `<div class="mb-10"><div class="mb-5"><p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Operacion</p><h2 class="text-2xl font-black tracking-tight text-slate-900">Reservas actuales y proximas</h2></div>`;
-            if (reservasActivas.length > 0) {
-                const groupedActivas = reservasActivas.reduce((acc, reserva) => {
-                    (acc[reserva.estado] = acc[reserva.estado] || []).push(reserva);
-                    return acc;
-                }, {});
-
-                ['reservada', 'confirmada', 'activa'].forEach((estado) => {
-                    if (groupedActivas[estado]?.length) {
-                        htmlGeneral += renderReservasGrupo(estado.charAt(0).toUpperCase() + estado.slice(1), groupedActivas[estado]);
-                    }
-                });
-            } else {
-                htmlGeneral += `<div class="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-slate-500">No hay reservas activas o proximas para mostrar.</div>`;
-            }
-            htmlGeneral += `</div>`;
-
-            htmlGeneral += `<div class="mb-10"><div class="mb-5"><p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Seguimiento</p><h2 class="text-2xl font-black tracking-tight text-slate-900">Historial de reservas</h2></div>`;
-            if (reservasCompletadasOcultas > 0) {
-                htmlGeneral += `<div class="mb-4 rounded-[20px] border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Las reservas completadas solo se muestran cuando usas el formulario de busqueda o filtros.</div>`;
-            }
-            if (reservasHistorial.length > 0) {
-                const groupedHistorial = reservasHistorial.reduce((acc, reserva) => {
-                    (acc[reserva.estado] = acc[reserva.estado] || []).push(reserva);
-                    return acc;
-                }, {});
-
-                estadosHistorialPorDefecto.forEach((estado) => {
-                    if (groupedHistorial[estado]?.length) {
-                        htmlGeneral += renderReservasGrupo(estado.toUpperCase().replace(/_/g, ' '), groupedHistorial[estado]);
-                    }
-                });
-            } else {
-                htmlGeneral += `<div class="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-slate-500">No hay historial para mostrar. Usa la busqueda si necesitas ver reservas completadas.</div>`;
-            }
-            htmlGeneral += `</div>`;
-        }
-    } else {
-        updateReservasExperiencePanels([]);
-        poblarTurnosFiltro([]);
-        updateReservasHistorySummary(0, []);
-        htmlGeneral += `<div class="mb-10"><div class="mb-5"><p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Reservas</p><h2 class="text-2xl font-black tracking-tight text-slate-900">Sin movimientos para mostrar</h2></div><div class="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-slate-500">No hay reservas para mostrar.</div></div>`;
-    }
-
-    try {
-        if (!ui.reservasListEl) {
-            ui.reservasListEl = document.getElementById('reservas-list');
-            if (!ui.reservasListEl) return;
-        }
-        ui.reservasListEl.style.display = 'block';
-        ui.reservasListEl.innerHTML = htmlGeneral;
-    } catch (e) {
-        console.error("[Reservas] Render: Error al insertar HTML en el DOM:", e);
-        if (ui.reservasListEl) {
-            ui.reservasListEl.innerHTML = "<p class='error-indicator'>Error critico al mostrar la lista de reservas. Revise la consola.</p>";
-        }
-    }
-}
-
-function renderReservasGrupoLegacy(titulo, grupo) {
+function renderReservasGrupo(titulo, grupo) {
     console.log(`[ReservasGrupo] Renderizando grupo titulado: "${titulo}" con ${grupo.length} elementos.`);
     let html = `<h3 class="text-xl font-bold mt-6 mb-3 text-blue-700 border-b pb-2">${titulo} (${grupo.length})</h3>`;
     html += `<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">`;
@@ -2419,9 +1772,6 @@ function renderReservasGrupoLegacy(titulo, grupo) {
                 <p><strong>Huésp:</strong> ${r.cantidad_huespedes || 'N/A'}</p>
                 <p><strong>Llega:</strong> ${formatDateTime(r.fecha_inicio)}</p>
                 <p><strong>Sale:</strong> ${formatDateTime(r.fecha_fin)}</p>
-                <p><strong>Registrada:</strong> ${r.__registroFecha ? formatDateTime(r.__registroFecha) : 'N/A'}</p>
-                <p><strong>Recepcion:</strong> ${r.__recepcionistaNombre || 'Usuario no disponible'}</p>
-                ${r.__turnoLabel ? `<p><strong>Turno:</strong> ${r.__turnoLabel}</p>` : ''}
                 <p><strong>Total:</strong> ${formatCurrency(r.monto_total, monedaSimbolo, monedaISO, monedaDecimales)}</p>
                 ${r.abonado > 0 ? `<p style="color:#059669"><strong>Abonado:</strong> ${formatCurrency(r.abonado, monedaSimbolo, monedaISO, monedaDecimales)}</p>` : ''}
                 ${r.pendiente > 0 ? `<p style="color:#b91c1c"><strong>Pendiente:</strong> ${formatCurrency(r.pendiente, monedaSimbolo, monedaISO, monedaDecimales)}</p>` : ''}
@@ -2442,99 +1792,6 @@ function renderReservasGrupoLegacy(titulo, grupo) {
     });
     html += `</div>`;
     console.log(`[ReservasGrupo] HTML generado para grupo "${titulo}" (primeros 300 chars): ${html.substring(0,300)}`);
-    return html;
-}
-
-function renderReservasGrupo(titulo, grupo) {
-    const tituloSeguro = escapeHtml(titulo);
-    let html = `
-        <div class="mt-8 first:mt-0">
-            <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Grupo</p>
-                    <h3 class="text-2xl font-black tracking-tight text-slate-900">${tituloSeguro}</h3>
-                </div>
-                <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">${grupo.length} reserva${grupo.length === 1 ? '' : 's'}</span>
-            </div>
-    `;
-    html += `<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">`;
-
-    grupo.forEach((r) => {
-        const estadoActual = (r.estado || 'N/A').toUpperCase().replace(/_/g, ' ');
-        const monedaSimbolo = state.configHotel?.moneda_local_simbolo || '$';
-        const monedaISO = state.configHotel?.moneda_codigo_iso_info || 'COP';
-        const monedaDecimales = parseInt(state.configHotel?.moneda_decimales_info || 0);
-        const clienteNombre = escapeHtml(r.cliente_nombre || 'Cliente desconocido');
-        const inicialCliente = escapeHtml((r.cliente_nombre || 'R').trim().charAt(0).toUpperCase() || 'R');
-        const habitacionNombre = escapeHtml(r.habitaciones?.nombre || 'N/A');
-        const recepcionNombre = escapeHtml(r.__recepcionistaNombre || 'Usuario no disponible');
-        const turnoLabel = escapeHtml(r.__turnoLabel || '');
-        const notas = escapeHtml(r.notas || '');
-        const cancelador = escapeHtml(r.cancelador?.nombre || 'Usuario desconocido');
-
-        html += `
-        <article class="group overflow-hidden rounded-[26px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] p-5 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.45)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_60px_-28px_rgba(37,99,235,0.28)] ${getBorderColorForEstado(r.estado)} border-l-4">
-            <div class="flex items-start justify-between gap-4">
-                <div class="flex items-start gap-3">
-                    <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-lg font-black text-white shadow-sm">${inicialCliente}</div>
-                    <div>
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Reserva</p>
-                        <h4 class="text-lg font-bold text-slate-900">${clienteNombre}</h4>
-                        <p class="mt-1 text-sm text-slate-500">${habitacionNombre} - ${r.cantidad_huespedes || 'N/A'} huespedes</p>
-                    </div>
-                </div>
-                <span class="text-xs font-semibold px-2.5 py-1 rounded-full ${getBgColorForEstado(r.estado)} ${getTextColorForEstado(r.estado)}">${estadoActual}</span>
-            </div>
-
-            <div class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div class="rounded-2xl border border-slate-200 bg-white p-3">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Llega</p>
-                    <p class="mt-1 text-sm font-semibold text-slate-800">${formatDateTime(r.fecha_inicio)}</p>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-3">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Sale</p>
-                    <p class="mt-1 text-sm font-semibold text-slate-800">${formatDateTime(r.fecha_fin)}</p>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-3">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Registrada</p>
-                    <p class="mt-1 text-sm font-semibold text-slate-800">${r.__registroFecha ? formatDateTime(r.__registroFecha) : 'N/A'}</p>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-3">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Recepcion</p>
-                    <p class="mt-1 text-sm font-semibold text-slate-800">${recepcionNombre}</p>
-                </div>
-            </div>
-
-            <div class="mt-4 flex flex-wrap gap-2 text-sm">
-                ${turnoLabel ? `<span class="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 font-semibold text-slate-700">Turno: ${turnoLabel}</span>` : ''}
-                <span class="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 font-semibold text-blue-700">Total: ${formatCurrency(r.monto_total, monedaSimbolo, monedaISO, monedaDecimales)}</span>
-                ${r.abonado > 0 ? `<span class="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-semibold text-emerald-700">Abonado: ${formatCurrency(r.abonado, monedaSimbolo, monedaISO, monedaDecimales)}</span>` : ''}
-                ${r.pendiente > 0 ? `<span class="rounded-full border border-red-200 bg-red-50 px-3 py-1 font-semibold text-red-700">Pendiente: ${formatCurrency(r.pendiente, monedaSimbolo, monedaISO, monedaDecimales)}</span>` : ''}
-            </div>
-
-            ${notas ? `
-                <div class="mt-4 rounded-2xl border border-slate-200 bg-white/90 p-3 text-sm text-slate-600">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Notas</p>
-                    <p class="mt-1 italic">${notas}</p>
-                </div>
-            ` : ''}
-
-            ${r.estado === 'cancelada' ? `
-                <div class="mt-4 rounded-2xl border border-red-100 bg-red-50 p-3 text-xs text-red-700">
-                    <p><strong>Cancelado por:</strong> ${cancelador}</p>
-                    <p><strong>Fecha cancelacion:</strong> ${formatDateTime(r.fecha_cancelacion)}</p>
-                </div>
-            ` : ''}
-
-            <div class="mt-5 rounded-2xl border border-slate-200 bg-slate-50/85 p-3">
-                <div class="flex flex-wrap gap-2">
-                    ${getAccionesReservaHTML(r)}
-                </div>
-            </div>
-        </article>`;
-    });
-
-    html += `</div></div>`;
     return html;
 }
 
@@ -2657,7 +1914,7 @@ async function mostrarModalAbonoReserva(reservaActual) {
 
 function getAccionesReservaHTML(reserva) {
     let actions = '';
-    const baseClass = "button text-xs px-3 py-2 rounded-xl shadow-sm font-semibold disabled:opacity-50";
+    const baseClass = "button text-xs px-2.5 py-1 rounded-md shadow-sm disabled:opacity-50";
     const estado = reserva.estado;
 
     if (['reservada', 'confirmada', 'activa'].includes(estado) && reserva.pendiente > 0) {
@@ -2853,7 +2110,6 @@ async function handleFormSubmit(event) {
                     bookingPayload.datosPago.pagosMixtos = pagosMixtos;
                     await createBooking(bookingPayload);
                     showSuccess(ui.feedbackDiv, "Reserva creada exitosamente con pago mixto.");
-                    await showReservaSuccessModal('La reserva fue confirmada correctamente.');
                     resetFormToCreateMode();
                     await renderReservas();
                     document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'reservas', accion: 'create' } }));
@@ -2886,7 +2142,6 @@ async function handleFormSubmit(event) {
         } else {
             await createBooking(bookingPayload);
             showSuccess(ui.feedbackDiv, "Reserva creada exitosamente.");
-            await showReservaSuccessModal('La reserva fue confirmada correctamente.');
         }
 
         resetFormToCreateMode();
@@ -3163,103 +2418,13 @@ export async function mount(container, supabaseClient, user, hotelId) {
     // REEMPLAZA el contenido de container.innerHTML en tu función mount CON ESTE BLOQUE COMPLETO
 
 container.innerHTML = `
-    <div class="max-w-7xl mx-auto mt-8 px-4 pb-10">
-        <section class="relative overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_34%),linear-gradient(135deg,_#ffffff,_#f8fbff_48%,_#f1f5f9)] p-6 shadow-[0_22px_80px_-36px_rgba(15,23,42,0.55)] md:p-8">
-            <div class="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-blue-200/30 blur-3xl"></div>
-            <div class="absolute bottom-0 right-0 h-28 w-28 rounded-full bg-emerald-200/30 blur-2xl"></div>
-            <div class="relative flex flex-col gap-6">
-                <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-                    <div class="max-w-3xl">
-                        <div class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-blue-700 shadow-sm">
-                            Centro de Reservas
-                        </div>
-                        <h2 id="form-title" class="mt-4 text-3xl font-black tracking-tight text-slate-900 md:text-4xl">Registrar Nueva Reserva</h2>
-                        <p class="mt-3 max-w-2xl text-sm leading-6 text-slate-600 md:text-[15px]">
-                            Gestiona llegadas, pagos y seguimiento del historial desde una sola vista mas clara y rapida para recepcion.
-                        </p>
-                    </div>
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:min-w-[360px]">
-                        <div class="rounded-2xl border border-white/70 bg-white/85 p-4 shadow-sm backdrop-blur">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Politica de cobro</p>
-                            <p id="reservas-policy-pill" class="mt-2 text-lg font-bold text-slate-900">Cargando...</p>
-                            <p class="mt-1 text-xs text-slate-500">Se actualiza segun la configuracion del hotel.</p>
-                        </div>
-                        <div class="rounded-2xl border border-white/70 bg-slate-900 p-4 text-white shadow-sm">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">Ultima actualizacion</p>
-                            <p id="reservas-last-update" class="mt-2 text-lg font-bold">Sin datos</p>
-                            <p class="mt-1 text-xs text-slate-300">La vista se refresca al guardar o filtrar.</p>
-                        </div>
-                    </div>
-                </div>
+    <div class="max-w-7xl mx-auto mt-10 px-4">
+        <h2 id="form-title" class="text-3xl font-extrabold text-blue-800 mb-8 text-center drop-shadow-md">Registrar Nueva Reserva</h2>
 
-                <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Activas</p>
-                        <p id="reservas-kpi-activas" class="mt-2 text-3xl font-black text-slate-900">0</p>
-                        <p class="mt-1 text-xs text-slate-500">Reservadas, confirmadas y activas</p>
-                    </article>
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Llegan Hoy</p>
-                        <p id="reservas-kpi-llegadas" class="mt-2 text-3xl font-black text-blue-700">0</p>
-                        <p class="mt-1 text-xs text-slate-500">Check-ins programados para hoy</p>
-                    </article>
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Con Saldo</p>
-                        <p id="reservas-kpi-pendientes" class="mt-2 text-3xl font-black text-amber-600">0</p>
-                        <p class="mt-1 text-xs text-slate-500">Reservas con pago pendiente</p>
-                    </article>
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Historial</p>
-                        <p id="reservas-kpi-historial" class="mt-2 text-3xl font-black text-emerald-700">0</p>
-                        <p class="mt-1 text-xs text-slate-500">Completadas, canceladas y no show</p>
-                    </article>
-                </div>
-            </div>
-        </section>
+        <form id="reserva-form" class="space-y-8 bg-white rounded-2xl p-8 border border-blue-100 shadow-xl">
 
-        <form id="reserva-form" class="relative mt-8 space-y-8 overflow-hidden rounded-[32px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,_rgba(37,99,235,0.12),_transparent_24%),linear-gradient(180deg,_#ffffff,_#f8fbff)] p-6 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.45)] md:p-8">
-            <div class="grid gap-4 rounded-[26px] border border-slate-200 bg-white/85 p-5 shadow-sm lg:grid-cols-[1.15fr_0.85fr]">
-                <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-700">Reserva Studio</p>
-                    <h3 class="mt-2 text-2xl font-black tracking-tight text-slate-900">Una vista mas limpia para registrar reservas sin perder contexto</h3>
-                    <p class="mt-3 text-sm leading-6 text-slate-600">Ahora el formulario resalta mejor las decisiones importantes: cliente, estancia, descuentos, pago y seguimiento posterior.</p>
-                </div>
-                <div class="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
-                    <div class="rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Rapido</p>
-                        <p class="mt-2 text-sm font-semibold text-slate-900">Selecciona cliente y habitacion</p>
-                    </div>
-                    <div class="rounded-2xl border border-indigo-100 bg-indigo-50/80 p-4">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">Claro</p>
-                        <p class="mt-2 text-sm font-semibold text-slate-900">Total y pago siempre visibles</p>
-                    </div>
-                    <div class="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Ordenado</p>
-                        <p class="mt-2 text-sm font-semibold text-slate-900">Historial mas facil de buscar</p>
-                    </div>
-                </div>
-            </div>
-            <div class="grid gap-4 md:grid-cols-3">
-                <div class="rounded-[24px] border border-blue-100 bg-[linear-gradient(180deg,_#ffffff,_#eef5ff)] px-4 py-4 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Paso 1</p>
-                    <p class="mt-2 text-base font-bold text-slate-900">Selecciona o crea el cliente</p>
-                    <p class="mt-1 text-sm text-slate-500">Busca uno existente o diligencia los datos manualmente.</p>
-                </div>
-                <div class="rounded-[24px] border border-indigo-100 bg-[linear-gradient(180deg,_#ffffff,_#f4f3ff)] px-4 py-4 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Paso 2</p>
-                    <p class="mt-2 text-base font-bold text-slate-900">Configura estancia y valor</p>
-                    <p class="mt-1 text-sm text-slate-500">Define fechas, habitacion, cantidad de huespedes y descuentos.</p>
-                </div>
-                <div class="rounded-[24px] border border-emerald-100 bg-[linear-gradient(180deg,_#ffffff,_#ecfdf5)] px-4 py-4 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Paso 3</p>
-                    <p class="mt-2 text-base font-bold text-slate-900">Registra el pago</p>
-                    <p class="mt-1 text-sm text-slate-500">Aplica el metodo correspondiente y guarda la reserva.</p>
-                </div>
-            </div>
-
-            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fafcff)] p-6 shadow-sm">
-                <legend class="px-3 text-lg font-bold text-slate-700">1. Datos del Cliente</legend>
-                <p class="mb-4 text-sm text-slate-500">Manten la ficha del huesped ordenada desde el inicio para agilizar futuras reservas y check-ins.</p>
+            <fieldset class="border border-slate-200 p-6 rounded-xl">
+                <legend class="text-lg font-bold text-slate-700 px-2">1. Datos del Cliente</legend>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                     <div class="md:col-span-2">
                         <label for="cliente_search_input" class="font-semibold text-sm text-gray-700 block mb-1">Buscar Cliente Existente</label>
@@ -3271,24 +2436,24 @@ container.innerHTML = `
                             </button>
                         </div>
                         <input type="hidden" name="cliente_id_hidden" id="cliente_id_hidden" />
-                        <div id="cliente_nombre_display" class="mt-3 hidden flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-800 shadow-sm">
+                        <div id="cliente_nombre_display" class="mt-3 hidden rounded-md bg-blue-50 border border-blue-300 text-blue-800 px-4 py-2 shadow-sm flex justify-between items-center">
                             <div><strong class="mr-2">Cliente:</strong> <span id="selected_client_name"></span></div>
                             <button type="button" id="btn_clear_cliente" class="text-red-500 font-bold text-lg leading-none" title="Deseleccionar cliente">&times;</button>
                         </div>
                     </div>
                     <div id="new-client-fields" class="md:col-span-2">
-                        <p class="text-sm text-gray-500 mb-2">O ingresa los datos para un cliente nuevo:</p>
+                        <p class="text-sm text-gray-500 mb-2">O ingrese los datos para un cliente nuevo:</p>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                                 <label for="cliente_nombre" class="font-semibold text-sm text-gray-700">Nombre completo*</label>
                                 <input name="cliente_nombre" id="cliente_nombre" class="form-control" required maxlength="120" />
                             </div>
                             <div>
-                                <label for="cedula" class="font-semibold text-sm text-gray-700">Cedula / ID</label>
+                                <label for="cedula" class="font-semibold text-sm text-gray-700">Cédula/ID</label>
                                 <input name="cedula" id="cedula" class="form-control" maxlength="30" />
                             </div>
                             <div>
-                                <label for="telefono" class="font-semibold text-sm text-gray-700">Telefono</label>
+                                <label for="telefono" class="font-semibold text-sm text-gray-700">Teléfono</label>
                                 <input name="telefono" id="telefono" type="tel" class="form-control" maxlength="30" />
                             </div>
                         </div>
@@ -3296,16 +2461,15 @@ container.innerHTML = `
                 </div>
             </fieldset>
 
-           <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fbff)] p-6 shadow-sm">
-    <legend class="px-3 text-lg font-bold text-slate-700">2. Detalles de la Reserva</legend>
-    <p class="mb-4 text-sm text-slate-500">Calcula la estancia con mayor claridad y deja visibles las decisiones clave para recepcion.</p>
+           <fieldset class="border border-slate-200 p-6 rounded-xl">
+    <legend class="text-lg font-bold text-slate-700 px-2">2. Detalles de la Reserva</legend>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
         <div>
             <label for="fecha_entrada" class="font-semibold text-sm text-gray-700">Fecha y hora de llegada*</label>
             <input type="datetime-local" name="fecha_entrada" id="fecha_entrada" class="form-control" required />
         </div>
         <div>
-            <label for="tipo_calculo_duracion" class="font-semibold text-sm text-gray-700">Calcular duracion por*</label>
+            <label for="tipo_calculo_duracion" class="font-semibold text-sm text-gray-700">Calcular duración por*</label>
             <select name="tipo_calculo_duracion" id="tipo_calculo_duracion" class="form-control" required>
                 <option value="noches_manual">Noches (manual)</option>
                 <option value="tiempo_predefinido">Tiempo predefinido</option>
@@ -3320,11 +2484,11 @@ container.innerHTML = `
             <select name="tiempo_estancia_id" id="tiempo_estancia_id" class="form-control"></select>
         </div>
         <div>
-            <label for="habitacion_id" class="font-semibold text-sm text-gray-700">Habitacion*</label>
+            <label for="habitacion_id" class="font-semibold text-sm text-gray-700">Habitación*</label>
             <select name="habitacion_id" id="habitacion_id" class="form-control" required></select>
         </div>
         <div>
-            <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huespedes*</label>
+            <label for="cantidad_huespedes" class="font-semibold text-sm text-gray-700">Cantidad de huéspedes*</label>
             <input name="cantidad_huespedes" id="cantidad_huespedes" type="number" min="1" max="20" value="2" class="form-control" required />
         </div>
 
@@ -3341,53 +2505,42 @@ container.innerHTML = `
         </div>
 </fieldset>
             
-            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fcfffe)] p-6 shadow-sm">
-                <legend class="px-3 text-lg font-bold text-slate-700">Descuento</legend>
-                <p class="mb-4 text-sm text-slate-500">Aplica promociones manuales o valida descuentos del cliente antes de confirmar.</p>
+            <fieldset class="border border-slate-200 p-6 rounded-xl">
+                <legend class="text-lg font-bold text-slate-700 px-2">Descuento</legend>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 items-center">
                     <div>
-                        <label for="codigo-descuento-reserva" class="font-semibold text-sm text-gray-700">Codigo de descuento (opcional)</label>
+                        <label for="codigo-descuento-reserva" class="font-semibold text-sm text-gray-700">Código de Descuento (opcional)</label>
                         <div class="flex items-center gap-2 mt-1">
                             <input type="text" id="codigo-descuento-reserva" class="form-control flex-grow" placeholder="PROMO2025">
                             <button type="button" id="btn-aplicar-descuento-reserva" class="button button-info">Aplicar</button>
                         </div>
                         <div id="feedback-descuento-reserva" class="text-xs mt-1 h-4"></div>
                     </div>
-                    <div id="descuento-resumen-reserva" class="text-sm text-green-600 bg-green-50 p-3 rounded-2xl border border-green-200 shadow-sm" style="display: none;">
+                    <div id="descuento-resumen-reserva" class="text-sm text-green-600 bg-green-50 p-3 rounded-md border border-green-200" style="display: none;">
                         </div>
                 </div>
             </fieldset>
-            <div class="overflow-hidden rounded-[28px] border border-blue-200 bg-[linear-gradient(135deg,_#eff6ff,_#ffffff_55%,_#ecfeff)] shadow-[0_24px_60px_-34px_rgba(37,99,235,0.45)]">
-                <div class="grid gap-4 p-5 md:grid-cols-[1.1fr_0.9fr] md:items-center">
-                    <div>
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Resumen en vivo</p>
-                        <p class="mt-2 text-sm text-slate-600">El total se recalcula automaticamente cuando cambias habitacion, fechas, huespedes o descuentos.</p>
-                    </div>
-                    <div class="rounded-[24px] border border-white/80 bg-white/85 p-5 text-center shadow-inner">
-                        <p id="reserva-total-caption" class="text-sm font-semibold text-blue-700">Total estimado de la reserva</p>
-                        <p id="total-reserva-calculado-display" class="mt-2 text-3xl font-extrabold text-blue-600">$0</p>
-                        <p id="reserva-total-support" class="mt-2 text-xs text-slate-500">Sin descuentos ni impuestos aplicados aun.</p>
-                    </div>
-                </div>
+            <div class="p-4 bg-blue-50 border border-blue-200 rounded-xl text-center">
+                <p class="text-sm text-blue-700">Total Estimado de la Reserva:</p>
+                <p id="total-reserva-calculado-display" class="text-3xl font-extrabold text-blue-600">$0</p>
             </div>
 
-            <div id="payment-message-checkout" class="hidden rounded-[22px] border border-orange-200 bg-orange-50 p-4 text-center text-sm text-orange-700 shadow-sm">
-                La politica del hotel es <strong class="font-semibold">Cobro al Check-out</strong>. Los detalles del pago se gestionaran al finalizar la estancia.
+            <div id="payment-message-checkout" class="p-3 bg-orange-50 border border-orange-200 rounded-md text-center text-orange-700 text-sm hidden">
+                La política del hotel es <strong class="font-semibold">Cobro al Check-out</strong>. Los detalles del pago se gestionarán al finalizar la estancia.
             </div>
 
-            <fieldset id="fieldset-pago-adicionales" class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fefefe)] p-6 shadow-sm">
-                 <legend class="px-3 text-lg font-bold text-slate-700">3. Pago y adicionales</legend>
-                 <p class="mb-4 text-sm text-slate-500">Deja claro si la reserva entra con abono, pago completo o si el cobro queda para salida.</p>
+            <fieldset id="fieldset-pago-adicionales" class="border border-slate-200 p-6 rounded-xl">
+                 <legend class="text-lg font-bold text-slate-700 px-2">3. Pago y Adicionales</legend>
                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                      <div>
-                         <label for="tipo_pago" class="font-semibold text-sm text-gray-700">Tipo de pago*</label>
+                         <label for="tipo_pago" class="font-semibold text-sm text-gray-700">Tipo de Pago*</label>
                          <select id="tipo_pago" name="tipo_pago" class="form-control" required>
                              <option value="parcial">Pago parcial (abono)</option>
                              <option value="completo">Pago completo</option>
                          </select>
                      </div>
                      <div>
-                         <label for="metodo_pago_id" class="font-semibold text-sm text-gray-700">Metodo de pago*</label>
+                         <label for="metodo_pago_id" class="font-semibold text-sm text-gray-700">Método de Pago*</label>
                          <select name="metodo_pago_id" id="metodo_pago_id" class="form-control"></select>
                      </div>
                      <div id="abono-container" class="md:col-span-2">
@@ -3402,100 +2555,22 @@ container.innerHTML = `
                  </div>
             </fieldset>
 
-            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fafafa)] p-6 shadow-sm">
-                <legend class="px-3 text-lg font-bold text-slate-700">4. Notas</legend>
-                <p class="mb-4 text-sm text-slate-500">Usa este espacio para observaciones operativas relevantes para recepcion y limpieza.</p>
+            <fieldset class="border border-slate-200 p-6 rounded-xl">
+                <legend class="text-lg font-bold text-slate-700 px-2">4. Notas</legend>
                 <div>
-                    <label for="notas" class="font-semibold text-sm text-gray-700">Notas adicionales (visibles para el staff)</label>
-                    <textarea name="notas" id="notas" class="form-control mt-2" maxlength="500" rows="2" placeholder="Ej: Solicitud especial del cliente, llegada tardia..."></textarea>
+                    <label for="notas" class="font-semibold text-sm text-gray-700">Notas Adicionales (visibles para el staff)</label>
+                    <textarea name="notas" id="notas" class="form-control mt-2" maxlength="500" rows="2" placeholder="Ej: Solicitud especial del cliente, llegada tardía..."></textarea>
                 </div>
             </fieldset>
 
             <div class="flex flex-col sm:flex-row gap-4 pt-4 justify-center">
-                <button type="submit" id="submit-button" class="button button-success py-3 px-6 rounded-2xl text-lg shadow-[0_14px_30px_-18px_rgba(16,185,129,0.75)]">Registrar reserva</button>
-                <button type="button" id="cancel-edit-button" class="button button-neutral py-3 px-6 rounded-2xl hidden">Cancelar edicion</button>
+                <button type="submit" id="submit-button" class="button button-success py-3 px-6 rounded-xl text-lg">Registrar Reserva</button>
+                <button type="button" id="cancel-edit-button" class="button button-neutral py-3 px-6 rounded-xl hidden">Cancelar Edición</button>
             </div>
         </form>
 
         <div id="reserva-feedback" class="mt-6"></div>
-
-        <section class="mt-10 overflow-hidden rounded-[32px] border border-slate-200 bg-[linear-gradient(180deg,_#f8fafc,_#ffffff)] p-6 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.42)]">
-            <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                    <h3 class="text-2xl font-bold text-slate-800">Historial y busqueda de reservas</h3>
-                    <p class="text-sm text-slate-600">Filtra por fecha, recepcionista o turno para revisar reservas registradas y encuentra rapido cualquier movimiento.</p>
-                </div>
-                <div id="reservas-history-summary" class="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm"></div>
-            </div>
-
-            <div class="mt-5 grid gap-4 md:grid-cols-3">
-                <div class="rounded-[22px] border border-blue-100 bg-blue-50/80 p-4">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Busqueda</p>
-                    <p class="mt-2 text-sm font-semibold text-slate-900">Cliente, habitacion o recepcionista</p>
-                </div>
-                <div class="rounded-[22px] border border-indigo-100 bg-indigo-50/80 p-4">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-indigo-700">Filtro</p>
-                    <p class="mt-2 text-sm font-semibold text-slate-900">Fecha de registro, llegada o salida</p>
-                </div>
-                <div class="rounded-[22px] border border-emerald-100 bg-emerald-50/80 p-4">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Seguimiento</p>
-                    <p class="mt-2 text-sm font-semibold text-slate-900">Turno, estado y recepcionista en una sola vista</p>
-                </div>
-            </div>
-
-            <form id="reservas-history-filters" class="mt-5 grid grid-cols-1 gap-4 rounded-[28px] border border-slate-200 bg-slate-50/80 p-5 shadow-inner md:grid-cols-2 xl:grid-cols-4">
-                <div class="xl:col-span-2 rounded-2xl border border-slate-200 bg-white p-4">
-                    <label for="reservas_search" class="font-semibold text-sm text-gray-700 block mb-1">Buscar</label>
-                    <input id="reservas_search" class="form-control" placeholder="Cliente, habitacion, nota o recepcionista" />
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                    <label for="reservas_fecha_modo" class="font-semibold text-sm text-gray-700 block mb-1">Tipo de fecha</label>
-                    <select id="reservas_fecha_modo" class="form-control">
-                        <option value="registro">Fecha de registro</option>
-                        <option value="llegada">Fecha de llegada</option>
-                        <option value="salida">Fecha de salida</option>
-                    </select>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                    <label for="reservas_estado_filter" class="font-semibold text-sm text-gray-700 block mb-1">Estado</label>
-                    <select id="reservas_estado_filter" class="form-control">
-                        <option value="">Todos</option>
-                        <option value="reservada">Reservada</option>
-                        <option value="confirmada">Confirmada</option>
-                        <option value="activa">Activa</option>
-                        <option value="completada">Completada</option>
-                        <option value="cancelada">Cancelada</option>
-                        <option value="no_show">No presentado</option>
-                    </select>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                    <label for="reservas_fecha_desde" class="font-semibold text-sm text-gray-700 block mb-1">Desde</label>
-                    <input type="date" id="reservas_fecha_desde" class="form-control" />
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                    <label for="reservas_fecha_hasta" class="font-semibold text-sm text-gray-700 block mb-1">Hasta</label>
-                    <input type="date" id="reservas_fecha_hasta" class="form-control" />
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                    <label for="reservas_recepcionista" class="font-semibold text-sm text-gray-700 block mb-1">Recepcionista</label>
-                    <select id="reservas_recepcionista" class="form-control">
-                        <option value="">Todas</option>
-                    </select>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-4">
-                    <label for="reservas_turno" class="font-semibold text-sm text-gray-700 block mb-1">Turno</label>
-                    <select id="reservas_turno" class="form-control">
-                        <option value="">Todos</option>
-                    </select>
-                </div>
-                <div class="flex items-end gap-3 xl:col-span-4">
-                    <button type="submit" class="button button-info rounded-2xl px-5 py-3 shadow-sm">Buscar</button>
-                    <button type="button" id="btn-limpiar-filtros-reservas" class="button button-neutral rounded-2xl px-5 py-3">Limpiar filtros</button>
-                </div>
-            </form>
-        </section>
-
-        <div id="reservas-list" class="mt-8 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"></div>
+        <div id="reservas-list" class="mt-10"></div>
     </div>
     
     <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4" style="display:none;"></div>
@@ -3503,7 +2578,6 @@ container.innerHTML = `
 
     // --- 3. INICIALIZAR REFERENCIAS A LA UI ---
     ui.init(container);
-    applyReservaFiltersToUI();
 
     // --- 4. LÓGICA Y LISTENERS DE EVENTOS ---
     
@@ -3620,17 +2694,6 @@ const setupEventListeners = () => {
     if (ui.form) ui.form.addEventListener('submit', handleFormSubmit);
     if (ui.cancelEditButton) ui.cancelEditButton.addEventListener('click', () => resetFormToCreateMode());
     if (ui.reservasListEl) ui.reservasListEl.addEventListener('click', handleListActions);
-    if (ui.reservasFiltrosForm) ui.reservasFiltrosForm.addEventListener('submit', handleReservasFiltersSubmit);
-    if (ui.reservasClearFiltersButton) ui.reservasClearFiltersButton.addEventListener('click', () => {
-        resetReservasFilters().catch((error) => console.error('[Reservas] Error limpiando filtros:', error));
-    });
-    if (ui.reservasSearchInput) ui.reservasSearchInput.addEventListener('input', scheduleReservasFilterRender);
-    if (ui.reservasFechaModoSelect) ui.reservasFechaModoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasFechaDesdeInput) ui.reservasFechaDesdeInput.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasFechaHastaInput) ui.reservasFechaHastaInput.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasRecepcionistaSelect) ui.reservasRecepcionistaSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasTurnoSelect) ui.reservasTurnoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasEstadoSelect) ui.reservasEstadoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
     
     document.addEventListener('datosActualizados', handleExternalUpdate);
 };   
@@ -3650,7 +2713,6 @@ await loadInitialData();
 
 export function unmount(container) {
      state.isModuleMounted = false;
-    clearTimeout(reservasSearchDebounceTimer);
     console.log("Modulo Reservas desmontado.");
     console.log("Modulo Reservas desmontado.");
     if (ui.form && typeof handleFormSubmit === 'function') {
@@ -3675,17 +2737,6 @@ export function unmount(container) {
     state.isEditMode = false;
     state.editingReservaId = null;
     state.tiemposEstanciaDisponibles = [];
-    state.reservasHistorialUsuarios = [];
-    state.reservasHistorialTurnos = [];
-    state.reservaFiltros = {
-        busqueda: '',
-        fechaDesde: '',
-        fechaHasta: '',
-        recepcionistaId: '',
-        turnoId: '',
-        estado: '',
-        modoFecha: 'registro'
-    };
     state.currentBookingTotal = 0;
     state.configHotel = {
         cobro_al_checkin: true,
@@ -3694,7 +2745,6 @@ export function unmount(container) {
         impuestos_incluidos_en_precios: false,
         porcentaje_impuesto_principal: 0,
         nombre_impuesto_principal: null,
-        tipo_turno_global: 12,
         moneda_local_simbolo: '$',
         moneda_codigo_iso_info: 'COP',
         moneda_decimales_info: '0'
@@ -3707,10 +2757,6 @@ export function unmount(container) {
     ui.fechaEntradaInput = null; ui.tipoCalculoDuracionEl = null; ui.nochesManualContainer = null;
     ui.cantidadNochesInput = null; ui.tiempoPredefinidoContainer = null; ui.tiempoEstanciaIdSelect = null;
     ui.habitacionIdSelect = null; ui.totalReservaDisplay = null; ui.fieldsetPago = null; ui.cedulaInput = null;
-    ui.reservasFiltrosForm = null; ui.reservasSearchInput = null; ui.reservasFechaModoSelect = null;
-    ui.reservasFechaDesdeInput = null; ui.reservasFechaHastaInput = null; ui.reservasRecepcionistaSelect = null;
-    ui.reservasTurnoSelect = null; ui.reservasEstadoSelect = null; ui.reservasClearFiltersButton = null;
-    ui.reservasSummaryEl = null;
     
     console.log("Reservas module unmounted and listeners removed.");
 }

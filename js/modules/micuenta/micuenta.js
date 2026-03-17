@@ -1,4 +1,4 @@
-// modules/micuenta/micuenta.js
+﻿// modules/micuenta/micuenta.js
 
 // --- IMPORTACIONES ---
 import { abrirMercadoPagoCheckout } from './mercadoPagoService.js';
@@ -40,17 +40,17 @@ function showSnackbar(container, message, type = 'success') {
 function alertaVencimientoHTML(diasRestantes, estado, enGracia) {
   if (estado === 'vencido') {
     return `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 mb-6 rounded">
-      <b>¡Tu suscripción está vencida!</b> Tienes <b>${diasRestantes}</b> días de gracia para renovar antes del bloqueo total.
+      <b>Â¡Tu suscripciÃ³n estÃ¡ vencida!</b> Tienes <b>${diasRestantes}</b> dÃ­as de gracia para renovar antes del bloqueo total.
     </div>`;
   }
   if (enGracia) {
     return `<div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 mb-6 rounded">
-      <b>¡Atención!</b> Tu periodo de gracia termina en <b>${diasRestantes}</b> días. Renueva tu plan para evitar bloqueo.
+      <b>Â¡AtenciÃ³n!</b> Tu periodo de gracia termina en <b>${diasRestantes}</b> dÃ­as. Renueva tu plan para evitar bloqueo.
     </div>`;
   }
   if (diasRestantes <= 3 && estado !== 'trial') {
     return `<div class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-900 p-3 mb-6 rounded">
-      <b>¡Tu suscripción vence pronto!</b> Quedan <b>${diasRestantes}</b> días para renovar o cambiar de plan.
+      <b>Â¡Tu suscripciÃ³n vence pronto!</b> Quedan <b>${diasRestantes}</b> dÃ­as para renovar o cambiar de plan.
     </div>`;
   }
   return '';
@@ -82,7 +82,7 @@ async function getUsdToCopRate() {
 }
 
 // =======================================================================
-// ========================== FUNCIÓN PRINCIPAL (MOUNT) ====================
+// ========================== FUNCIÃ“N PRINCIPAL (MOUNT) ====================
 // =======================================================================
 
 export async function mount(container, supabase, user, hotelId) {
@@ -99,32 +99,32 @@ export async function mount(container, supabase, user, hotelId) {
 
   let referidosSafe = [];
 
-// ✅ Mostramos qué hotelId se está usando
-console.log("📦 hotelId recibido en Mi Cuenta:", hotelId);
+// âœ… Mostramos quÃ© hotelId se estÃ¡ usando
+console.log("ðŸ“¦ hotelId recibido en Mi Cuenta:", hotelId);
 
 try {
-  // ✅ Ejecutamos la consulta corregida
+  // âœ… Ejecutamos la consulta corregida
   const { data: referidosRaw, error: errorReferidos } = await supabase
     .from('referidos')
     .select('nombre_hotel_referido, fecha_registro, estado, recompensa_otorgada') // Campo corregido
     .eq('referidor_id', hotelId)
     .order('fecha_registro', { ascending: false }); // Campo corregido
 
-  // ✅ Mostramos lo que devuelve la base de datos
-  console.log("🔍 Resultado referidosRaw:", referidosRaw);
+  // âœ… Mostramos lo que devuelve la base de datos
+  console.log("ðŸ” Resultado referidosRaw:", referidosRaw);
 
-  // ✅ Validamos si hubo error o si vino vacío
+  // âœ… Validamos si hubo error o si vino vacÃ­o
   if (errorReferidos) {
-    console.error("❌ Error al consultar referidos:", errorReferidos.message);
+    console.error("âŒ Error al consultar referidos:", errorReferidos.message);
   } else if (!referidosRaw || referidosRaw.length === 0) {
-    console.warn("⚠️ Consulta ejecutada correctamente pero no devolvió ningún referido.");
+    console.warn("âš ï¸ Consulta ejecutada correctamente pero no devolviÃ³ ningÃºn referido.");
   }
 
-  // ✅ Guardamos los datos si vinieron bien
+  // âœ… Guardamos los datos si vinieron bien
   referidosSafe = Array.isArray(referidosRaw) ? referidosRaw : [];
 
 } catch (err) {
-  console.error("❌ Excepción al cargar referidos:", err);
+  console.error("âŒ ExcepciÃ³n al cargar referidos:", err);
 }
 
 
@@ -145,7 +145,7 @@ try {
 
   const esSuperAdmin = (userProfile.rol === 'admin' || userProfile.rol === 'superadmin' || (hotel.creado_por && userProfile.id === hotel.creado_por));
   if (!esSuperAdmin) {
-    container.innerHTML = `<div class="flex flex-col justify-center items-center min-h-[60vh]"><span class="text-5xl mb-3">🔒</span><div class="text-2xl font-bold mb-2 text-red-600">Acceso restringido</div><div class="text-gray-500 text-lg text-center">Esta sección solo está disponible para el creador de la cuenta o superadministrador.<br>Si necesitas cambiar tu plan o tus datos de cuenta, contacta al responsable de tu hotel.</div></div>`;
+    container.innerHTML = `<div class="flex flex-col justify-center items-center min-h-[60vh]"><span class="text-5xl mb-3">ðŸ”’</span><div class="text-2xl font-bold mb-2 text-red-600">Acceso restringido</div><div class="text-gray-500 text-lg text-center">Esta secciÃ³n solo estÃ¡ disponible para el creador de la cuenta o superadministrador.<br>Si necesitas cambiar tu plan o tus datos de cuenta, contacta al responsable de tu hotel.</div></div>`;
     return;
   }
   
@@ -171,7 +171,7 @@ try {
   container.innerHTML = `
     <div class="max-w-4xl mx-auto py-8 px-2 relative">
       <div class="flex items-center mb-8 gap-4">
-        <div class="flex items-center justify-center w-14 h-14 rounded-full bg-blue-100 text-blue-600 text-3xl shadow-sm"><span>👤</span></div>
+        <div class="flex items-center justify-center w-14 h-14 rounded-full bg-blue-100 text-blue-600 text-3xl shadow-sm"><span>ðŸ‘¤</span></div>
         <div>
           <h2 class="text-2xl font-bold mb-0 flex items-center gap-2">Mi cuenta <span class="text-gray-400 text-xl">|</span> <span class="text-base text-gray-500">${userProfile.nombre || user.email}</span></h2>
           <div class="text-sm text-gray-400">Hotel: <span class="font-medium text-blue-600">${hotel.nombre}</span></div>
@@ -216,7 +216,7 @@ try {
           </button>
           <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-gray-500 to-gray-700 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnCambiarPass">
             <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-key-fill"></i></span>
-            Cambiar contraseña
+            Cambiar contraseÃ±a
           </button>
           <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnRenovarPlan">
               <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-arrow-repeat"></i></span>
@@ -233,7 +233,7 @@ try {
           <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-clock-history text-blue-500"></i> Historial de Pagos</h3>
           <div class="overflow-auto">
             <table class="w-full text-xs">
-              <thead><tr class="text-left text-gray-600 border-b"><th class="py-2">Fecha</th><th>Plan</th><th>Monto</th><th>Método</th></tr></thead>
+              <thead><tr class="text-left text-gray-600 border-b"><th class="py-2">Fecha</th><th>Plan</th><th>Monto</th><th>MÃ©todo</th></tr></thead>
               <tbody>
                 ${pagosSafe.length === 0 ? `<tr><td colspan="4" class="text-gray-400 py-3 text-center">Sin pagos registrados</td></tr>` : pagosSafe.map(p => `<tr><td>${new Date(p.fecha).toLocaleDateString('es-CO')}</td><td>${p.plan}</td><td>${formatMoneda(p.monto, p.moneda)}</td><td>${p.metodo_pago}</td></tr>`).join('')}
               </tbody>
@@ -254,7 +254,7 @@ try {
       </div>
       <div class="bg-white shadow rounded-2xl p-6 mb-8">
         <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-share-fill text-indigo-600"></i> Programa de Referidos</h3>
-        <p class="text-sm text-gray-600 mb-3">Comparte tu enlace y obtén 30 días gratis por cada hotel que pague su primera suscripción.</p>
+        <p class="text-sm text-gray-600 mb-3">Comparte tu enlace y obtÃ©n 30 dÃ­as gratis por cada hotel que pague su primera suscripciÃ³n.</p>
         <div class="flex items-center gap-3 mb-2">
           <input type="text" class="form-control w-full" value="${refLink}" readonly id="refLinkInput">
           <button class="btn btn-accent" id="btnCopyRefLink">Copiar enlace</button>
@@ -264,15 +264,15 @@ try {
             <thead>
               <tr class="text-left text-gray-600 border-b">
                 <th class="py-2">Hotel Referido</th>
-                <th>Estado Suscripción</th>
+                <th>Estado SuscripciÃ³n</th>
                 <th>Fecha Registro</th>
                 <th>Recompensa</th>
               </tr>
             </thead>
-            console.log("🧾 Renderizando referidos en tabla:", referidosSafe);
+            console.log("ðŸ§¾ Renderizando referidos en tabla:", referidosSafe);
             <tbody>
               ${referidosSafe.length === 0 ? `
-                <tr><td colspan="4" class="text-gray-400 py-3 text-center">Aún no tienes hoteles referidos. ¡Comparte tu enlace!</td></tr>
+                <tr><td colspan="4" class="text-gray-400 py-3 text-center">AÃºn no tienes hoteles referidos. Â¡Comparte tu enlace!</td></tr>
               ` : referidosSafe.map(r => `
                 <tr>
                   <td>${r.nombre_hotel_referido || '-'}</td>
@@ -282,7 +282,7 @@ try {
                       'bg-red-100 text-red-700'
                   }">${r.estado || '-'}</span></td>
 <td>${r.fecha_registro ? new Date(r.fecha_registro).toLocaleDateString('es-CO') : '-'}</td>
-                  <td>${r.recompensa_otorgada ? '✔️ Otorgada' : '⏳ Pendiente de pago'}</td>
+                  <td>${r.recompensa_otorgada ? 'âœ”ï¸ Otorgada' : 'â³ Pendiente de pago'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -290,7 +290,7 @@ try {
         </div>
       </div>
       <div class="flex flex-col items-center justify-center text-xs text-gray-400 pt-8 pb-2">
-        Gestión de Hotel es un producto de Grupo Empresarial Areiza Gomez
+        GestiÃ³n de Hotel es un producto de Grupo Empresarial Areiza Gomez
       </div>
     </div>
     <div id="modalUpgrade" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden">
@@ -298,7 +298,7 @@ try {
         <button id="closeUpgradeModal" class="absolute top-2 right-3 text-gray-400 hover:text-red-400 text-2xl">&times;</button>
         <h3 class="font-bold text-lg mb-2 text-blue-700">Confirmar cambio de plan</h3>
         <div class="mb-2"><span id="modalPlanName"></span></div>
-        <div class="mb-3 text-sm text-gray-500">Tu ciclo actual vence el <b>${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>. Quedan <b>${diasRestantes}</b> días en este ciclo.</div>
+        <div class="mb-3 text-sm text-gray-500">Tu ciclo actual vence el <b>${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>. Quedan <b>${diasRestantes}</b> dÃ­as en este ciclo.</div>
         <div id="prorrateoDetalle" class="mb-4 p-3 bg-blue-50/70 rounded-lg text-blue-900"></div>
         <button id="confirmUpgrade" class="group w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-green-500 to-emerald-600 font-semibold transition-all duration-300 shadow-md hover:shadow-lg hover:scale-[1.03] disabled:opacity-70 disabled:scale-100">
             <span class="btn-text">Pagar y cambiar plan</span>
@@ -322,13 +322,13 @@ try {
     <div id="modalPass" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden">
       <div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full relative animate-fade-in">
         <button id="closePassModal" class="absolute top-2 right-3 text-gray-400 hover:text-red-400 text-2xl">&times;</button>
-        <h3 class="font-bold text-lg mb-4 text-blue-700">Cambiar contraseña</h3>
+        <h3 class="font-bold text-lg mb-4 text-blue-700">Cambiar contraseÃ±a</h3>
         <form id="formPass">
-          <label class="block text-sm mb-1">Nueva contraseña</label>
-          <input type="password" class="form-control mb-3" id="nuevoPass" required minlength="6">
-          <label class="block text-sm mb-1">Confirmar contraseña</label>
-          <input type="password" class="form-control mb-3" id="confirmarPass" required minlength="6">
-          <button class="btn btn-primary w-full mt-1" type="submit">Actualizar contraseña</button>
+          <label class="block text-sm mb-1">Nueva contraseÃ±a</label>
+          <input type="password" class="form-control mb-3" id="nuevoPass" required minlength="8">
+          <label class="block text-sm mb-1">Confirmar contraseÃ±a</label>
+          <input type="password" class="form-control mb-3" id="confirmarPass" required minlength="8">
+          <button class="btn btn-primary w-full mt-1" type="submit">Actualizar contraseÃ±a</button>
         </form>
       </div>
     </div>
@@ -366,14 +366,14 @@ try {
       const usdCop = await getUsdToCopRate();
       Swal.fire({
         icon: 'info',
-        title: 'Serás redirigido a la pasarela de pago',
-        html: `<b>El pago será a nombre de<br>Grupo Empresarial Areiza Gomez</b><br>
-          <span class="text-gray-500">propietario del sistema hotelero Gestión de Hotel.</span>
+        title: 'SerÃ¡s redirigido a la pasarela de pago',
+        html: `<b>El pago serÃ¡ a nombre de<br>Grupo Empresarial Areiza Gomez</b><br>
+          <span class="text-gray-500">propietario del sistema hotelero GestiÃ³n de Hotel.</span>
           <br><br>
           Monto a pagar: <b>${formatMoneda(montoPagar, 'COP')}</b>
           <br><span class="text-xs">Tasa de cambio (ref): ${formatMoneda(usdCop, 'COP')}</span><br>
-          ¿Deseas continuar?`,
-        confirmButtonText: 'Sí, continuar',
+          Â¿Deseas continuar?`,
+        confirmButtonText: 'SÃ­, continuar',
         cancelButtonText: 'Cancelar',
         showCancelButton: true,
         confirmButtonColor: '#16a34a',
@@ -422,7 +422,7 @@ try {
         const costoRestanteMostrar = monedaActual === 'USD' ? costoNuevoRestanteUSD : costoNuevoRestanteCOP;
 
         const detalleHTML = `
-            <ul class="text-sm space-y-2"><li class="flex justify-between items-center"><span>Costo de ${planSeleccionado.nombre} (${diasRestantesSeguro} días)</span><span class="font-semibold">${formatMoneda(costoRestanteMostrar, monedaActual)}</span></li><li class="flex justify-between items-center text-green-600"><span>(-) Crédito plan ${planActivo.nombre}</span><span class="font-semibold">${formatMoneda(creditoMostrar, monedaActual)}</span></li></ul>
+            <ul class="text-sm space-y-2"><li class="flex justify-between items-center"><span>Costo de ${planSeleccionado.nombre} (${diasRestantesSeguro} dÃ­as)</span><span class="font-semibold">${formatMoneda(costoRestanteMostrar, monedaActual)}</span></li><li class="flex justify-between items-center text-green-600"><span>(-) CrÃ©dito plan ${planActivo.nombre}</span><span class="font-semibold">${formatMoneda(creditoMostrar, monedaActual)}</span></li></ul>
             <hr class="my-3 border-dashed">
             <div class="text-lg font-bold flex justify-between items-center"><span>Total a pagar hoy:</span><span class="text-green-700">${formatMoneda(montoMostar, monedaActual)}</span></div>
         `;
@@ -450,18 +450,18 @@ try {
         const montoAPagar = monedaActual === 'USD' ? precioRenovacionUSD : precioRenovacionCOP;
 
         modal.querySelector('#modalPlanName').innerHTML = `De <b>${planActivo.nombre}</b> a <b class="text-orange-600">${planSeleccionado.nombre}</b>`;
-        modal.querySelector('.text-blue-700').textContent = 'Confirmar pago para próximo ciclo';
+        modal.querySelector('.text-blue-700').textContent = 'Confirmar pago para prÃ³ximo ciclo';
 
         const detalleHTML = `
           <div class="text-sm text-gray-700 space-y-3">
-            <p>Vas a pagar hoy por tu próximo ciclo para asegurar un precio más bajo.</p>
+            <p>Vas a pagar hoy por tu prÃ³ximo ciclo para asegurar un precio mÃ¡s bajo.</p>
             <div class="text-lg font-bold flex justify-between items-center">
               <span>Total a pagar ahora:</span>
               <span class="text-green-700">${formatMoneda(montoAPagar, monedaActual)}</span>
             </div>
             <div class="p-3 bg-blue-50 border-l-4 border-blue-500 text-blue-800 rounded">
-              <p>Tu plan actual <b class="font-semibold">${planActivo.nombre}</b> seguirá activo hasta el <b class="font-semibold">${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>.</p>
-              <p class="mt-1">El nuevo plan <b class="font-semibold">${planSeleccionado.nombre}</b> se activará automáticamente después de esa fecha.</p>
+              <p>Tu plan actual <b class="font-semibold">${planActivo.nombre}</b> seguirÃ¡ activo hasta el <b class="font-semibold">${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>.</p>
+              <p class="mt-1">El nuevo plan <b class="font-semibold">${planSeleccionado.nombre}</b> se activarÃ¡ automÃ¡ticamente despuÃ©s de esa fecha.</p>
             </div>
           </div>
         `;
@@ -469,7 +469,7 @@ try {
 
         const btnConfirmar = modal.querySelector('#confirmUpgrade');
         const newBtn = btnConfirmar.cloneNode(true);
-        newBtn.querySelector('.btn-text').textContent = 'Pagar próximo ciclo ahora';
+        newBtn.querySelector('.btn-text').textContent = 'Pagar prÃ³ximo ciclo ahora';
         newBtn.classList.remove('from-green-500', 'to-emerald-600');
         newBtn.classList.add('from-orange-500', 'to-red-500');
         btnConfirmar.parentNode.replaceChild(newBtn, btnConfirmar);
@@ -494,11 +494,11 @@ try {
         if (monedaActual === 'USD') {
             let priceUSD = USD_PRICES[planKey] || 30;
             price = periodoActual === 'anual' ? priceUSD * 10 : priceUSD;
-            label = periodoActual === 'anual' ? 'año' : 'mes';
+            label = periodoActual === 'anual' ? 'aÃ±o' : 'mes';
         } else {
             price = plan.precio_mensual;
             if (periodoActual === 'anual') price *= 10;
-            label = periodoActual === 'anual' ? 'año' : 'mes';
+            label = periodoActual === 'anual' ? 'aÃ±o' : 'mes';
         }
 
         const esPlanActual = plan.id === planActivo?.id;
@@ -508,10 +508,10 @@ try {
         let motivoDeshabilitado = '';
 
         if (typeof limiteHabitaciones === 'number' && conteoHabitacionesActual > limiteHabitaciones) {
-            motivoDeshabilitado = `Excedes el límite de ${limiteHabitaciones} habitaciones.`;
+            motivoDeshabilitado = `Excedes el lÃ­mite de ${limiteHabitaciones} habitaciones.`;
         }
         else if (typeof limiteUsuarios === 'number' && conteoUsuariosActual > limiteUsuarios) {
-            motivoDeshabilitado = `Excedes el límite de ${limiteUsuarios} usuarios.`;
+            motivoDeshabilitado = `Excedes el lÃ­mite de ${limiteUsuarios} usuarios.`;
         }
         
         const puedeElegirPlan = !motivoDeshabilitado;
@@ -572,7 +572,7 @@ try {
     const input = container.querySelector('#refLinkInput');
     input.select();
     document.execCommand('copy');
-    showSnackbar(container, '¡Enlace copiado!', 'success');
+    showSnackbar(container, 'Â¡Enlace copiado!', 'success');
   });
 
   container.querySelector('#btnRenovarPlan')?.addEventListener('click', () => {
@@ -609,24 +609,24 @@ try {
     e.preventDefault();
     const nuevoPass = container.querySelector('#nuevoPass').value.trim();
     const confirmar = container.querySelector('#confirmarPass').value.trim();
-    if (nuevoPass.length < 6) {
-      showSnackbar(container, 'La contraseña debe tener al menos 6 caracteres', 'error'); return;
+    if (nuevoPass.length < 8) {
+      showSnackbar(container, 'La contrase\u00F1a debe tener al menos 8 caracteres', 'error'); return;
     }
     if (nuevoPass !== confirmar) {
-      showSnackbar(container, 'Las contraseñas no coinciden', 'error'); return;
+      showSnackbar(container, 'Las contraseÃ±as no coinciden', 'error'); return;
     }
     const { error } = await supabase.auth.updateUser({ password: nuevoPass });
     if (error) {
       showSnackbar(container, 'Error: ' + error.message, 'error');
     } else {
-      showSnackbar(container, 'Contraseña actualizada correctamente', 'success');
+      showSnackbar(container, 'ContraseÃ±a actualizada correctamente', 'success');
       container.querySelector('#modalPass').classList.add('hidden');
     }
   });
 }
 
 // =======================================================================
-// ========================== FUNCIÓN DE DESMONTAJE ======================
+// ========================== FUNCIÃ“N DE DESMONTAJE ======================
 // =======================================================================
 
 export function unmount(container) {

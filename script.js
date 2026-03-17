@@ -132,8 +132,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 showAlert(alertElement, 'Por favor, introduce una dirección de correo válida.', 'warning');
                 return;
             }
-            if (password.length < 6) {
-                showAlert(alertElement, 'La contraseña debe tener al menos 6 caracteres.', 'warning');
+            if (password.length < 8) {
+                showAlert(alertElement, 'La contrase\u00F1a debe tener al menos 8 caracteres.', 'warning');
+                return;
                 return;
             }
             if (password !== confirmPasswordValue) {
@@ -214,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else if (error.message.includes('duplicate key value') && error.message.includes('hoteles_nombre_key')) {
                     userMessage = "El nombre de este hotel ya ha sido registrado. Por favor, elige otro.";
                 } else if (error.message.includes('Password should be at least 6 characters')) {
-                    userMessage = "La contraseña es demasiado corta. Debe tener al menos 6 caracteres.";
+                    userMessage = "La contrase\u00F1a es demasiado corta. Debe tener al menos 8 caracteres.";
                 }
                 
                 // --- FIN DE LA LÓGICA CORREGIDA ---

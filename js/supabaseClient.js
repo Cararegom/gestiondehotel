@@ -12,7 +12,20 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("Error crítico: Faltan las credenciales de Supabase en supabaseClient.js");
 }
 
-// Inicializar el cliente
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Inicializar el cliente con opciones explÃ­citas de sesiÃ³n para evitar
+// comportamientos ambiguos entre pÃ¡ginas pÃºblicas, login y recuperaciÃ³n.
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true,
+    storageKey: 'gestionhotel.auth'
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'gestiondehotel-web'
+    }
+  }
+});
 
 console.log("Supabase Client cargado correctamente (v2.39.7)");

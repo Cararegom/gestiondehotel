@@ -1,9 +1,7 @@
-// js/modules/habitaciones/habitaciones.js
+﻿// js/modules/habitaciones/habitaciones.js
 import {
     formatCurrency,
     setFormLoadingState,
-    showError, 
-    showSuccess,
     showLoading, 
     clearFeedback 
 } from '../../uiUtils.js';
@@ -90,6 +88,46 @@ function formatMinutesToHoursMinutes(totalMinutes) {
     if (minutes > 0) durationString += `${minutes}m`;
     if (durationString === '') durationString = '0m';
     return durationString.trim();
+}
+
+function parseAmenidadesInput(rawValue) {
+  return String(rawValue || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getHabitacionesPlanLimit() {
+  const rawLimit = Number(activePlanDetails?.funcionalidades?.limite_habitaciones);
+  return Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : null;
+}
+
+async function getCurrentHabitacionesCount() {
+  if (!currentSupabaseInstance || !currentHotelId) return 0;
+
+  const { count, error } = await currentSupabaseInstance
+    .from('habitaciones')
+    .select('id', { count: 'exact', head: true })
+    .eq('hotel_id', currentHotelId);
+
+  if (error) {
+    throw error;
+  }
+
+  return count || 0;
+}
+
+async function ensureHabitacionPlanCapacity() {
+  const limite = getHabitacionesPlanLimit();
+  if (!limite) return true;
+
+  const totalActual = await getCurrentHabitacionesCount();
+  if (totalActual >= limite) {
+    mostrarModalUpgradeHabitaciones(limite, activePlanDetails?.nombre || 'Actual');
+    return false;
+  }
+
+  return true;
 }
 
 // --- UI Helper Functions (Específicas del módulo) ---
@@ -231,7 +269,7 @@ function resetearFormularioTiempoEstancia(formEl, btnCancelarEl) {
   formEl.reset();
   formEl.elements.tiempoEstanciaIdEdit.value = '';
   formEl.elements.activoTiempo.checked = true;
-  formEl.querySelector('#btn-guardar-tiempo-estancia').textContent = '＋ Crear Tiempo';
+  formEl.querySelector('#btn-guardar-tiempo-estancia').textContent = '+ Crear Tiempo';
   if (btnCancelarEl) btnCancelarEl.style.display = 'none';
   formEl.elements.minutosTiempo.disabled = false; // Siempre re-habilitar al resetear
   formEl.elements.nombreTiempo.focus();
@@ -417,11 +455,22 @@ async function renderHabitaciones(habitacionesContainer, feedbackEl) {
         habitacionesContainer.innerHTML = '';
 
         habitaciones.sort((a, b) => {
-            const getNumber = nombre => {
+            const pisoA = Number.isFinite(Number.parseInt(a?.piso, 10)) ? Number.parseInt(a.piso, 10) : Number.MAX_SAFE_INTEGER;
+            const pisoB = Number.isFinite(Number.parseInt(b?.piso, 10)) ? Number.parseInt(b.piso, 10) : Number.MAX_SAFE_INTEGER;
+
+            if (pisoA !== pisoB) {
+                return pisoA - pisoB;
+            }
+
+            const getNumber = (nombre) => {
                 const match = String(nombre || '').match(/\d+/);
                 return match ? parseInt(match[0], 10) : Infinity;
             };
-            return getNumber(a.nombre) - getNumber(b.nombre);
+
+            const diffNumero = getNumber(a.nombre) - getNumber(b.nombre);
+            if (diffNumero !== 0) return diffNumero;
+
+            return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
         });
 
         if (!habitaciones || habitaciones.length === 0) {
@@ -433,6 +482,7 @@ async function renderHabitaciones(habitacionesContainer, feedbackEl) {
             const card = document.createElement('div');
             card.className = `habitacion-card card p-4 rounded-lg shadow-md bg-white border-l-4 estado-border-${h.estado || 'desconocido'} ${h.activo ? 'opacity-100' : 'opacity-60'}`;
             card.dataset.habitacionId = h.id;
+            card.dataset.estado = h.estado || '';
 
             const estadoDisplay = h.estado ? h.estado.charAt(0).toUpperCase() + h.estado.slice(1) : 'Desconocido';
             
@@ -448,6 +498,7 @@ async function renderHabitaciones(habitacionesContainer, feedbackEl) {
                         <p><strong>Precio 1 pers (noche):</strong> ${formatCurrency(h.precio_1_persona)}</p>
                         <p><strong>Precio 2 pers (noche):</strong> ${formatCurrency(h.precio_2_personas)}</p>
                         <p><strong>Precio Adic/pers (3+):</strong> ${formatCurrency(h.precio_huesped_adicional)}</p>
+                        <p><strong>Reservas por horas:</strong> ${h.permite_reservas_por_horas ? 'Si' : 'No'}${h.permite_reservas_por_horas ? ` - Base hora: ${formatCurrency(h.precio_base_hora || 0)}` : ''}</p>
                     </div>
 
                     <p class="text-xs text-gray-500 mt-2"><strong>Capacidad Máx:</strong> ${h.capacidad_maxima || 'N/A'} pers.</p>
@@ -470,8 +521,6 @@ async function renderHabitaciones(habitacionesContainer, feedbackEl) {
     }
 }
 
-
-// AÑADE ESTA NUEVA FUNCIÓN A: js/modules/habitaciones/habitaciones.js
 
 /**
  * Crea y muestra un modal flotante para editar una habitación específica.
@@ -496,7 +545,11 @@ async function showEditHabitacionModal(habitacionId) {
     try {
         // 1. Obtener los datos de la habitación a editar
         const { data: habitacionData, error } = await currentSupabaseInstance
-            .from('habitaciones').select('*').eq('id', habitacionId).single();
+            .from('habitaciones')
+            .select('*')
+            .eq('id', habitacionId)
+            .eq('hotel_id', currentHotelId)
+            .single();
         if (error) throw error;
 
         // 2. Crear el HTML del formulario dentro del modal
@@ -518,6 +571,20 @@ async function showEditHabitacionModal(habitacionId) {
                             <div><label class="form-label text-sm">Precio 1 Persona*</label><input type="number" name="precio_1_persona" class="form-control" value="${habitacionData.precio_1_persona || 0}" required></div>
                             <div><label class="form-label text-sm">Precio 2 Personas*</label><input type="number" name="precio_2_personas" class="form-control" value="${habitacionData.precio_2_personas || 0}" required></div>
                             <div><label class="form-label text-sm">Precio Adicional</label><input type="number" name="precio_huesped_adicional" class="form-control" value="${habitacionData.precio_huesped_adicional || 0}"></div>
+                        </div>
+                    </fieldset>
+
+                    <fieldset class="border border-cyan-300 p-3 rounded-lg">
+                        <legend class="text-md font-semibold text-cyan-800 px-2">Reservas por horas</legend>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" name="permite_reservas_por_horas" class="form-check-input h-5 w-5 text-cyan-600" ${habitacionData.permite_reservas_por_horas ? 'checked' : ''}>
+                                <span class="form-label mb-0">Permitir alquiler por horas</span>
+                            </label>
+                            <div>
+                                <label class="form-label text-sm">Precio base por hora</label>
+                                <input type="number" name="precio_base_hora" class="form-control" min="0" step="any" value="${habitacionData.precio_base_hora || 0}" ${habitacionData.permite_reservas_por_horas ? '' : 'disabled'}>
+                            </div>
                         </div>
                     </fieldset>
                     
@@ -543,11 +610,17 @@ async function showEditHabitacionModal(habitacionId) {
 
         // 3. Lógica para guardar los cambios
         const formEditEl = modalContainer.querySelector('#form-edit-habitacion');
-// REEMPLAZA ESTE LISTENER COMPLETO DENTRO DE la función showEditHabitacionModal
-// EN: js/modules/habitaciones/habitaciones.js
-
-// REEMPLAZA ESTE LISTENER COMPLETO DENTRO DE la función showEditHabitacionModal
-// EN: js/modules/habitaciones/habitaciones.js
+        const permiteHorasEditEl = formEditEl.querySelector('[name="permite_reservas_por_horas"]');
+        const precioHoraEditEl = formEditEl.querySelector('[name="precio_base_hora"]');
+        const syncPrecioHoraEditState = () => {
+            if (!permiteHorasEditEl || !precioHoraEditEl) return;
+            precioHoraEditEl.disabled = !permiteHorasEditEl.checked;
+            if (!permiteHorasEditEl.checked) {
+                precioHoraEditEl.value = habitacionData.precio_base_hora || 0;
+            }
+        };
+        permiteHorasEditEl?.addEventListener('change', syncPrecioHoraEditState);
+        syncPrecioHoraEditState();
 
 formEditEl.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -570,20 +643,69 @@ formEditEl.addEventListener('submit', async (e) => {
         return;
     }
 
+    const capacidadMaxima = parseInt(formData.get('capacidad_maxima'), 10) || 2;
+    const precio1Persona = parseFloat(formData.get('precio_1_persona')) || 0;
+    const precio2Personas = parseFloat(formData.get('precio_2_personas')) || 0;
+    const precioHuespedAdicional = parseFloat(formData.get('precio_huesped_adicional')) || 0;
+    const precioBaseHora = permiteHorasEditEl?.checked ? (parseFloat(formData.get('precio_base_hora')) || 0) : 0;
+
+    if (capacidadMaxima < 1) {
+        showHabitacionesFeedback(modalFeedbackEl, 'La capacidad maxima debe ser al menos 1.', 'error');
+        setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+        return;
+    }
+
+    const { data: habitacionDuplicada, error: duplicateError } = await currentSupabaseInstance
+        .from('habitaciones')
+        .select('id')
+        .eq('hotel_id', currentHotelId)
+        .eq('nombre', nombre)
+        .neq('id', habitacionId)
+        .limit(1)
+        .maybeSingle();
+
+    if (duplicateError) {
+        showHabitacionesFeedback(modalFeedbackEl, `Error: ${duplicateError.message}`, 'error');
+        setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+        return;
+    }
+
+    if (habitacionDuplicada) {
+        showHabitacionesFeedback(modalFeedbackEl, `Ya existe una habitacion con el nombre "${nombre}".`, 'error');
+        setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+        return;
+    }
+
     const payload = {
         nombre: nombre,
         tipo: formData.get('tipo')?.trim() || null,
         piso: parseInt(formData.get('piso')) || null,
-        precio_1_persona: parseFloat(formData.get('precio_1_persona')) || 0,
-        precio_2_personas: parseFloat(formData.get('precio_2_personas')) || 0,
-        precio_huesped_adicional: parseFloat(formData.get('precio_huesped_adicional')) || 0,
-        capacidad_maxima: parseInt(formData.get('capacidad_maxima')) || 2,
-        amenidades: formData.get('amenidades')?.split(',').map(s => s.trim()).filter(Boolean) || [],
-        activo: formEditEl.querySelector('[name="activo"]').checked
+        precio: precio2Personas || precio1Persona || 0,
+        precio_1_persona: precio1Persona,
+        precio_2_personas: precio2Personas,
+        precio_huesped_adicional: precioHuespedAdicional,
+        capacidad_maxima: capacidadMaxima,
+        amenidades: parseAmenidadesInput(formData.get('amenidades')),
+        activo: formEditEl.querySelector('[name="activo"]').checked,
+        permite_reservas_por_horas: Boolean(permiteHorasEditEl?.checked),
+        precio_base_hora: precioBaseHora,
+        actualizado_en: new Date().toISOString()
     };
 
+    if (payload.precio_1_persona < 0 || payload.precio_2_personas < 0 || payload.precio_huesped_adicional < 0 || payload.precio_base_hora < 0) {
+        showHabitacionesFeedback(modalFeedbackEl, 'Los precios no pueden ser negativos.', 'error');
+        setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+        return;
+    }
+
+    if (payload.permite_reservas_por_horas && payload.precio_base_hora <= 0) {
+        showHabitacionesFeedback(modalFeedbackEl, 'Debes definir un precio base por hora mayor a cero.', 'error');
+        setFormLoadingState(formEditEl, false, btnGuardar, 'Guardar Cambios');
+        return;
+    }
+
     const { error: updateError } = await currentSupabaseInstance
-        .from('habitaciones').update(payload).eq('id', habitacionId);
+        .from('habitaciones').update(payload).eq('id', habitacionId).eq('hotel_id', currentHotelId);
 
     if (updateError) {
         showHabitacionesFeedback(modalFeedbackEl, `Error: ${updateError.message}`, 'error');
@@ -591,10 +713,20 @@ formEditEl.addEventListener('submit', async (e) => {
     } else {
         const modalContainer = document.getElementById('habitacion-edit-modal-container');
         if (modalContainer) {
-            modalContainer.style.display = 'none'; // Ocultar modal
+            modalContainer.style.display = 'none';
+            modalContainer.innerHTML = '';
         }
         showHabitacionesFeedback(feedbackEl, 'Habitación actualizada con éxito.', 'success');
         await renderHabitaciones(listaContainerEl, feedbackEl); // Refrescar la lista de habitaciones
+        registrarEnBitacora({
+            supabase: currentSupabaseInstance,
+            hotel_id: currentHotelId,
+            usuario_id: currentModuleUser.id,
+            modulo: 'Habitaciones',
+            accion: 'ACTUALIZAR_HABITACION',
+            detalles: { habitacion_id: habitacionId, nombre: payload.nombre }
+        }).catch(err => console.error("Error bitacora habitacion", err));
+        document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'habitaciones', accion: 'actualizar_habitacion', habitacion_id: habitacionId } }));
         // No es necesario llamar a setFormLoadingState aquí porque el modal se oculta.
     }
 });
@@ -602,6 +734,7 @@ formEditEl.addEventListener('submit', async (e) => {
         // Lógica para cancelar
         modalContainer.querySelector('#btn-cancelar-modal').addEventListener('click', () => {
             modalContainer.style.display = 'none';
+            modalContainer.innerHTML = '';
         });
 
     } catch (err) {
@@ -621,13 +754,19 @@ function populateFormHabitacion(formEl, selectTiemposEl, habitacionData, btnCanc
     formEl.elements.piso.value = habitacionData.piso || '';
     formEl.elements.capacidad_maxima.value = habitacionData.capacidad_maxima || 2;
     formEl.elements.precio_huesped_adicional.value = habitacionData.precio_huesped_adicional || 0;
-    formEl.elements.estado.value = habitacionData.estado || 'libre';
     formEl.elements.amenidades.value = habitacionData.amenidades?.join(', ') || '';
     formEl.elements.activo.checked = habitacionData.activo === undefined ? true : habitacionData.activo;
 
     // --- INICIO DE LA MODIFICACIÓN: Poblar nuevos campos de precio ---
     formEl.elements.precio_1_persona.value = habitacionData.precio_1_persona || 0;
     formEl.elements.precio_2_personas.value = habitacionData.precio_2_personas || 0;
+    if (formEl.elements.permite_reservas_por_horas) {
+      formEl.elements.permite_reservas_por_horas.checked = Boolean(habitacionData.permite_reservas_por_horas);
+    }
+    if (formEl.elements.precio_base_hora) {
+      formEl.elements.precio_base_hora.value = habitacionData.precio_base_hora || 0;
+      formEl.elements.precio_base_hora.disabled = !habitacionData.permite_reservas_por_horas;
+    }
     // --- FIN DE LA MODIFICACIÓN ---
 
     if (btnCancelarEl) btnCancelarEl.style.display = 'inline-block';
@@ -642,118 +781,150 @@ function resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEl, btnGuardarE
   formEl.elements.habitacionIdEdit.value = '';
   if(formTitleEl) formTitleEl.textContent = 'Crear Nueva Habitación';
   formEl.elements.activo.checked = true;
-  // formEl.elements.permite_reservas_por_horas.checked = false; 
+  if (formEl.elements.permite_reservas_por_horas) {
+    formEl.elements.permite_reservas_por_horas.checked = false;
+  }
+  if (formEl.elements.precio_base_hora) {
+    formEl.elements.precio_base_hora.value = 0;
+    formEl.elements.precio_base_hora.disabled = true;
+  }
   populateTiemposEstanciaSelect(selectTiemposEl);
   if (btnCancelarEl) btnCancelarEl.style.display = 'none';
-  if (btnGuardarEl) btnGuardarEl.textContent = '＋ Crear Habitación';
+  if (btnGuardarEl) btnGuardarEl.textContent = '+ Crear Habitacion';
   formEl.elements.nombre.focus();
 }
 
 
-/**
- * Maneja el envío del formulario de creación/edición de habitación.
- */
-async function handleHabitacionSubmit(e) {
-    e.preventDefault(); // Evitar recarga de página
+async function handleHabitacionSubmit(e, formEl, selectTiemposEl, listaHabitacionesContainerEl, feedbackEl, btnGuardarEl, btnCancelarEl, formTitleEl) {
+  e.preventDefault();
 
-    // 1. Validaciones básicas
-    const nombre = document.getElementById('nombreHabitacion').value;
-    const tipo = document.getElementById('tipoHabitacion').value;
-    
-    // Obtener el ID si estamos editando (puede estar en un dataset o variable global)
-    // Asumo que guardas el ID en el botón o en una variable 'currentEditingId'
-    const habitacionId = document.getElementById('btnGuardarHabitacion').dataset.id || null;
+  if (!formEl || !currentSupabaseInstance || !currentHotelId) {
+    if (feedbackEl) showHabitacionesFeedback(feedbackEl, 'No se pudo guardar la habitacion. Falta contexto del hotel.', 'error', 0);
+    return;
+  }
 
-    if (!nombre || !tipo) {
-        showError('El nombre y el tipo de habitación son obligatorios.');
-        return;
+  if (feedbackEl) clearHabitacionesFeedbackLocal(feedbackEl);
+
+  const originalButtonText = btnGuardarEl?.textContent || 'Guardar';
+  setFormLoadingState(formEl, true, btnGuardarEl, originalButtonText, 'Guardando...');
+
+  try {
+    const idEdit = formEl.elements.habitacionIdEdit?.value || '';
+    const nombre = formEl.elements.nombre?.value?.trim() || '';
+    const tipo = formEl.elements.tipo?.value?.trim() || null;
+    const pisoValue = formEl.elements.piso?.value || '';
+    const capacidadMaximaValue = formEl.elements.capacidad_maxima?.value || '';
+    const precio1Persona = parseFloat(formEl.elements.precio_1_persona?.value) || 0;
+    const precio2Personas = parseFloat(formEl.elements.precio_2_personas?.value) || 0;
+    const precioHuespedAdicional = parseFloat(formEl.elements.precio_huesped_adicional?.value) || 0;
+    const permiteHoras = Boolean(formEl.elements.permite_reservas_por_horas?.checked);
+    const precioBaseHora = permiteHoras ? (parseFloat(formEl.elements.precio_base_hora?.value) || 0) : 0;
+    const amenidades = parseAmenidadesInput(formEl.elements.amenidades?.value);
+    const activo = formEl.elements.activo?.checked ?? true;
+
+    if (!nombre) {
+      showHabitacionesFeedback(feedbackEl, 'El nombre o numero de la habitacion es obligatorio.', 'error', 0);
+      formEl.elements.nombre?.focus();
+      return;
+    }
+    if ((parseInt(capacidadMaximaValue, 10) || 0) < 1) {
+      showHabitacionesFeedback(feedbackEl, 'La capacidad maxima debe ser al menos 1.', 'error', 0);
+      formEl.elements.capacidad_maxima?.focus();
+      return;
+    }
+    if (precio1Persona < 0 || precio2Personas < 0 || precioHuespedAdicional < 0 || precioBaseHora < 0) {
+      showHabitacionesFeedback(feedbackEl, 'Los precios no pueden ser negativos.', 'error', 0);
+      return;
+    }
+    if (permiteHoras && precioBaseHora <= 0) {
+      showHabitacionesFeedback(feedbackEl, 'Debes definir un precio base por hora mayor a cero.', 'error', 0);
+      formEl.elements.precio_base_hora?.focus();
+      return;
     }
 
-    setFormLoadingState(true);
+    const { data: habitacionDuplicada, error: duplicateError } = await currentSupabaseInstance
+      .from('habitaciones')
+      .select('id')
+      .eq('hotel_id', currentHotelId)
+      .eq('nombre', nombre)
+      .limit(1)
+      .maybeSingle();
 
-    try {
-        // 2. Recopilar Amenidades (Checkboxes)
-        // Asumiendo que tus checkboxes de amenidades tienen la clase 'amenidad-check'
-        const amenidadesSeleccionadas = Array.from(document.querySelectorAll('.amenidad-check:checked'))
-            .map(cb => cb.value);
-
-        // 3. Obtener valores numéricos con seguridad (evitando NaN)
-        const precioNoche = parseFloat(document.getElementById('precioNoche').value) || 0;
-        const capacidad = parseInt(document.getElementById('capacidadPersonas').value) || 2;
-        const piso = parseInt(document.getElementById('pisoHabitacion').value) || 1;
-        const precioAdicional = parseFloat(document.getElementById('precioAdicional').value) || 0;
-        
-        // --- AQUÍ ESTÁ LA CLAVE DEL PROBLEMA ---
-        // Capturamos explícitamente si permite horas y el precio base
-        const checkHoras = document.getElementById('checkReservasPorHoras');
-        const inputPrecioHora = document.getElementById('precioBaseHora');
-        
-        const permiteHoras = checkHoras ? checkHoras.checked : false; // Por defecto false si no existe el input
-        const precioHora = inputPrecioHora ? (parseFloat(inputPrecioHora.value) || 0) : 0;
-
-        // 4. Construir el objeto para Supabase
-        // Las claves deben coincidir EXACTAMENTE con tu esquema de base de datos
-        const datosHabitacion = {
-            hotel_id: currentHotelId, // Variable global del módulo
-            nombre: nombre,
-            tipo: tipo,
-            precio: precioNoche, // Precio base/noche
-            capacidad_maxima: capacidad,
-            piso: piso,
-            amenidades: amenidadesSeleccionadas,
-            precio_huesped_adicional: precioAdicional,
-            
-            // CAMPOS CRÍTICOS PARA EL MAPA:
-            permite_reservas_por_horas: permiteHoras,
-            precio_base_hora: precioHora,
-            
-            actualizado_en: new Date()
-        };
-
-        let data, error;
-
-        // 5. Decidir si es UPDATE o INSERT
-        if (habitacionId) {
-            // --- ACTUALIZAR ---
-            ({ data, error } = await currentSupabaseInstance
-                .from('habitaciones')
-                .update(datosHabitacion)
-                .eq('id', habitacionId)
-                .select());
-        } else {
-            // --- CREAR NUEVA ---
-            // Solo al crear añadimos el estado inicial si no existe
-            datosHabitacion.estado = 'libre';
-            datosHabitacion.activo = true;
-            
-            ({ data, error } = await currentSupabaseInstance
-                .from('habitaciones')
-                .insert(datosHabitacion)
-                .select());
-        }
-
-        if (error) throw error;
-
-        // 6. Éxito
-        showSuccess(habitacionId ? 'Habitación actualizada correctamente' : 'Habitación creada correctamente');
-        
-        // Cerrar modal (ajusta según cómo gestiones tus modales, ej: bootstrap o custom)
-        const modalElement = document.getElementById('modalCrearHabitacion');
-        // Si usas Bootstrap 5 vanilla:
-        // const modalInstance = bootstrap.Modal.getInstance(modalElement);
-        // modalInstance.hide();
-        // O simplemente ocultar si es CSS puro:
-        if(modalElement) modalElement.style.display = 'none';
-
-        // Recargar la lista
-        await renderHabitaciones(); 
-
-    } catch (err) {
-        console.error('Error guardando habitación:', err);
-        showError('Error al guardar: ' + err.message);
-    } finally {
-        setFormLoadingState(false);
+    if (duplicateError) throw duplicateError;
+    if (habitacionDuplicada && habitacionDuplicada.id !== idEdit) {
+      showHabitacionesFeedback(feedbackEl, `Ya existe una habitacion con el nombre "${nombre}".`, 'error', 0);
+      formEl.elements.nombre?.focus();
+      return;
     }
+
+    if (!idEdit) {
+      const canCreateMore = await ensureHabitacionPlanCapacity();
+      if (!canCreateMore) return;
+    }
+
+    const payload = {
+      nombre,
+      tipo,
+      piso: pisoValue !== '' ? parseInt(pisoValue, 10) : null,
+      capacidad_maxima: parseInt(capacidadMaximaValue, 10) || 2,
+      precio: precio2Personas || precio1Persona || 0,
+      precio_1_persona: precio1Persona,
+      precio_2_personas: precio2Personas,
+      precio_huesped_adicional: precioHuespedAdicional,
+      amenidades,
+      activo,
+      permite_reservas_por_horas: permiteHoras,
+      precio_base_hora: precioBaseHora,
+      actualizado_en: new Date().toISOString()
+    };
+
+    let savedHabitacion;
+
+    if (idEdit) {
+      const { data, error } = await currentSupabaseInstance
+        .from('habitaciones')
+        .update(payload)
+        .eq('id', idEdit)
+        .eq('hotel_id', currentHotelId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      savedHabitacion = data;
+    } else {
+      const { data, error } = await currentSupabaseInstance
+        .from('habitaciones')
+        .insert({
+          ...payload,
+          hotel_id: currentHotelId,
+          estado: 'libre'
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      savedHabitacion = data;
+    }
+
+    showHabitacionesFeedback(feedbackEl, idEdit ? 'Habitacion actualizada correctamente.' : 'Habitacion creada correctamente.', 'success');
+    registrarEnBitacora({
+      supabase: currentSupabaseInstance,
+      hotel_id: currentHotelId,
+      usuario_id: currentModuleUser.id,
+      modulo: 'Habitaciones',
+      accion: idEdit ? 'ACTUALIZAR_HABITACION' : 'CREAR_HABITACION',
+      detalles: { habitacion_id: savedHabitacion.id, nombre: savedHabitacion.nombre }
+    }).catch(err => console.error('Error bitacora habitaciones', err));
+
+    resetFormHabitacion(formEl, selectTiemposEl, btnCancelarEl, btnGuardarEl, formTitleEl);
+    await renderHabitaciones(listaHabitacionesContainerEl, feedbackEl);
+    document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'habitaciones', accion: idEdit ? 'actualizar_habitacion' : 'crear_habitacion', habitacion_id: savedHabitacion.id } }));
+  } catch (err) {
+    console.error('Error guardando habitacion:', err);
+    showHabitacionesFeedback(feedbackEl, `Error al guardar la habitacion: ${err.message}`, 'error', 0);
+  } finally {
+    setFormLoadingState(formEl, false, btnGuardarEl, originalButtonText);
+  }
 }
 
 // --- Main Module Mount Function ---
@@ -764,10 +935,10 @@ export async function mount(container, supabaseInst, user, hotelId, planDetails)
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
-  currentHotelId = hotelId; // hotelId ya se recibe de main.js
+  currentHotelId = hotelId;
   activePlanDetails = planDetails; // <--- GUARDA LOS DETALLES DEL PLAN 
 
-  let tempHotelId = user?.user_metadata?.hotel_id || user?.app_metadata?.hotel_id;
+  let tempHotelId = currentHotelId || user?.user_metadata?.hotel_id || user?.app_metadata?.hotel_id;
   if (!tempHotelId && user?.id) {
     try {
       const { data: perfil, error: perfilError } = await currentSupabaseInstance
@@ -778,7 +949,7 @@ export async function mount(container, supabaseInst, user, hotelId, planDetails)
       console.error("[Habitaciones] Error obteniendo hotel_id del perfil:", err);
     }
   }
-  currentHotelId = tempHotelId;
+  currentHotelId = tempHotelId || currentHotelId;
 
   // Cargar configuración de horarios del hotel desde configuracion_hotel
   if (currentHotelId) {
@@ -850,26 +1021,28 @@ container.innerHTML = `
           </h3>
           <form id="form-tiempo-estancia" class="form space-y-4 mb-6 bg-indigo-50/50 rounded-lg p-5" novalidate>
             <input type="hidden" id="tiempoEstanciaIdEdit" name="tiempoEstanciaIdEdit" />
-            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-end">
-              <div>
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+              <div class="md:col-span-5">
                 <label for="nombreTiempo" class="form-label text-indigo-800">Nombre del Tiempo *</label>
                 <input type="text" id="nombreTiempo" name="nombreTiempo" class="form-control" required maxlength="100" placeholder="Ej: 6 Horas, Noche Completa"/>
-                <small class="text-xs text-indigo-600">Si incluye "Noche", la duración se calcula automáticamente.</small>
+                <small class="mt-1 block text-xs leading-5 text-indigo-600">Si incluye \"Noche\", la duracion se calcula automaticamente.</small>
               </div>
-              <div>
-                <label for="minutosTiempo" class="form-label text-indigo-800">Duración (Minutos) *</label>
+              <div class="md:col-span-3">
+                <label for="minutosTiempo" class="form-label text-indigo-800">Duracion (Minutos) *</label>
                 <input type="number" id="minutosTiempo" name="minutosTiempo" class="form-control" required min="1" placeholder="Ej: 360"/>
               </div>
-              <div>
+              <div class="md:col-span-4">
                 <label for="precioTiempo" class="form-label text-indigo-800">Precio del Tiempo *</label>
                 <input type="number" id="precioTiempo" name="precioTiempo" class="form-control" required min="0" step="any" placeholder="0.00"/>
               </div>
-              <div class="flex items-center pt-5">
-                <input type="checkbox" id="activoTiempo" name="activoTiempo" class="form-check-input h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 mr-2" checked />
-                <label for="activoTiempo" class="form-label text-indigo-800 mb-0">Activo</label>
-              </div>
-              <div class="form-actions flex items-center gap-3 pt-5">
-                <button type="submit" id="btn-guardar-tiempo-estancia" class="button button-primary py-2 px-4 text-sm">＋ Crear Tiempo</button>
+            </div>
+            <div class="flex flex-col gap-3 border-t border-indigo-100 pt-4 md:flex-row md:items-center md:justify-between">
+              <label for="activoTiempo" class="inline-flex items-center gap-2 self-start rounded-lg border border-indigo-100 bg-white/80 px-3 py-2">
+                <input type="checkbox" id="activoTiempo" name="activoTiempo" class="form-check-input h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked />
+                <span class="text-sm font-medium text-indigo-800">Activo</span>
+              </label>
+              <div class="form-actions flex flex-wrap items-center gap-3">
+                <button type="submit" id="btn-guardar-tiempo-estancia" class="button button-primary min-w-[160px] py-2 px-4 text-sm">+ Crear Tiempo</button>
                 <button type="button" id="btn-cancelar-edicion-tiempo" class="button button-outline py-2 px-4 text-sm" style="display:none;">Cancelar</button>
               </div>
             </div>
@@ -916,6 +1089,20 @@ container.innerHTML = `
                 </div>
                 <p class="text-xs text-green-600 mt-2">El precio de "Huésped Adicional" se suma por cada persona a partir de la tercera.</p>
             </fieldset>
+            <fieldset class="border border-cyan-300 p-4 rounded-lg mt-4">
+              <legend class="text-md font-semibold text-cyan-800 px-2">Configuracion de alquiler por horas</legend>
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-2 items-end">
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" id="hab-permite-horas" name="permite_reservas_por_horas" class="form-check-input h-5 w-5 text-cyan-600" />
+                  <span class="form-label mb-0 text-cyan-800">Permitir reservas por horas</span>
+                </label>
+                <div>
+                  <label for="hab-precio-base-hora" class="form-label text-cyan-800">Precio base por hora</label>
+                  <input type="number" name="precio_base_hora" id="hab-precio-base-hora" class="form-control" min="0" step="any" value="0" disabled />
+                </div>
+              </div>
+            </fieldset>
+
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
               <div>
                 <label for="hab-capacidad-maxima" class="form-label text-indigo-800">Capacidad Máxima (pers.)</label>
@@ -934,7 +1121,7 @@ container.innerHTML = `
               <label for="hab-activo" class="form-label text-indigo-800 mb-0">Activa</label>
             </div>
             <div class="flex items-center gap-4 mt-6">
-              <button type="submit" id="btn-guardar-habitacion" class="button button-primary py-2 px-4 text-sm">＋ Crear Habitación</button>
+              <button type="submit" id="btn-guardar-habitacion" class="button button-primary py-2 px-4 text-sm">+ Crear Habitacion</button>
               <button type="button" id="btn-cancelar-edicion-habitacion" class="button button-outline py-2 px-4 text-sm" style="display:none;">Cancelar Edición</button>
             </div>
           </form>
@@ -960,6 +1147,8 @@ container.innerHTML = `
   const listaHabitacionesContainerEl = container.querySelector('#habitaciones-lista-container');
   const btnGuardarHabitacionEl = container.querySelector('#btn-guardar-habitacion');
   const btnCancelarEdicionHabitacionEl = container.querySelector('#btn-cancelar-edicion-habitacion');
+  const permiteHorasHabitacionEl = container.querySelector('#hab-permite-horas');
+  const precioBaseHoraHabitacionEl = container.querySelector('#hab-precio-base-hora');
 
   if (!currentHotelId) {
     if (feedbackGlobalEl) showHabitacionesFeedback(feedbackGlobalEl, 'Error crítico: Hotel no identificado. Módulo deshabilitado.', 'error', 0);
@@ -1037,7 +1226,18 @@ container.innerHTML = `
   btnCancelarEdicionHabitacionEl.addEventListener('click', cancelHabitacionHandler);
   moduleListeners.push({ element: btnCancelarEdicionHabitacionEl, type: 'click', handler: cancelHabitacionHandler });
 
-// REEMPLAZA ESTA FUNCIÓN DENTRO DE mount EN: js/modules/habitaciones/habitaciones.js
+  const syncPrecioHoraHabitacionHandler = () => {
+    if (!precioBaseHoraHabitacionEl || !permiteHorasHabitacionEl) return;
+    precioBaseHoraHabitacionEl.disabled = !permiteHorasHabitacionEl.checked;
+    if (!permiteHorasHabitacionEl.checked) {
+      precioBaseHoraHabitacionEl.value = 0;
+    }
+  };
+  permiteHorasHabitacionEl?.addEventListener('change', syncPrecioHoraHabitacionHandler);
+  if (permiteHorasHabitacionEl) {
+    moduleListeners.push({ element: permiteHorasHabitacionEl, type: 'change', handler: syncPrecioHoraHabitacionHandler });
+    syncPrecioHoraHabitacionHandler();
+  }
 
   const listaHabitacionesClickHandler = async (e) => {
     const button = e.target.closest('button[data-accion]');
@@ -1053,14 +1253,29 @@ container.innerHTML = `
 
     try {
         if (accion === 'editar-habitacion') {
-            // ▼▼▼ CAMBIO PRINCIPAL AQUÍ ▼▼▼
-            // En lugar de poblar el formulario de arriba, llamamos a nuestro nuevo modal.
             await showEditHabitacionModal(habitacionId);
-            // ▲▲▲ FIN DEL CAMBIO ▲▲▲
 
         } else if (accion === 'eliminar-habitacion') {
             const habitacionCard = button.closest('.habitacion-card');
             const nombreHabitacion = habitacionCard?.querySelector('.habitacion-nombre')?.textContent || habitacionId;
+            const estadoHabitacion = habitacionCard?.dataset.estado || '';
+
+            if (!['libre', 'disponible'].includes(estadoHabitacion)) {
+                showHabitacionesFeedback(feedbackGlobalEl, 'Solo puedes eliminar habitaciones que esten libres.', 'error', 0);
+                return;
+            }
+
+            const { count: reservasAbiertasCount, error: reservasAbiertasError } = await currentSupabaseInstance
+                .from('reservas')
+                .select('id', { count: 'exact', head: true })
+                .eq('habitacion_id', habitacionId)
+                .in('estado', ['reservada', 'confirmada', 'activa', 'ocupada', 'tiempo agotado']);
+
+            if (reservasAbiertasError) throw reservasAbiertasError;
+            if ((reservasAbiertasCount || 0) > 0) {
+                showHabitacionesFeedback(feedbackGlobalEl, 'No puedes eliminar una habitacion con reservas activas o futuras.', 'error', 0);
+                return;
+            }
             
             if (confirm(`¿Está seguro de que desea eliminar la habitación "${nombreHabitacion}"? Esta acción no se puede deshacer.`)) {
                 showLoading(feedbackGlobalEl, 'Eliminando habitación...');
@@ -1072,6 +1287,7 @@ container.innerHTML = `
                 showHabitacionesFeedback(feedbackGlobalEl, 'Habitación eliminada exitosamente.', 'success');
                 await registrarEnBitacora({ supabase: currentSupabaseInstance, hotel_id: currentHotelId, usuario_id: currentModuleUser.id, modulo: 'Habitaciones', accion: 'ELIMINAR_HABITACION', detalles: { habitacion_id: habitacionId, nombre: nombreHabitacion } });
                 await renderHabitaciones(listaHabitacionesContainerEl, feedbackGlobalEl);
+                document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'habitaciones', accion: 'eliminar_habitacion', habitacion_id: habitacionId } }));
                 
                 // Si el formulario principal estaba editando esta habitación, lo reseteamos.
                 if (formHabitacionEl.elements.habitacionIdEdit.value === habitacionId) {
@@ -1092,14 +1308,14 @@ container.innerHTML = `
   moduleListeners.push({ element: listaHabitacionesContainerEl, type: 'click', handler: listaHabitacionesClickHandler });
 
   // Carga inicial de datos
-  setFormLoadingState(formTiempoEstanciaEl, true, btnGuardarTiempoEstanciaEl, '＋ Crear Tiempo', 'Cargando...');
-  setFormLoadingState(formHabitacionEl, true, btnGuardarHabitacionEl, '＋ Crear Habitación', 'Cargando...');
+  setFormLoadingState(formTiempoEstanciaEl, true, btnGuardarTiempoEstanciaEl, '+ Crear Tiempo', 'Cargando...');
+  setFormLoadingState(formHabitacionEl, true, btnGuardarHabitacionEl, '+ Crear Habitacion', 'Cargando...');
   
   await cargarYRenderizarTiemposEstancia(tablaTiemposEstanciaBodyEl, feedbackGlobalEl);
   await renderHabitaciones(listaHabitacionesContainerEl, feedbackGlobalEl);
   
-  setFormLoadingState(formTiempoEstanciaEl, false, btnGuardarTiempoEstanciaEl, '＋ Crear Tiempo');
-  setFormLoadingState(formHabitacionEl, false, btnGuardarHabitacionEl, '＋ Crear Habitación');
+  setFormLoadingState(formTiempoEstanciaEl, false, btnGuardarTiempoEstanciaEl, '+ Crear Tiempo');
+  setFormLoadingState(formHabitacionEl, false, btnGuardarHabitacionEl, '+ Crear Habitacion');
 
   resetearFormularioTiempoEstancia(formTiempoEstanciaEl, btnCancelarEdicionTiempoEl);
   resetFormHabitacion(formHabitacionEl, selectHabitacionTiemposEl, btnCancelarEdicionHabitacionEl, btnGuardarHabitacionEl, formHabitacionTitleEl);
@@ -1122,8 +1338,13 @@ export function unmount() {
   currentSupabaseInstance = null;
   todosLosTiemposEstanciaCache = [];
   currentContainerEl = null;
+  activePlanDetails = null;
   hotelCheckinTimeConfig = "15:00"; // Reset a predeterminados
   hotelCheckoutTimeConfig = "12:00";
+  const modalContainer = document.getElementById('habitacion-edit-modal-container');
+  if (modalContainer?.parentNode) {
+    modalContainer.parentNode.removeChild(modalContainer);
+  }
   console.log('[Habitaciones] Módulo desmontado.');
 }
 function mostrarModalUpgradeHabitaciones(limite, planNombre) {
@@ -1167,3 +1388,5 @@ function mostrarModalUpgradeHabitaciones(limite, planNombre) {
 export function obtenerTiempoEstanciaPorId(id) {
     return todosLosTiemposEstanciaCache.find(t => t.id === id);
 }
+
+

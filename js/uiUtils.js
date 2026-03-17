@@ -21,8 +21,8 @@ export function showAppFeedback(message, type = 'info', autoHide = true, duratio
   feedbackBanner.style.display = 'block';
   feedbackBanner.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
   if (type === 'error') {
-      feedbackBanner.setAttribute('tabindex', '-1');
-      feedbackBanner.focus();
+    feedbackBanner.setAttribute('tabindex', '-1');
+    feedbackBanner.focus();
   }
   if (autoHide) {
     setTimeout(() => clearAppFeedback(feedbackBanner), duration);
@@ -138,40 +138,40 @@ export function setFormLoadingState(formEl, isLoading, buttonEl, originalButtonT
  * @returns {string} - El valor formateado como string de moneda.
  */
 export function formatCurrency(value, simboloMoneda = '$', codigoISONacion = 'COP', decimales = 0) {
-    if (typeof value !== 'number' || isNaN(value)) {
-        value = 0;
+  if (typeof value !== 'number' || isNaN(value)) {
+    value = 0;
+  }
+
+  const isValidISOCode = typeof codigoISONacion === 'string' && /^[A-Z]{3}$/i.test(codigoISONacion);
+  const safeISOCode = isValidISOCode ? codigoISONacion.toUpperCase() : 'USD';
+
+  try {
+    const formatter = new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: safeISOCode,
+      minimumFractionDigits: decimales,
+      maximumFractionDigits: decimales,
+    });
+
+    let formattedString = formatter.format(value);
+    const parts = formatter.formatToParts(value);
+    const currencyPart = parts.find(part => part.type === 'currency');
+
+    if (currencyPart && currencyPart.value !== simboloMoneda) {
+      formattedString = formattedString.replace(currencyPart.value, simboloMoneda);
+    } else if (!currencyPart && formattedString.includes(safeISOCode)) {
+      formattedString = formattedString.replace(safeISOCode, simboloMoneda);
     }
 
-    const isValidISOCode = typeof codigoISONacion === 'string' && /^[A-Z]{3}$/i.test(codigoISONacion);
-    const safeISOCode = isValidISOCode ? codigoISONacion.toUpperCase() : 'USD';
+    return formattedString;
 
-    try {
-        const formatter = new Intl.NumberFormat('es-CO', {
-            style: 'currency',
-            currency: safeISOCode,
-            minimumFractionDigits: decimales,
-            maximumFractionDigits: decimales,
-        });
-        
-        let formattedString = formatter.format(value);
-        const parts = formatter.formatToParts(value);
-        const currencyPart = parts.find(part => part.type === 'currency');
-
-        if (currencyPart && currencyPart.value !== simboloMoneda) {
-            formattedString = formattedString.replace(currencyPart.value, simboloMoneda);
-        } else if (!currencyPart && formattedString.includes(safeISOCode)) {
-            formattedString = formattedString.replace(safeISOCode, simboloMoneda);
-        }
-        
-        return formattedString;
-
-    } catch (e) {
-        console.warn(`Error en Intl.NumberFormat con código '${safeISOCode}'. Usando fallback de formateo manual. Error: ${e.message}`);
-        let numeroFormateado = Number(value).toFixed(decimales);
-        const [entero, decimalStr] = numeroFormateado.split('.');
-        const enteroFormateado = entero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-        return decimales > 0 && decimalStr ? `${simboloMoneda} ${enteroFormateado},${decimalStr}` : `${simboloMoneda} ${enteroFormateado}`;
-    }
+  } catch (e) {
+    console.warn(`Error en Intl.NumberFormat con código '${safeISOCode}'. Usando fallback de formateo manual. Error: ${e.message}`);
+    let numeroFormateado = Number(value).toFixed(decimales);
+    const [entero, decimalStr] = numeroFormateado.split('.');
+    const enteroFormateado = entero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return decimales > 0 && decimalStr ? `${simboloMoneda} ${enteroFormateado},${decimalStr}` : `${simboloMoneda} ${enteroFormateado}`;
+  }
 }
 
 export function formatDateShort(dateInput, locale = 'es-CO') {
@@ -194,8 +194,8 @@ export function formatDateTime(dateInput, locale = 'es-CO', options = { dateStyl
 
 // --- Otras utilidades rápidas ---
 export function mostrarFechaLocal(fechaUtc) {
-    if (!fechaUtc) return '-';
-    return new Date(fechaUtc).toLocaleString();
+  if (!fechaUtc) return '-';
+  return new Date(fechaUtc).toLocaleString();
 }
 
 // --- LOADING GLOBAL PARA OVERLAY ---
@@ -225,7 +225,7 @@ export function showSuccess(elementOrId, message, autoHide = true, duration = 40
     if (autoHide) {
       setTimeout(() => {
         if (element && element.textContent === message) {
-            clearFeedback(element);
+          clearFeedback(element);
         }
       }, duration);
     }
@@ -238,16 +238,16 @@ export function showSuccess(elementOrId, message, autoHide = true, duration = 40
  * @returns {string} - String formateado.
  */
 export function formatMinutesToHoursMinutes(totalMinutes) {
-    if (typeof totalMinutes !== 'number' || isNaN(totalMinutes) || totalMinutes < 0) {
-        return 'N/A';
-    }
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    let durationString = '';
-    if (hours > 0) durationString += `${hours}h `;
-    if (minutes > 0) durationString += `${minutes}m`;
-    if (durationString === '') durationString = '0m';
-    return durationString.trim();
+  if (typeof totalMinutes !== 'number' || isNaN(totalMinutes) || totalMinutes < 0) {
+    return 'N/A';
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  let durationString = '';
+  if (hours > 0) durationString += `${hours}h `;
+  if (minutes > 0) durationString += `${minutes}m`;
+  if (durationString === '') durationString = '0m';
+  return durationString.trim();
 }
 
 /**
@@ -257,24 +257,24 @@ export function formatMinutesToHoursMinutes(totalMinutes) {
  * @param {string} descuentoId - El UUID del descuento que se utilizó.
  */
 export async function registrarUsoDescuento(supabase, descuentoId) {
-    // Si no se pasó un ID de descuento, no hacemos nada.
-    if (!descuentoId) return;
+  // Si no se pasó un ID de descuento, no hacemos nada.
+  if (!descuentoId) return;
 
-    try {
-        // La llamada RPC estandarizada con el nombre de parámetro correcto.
-        const { error } = await supabase.rpc('incrementar_uso_descuento', {
-            descuento_id_param: descuentoId
-        });
+  try {
+    // La llamada RPC estandarizada con el nombre de parámetro correcto.
+    const { error } = await supabase.rpc('incrementar_uso_descuento', {
+      descuento_id_param: descuentoId
+    });
 
-        if (error) {
-            // Este error ya no debería ocurrir, pero lo dejamos por si acaso.
-            console.error('Error al registrar el uso del descuento:', error);
-        } else {
-            console.log(`Uso registrado exitosamente para el descuento ID: ${descuentoId}`);
-        }
-    } catch (err) {
-        console.error('Excepción al intentar registrar el uso del descuento:', err);
+    if (error) {
+      // Este error ya no debería ocurrir, pero lo dejamos por si acaso.
+      console.error('Error al registrar el uso del descuento:', error);
+    } else {
+      console.log(`Uso registrado exitosamente para el descuento ID: ${descuentoId}`);
     }
+  } catch (err) {
+    console.error('Excepción al intentar registrar el uso del descuento:', err);
+  }
 }
 
 // Agrega esta función a tu archivo /js/uiUtils.js
@@ -287,28 +287,28 @@ export async function registrarUsoDescuento(supabase, descuentoId) {
  * @returns {Promise<boolean>} - Una promesa que resuelve a `true` si el usuario confirma, `false` si cancela.
  */
 export async function showConfirmationModal({
-    title = '¿Estás seguro?',
-    text = 'Esta acción no se puede revertir.',
-    confirmButtonText = 'Sí, continuar'
+  title = '¿Estás seguro?',
+  text = 'Esta acción no se puede revertir.',
+  confirmButtonText = 'Sí, continuar'
 }) {
-    const result = await Swal.fire({
-        title: title,
-        html: text, // Usamos 'html' para permitir etiquetas como <strong>
-        icon: 'warning',
-        iconColor: '#f59e0b', // Un color ámbar para la advertencia
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626', // Rojo para acciones destructivas
-        cancelButtonColor: '#6b7280',  // Gris para cancelar
-        confirmButtonText: confirmButtonText,
-        cancelButtonText: 'Cancelar',
-        customClass: {
-            popup: 'rounded-xl shadow-lg',
-            confirmButton: 'button button-danger py-2 px-5',
-            cancelButton: 'button button-neutral py-2 px-5'
-        },
-        buttonsStyling: false // Importante para que tome nuestras clases
-    });
-    return result.isConfirmed;
+  const result = await Swal.fire({
+    title: title,
+    html: text, // Usamos 'html' para permitir etiquetas como <strong>
+    icon: 'warning',
+    iconColor: '#f59e0b', // Un color ámbar para la advertencia
+    showCancelButton: true,
+    confirmButtonColor: '#dc2626', // Rojo para acciones destructivas
+    cancelButtonColor: '#6b7280',  // Gris para cancelar
+    confirmButtonText: confirmButtonText,
+    cancelButtonText: 'Cancelar',
+    customClass: {
+      popup: 'rounded-xl shadow-lg',
+      confirmButton: 'button button-danger py-2 px-5',
+      cancelButton: 'button button-neutral py-2 px-5'
+    },
+    buttonsStyling: false // Importante para que tome nuestras clases
+  });
+  return result.isConfirmed;
 }
 export async function notificarAlegraViaZapier(supabase, hotelId, datosVenta) {
   const { data } = await supabase
@@ -338,59 +338,59 @@ export async function notificarAlegraViaZapier(supabase, hotelId, datosVenta) {
 // En tu archivo: /js/uiUtils.js
 
 export async function showConsumosYFacturarModal(roomContext, supabase, currentUser, hotelId, mainAppContainer, initialButtonTrigger) {
-    const modalContainerConsumos = document.getElementById('modal-container');
-    if (!modalContainerConsumos) {
-        console.error("El contenedor del modal principal 'modal-container' no se encontró.");
-        return;
-    }
+  const modalContainerConsumos = document.getElementById('modal-container');
+  if (!modalContainerConsumos) {
+    console.error("El contenedor del modal principal 'modal-container' no se encontró.");
+    return;
+  }
 
-    // --- 1. OBTENCIÓN DE DATOS ---
-    const { data: reserva, error: errRes } = await supabase.from('reservas').select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id, metodo_pago_id').eq('habitacion_id', roomContext.id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).order('fecha_inicio', { ascending: false }).limit(1).single();
-    
-    if (errRes || !reserva) {
-        mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos", [], modalContainerConsumos);
-        return;
-    }
-    reserva.habitacion_nombre = roomContext.nombre;
+  // --- 1. OBTENCIÓN DE DATOS ---
+  const { data: reserva, error: errRes } = await supabase.from('reservas').select('id, cliente_nombre, cedula, monto_total, fecha_inicio, fecha_fin, hotel_id, monto_pagado, habitacion_id, metodo_pago_id').eq('habitacion_id', roomContext.id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).order('fecha_inicio', { ascending: false }).limit(1).single();
 
-    const alojamientoCargo = { tipo: "Habitación", nombre: "Estancia Principal", cantidad: 1, subtotal: Number(reserva.monto_total) || 0, id: "hab", estado_pago: "pendiente", fecha: reserva.fecha_inicio };
-    
-    let cargosTienda = [];
-    const { data: ventasTiendaDB } = await supabase.from('ventas_tienda').select('id, creado_en').eq('reserva_id', reserva.id);
-    if (ventasTiendaDB && ventasTiendaDB.length > 0) {
-        const ventaTiendaIds = ventasTiendaDB.map(v => v.id);
-        const { data: detallesTienda } = await supabase.from('detalle_ventas_tienda').select('*, producto_id, venta_id').in('venta_id', ventaTiendaIds);
-        if (detallesTienda) {
-            const productoIds = [...new Set(detallesTienda.map(d => d.producto_id))];
-            const { data: productos } = await supabase.from('productos_tienda').select('id, nombre').in('id', productoIds);
-            const productosMap = new Map(productos?.map(p => [p.id, p.nombre]));
-            cargosTienda = detallesTienda.map(item => ({ tipo: "Tienda", nombre: productosMap.get(item.producto_id) || 'Producto', id: `dvt_${item.id}`, cantidad: item.cantidad, subtotal: Number(item.subtotal) || 0, estado_pago: "pendiente", fecha: ventasTiendaDB.find(v => v.id === item.venta_id)?.creado_en }));
-        }
-    }
-    
-    const { data: serviciosYExtensiones } = await supabase.from('servicios_x_reserva').select('id, servicio_id, cantidad, nota, estado_pago, creado_en, precio_cobrado, pago_reserva_id, descripcion_manual').eq('reserva_id', reserva.id);
-    let cargosServiciosYExtensiones = [];
-    if (serviciosYExtensiones && serviciosYExtensiones.length) {
-        const servicioIds = [...new Set(serviciosYExtensiones.map(s => s.servicio_id).filter(Boolean))];
-        let nombresServicios = {};
-        if (servicioIds.length > 0) {
-            const { data: infoServicios } = await supabase.from('servicios_adicionales').select('id, nombre').in('id', servicioIds);
-            if (infoServicios) { infoServicios.forEach(s => { nombresServicios[s.id] = s.nombre; }); }
-        }
-        cargosServiciosYExtensiones = serviciosYExtensiones.map(s => ({ tipo: (s.descripcion_manual && s.descripcion_manual.toLowerCase().includes('descuento')) ? "Ajuste" : "Servicios", nombre: s.descripcion_manual || (s.servicio_id && nombresServicios[s.servicio_id]) || `Ítem #${s.id.slice(0,6)}`, id: `sxr_${s.id}`, cantidad: s.cantidad || 1, subtotal: s.precio_cobrado !== null ? Number(s.precio_cobrado) : 0, estado_pago: s.estado_pago || "pendiente", fecha: s.creado_en, nota: s.nota || "" }));
-    }
+  if (errRes || !reserva) {
+    mostrarInfoModalGlobal("No hay reserva activa con consumos para esta habitación.", "Consumos", [], modalContainerConsumos);
+    return;
+  }
+  reserva.habitacion_nombre = roomContext.nombre;
 
-    let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosServiciosYExtensiones].filter(c => c.subtotal !== 0);
-    if(todosLosCargos.length === 0) {
-      todosLosCargos.push(alojamientoCargo);
+  const alojamientoCargo = { tipo: "Habitación", nombre: "Estancia Principal", cantidad: 1, subtotal: Number(reserva.monto_total) || 0, id: "hab", estado_pago: "pendiente", fecha: reserva.fecha_inicio };
+
+  let cargosTienda = [];
+  const { data: ventasTiendaDB } = await supabase.from('ventas_tienda').select('id, creado_en').eq('reserva_id', reserva.id);
+  if (ventasTiendaDB && ventasTiendaDB.length > 0) {
+    const ventaTiendaIds = ventasTiendaDB.map(v => v.id);
+    const { data: detallesTienda } = await supabase.from('detalle_ventas_tienda').select('*, producto_id, venta_id').in('venta_id', ventaTiendaIds);
+    if (detallesTienda) {
+      const productoIds = [...new Set(detallesTienda.map(d => d.producto_id))];
+      const { data: productos } = await supabase.from('productos_tienda').select('id, nombre').in('id', productoIds);
+      const productosMap = new Map(productos?.map(p => [p.id, p.nombre]));
+      cargosTienda = detallesTienda.map(item => ({ tipo: "Tienda", nombre: productosMap.get(item.producto_id) || 'Producto', id: `dvt_${item.id}`, cantidad: item.cantidad, subtotal: Number(item.subtotal) || 0, estado_pago: "pendiente", fecha: ventasTiendaDB.find(v => v.id === item.venta_id)?.creado_en }));
     }
-    
-    const totalPagadoCalculado = Number(reserva.monto_pagado) || 0;
-    const totalDeTodosLosCargos = todosLosCargos.reduce((sum, c) => sum + Number(c.subtotal), 0);
-    const saldoPendienteFinal = Math.max(0, totalDeTodosLosCargos - totalPagadoCalculado);
-    
-    // --- 2. GENERACIÓN DE HTML (Con la lista de consumos y fecha) ---
-    let htmlConsumos = `
+  }
+
+  const { data: serviciosYExtensiones } = await supabase.from('servicios_x_reserva').select('id, servicio_id, cantidad, nota, estado_pago, creado_en, precio_cobrado, pago_reserva_id, descripcion_manual').eq('reserva_id', reserva.id);
+  let cargosServiciosYExtensiones = [];
+  if (serviciosYExtensiones && serviciosYExtensiones.length) {
+    const servicioIds = [...new Set(serviciosYExtensiones.map(s => s.servicio_id).filter(Boolean))];
+    let nombresServicios = {};
+    if (servicioIds.length > 0) {
+      const { data: infoServicios } = await supabase.from('servicios_adicionales').select('id, nombre').in('id', servicioIds);
+      if (infoServicios) { infoServicios.forEach(s => { nombresServicios[s.id] = s.nombre; }); }
+    }
+    cargosServiciosYExtensiones = serviciosYExtensiones.map(s => ({ tipo: (s.descripcion_manual && s.descripcion_manual.toLowerCase().includes('descuento')) ? "Ajuste" : "Servicios", nombre: s.descripcion_manual || (s.servicio_id && nombresServicios[s.servicio_id]) || `Ítem #${s.id.slice(0, 6)}`, id: `sxr_${s.id}`, cantidad: s.cantidad || 1, subtotal: s.precio_cobrado !== null ? Number(s.precio_cobrado) : 0, estado_pago: s.estado_pago || "pendiente", fecha: s.creado_en, nota: s.nota || "" }));
+  }
+
+  let todosLosCargos = [alojamientoCargo, ...cargosTienda, ...cargosServiciosYExtensiones].filter(c => c.subtotal !== 0);
+  if (todosLosCargos.length === 0) {
+    todosLosCargos.push(alojamientoCargo);
+  }
+
+  const totalPagadoCalculado = Number(reserva.monto_pagado) || 0;
+  const totalDeTodosLosCargos = todosLosCargos.reduce((sum, c) => sum + Number(c.subtotal), 0);
+  const saldoPendienteFinal = Math.max(0, totalDeTodosLosCargos - totalPagadoCalculado);
+
+  // --- 2. GENERACIÓN DE HTML (Con la lista de consumos y fecha) ---
+  let htmlConsumos = `
         <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:650px;margin:auto;" class="bg-white p-6 rounded-xl">
             <div class="flex justify-between items-center mb-3"><h3 style="font-size:1.3em;font-weight:bold;color:#1459ae;">🧾 Consumos: Hab. ${roomContext.nombre}</h3><button id="btn-cerrar-modal-consumos-X" class="text-gray-500 hover:text-red-600 text-3xl leading-none">&times;</button></div>
             <div style="font-size:0.9em; margin-bottom:10px;">Cliente: <strong>${reserva.cliente_nombre}</strong></div>
@@ -405,8 +405,8 @@ export async function showConsumosYFacturarModal(roomContext, supabase, currentU
                       </tr>
                     </thead>
                     <tbody>
-                      ${todosLosCargos.length > 0 
-                          ? todosLosCargos.map(c => `
+                      ${todosLosCargos.length > 0
+      ? todosLosCargos.map(c => `
                               <tr style="border-bottom:1px solid #e5e7eb;">
                                   <td style="padding:6px;">${c.tipo}</td>
                                   <td style="padding:6px;">
@@ -416,8 +416,8 @@ export async function showConsumosYFacturarModal(roomContext, supabase, currentU
                                   <td style="padding:6px;text-align:center;">${c.cantidad}</td>
                                   <td style="padding:6px;text-align:right;">${formatCurrency(c.subtotal)}</td>
                               </tr>`).join('')
-                          : `<tr><td colspan="4" style="text-align:center;padding:20px;color:#6b7280;">No hay consumos registrados para esta estancia.</td></tr>`
-                      }
+      : `<tr><td colspan="4" style="text-align:center;padding:20px;color:#6b7280;">No hay consumos registrados para esta estancia.</td></tr>`
+    }
                     </tbody>
                 </table>
             </div>
@@ -433,179 +433,187 @@ export async function showConsumosYFacturarModal(roomContext, supabase, currentU
             </div>
         </div>`;
 
-    modalContainerConsumos.innerHTML = htmlConsumos;
-    modalContainerConsumos.style.display = "flex";
+  modalContainerConsumos.innerHTML = htmlConsumos;
+  modalContainerConsumos.style.display = "flex";
 
-    // --- 3. ASIGNACIÓN DE EVENTOS (LISTENERS COMPLETOS) ---
-    setTimeout(() => {
-        const modalDialogActual = modalContainerConsumos.querySelector('.bg-white');
-        if (!modalDialogActual) return;
+  // --- 3. ASIGNACIÓN DE EVENTOS (LISTENERS COMPLETOS) ---
+  setTimeout(() => {
+    const modalDialogActual = modalContainerConsumos.querySelector('.bg-white');
+    if (!modalDialogActual) return;
 
-        const cerrarDesdeModal = () => { 
-            modalContainerConsumos.style.display = "none"; 
-            modalContainerConsumos.innerHTML = ''; 
-        };
-        modalDialogActual.querySelector('#btn-cerrar-modal-consumos-X').onclick = cerrarDesdeModal;
-        modalDialogActual.querySelector('#btn-cerrar-modal-consumos').onclick = cerrarDesdeModal;
-        
-      // --- Reemplaza el bloque vacío con este en uiUtils.js ---
+    const cerrarDesdeModal = () => {
+      modalContainerConsumos.style.display = "none";
+      modalContainerConsumos.innerHTML = '';
+    };
+    modalDialogActual.querySelector('#btn-cerrar-modal-consumos-X').onclick = cerrarDesdeModal;
+    modalDialogActual.querySelector('#btn-cerrar-modal-consumos').onclick = cerrarDesdeModal;
 
-const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
-if (btnCobrarConsumosPend) {
-    btnCobrarConsumosPend.onclick = async () => {
+    // --- Reemplaza el bloque vacío con este en uiUtils.js ---
+
+    const btnCobrarConsumosPend = modalDialogActual.querySelector('#btn-cobrar-pendientes-consumos');
+    if (btnCobrarConsumosPend) {
+      btnCobrarConsumosPend.onclick = async () => {
         // Deshabilitar botón para evitar dobles clics
         btnCobrarConsumosPend.disabled = true;
         btnCobrarConsumosPend.textContent = 'Procesando...';
 
         try {
-            // Asumimos que tienes acceso a tu turnoService globalmente o lo importas
-            const turnoId = turnoService.getActiveTurnId(); 
-            if (!turnoId) {
-                mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No hay un turno de caja activo para registrar este pago.", "Turno Requerido");
-                return;
-            }
+          // Asumimos que tienes acceso a tu turnoService globalmente o lo importas
+          const turnoId = turnoService.getActiveTurnId();
+          if (!turnoId) {
+            mostrarInfoModalGlobal("ACCIÓN BLOQUEADA: No hay un turno de caja activo para registrar este pago.", "Turno Requerido");
+            return;
+          }
 
-            // Obtener métodos de pago para el modal de selección
-            const { data: metodosPagoDB } = await supabase.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true);
-            const metodosPagoDisponibles = metodosPagoDB || [];
-            metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
+          // Obtener métodos de pago para el modal de selección
+          const { data: metodosPagoDB } = await supabase.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true);
+          const metodosPagoDisponibles = metodosPagoDB || [];
+          metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
 
-            // Función interna para procesar el pago una vez confirmado el método
-            const procesarPagoDeuda = async (pagos) => {
-                const totalPagadoDeuda = pagos.reduce((sum, p) => sum + p.monto, 0);
+          // Función interna para procesar el pago una vez confirmado el método
+          const procesarPagoDeuda = async (pagos) => {
+            const totalPagadoDeuda = pagos.reduce((sum, p) => sum + p.monto, 0);
 
-                // 1. Registrar los pagos en 'pagos_reserva'
-                const pagosParaInsertar = pagos.map(p => ({
-                    hotel_id: hotelId,
-                    reserva_id: reserva.id,
-                    monto: p.monto,
-                    fecha_pago: new Date().toISOString(),
-                    metodo_pago_id: p.metodo_pago_id,
-                    usuario_id: currentUser.id,
-                    concepto: `Abono a saldo pendiente (Hab. ${roomContext.nombre})`
-                }));
-                const { data: pagosData, error: errPagos } = await supabase.from('pagos_reserva').insert(pagosParaInsertar).select('id');
-                if (errPagos) throw new Error(`Error al registrar el pago: ${errPagos.message}`);
+            // 1. Registrar los pagos en 'pagos_reserva'
+            const pagosParaInsertar = pagos.map(p => ({
+              hotel_id: hotelId,
+              reserva_id: reserva.id,
+              monto: p.monto,
+              fecha_pago: new Date().toISOString(),
+              metodo_pago_id: p.metodo_pago_id,
+              usuario_id: currentUser.id,
+              concepto: `Abono a saldo pendiente (Hab. ${roomContext.nombre})`
+            }));
+            const { data: pagosData, error: errPagos } = await supabase.from('pagos_reserva').insert(pagosParaInsertar).select('id');
+            if (errPagos) throw new Error(`Error al registrar el pago: ${errPagos.message}`);
 
-                // 2. Registrar el ingreso en 'caja'
-                const movimientosCaja = pagos.map((p, index) => ({
-                    hotel_id: hotelId,
-                    tipo: 'ingreso',
-                    monto: p.monto,
-                    concepto: `Cobro saldo Hab. ${roomContext.nombre} - ${reserva.cliente_nombre}`,
-                    fecha_movimiento: new Date().toISOString(),
-                    metodo_pago_id: p.metodo_pago_id,
-                    usuario_id: currentUser.id,
-                    reserva_id: reserva.id,
-                    turno_id: turnoId,
-                    pago_reserva_id: pagosData[index].id
-                }));
-                const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
-                if (errCaja) console.error("Error registrando en caja, pero el pago fue guardado:", errCaja);
+            // 2. Registrar el ingreso en 'caja'
+            const movimientosCaja = pagos.map((p, index) => ({
+              hotel_id: hotelId,
+              tipo: 'ingreso',
+              monto: p.monto,
+              concepto: `Cobro saldo Hab. ${roomContext.nombre} - ${reserva.cliente_nombre}`,
+              fecha_movimiento: new Date().toISOString(),
+              metodo_pago_id: p.metodo_pago_id,
+              usuario_id: currentUser.id,
+              reserva_id: reserva.id,
+              turno_id: turnoId,
+              pago_reserva_id: pagosData[index].id
+            }));
+            const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
+            if (errCaja) console.error("Error registrando en caja, pero el pago fue guardado:", errCaja);
 
-                // 3. Actualizar el 'monto_pagado' en la reserva principal
-                const { data: reservaActual } = await supabase.from('reservas').select('monto_pagado').eq('id', reserva.id).single();
-                const nuevoMontoPagado = (reservaActual.monto_pagado || 0) + totalPagadoDeuda;
-                await supabase.from('reservas').update({ monto_pagado: nuevoMontoPagado }).eq('id', reserva.id);
+            // 3. Actualizar el 'monto_pagado' en la reserva principal
+            const { data: reservaActual } = await supabase.from('reservas').select('monto_pagado').eq('id', reserva.id).single();
+            const nuevoMontoPagado = (reservaActual.monto_pagado || 0) + totalPagadoDeuda;
+            await supabase.from('reservas').update({ monto_pagado: nuevoMontoPagado }).eq('id', reserva.id);
 
-                mostrarInfoModalGlobal("¡Saldo cobrado con éxito!", "Pago Registrado");
-                
-                // Cerrar modal actual y refrescar el mapa de habitaciones
-                cerrarDesdeModal();
-                // Necesitarás una referencia a renderRooms o emitir un evento global para actualizar
-                const event = new CustomEvent('forceRefreshRoomMap');
-                document.dispatchEvent(event);
-            };
+            mostrarInfoModalGlobal("¡Saldo cobrado con éxito!", "Pago Registrado");
 
-            // Preguntar al usuario por el método de pago usando SweetAlert2
-            const opcionesMetodosHTML = metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
-            const { value: metodoPagoId, isConfirmed } = await Swal.fire({
-                title: 'Confirmar Cobro de Saldo',
-                html: `
+            // Cerrar modal actual y refrescar el mapa de habitaciones
+            cerrarDesdeModal();
+            // Necesitarás una referencia a renderRooms o emitir un evento global para actualizar
+            const event = new CustomEvent('forceRefreshRoomMap');
+            document.dispatchEvent(event);
+          };
+
+          // Preguntar al usuario por el método de pago usando SweetAlert2
+          const opcionesMetodosHTML = metodosPagoDisponibles.map(mp => `<option value="${mp.id}">${mp.nombre}</option>`).join('');
+          const { value: metodoPagoId, isConfirmed } = await Swal.fire({
+            title: 'Confirmar Cobro de Saldo',
+            html: `
                     <p class="mb-4">Se cobrará un total de <strong>${formatCurrency(saldoPendienteFinal)}</strong>.</p>
                     <label for="swal-metodo-pago" class="swal2-label">Seleccione el método de pago:</label>
                     <select id="swal-metodo-pago" class="swal2-input">${opcionesMetodosHTML}</select>`,
-                focusConfirm: false,
-                preConfirm: () => document.getElementById('swal-metodo-pago').value,
-                showCancelButton: true,
-                confirmButtonText: 'Siguiente',
-                cancelButtonText: 'Cancelar'
-            });
+            focusConfirm: false,
+            preConfirm: () => document.getElementById('swal-metodo-pago').value,
+            showCancelButton: true,
+            confirmButtonText: 'Siguiente',
+            cancelButtonText: 'Cancelar'
+          });
 
-            if (isConfirmed && metodoPagoId) {
-                // Si se elige pago mixto, se necesita una función que muestre ese modal
-                // y que al confirmar llame a `procesarPagoDeuda`.
-                // Por simplicidad, aquí asumimos que tienes una función `showPagoMixtoModal`.
-                if (metodoPagoId === "mixto") {
-                    // showPagoMixtoModal(saldoPendienteFinal, metodosPagoDisponibles, procesarPagoDeuda);
-                    alert("La lógica para Pago Mixto debe ser implementada aquí.");
-                } else {
-                    await procesarPagoDeuda([{ metodo_pago_id: metodoPagoId, monto: saldoPendienteFinal }]);
-                }
+          if (isConfirmed && metodoPagoId) {
+            // Si se elige pago mixto, se necesita una función que muestre ese modal
+            // y que al confirmar llame a `procesarPagoDeuda`.
+            // Por simplicidad, aquí asumimos que tienes una función `showPagoMixtoModal`.
+            if (metodoPagoId === "mixto") {
+              // TODO: Implementar modal de pago mixto para cobro de saldo pendiente
+              Swal.fire({
+                icon: 'info',
+                title: 'Pago Mixto no disponible aquí',
+                text: 'Selecciona un método de pago individual para este cobro.',
+                confirmButtonText: 'Entendido',
+                confirmButtonColor: '#3085d6'
+              });
+            } else {
+              await procesarPagoDeuda([{ metodo_pago_id: metodoPagoId, monto: saldoPendienteFinal }]);
             }
+          }
 
         } catch (error) {
-            console.error("Error en el proceso de cobrar saldo:", error);
-            mostrarInfoModalGlobal(`Error al procesar el pago: ${error.message}`, "Error Crítico");
+          console.error("Error en el proceso de cobrar saldo:", error);
+          mostrarInfoModalGlobal(`Error al procesar el pago: ${error.message}`, "Error Crítico");
         } finally {
-            // Reactivar el botón en caso de cancelación o error
-            if(btnCobrarConsumosPend){
-                btnCobrarConsumosPend.disabled = false;
-                btnCobrarConsumosPend.textContent = `Cobrar Saldo (${formatCurrency(saldoPendienteFinal)})`;
-            }
+          // Reactivar el botón en caso de cancelación o error
+          if (btnCobrarConsumosPend) {
+            btnCobrarConsumosPend.disabled = false;
+            btnCobrarConsumosPend.textContent = `Cobrar Saldo (${formatCurrency(saldoPendienteFinal)})`;
+          }
         }
-    };
-}
-        
-        // --- LÓGICA AÑADIDA PARA EL BOTÓN "FACTURAR" ---
-        const btnFacturar = modalDialogActual.querySelector('#btn-facturar');
-        if (btnFacturar) {
-            btnFacturar.onclick = async () => {
-                // Primero, preguntar por el método de pago para la factura
-                const { data: metodosPagoDB } = await supabase.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true);
-                const opcionesPago = metodosPagoDB.reduce((obj, metodo) => {
-                    obj[metodo.id] = metodo.nombre;
-                    return obj;
-                }, {});
+      };
+    }
 
-                const { value: metodoPagoIdFactura } = await Swal.fire({
-                    title: 'Seleccionar Método de Pago para Factura',
-                    input: 'select',
-                    inputOptions: opcionesPago,
-                    inputPlaceholder: 'Seleccione un método',
-                    showCancelButton: true,
-                    confirmButtonText: 'Continuar a Facturación',
-                    cancelButtonText: 'Cancelar'
-                });
+    // --- LÓGICA AÑADIDA PARA EL BOTÓN "FACTURAR" ---
+    const btnFacturar = modalDialogActual.querySelector('#btn-facturar');
+    if (btnFacturar) {
+      btnFacturar.onclick = async () => {
+        // Primero, preguntar por el método de pago para la factura
+        const { data: metodosPagoDB } = await supabase.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true);
+        const opcionesPago = metodosPagoDB.reduce((obj, metodo) => {
+          obj[metodo.id] = metodo.nombre;
+          return obj;
+        }, {});
 
-                if (metodoPagoIdFactura) {
-                    showGlobalLoading("Generando factura electrónica...");
-                    
-                    // Preparar los datos de consumo para la función de facturación
-                    const consumosParaFactura = todosLosCargos
-                        .filter(c => c.tipo !== 'Habitación') // Excluir el cargo de la estancia principal que ya va en la reserva
-                        .map(c => ({
-                            nombre: c.nombre,
-                            cantidad: c.cantidad,
-                            subtotal: c.subtotal
-                        }));
+        const { value: metodoPagoIdFactura } = await Swal.fire({
+          title: 'Seleccionar Método de Pago para Factura',
+          input: 'select',
+          inputOptions: opcionesPago,
+          inputPlaceholder: 'Seleccione un método',
+          showCancelButton: true,
+          confirmButtonText: 'Continuar a Facturación',
+          cancelButtonText: 'Cancelar'
+        });
 
-                    await facturarElectronicaYMostrarResultado({
-                        supabase: supabase,
-                        hotelId: hotelId,
-                        reserva: reserva,
-                        consumosTienda: cargosTienda, // Pasamos los consumos por separado
-                        consumosRest: [], // (Añadir si tienes restaurante)
-                        consumosServicios: cargosServiciosYExtensiones,
-                        metodoPagoIdLocal: metodoPagoIdFactura
-                    });
-                    
-                    hideGlobalLoading();
-                }
-            };
+        if (metodoPagoIdFactura) {
+          showGlobalLoading("Generando factura electrónica...");
+
+          // Preparar los datos de consumo para la función de facturación
+          const consumosParaFactura = todosLosCargos
+            .filter(c => c.tipo !== 'Habitación') // Excluir el cargo de la estancia principal que ya va en la reserva
+            .map(c => ({
+              nombre: c.nombre,
+              cantidad: c.cantidad,
+              subtotal: c.subtotal
+            }));
+
+          const { facturarElectronicaYMostrarResultado } = await import('./modules/mapa-habitaciones/modales-alquiler.js');
+
+          await facturarElectronicaYMostrarResultado({
+            supabase: supabase,
+            hotelId: hotelId,
+            reserva: reserva,
+            consumosTienda: cargosTienda, // Pasamos los consumos por separado
+            consumosRest: [], // (Añadir si tienes restaurante)
+            consumosServicios: cargosServiciosYExtensiones,
+            metodoPagoIdLocal: metodoPagoIdFactura
+          });
+
+          hideGlobalLoading();
         }
-        
-    }, 100);
+      };
+    }
+
+  }, 100);
 }
 
 export async function imprimirTicketHabitacion({ supabase, hotelId, datosTicket, tipoDocumento }) {
@@ -664,19 +672,19 @@ export async function imprimirTicketHabitacion({ supabase, hotelId, datosTicket,
   }
 
   // --- HTML ticket --- (ajusta aquí tu template según lo que imprimas: factura, consumo, etc)
-let html = ''; // Inicializar vacía
+  let html = ''; // Inicializar vacía
 
   if (tipoDocumento === 'Recibo de Pago') {
     const {
-        habitacion,
-        cliente,
-        fechaPago,
-        montoPagado,
-        metodoPagoNombre,
-        conceptoPago,
-        // usuarioNombre, // Lo incluiremos en otrosDatos si es necesario
-        // transaccionId, // Lo incluiremos en otrosDatos si es necesario
-        otrosDatos // Recibirá: `Reserva ID: XXXXX<br>Atendido por: YYYYY`
+      habitacion,
+      cliente,
+      fechaPago,
+      montoPagado,
+      metodoPagoNombre,
+      conceptoPago,
+      // usuarioNombre, // Lo incluiremos en otrosDatos si es necesario
+      // transaccionId, // Lo incluiremos en otrosDatos si es necesario
+      otrosDatos // Recibirá: `Reserva ID: XXXXX<br>Atendido por: YYYYY`
     } = datosTicket;
 
     html = `
@@ -689,13 +697,13 @@ let html = ''; // Inicializar vacía
                 ${config?.razon_social ? `<br/>${config.razon_social}` : ''}
                 ${config?.telefono_fiscal ? `<br/>Tel: ${config.telefono_fiscal}` : ''}
             </div>
-            ${config?.encabezado_ticket_l1 || config?.encabezado_ticket_l2 || config?.encabezado_ticket_l3 ? 
-                `<div style="text-align:center;margin:3px 0 5px 0;font-size:0.9em;">
+            ${config?.encabezado_ticket_l1 || config?.encabezado_ticket_l2 || config?.encabezado_ticket_l3 ?
+        `<div style="text-align:center;margin:3px 0 5px 0;font-size:0.9em;">
                     ${config.encabezado_ticket_l1 || ''}
                     ${config.encabezado_ticket_l2 ? `<br>${config.encabezado_ticket_l2}` : ''}
                     ${config.encabezado_ticket_l3 ? `<br>${config.encabezado_ticket_l3}` : ''}
                 </div>` : (config?.encabezado_ticket ? `<div style="text-align:center;margin:2px 0 5px 0;font-size:0.9em;">${config.encabezado_ticket}</div>` : '')
-            }
+      }
             <div class="linea"></div>
             <div style="font-size:1.1em; text-align:center; font-weight:bold; margin: 3px 0;">RECIBO DE PAGO</div>
             <div class="linea"></div>
@@ -716,17 +724,17 @@ let html = ''; // Inicializar vacía
         </div>
     `;
   } else { // Lógica existente para 'Ticket de Consumo' o cualquier otro tipo por defecto
-      const {
-          habitacion,
-          cliente,
-          fechaIngreso,
-          fechaSalida,
-          consumos,
-          totalConsumo,
-          otrosDatos: otrosDatosConsumo // Renombrar para evitar colisión
-      } = datosTicket;
+    const {
+      habitacion,
+      cliente,
+      fechaIngreso,
+      fechaSalida,
+      consumos,
+      totalConsumo,
+      otrosDatos: otrosDatosConsumo // Renombrar para evitar colisión
+    } = datosTicket;
 
-      html = `
+    html = `
           <div class="ticket">
             ${config?.mostrar_logo !== false && config?.logo_url ? `<div style="text-align:center;margin-bottom:4px;"><img src="${config.logo_url}" style="max-width:45mm;max-height:30px; object-fit:contain;"></div>` : ''}
             <div class="title" style="text-align:center;font-weight:bold; margin-bottom:3px;">${config?.nombre_hotel || ''}</div>
@@ -736,13 +744,13 @@ let html = ''; // Inicializar vacía
                 ${config?.razon_social ? `<br/>${config.razon_social}` : ''}
                 ${config?.telefono_fiscal ? `<br/>Tel: ${config.telefono_fiscal}` : ''}
             </div>
-            ${config?.encabezado_ticket_l1 || config?.encabezado_ticket_l2 || config?.encabezado_ticket_l3 ? 
-                `<div style="text-align:center;margin:3px 0 5px 0;font-size:0.9em;">
+            ${config?.encabezado_ticket_l1 || config?.encabezado_ticket_l2 || config?.encabezado_ticket_l3 ?
+        `<div style="text-align:center;margin:3px 0 5px 0;font-size:0.9em;">
                     ${config.encabezado_ticket_l1 || ''}
                     ${config.encabezado_ticket_l2 ? `<br>${config.encabezado_ticket_l2}` : ''}
                     ${config.encabezado_ticket_l3 ? `<br>${config.encabezado_ticket_l3}` : ''}
                 </div>` : (config?.encabezado_ticket ? `<div style="text-align:center;margin:2px 0 5px 0;font-size:0.9em;">${config.encabezado_ticket}</div>` : '')
-            }
+      }
             <div class="linea"></div>
             <div style="font-size:1.1em; text-align:center; font-weight:bold; margin: 3px 0;">${tipoDocumento || "Ticket de Consumo"}</div>
             <div class="linea"></div>
@@ -804,41 +812,41 @@ let html = ''; // Inicializar vacía
   setTimeout(() => { w.focus(); w.print(); }, 250);
 }
 export function mostrarInfoModalGlobal(htmlContent, title = "Información", botones = [], modalContainerRef = null) {
-    const container = modalContainerRef || document.getElementById('modal-container');
+  const container = modalContainerRef || document.getElementById('modal-container');
 
-    if (!container) {
-        console.error("Contenedor de modal global no encontrado ('modal-container'). El modal no se puede mostrar.");
-        // Fallback muy básico si el contenedor principal no existe
-        alert(title + "\n\n" + String(htmlContent).replace(/<[^>]*>/g, ''));
-        return;
+  if (!container) {
+    console.error("Contenedor de modal global no encontrado ('modal-container'). El modal no se puede mostrar.");
+    // Fallback muy básico si el contenedor principal no existe
+    alert(title + "\n\n" + String(htmlContent).replace(/<[^>]*>/g, ''));
+    return;
+  }
+
+  container.style.display = "flex"; // Ahora 'container' debería ser el elemento DOM correcto
+  container.innerHTML = ""; // Limpiar contenido anterior
+
+  const modalDialog = document.createElement('div');
+  modalDialog.className = "bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 m-auto relative animate-fade-in-up";
+
+  let buttonsHTML = '';
+  const closeAndClean = () => {
+    if (container) { // Doble chequeo por si acaso
+      container.style.display = "none";
+      container.innerHTML = '';
     }
+  };
 
-    container.style.display = "flex"; // Ahora 'container' debería ser el elemento DOM correcto
-    container.innerHTML = ""; // Limpiar contenido anterior
+  if (botones && botones.length > 0) {
+    botones.forEach((btnInfo, index) => {
+      // Usar clases de botón base y permitir clases personalizadas
+      const btnClass = btnInfo.clase || (index === 0 && botones.length === 1 ? 'button-primary' : 'button-neutral');
+      buttonsHTML += `<button id="info-modal-btn-${index}" class="button ${btnClass} py-2 px-4 ml-2">${btnInfo.texto}</button>`;
+    });
+  } else {
+    // Botón "Entendido" por defecto si no se especifican otros botones
+    buttonsHTML = `<button id="btn-ok-info-modal-global" class="button button-primary py-2 px-4">Entendido</button>`;
+  }
 
-    const modalDialog = document.createElement('div');
-    modalDialog.className = "bg-white rounded-xl shadow-2xl w-full max-w-lg p-6 m-auto relative animate-fade-in-up";
-
-    let buttonsHTML = '';
-    const closeAndClean = () => {
-        if (container) { // Doble chequeo por si acaso
-            container.style.display = "none";
-            container.innerHTML = '';
-        }
-    };
-
-    if (botones && botones.length > 0) {
-        botones.forEach((btnInfo, index) => {
-            // Usar clases de botón base y permitir clases personalizadas
-            const btnClass = btnInfo.clase || (index === 0 && botones.length === 1 ? 'button-primary' : 'button-neutral');
-            buttonsHTML += `<button id="info-modal-btn-${index}" class="button ${btnClass} py-2 px-4 ml-2">${btnInfo.texto}</button>`;
-        });
-    } else {
-        // Botón "Entendido" por defecto si no se especifican otros botones
-        buttonsHTML = `<button id="btn-ok-info-modal-global" class="button button-primary py-2 px-4">Entendido</button>`;
-    }
-
-    modalDialog.innerHTML = `
+  modalDialog.innerHTML = `
         <div class="flex justify-between items-start mb-4">
             <h3 class="text-xl font-semibold text-gray-800">${title}</h3>
             <button id="close-info-modal-global-btn" class="text-gray-400 hover:text-red-600 text-3xl leading-none p-1 -mt-2 -mr-2">&times;</button>
@@ -848,64 +856,64 @@ export function mostrarInfoModalGlobal(htmlContent, title = "Información", boto
             ${buttonsHTML}
         </div>
     `;
-    container.appendChild(modalDialog);
+  container.appendChild(modalDialog);
 
-    // Asignar acciones a los botones
-    if (botones && botones.length > 0) {
-        botones.forEach((btnInfo, index) => {
-            const btnElement = modalDialog.querySelector(`#info-modal-btn-${index}`);
-            if (btnElement) {
-                btnElement.onclick = () => {
-                    if (typeof btnInfo.accion === 'function') {
-                        btnInfo.accion();
-                    }
-                    // Por defecto, la mayoría de las acciones de botón deberían cerrar el modal,
-                    // a menos que la propia acción lo maneje o se quiera mantener abierto.
-                    // Si una acción NO debe cerrar el modal, la acción puede devolver `false`.
-                    if (btnInfo.noCerrar !== true) {
-                         closeAndClean();
-                    }
-                };
-            }
-        });
-    } else {
-        const defaultOkButton = modalDialog.querySelector('#btn-ok-info-modal-global');
-        if (defaultOkButton) {
-            defaultOkButton.onclick = closeAndClean;
-        }
-    }
-
-    const closeModalButton = modalDialog.querySelector('#close-info-modal-global-btn');
-    if (closeModalButton) {
-        closeModalButton.onclick = closeAndClean;
-    }
-
-    // Cerrar si se hace clic fuera del modalDialog (en el overlay 'container')
-    container.onclick = (e) => {
-        if (e.target === container) {
+  // Asignar acciones a los botones
+  if (botones && botones.length > 0) {
+    botones.forEach((btnInfo, index) => {
+      const btnElement = modalDialog.querySelector(`#info-modal-btn-${index}`);
+      if (btnElement) {
+        btnElement.onclick = () => {
+          if (typeof btnInfo.accion === 'function') {
+            btnInfo.accion();
+          }
+          // Por defecto, la mayoría de las acciones de botón deberían cerrar el modal,
+          // a menos que la propia acción lo maneje o se quiera mantener abierto.
+          // Si una acción NO debe cerrar el modal, la acción puede devolver `false`.
+          if (btnInfo.noCerrar !== true) {
             closeAndClean();
-        }
-    };
-    // Prevenir que el clic en el modalDialog cierre el modal (ya que se propagaría al container)
-    modalDialog.onclick = (e) => {
-        e.stopPropagation();
-    };
+          }
+        };
+      }
+    });
+  } else {
+    const defaultOkButton = modalDialog.querySelector('#btn-ok-info-modal-global');
+    if (defaultOkButton) {
+      defaultOkButton.onclick = closeAndClean;
+    }
+  }
+
+  const closeModalButton = modalDialog.querySelector('#close-info-modal-global-btn');
+  if (closeModalButton) {
+    closeModalButton.onclick = closeAndClean;
+  }
+
+  // Cerrar si se hace clic fuera del modalDialog (en el overlay 'container')
+  container.onclick = (e) => {
+    if (e.target === container) {
+      closeAndClean();
+    }
+  };
+  // Prevenir que el clic en el modalDialog cierre el modal (ya que se propagaría al container)
+  modalDialog.onclick = (e) => {
+    e.stopPropagation();
+  };
 }
 // --- MODAL DE CONFIRMACIÓN PERSONALIZADO (Estilo Tailwind) ---
 export function mostrarConfirmacion(titulo, mensaje, tipo = 'danger') {
-    return new Promise((resolve) => {
-        // Colores según el tipo de acción (danger = rojo, info/primary = azul)
-        const colorClass = tipo === 'danger' ? 'red' : 'blue';
-        
-        // Icono SVG según el tipo
-        const icon = tipo === 'danger' 
-            ? `<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4"><svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>`
-            : `<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4"><svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>`;
+  return new Promise((resolve) => {
+    // Colores según el tipo de acción (danger = rojo, info/primary = azul)
+    const colorClass = tipo === 'danger' ? 'red' : 'blue';
 
-        // Crear el elemento contenedor
-        const modalEl = document.createElement('div');
-        modalEl.className = "fixed inset-0 z-[150] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-fadeIn";
-        modalEl.innerHTML = `
+    // Icono SVG según el tipo
+    const icon = tipo === 'danger'
+      ? `<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4"><svg class="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg></div>`
+      : `<div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4"><svg class="h-6 w-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>`;
+
+    // Crear el elemento contenedor
+    const modalEl = document.createElement('div');
+    modalEl.className = "fixed inset-0 z-[150] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-fadeIn";
+    modalEl.innerHTML = `
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative transform transition-all scale-100 border border-gray-200">
                 <div class="text-center">
                     ${icon}
@@ -924,29 +932,29 @@ export function mostrarConfirmacion(titulo, mensaje, tipo = 'danger') {
                 </div>
             </div>
         `;
-        
-        // Agregar al DOM
-        document.body.appendChild(modalEl);
 
-        // Función de cierre
-        const close = (result) => {
-            modalEl.classList.add('opacity-0'); // Efecto visual de salida
-            setTimeout(() => {
-                if (document.body.contains(modalEl)) {
-                    document.body.removeChild(modalEl);
-                }
-            }, 200);
-            resolve(result);
-        };
+    // Agregar al DOM
+    document.body.appendChild(modalEl);
 
-        // Listeners
-        const btnCancel = modalEl.querySelector('#btn-cancel-confirm');
-        const btnAccept = modalEl.querySelector('#btn-accept-confirm');
+    // Función de cierre
+    const close = (result) => {
+      modalEl.classList.add('opacity-0'); // Efecto visual de salida
+      setTimeout(() => {
+        if (document.body.contains(modalEl)) {
+          document.body.removeChild(modalEl);
+        }
+      }, 200);
+      resolve(result);
+    };
 
-        btnCancel.onclick = () => close(false);
-        btnAccept.onclick = () => close(true);
+    // Listeners
+    const btnCancel = modalEl.querySelector('#btn-cancel-confirm');
+    const btnAccept = modalEl.querySelector('#btn-accept-confirm');
 
-        // Cerrar al hacer clic fuera (backdrop)
-        modalEl.onclick = (e) => { if(e.target === modalEl) close(false); };
-    });
+    btnCancel.onclick = () => close(false);
+    btnAccept.onclick = () => close(true);
+
+    // Cerrar al hacer clic fuera (backdrop)
+    modalEl.onclick = (e) => { if (e.target === modalEl) close(false); };
+  });
 }

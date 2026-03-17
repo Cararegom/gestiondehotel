@@ -2,11 +2,8 @@
 <html lang="es">
 <head>
     <script>
-  gtag('event', 'conversion_event_signup', {
-    // <event_parameters>
-  });
-</script>
-    <script>
+<!-- GTM: inicializa dataLayer primero, luego carga el script. El evento de conversión
+     se registra correctamente a través del dataLayer que GTM ya tiene disponible. -->
 (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
 new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
 j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
@@ -14,6 +11,9 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 })(window,document,'script','dataLayer','GTM-NDC7DNLK');
 </script>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; frame-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self' https:; manifest-src 'self'; worker-src 'self' blob:;">
     <title>Software para Hoteles, Moteles y Hostales | Prueba Gestión de Hotel GRATIS 30 Días</title>
 <meta name="description" content="Software hotelero todo en uno. Administra reservas por horas o noches, caja, limpieza, tienda, restaurante y mantenimiento. Ideal para hoteles, moteles y hostales. Prueba GRATIS 30 días sin tarjeta.">
 
@@ -792,13 +792,13 @@ Gestiona reservas, caja, limpieza, tienda, restaurante y mantenimiento desde un 
 
                     <div class="mb-3 position-relative">
                         <label for="registroPassword" class="form-label">Contraseña <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" id="registroPassword" required>
+                        <input type="password" class="form-control" id="registroPassword" required minlength="8">
                         <i class="bi bi-eye-slash-fill position-absolute" style="cursor: pointer; right: 15px; top: 42px;" id="togglePassword"></i>
                     </div>
 
                     <div class="mb-3 position-relative">
                         <label for="confirmPassword" class="form-label">Confirmar Contraseña <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" id="confirmPassword" required>
+                        <input type="password" class="form-control" id="confirmPassword" required minlength="8">
                         <i class="bi bi-eye-slash-fill position-absolute" style="cursor: pointer; right: 15px; top: 42px;" id="toggleConfirmPassword"></i>
                     </div>
                 </div>

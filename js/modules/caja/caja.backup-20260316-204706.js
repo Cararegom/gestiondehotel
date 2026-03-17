@@ -8,8 +8,7 @@ import {
   showGlobalLoading,
   hideGlobalLoading,
   setFormLoadingState,
-  showSuccess,
-  showConfirmationModal
+  showSuccess
 } from '../../uiUtils.js';
 import { escapeAttribute, escapeHtml } from '../../security.js';
 
@@ -21,183 +20,9 @@ let currentContainerEl = null;
 let currentUserRole = null;
 let turnoActivo = null; // GuardarÃ¡ el estado del turno actual
 let turnoEnSupervision = null;
-let turnosAbiertosCache = new Map();
-let movementTableState = {
-  all: [],
-  turnoId: null,
-  currentPage: 1,
-  pageSize: 15,
-  search: '',
-  type: 'todos',
-  method: 'todos'
-};
 
 
 const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb44ip8u876";
-const ADMIN_ROLES = ['admin', 'administrador'];
-
-function isAdminUser() {
-  return !!(currentUserRole && ADMIN_ROLES.includes(String(currentUserRole).toLowerCase()));
-}
-
-function getMovementEffectiveDate(movement) {
-  return movement?.fecha_movimiento || movement?.creado_en || null;
-}
-
-function getTimestampValue(dateInput) {
-  const timeValue = dateInput ? new Date(dateInput).getTime() : 0;
-  return Number.isFinite(timeValue) ? timeValue : 0;
-}
-
-function sortMovementsByDate(movements, ascending = false) {
-  return [...(movements || [])].sort((a, b) => {
-    const diff = getTimestampValue(getMovementEffectiveDate(a)) - getTimestampValue(getMovementEffectiveDate(b));
-    return ascending ? diff : -diff;
-  });
-}
-
-function formatMovementDateTime(movement) {
-  return formatDateTime(getMovementEffectiveDate(movement));
-}
-
-function getMovementTimeLabel(movement) {
-  const formatted = formatMovementDateTime(movement);
-  const parts = formatted.split(',');
-  return (parts[1] || parts[0] || '').trim().slice(0, 5) || '--:--';
-}
-
-function getTurnElapsedLabel(fechaApertura) {
-  if (!fechaApertura) return 'Sin hora de apertura';
-  const elapsedMs = Date.now() - new Date(fechaApertura).getTime();
-  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return 'Sin hora de apertura';
-
-  const totalMinutes = Math.floor(elapsedMs / 60000);
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours <= 0) return `${minutes} min abierto`;
-  return `${hours}h ${String(minutes).padStart(2, '0')} min abierto`;
-}
-
-function getMovementOriginMeta(movement) {
-  const concept = String(movement?.concepto || '').toLowerCase();
-
-  if (concept.includes('tienda') || concept.includes('producto')) {
-    return { label: 'Tienda', className: 'bg-cyan-100 text-cyan-700' };
-  }
-  if (concept.includes('restaurante') || concept.includes('cocina')) {
-    return { label: 'Restaurante', className: 'bg-orange-100 text-orange-700' };
-  }
-  if (concept.includes('propina')) {
-    return { label: 'Propina', className: 'bg-amber-100 text-amber-700' };
-  }
-  if (concept.includes('habitaci') || concept.includes('alquiler') || concept.includes('reserva') || concept.includes('extensi')) {
-    return { label: 'Habitaciones', className: 'bg-blue-100 text-blue-700' };
-  }
-  if (movement?.tipo === 'egreso') {
-    return { label: 'Egreso', className: 'bg-rose-100 text-rose-700' };
-  }
-  if (movement?.tipo === 'apertura') {
-    return { label: 'Apertura', className: 'bg-violet-100 text-violet-700' };
-  }
-  return { label: 'General', className: 'bg-slate-100 text-slate-700' };
-}
-
-function getMovementTypeBadge(movementType) {
-  const safeType = escapeHtml(movementType || 'N/A');
-  if (movementType === 'ingreso') {
-    return `<span class="badge bg-green-100 text-green-800">${safeType}</span>`;
-  }
-  if (movementType === 'egreso') {
-    return `<span class="badge bg-red-100 text-red-800">${safeType}</span>`;
-  }
-  return `<span class="badge bg-blue-100 text-blue-800">${safeType}</span>`;
-}
-
-function resetMovementTableState() {
-  movementTableState = {
-    all: [],
-    turnoId: null,
-    currentPage: 1,
-    pageSize: 15,
-    search: '',
-    type: 'todos',
-    method: 'todos'
-  };
-}
-
-async function solicitarMontoInicialTurno() {
-  if (typeof Swal !== 'undefined') {
-    const result = await Swal.fire({
-      title: 'Abrir turno',
-      text: 'Ingresa el monto inicial de caja.',
-      input: 'number',
-      inputValue: '0',
-      inputAttributes: {
-        min: '0',
-        step: '0.01'
-      },
-      showCancelButton: true,
-      confirmButtonText: 'Abrir turno',
-      cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#16a34a',
-      inputValidator: (value) => {
-        const parsed = Number(value);
-        if (!Number.isFinite(parsed) || parsed < 0) {
-          return 'Debes ingresar un monto igual o mayor a 0.';
-        }
-        return null;
-      }
-    });
-
-    if (!result.isConfirmed) return null;
-    return Number(result.value);
-  }
-
-  const montoInicialStr = prompt('¿Cuál es el monto inicial de caja?');
-  if (montoInicialStr === null) return null;
-
-  const montoInicial = Number(montoInicialStr);
-  return Number.isFinite(montoInicial) ? montoInicial : Number.NaN;
-}
-
-async function seleccionarMetodoPago(metodos, metodoActualId = '') {
-  if (!Array.isArray(metodos) || metodos.length === 0) return null;
-
-  if (typeof Swal !== 'undefined') {
-    const inputOptions = Object.fromEntries(
-      metodos.map((metodo) => [metodo.id, metodo.nombre || 'Sin nombre'])
-    );
-
-    const result = await Swal.fire({
-      title: 'Cambiar metodo de pago',
-      input: 'select',
-      inputOptions,
-      inputValue: metodoActualId || metodos[0].id,
-      showCancelButton: true,
-      confirmButtonText: 'Guardar',
-      cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#2563eb',
-      inputPlaceholder: 'Selecciona un metodo'
-    });
-
-    if (!result.isConfirmed) return null;
-    return result.value;
-  }
-
-  const opciones = metodos.map((metodo, index) => `${index + 1}. ${metodo.nombre}`).join('\n');
-  const seleccionado = prompt(`Selecciona el metodo de pago:\n${opciones}`);
-  const indice = Number(seleccionado) - 1;
-  return metodos[indice]?.id || null;
-}
-
-async function confirmAction(options) {
-  if (typeof Swal !== 'undefined') {
-    return showConfirmationModal(options);
-  }
-
-  const plainText = String(options?.text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-  return window.confirm(plainText || 'Estas seguro de continuar?');
-}
 
 // --- LÃ“GICA DE TURNOS ---
 // js/modules/caja/caja.js
@@ -225,12 +50,15 @@ async function salirModoSupervision() {
 async function verificarTurnoActivo() {
   if (!currentModuleUser?.id || !currentHotelId) return null;
 
+  // 1) Traer TODOS los turnos abiertos de ese usuario/hotel
+  // 1) Traer TODOS los turnos abiertos de ese usuario/hotel
   const { data: turnosAbiertos, error } = await currentSupabaseInstance
     .from('turnos')
-    .select('*, usuarios(nombre, email)')
+    .select('*')
     .eq('usuario_id', currentModuleUser.id)
     .eq('hotel_id', currentHotelId)
     .eq('estado', 'abierto')
+    // ðŸ‘‡ Se cambia 'creado_en' por 'fecha_apertura'
     .order('fecha_apertura', { ascending: false });
 
   if (error) {
@@ -242,10 +70,12 @@ async function verificarTurnoActivo() {
     return null;
   }
 
+  // 2) Si no hay turnos abiertos
   if (!turnosAbiertos || turnosAbiertos.length === 0) {
     return null;
   }
 
+  // 3) Si hay MÃS de 1, lo reportamos (para que sepas que hay duplicados)
   if (turnosAbiertos.length > 1) {
     console.warn(
       `[Caja] Hay ${turnosAbiertos.length} turnos abiertos para este usuario. TomarÃ© el mÃ¡s reciente. IDs:`,
@@ -253,22 +83,22 @@ async function verificarTurnoActivo() {
     );
   }
 
-  const turnoReciente = turnosAbiertos[0];
-  turnoService.setActiveTurn(turnoReciente.id);
-  return turnoReciente;
+  // 4) Tomamos el mÃ¡s reciente
+  const turnoActivo = turnosAbiertos[0];
+
+  // 5) Guardar el turno activo en tu service
+  turnoService.setActiveTurn(turnoActivo.id);
+
+  return turnoActivo;
 }
 async function abrirTurno() {
-  const montoInicial = await solicitarMontoInicialTurno();
-  if (montoInicial === null) {
+  const montoInicialStr = prompt("Â¿CuÃ¡l es el monto inicial de caja?");
+  const montoInicial = parseFloat(montoInicialStr);
+  if (isNaN(montoInicial) || montoInicial < 0) {
+    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'Monto invÃ¡lido. Turno no iniciado.');
     return;
   }
-
-  if (!Number.isFinite(montoInicial) || montoInicial < 0) {
-    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'Monto invalido. Turno no iniciado.');
-    return;
-  }
-
-  showGlobalLoading('Abriendo nuevo turno...');
+  showGlobalLoading("Abriendo nuevo turno...");
   try {
     const { data: nuevoTurno, error } = await currentSupabaseInstance
       .from('turnos')
@@ -280,34 +110,19 @@ async function abrirTurno() {
       .select()
       .single();
     if (error) throw error;
-
-    const turnoPreparado = {
-      ...nuevoTurno,
-      usuarios: {
-        nombre: currentModuleUser?.nombre || currentModuleUser?.email || 'Usuario',
-        email: currentModuleUser?.email || ''
-      }
-    };
-
-    const { error: aperturaError } = await currentSupabaseInstance.from('caja').insert({
+    turnoActivo = nuevoTurno;
+    turnoService.setActiveTurn(turnoActivo.id);
+    await currentSupabaseInstance.from('caja').insert({
       tipo: 'apertura',
       monto: montoInicial,
       concepto: 'Apertura de caja',
       hotel_id: currentHotelId,
       usuario_id: currentModuleUser.id,
-      turno_id: turnoPreparado.id,
+      turno_id: turnoActivo.id,
       fecha_movimiento: new Date().toISOString()
     });
-
-    if (aperturaError) {
-      await currentSupabaseInstance.from('turnos').delete().eq('id', turnoPreparado.id);
-      throw new Error(`No se pudo registrar la apertura de caja: ${aperturaError.message}`);
-    }
-
-    turnoActivo = turnoPreparado;
-    turnoService.setActiveTurn(turnoActivo.id);
     await renderizarUI();
-    showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Turno iniciado con exito.');
+    showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Â¡Turno iniciado con Ã©xito!');
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error al abrir turno: ${err.message}`);
     await renderizarUI();
@@ -319,7 +134,8 @@ async function abrirTurno() {
 // js/modules/caja/caja.js
 
 
-async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, valoresReales = null) {
+// REEMPLAZA TU FUNCIÃ“N cerrarTurno CON ESTA VERSIÃ“N CORREGIDA
+async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, valoresReales = null) { // <--- AQUÃ ESTABA EL ERROR (FALTABA valoresReales)
   const turnoACerrar = turnoExterno || turnoActivo;
   const usuarioDelTurno = usuarioDelTurnoExterno || currentModuleUser;
 
@@ -330,69 +146,61 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, v
 
   const esCierreForzoso = !!turnoExterno;
   const adminNombre = currentModuleUser?.email;
-  const tituloLoading = esCierreForzoso
-    ? `Forzando cierre del turno de ${usuarioDelTurno.nombre || 'usuario'}...`
-    : 'Realizando cierre de turno...';
+  const tituloLoading = esCierreForzoso 
+    ? `Forzando cierre del turno de ${usuarioDelTurno.nombre}...` 
+    : "Realizando cierre de turno...";
   
   showGlobalLoading(tituloLoading);
 
   try {
+    // --- 1. Definimos la fecha de cierre ---
     const fechaCierreISO = new Date().toISOString();
     const fechaAperturaISO = turnoACerrar.fecha_apertura;
     const usuarioDelTurnoId = usuarioDelTurno.id;
 
+    // --- 2. Obtenemos los datos de CAJA ---
     const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance
       .from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
     if (metodosError) throw metodosError;
 
     const { data: movimientos, error: movError } = await currentSupabaseInstance
-      .from('caja')
-      .select('*, usuarios(nombre), metodos_pago(nombre)')
-      .eq('turno_id', turnoACerrar.id);
+      .from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoACerrar.id);
     if (movError) throw movError;
+    
+    // --- 3. Obtenemos los LOGS del turno ---
+    
+    // Log de Amenidades
+    const { data: logAmenidades } = await currentSupabaseInstance
+      .from('log_amenidades_uso')
+      .select('*, amenidades_inventario(nombre_item), habitaciones(nombre)')
+      .eq('usuario_id', usuarioDelTurnoId)
+      .gte('fecha_uso', fechaAperturaISO)
+      .lte('fecha_uso', fechaCierreISO);
 
-    const [
-      { data: logAmenidades, error: logAmenidadesError },
-      { data: logLenceria, error: logLenceriaError },
-      { data: logPrestamos, error: logPrestamosError },
-      { data: stockAmenidades, error: stockAmenidadesError },
-      { data: stockLenceria, error: stockLenceriaError }
-    ] = await Promise.all([
-      currentSupabaseInstance
-        .from('log_amenidades_uso')
-        .select('*, amenidades_inventario(nombre_item), habitaciones(nombre)')
-        .eq('usuario_id', usuarioDelTurnoId)
-        .gte('fecha_uso', fechaAperturaISO)
-        .lte('fecha_uso', fechaCierreISO),
-      currentSupabaseInstance
-        .from('log_lenceria_uso')
-        .select('*, inventario_lenceria(nombre_item), habitaciones(nombre)')
-        .eq('usuario_id', usuarioDelTurnoId)
-        .gte('fecha_uso', fechaAperturaISO)
-        .lte('fecha_uso', fechaCierreISO),
-      currentSupabaseInstance
-        .from('historial_articulos_prestados')
-        .select('*, habitaciones(nombre)')
-        .eq('usuario_id', usuarioDelTurnoId)
-        .gte('fecha_accion', fechaAperturaISO)
-        .lte('fecha_accion', fechaCierreISO),
-      currentSupabaseInstance
-        .from('amenidades_inventario')
-        .select('nombre_item, stock_actual')
-        .eq('hotel_id', currentHotelId),
-      currentSupabaseInstance
-        .from('inventario_lenceria')
-        .select('nombre_item, stock_limpio_almacen, stock_en_lavanderia, stock_total')
-        .eq('hotel_id', currentHotelId)
-    ]);
+    // Log de LencerÃ­a
+    const { data: logLenceria } = await currentSupabaseInstance
+      .from('log_lenceria_uso')
+      .select('*, inventario_lenceria(nombre_item), habitaciones(nombre)')
+      .eq('usuario_id', usuarioDelTurnoId)
+      .gte('fecha_uso', fechaAperturaISO)
+      .lte('fecha_uso', fechaCierreISO);
 
-    if (logAmenidadesError) throw logAmenidadesError;
-    if (logLenceriaError) throw logLenceriaError;
-    if (logPrestamosError) throw logPrestamosError;
-    if (stockAmenidadesError) throw stockAmenidadesError;
-    if (stockLenceriaError) throw stockLenceriaError;
+    // Log de PrÃ©stamos
+    const { data: logPrestamos } = await currentSupabaseInstance
+      .from('historial_articulos_prestados')
+      .select('*, habitaciones(nombre)')
+      .eq('usuario_id', usuarioDelTurnoId)
+      .gte('fecha_accion', fechaAperturaISO)
+      .lte('fecha_accion', fechaCierreISO);
 
-    const movimientosOrdenados = sortMovementsByDate(movimientos, true);
+    // --- 4. Obtenemos el STOCK ACTUAL ---
+    const { data: stockAmenidades } = await currentSupabaseInstance
+      .from('amenidades_inventario').select('nombre_item, stock_actual').eq('hotel_id', currentHotelId);
+
+    const { data: stockLenceria } = await currentSupabaseInstance
+      .from('inventario_lenceria').select('nombre_item, stock_limpio_almacen, stock_en_lavanderia, stock_total').eq('hotel_id', currentHotelId);
+
+    // --- 5. Procesamos y generamos el HTML ---
     const reporte = procesarMovimientosParaReporte(movimientos);
     const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
     const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
@@ -407,26 +215,28 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, v
       asuntoEmail += ` (Forzado por ${adminNombre})`;
     }
 
+    // Generar el HTML pasando los valoresReales (AQUÃ ES DONDE FALLABA ANTES)
     const htmlReporte = generarHTMLReporteCierre(
         reporte, 
         metodosDePago, 
         usuarioNombre, 
         fechaCierreLocal,
-        movimientosOrdenados || [],
+        movimientos || [],
         logAmenidades || [],
         logLenceria || [],
         logPrestamos || [],
         stockAmenidades || [],
         stockLenceria || [],
-        valoresReales
+        valoresReales // <--- Ahora sÃ­ existe esta variable
     );
 
-    const emailResult = await enviarReporteCierreCaja({
+    await enviarReporteCierreCaja({
       asunto: asuntoEmail,
       htmlReporte: htmlReporte,
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
 
+    // --- 6. Actualizamos el turno en la DB ---
     const { error: updateError } = await currentSupabaseInstance.from('turnos').update({
         estado: 'cerrado',
         fecha_cierre: fechaCierreISO,
@@ -435,21 +245,15 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, v
 
     if (updateError) throw updateError;
     
-    const successMessage = emailResult?.sent
-      ? 'Turno cerrado y reporte enviado.'
-      : 'Turno cerrado. El reporte no se pudo enviar por correo.';
-
+    // --- 7. Actualizamos la UI ---
     if (turnoActivo && turnoACerrar.id === turnoActivo.id) {
-        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), successMessage);
+        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Â¡Turno cerrado y reporte enviado!');
         turnoActivo = null;
         turnoEnSupervision = null;
         turnoService.clearActiveTurn();
         await renderizarUI();
     } else if (esCierreForzoso) {
-        const supervisionMessage = emailResult?.sent
-          ? `Turno de ${usuarioDelTurno.nombre || 'usuario'} cerrado exitosamente.`
-          : `Turno de ${usuarioDelTurno.nombre || 'usuario'} cerrado, pero el reporte no se envio por correo.`;
-        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), supervisionMessage);
+        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), `Â¡Turno de ${usuarioDelTurno.nombre || 'usuario'} cerrado exitosamente!`);
         turnoEnSupervision = null;
         await renderizarUI();
     }
@@ -465,245 +269,171 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, v
 }
 
 
-function updateMovementMethodFilter(selectEl, movements) {
-    if (!selectEl) return;
-
-    const currentValue = movementTableState.method;
-    const methods = [...new Set(
-        (movements || [])
-            .map((movement) => movement?.metodos_pago?.nombre)
-            .filter(Boolean)
-    )].sort((a, b) => a.localeCompare(b, 'es'));
-
-    selectEl.innerHTML = `
-        <option value="todos">Todos los metodos</option>
-        ${methods.map((methodName) => `<option value="${escapeAttribute(methodName)}">${escapeHtml(methodName)}</option>`).join('')}
-    `;
-
-    if (currentValue !== 'todos' && methods.includes(currentValue)) {
-        selectEl.value = currentValue;
-    } else {
-        selectEl.value = 'todos';
-        movementTableState.method = 'todos';
-    }
-}
-
-function getFilteredMovements() {
-    const searchTerm = movementTableState.search.trim().toLowerCase();
-    return movementTableState.all.filter((movement) => {
-        const concept = String(movement?.concepto || '').toLowerCase();
-        const clientName = String(movement?.reservas?.cliente_nombre || '').toLowerCase();
-        const userName = String(movement?.usuarios?.nombre || '').toLowerCase();
-        const methodName = String(movement?.metodos_pago?.nombre || '').toLowerCase();
-
-        const matchesSearch = !searchTerm || [concept, clientName, userName, methodName].some((value) => value.includes(searchTerm));
-        const matchesType = movementTableState.type === 'todos' || movement?.tipo === movementTableState.type;
-        const matchesMethod = movementTableState.method === 'todos' || movement?.metodos_pago?.nombre === movementTableState.method;
-
-        return matchesSearch && matchesType && matchesMethod;
-    });
-}
-
-function renderMovementRows(tBodyEl, summaryEls, movementRefs = {}) {
-    const allMovements = movementTableState.all || [];
-    const filteredMovements = getFilteredMovements();
-
-    let ingresos = 0;
-    let egresos = 0;
-    const apertura = Number(allMovements.find((movement) => movement.tipo === 'apertura')?.monto || 0);
-
-    allMovements.forEach((movement) => {
-        if (movement.tipo === 'ingreso') ingresos += Number(movement.monto || 0);
-        if (movement.tipo === 'egreso') egresos += Number(movement.monto || 0);
-    });
-
-    const balance = apertura + ingresos - egresos;
-    summaryEls.ingresos.textContent = formatCurrency(ingresos);
-    summaryEls.egresos.textContent = formatCurrency(egresos);
-    summaryEls.balance.textContent = formatCurrency(balance);
-    summaryEls.balance.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
-
-    const totalPages = Math.max(1, Math.ceil(filteredMovements.length / movementTableState.pageSize));
-    if (movementTableState.currentPage > totalPages) {
-        movementTableState.currentPage = totalPages;
-    }
-
-    const startIndex = (movementTableState.currentPage - 1) * movementTableState.pageSize;
-    const pageMovements = filteredMovements.slice(startIndex, startIndex + movementTableState.pageSize);
-
-    if (!filteredMovements.length) {
-        tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-6 text-sm text-gray-500">No hay movimientos que coincidan con los filtros actuales.</td></tr>`;
-    } else {
-        tBodyEl.innerHTML = pageMovements.map((movement) => {
-            const safeConcept = escapeHtml(movement.concepto || 'Sin concepto');
-            const safeClientName = escapeHtml(movement.reservas?.cliente_nombre || '');
-            const safeUserName = escapeHtml(movement.usuarios?.nombre || 'Sistema');
-            const safeMethodName = escapeHtml(movement.metodos_pago?.nombre || 'N/A');
-            const movementIdAttr = escapeAttribute(movement.id || '');
-            const conceptAttr = escapeAttribute(movement.concepto || 'N/A');
-            const amountAttr = escapeAttribute(formatCurrency(movement.monto));
-            const typeAttr = escapeAttribute(movement.tipo || '');
-            const currentMethodAttr = escapeAttribute(movement.metodo_pago_id || '');
-            const originMeta = getMovementOriginMeta(movement);
-            const movementDate = formatMovementDateTime(movement);
-            const isIncome = movement.tipo === 'ingreso';
-            const amountClass = movement.tipo === 'egreso' ? 'text-red-600' : (isIncome ? 'text-green-600' : 'text-blue-600');
-
-            return `
-                <tr class="hover:bg-slate-50 transition-colors">
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                        <div>${movementDate}</div>
-                        <div class="text-xs text-gray-400">${getMovementTimeLabel(movement)}</div>
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm">
-                        <div>${getMovementTypeBadge(movement.tipo)}</div>
-                        <div class="mt-1"><span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${originMeta.className}">${escapeHtml(originMeta.label)}</span></div>
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm font-semibold ${amountClass}">${formatCurrency(Number(movement.monto || 0))}</td>
-                    <td class="px-4 py-3 whitespace-normal text-sm text-gray-700">
-                        <div class="font-medium text-slate-700">${safeConcept}</div>
-                        ${movement.reservas?.cliente_nombre && !(movement.concepto || '').includes('Cliente:')
-                            ? `<div class="text-xs text-gray-500 mt-1">Cliente: ${safeClientName}</div>`
-                            : ''
-                        }
-                    </td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${safeUserName}</td>
-                    <td class="px-4 py-3 text-sm text-gray-500">
-                        <div class="flex items-center justify-between gap-3">
-                            <span class="truncate">${safeMethodName}</span>
-                            <div class="flex-shrink-0 flex items-center gap-3">
-                                <button class="text-blue-600 hover:text-blue-800 font-medium" title="Editar metodo de pago" data-edit-metodo="${movementIdAttr}" data-metodo-actual="${currentMethodAttr}">Editar</button>
-                                ${isAdminUser() ? `<button class="text-red-500 hover:text-red-700 font-medium" title="Eliminar movimiento" data-delete-movimiento="${movementIdAttr}" data-concepto="${conceptAttr}" data-monto="${amountAttr}" data-tipo="${typeAttr}">Eliminar</button>` : ''}
-                            </div>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        }).join('');
-    }
-
-    if (movementRefs.resultsEl) {
-        movementRefs.resultsEl.textContent = `Mostrando ${pageMovements.length} de ${filteredMovements.length} movimientos`;
-    }
-    if (movementRefs.pageInfoEl) {
-        movementRefs.pageInfoEl.textContent = `Pagina ${movementTableState.currentPage} de ${totalPages}`;
-    }
-    if (movementRefs.prevBtn) {
-        movementRefs.prevBtn.disabled = movementTableState.currentPage <= 1;
-    }
-    if (movementRefs.nextBtn) {
-        movementRefs.nextBtn.disabled = movementTableState.currentPage >= totalPages;
-    }
-    if (movementRefs.countEl) {
-        movementRefs.countEl.textContent = String(allMovements.length);
-    }
-}
-
-async function handleMovementTableClick(event, tBodyEl, summaryEls, turnoId, movementRefs = {}) {
-    const editButton = event.target.closest('button[data-edit-metodo]');
-    if (editButton) {
-        const movimientoId = editButton.getAttribute('data-edit-metodo');
-        const metodoActualId = editButton.getAttribute('data-metodo-actual') || '';
-
-        showGlobalLoading('Cargando metodos de pago...');
-        const { data: metodos, error: errMetodos } = await currentSupabaseInstance
-            .from('metodos_pago')
-            .select('id, nombre')
-            .eq('hotel_id', currentHotelId)
-            .eq('activo', true)
-            .order('nombre');
-        hideGlobalLoading();
-
-        if (errMetodos || !metodos?.length) {
-            showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No se pudieron cargar los metodos de pago.');
-            return;
-        }
-
-        const nuevoMetodoId = await seleccionarMetodoPago(metodos, metodoActualId);
-        if (!nuevoMetodoId || nuevoMetodoId === metodoActualId) return;
-
-        const { error: updateError } = await currentSupabaseInstance
-            .from('caja')
-            .update({ metodo_pago_id: nuevoMetodoId })
-            .eq('id', movimientoId);
-
-        if (updateError) {
-            showError(currentContainerEl.querySelector('#turno-global-feedback'), `No se pudo actualizar el metodo de pago: ${updateError.message}`);
-            return;
-        }
-
-        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Metodo de pago actualizado.');
-        await loadAndRenderMovements(tBodyEl, summaryEls, turnoId, movementRefs);
-        return;
-    }
-
-    const deleteButton = event.target.closest('button[data-delete-movimiento]');
-    if (deleteButton && isAdminUser()) {
-        const movimientoId = deleteButton.dataset.deleteMovimiento;
-        const concepto = deleteButton.dataset.concepto;
-        const monto = deleteButton.dataset.monto;
-        const tipo = deleteButton.dataset.tipo;
-
-        let warningMessage = `<p>Realmente deseas eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded text-left"><strong>Concepto:</strong> ${escapeHtml(concepto || 'N/A')}<br><strong>Monto:</strong> ${escapeHtml(monto || 'N/A')}</div><p class="font-bold text-red-600">Esta accion es irreversible.</p>`;
-        if (tipo === 'apertura') {
-            warningMessage = `<p class="font-bold text-lg text-red-700">Advertencia maxima</p><p>Estas a punto de eliminar el movimiento de <strong>apertura de turno</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded text-left"><strong>Monto:</strong> ${escapeHtml(monto || 'N/A')}</div><p>Eliminar esto afectara todos los calculos del turno.</p>`;
-        }
-
-        const confirmed = await confirmAction({
-            title: 'Confirmar eliminacion',
-            text: warningMessage,
-            confirmButtonText: 'Si, eliminar'
-        });
-
-        if (!confirmed) return;
-
-        showGlobalLoading('Eliminando movimiento...');
-        const { error: rpcError } = await currentSupabaseInstance.rpc('registrar_y_eliminar_mov_caja', {
-            movimiento_id_param: movimientoId,
-            eliminado_por_usuario_id_param: currentModuleUser.id
-        });
-        hideGlobalLoading();
-
-        if (rpcError) {
-            showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error al eliminar el movimiento: ${rpcError.message}`);
-            return;
-        }
-
-        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado y registrado.');
-        await loadAndRenderMovements(tBodyEl, summaryEls, turnoId, movementRefs);
-    }
-}
-
-async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId, movementRefs = {}) {
+// REEMPLAZA TU FUNCIÃ“N CON ESTA VERSIÃ“N COMPLETA Y FINAL
+async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId) {
     if (!turnoId) {
-        tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4 text-red-500">Error: no se ha especificado un turno para cargar.</td></tr>`;
+        tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4 text-red-500">Error: No se ha especificado un turno para cargar.</td></tr>`;
         return;
     }
-
-    if (movementTableState.turnoId !== turnoId) {
-        resetMovementTableState();
-        movementTableState.turnoId = turnoId;
-        if (movementRefs.searchInputEl) movementRefs.searchInputEl.value = '';
-        if (movementRefs.typeFilterEl) movementRefs.typeFilterEl.value = 'todos';
-        if (movementRefs.methodFilterEl) movementRefs.methodFilterEl.value = 'todos';
-    }
-
     tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">Cargando movimientos del turno...</td></tr>`;
     try {
         const { data: movements, error } = await currentSupabaseInstance
             .from('caja')
-            .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
+            .select('id,tipo,monto,concepto,creado_en,usuario_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
             .eq('hotel_id', currentHotelId)
-            .eq('turno_id', turnoId);
+            .eq('turno_id', turnoId)
+            // Mostramos primero los movimientos mÃ¡s recientes en la lista del turno.
+            .order('creado_en', { ascending: false }); 
+            // ðŸ‘‡ Â¡Y eliminamos el .limit(1) para que carguen TODOS los movimientos!
 
         if (error) throw error;
+        
+        let ingresos = 0;
+        let egresos = 0;
+        const apertura = Number(movements.find(m => m.tipo === 'apertura')?.monto || 0);
 
-        movementTableState.all = sortMovementsByDate(movements || []);
-        updateMovementMethodFilter(movementRefs.methodFilterEl, movementTableState.all);
-        renderMovementRows(tBodyEl, summaryEls, movementRefs);
+        tBodyEl.innerHTML = '';
+        const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
+
+        if (!movements || movements.length === 0) {
+            tBodyEl.innerHTML = `<tr><td colspan="6" class="text-center p-4">No hay movimientos en este turno.</td></tr>`;
+        } else {
+            movements.forEach(mv => {
+                if (mv.tipo === 'ingreso') ingresos += Number(mv.monto);
+                else if (mv.tipo === 'egreso') egresos += Number(mv.monto);
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-gray-50";
+                
+                const safeTipo = escapeHtml(mv.tipo || 'N/A');
+                const safeConcepto = escapeHtml(mv.concepto || 'N/A');
+                const safeClienteNombre = escapeHtml(mv.reservas?.cliente_nombre || '');
+                const safeUsuarioNombre = escapeHtml(mv.usuarios?.nombre || 'Sistema');
+                const safeMetodoNombre = escapeHtml(mv.metodos_pago?.nombre || 'N/A');
+                const movimientoIdAttr = escapeAttribute(mv.id || '');
+                const conceptoAttr = escapeAttribute(mv.concepto || 'N/A');
+                const montoAttr = escapeAttribute(formatCurrency(mv.monto));
+                const tipoAttr = escapeAttribute(mv.tipo || '');
+                let tipoBadge = '';
+                if (mv.tipo === 'ingreso') {
+                    tipoBadge = `<span class="badge bg-green-100 text-green-800">${safeTipo}</span>`;
+                } else if (mv.tipo === 'egreso') {
+                    tipoBadge = `<span class="badge bg-red-100 text-red-800">${safeTipo}</span>`;
+                } else {
+                    tipoBadge = `<span class="badge bg-blue-100 text-blue-800">${safeTipo}</span>`;
+                }
+
+                tr.innerHTML = `
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${formatDateTime(mv.creado_en)}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm">${tipoBadge}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium ${mv.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${formatCurrency(mv.monto)}</td>
+                    <td class="px-4 py-2 whitespace-normal text-sm text-gray-700">
+                        <div>${safeConcepto}</div>
+                        ${mv.reservas?.cliente_nombre && !(mv.concepto || '').includes('Cliente:')
+                            ? `<div class="text-xs text-gray-500 mt-1">Cliente: ${safeClienteNombre}</div>`
+                            : ''
+                        }
+                    </td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${safeUsuarioNombre}</td>
+                    <td class="px-4 py-2 text-sm text-gray-500">
+                        <div class="flex items-center justify-center">
+                            <span class="truncate">${safeMetodoNombre}</span>
+                            <div class="flex-shrink-0 ml-3 flex items-center space-x-2">
+                                <button class="text-blue-500 hover:text-blue-700" title="Editar Metodo de Pago" data-edit-metodo="${movimientoIdAttr}">Editar</button>
+                                ${isAdmin ? `<button class="text-red-500 hover:text-red-700" title="Eliminar Movimiento" data-delete-movimiento="${movimientoIdAttr}" data-concepto="${conceptoAttr}" data-monto="${montoAttr}" data-tipo="${tipoAttr}">Eliminar</button>` : ''}
+                            </div>
+                        </div>
+                    </td>
+                `;
+                tBodyEl.appendChild(tr);
+            });
+
+            // --- SECCIÃ“N DE CÃ“DIGO RESTAURADA Y CORREGIDA ---
+            
+            // Listener para editar mÃ©todo de pago
+            tBodyEl.querySelectorAll('button[data-edit-metodo]').forEach(btn => {
+                btn.onclick = async () => {
+                    const movimientoId = btn.getAttribute('data-edit-metodo');
+                    showGlobalLoading("Cargando mÃ©todos de pago...");
+                    const { data: metodos, error: errMetodos } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre');
+                    hideGlobalLoading();
+                    if (errMetodos || !metodos || !metodos.length) {
+                        alert("No se pudieron cargar los mÃ©todos de pago para editar.");
+                        return;
+                    }
+                    const opcionesHTML = metodos.map(m => `<option value="${escapeAttribute(m.id || '')}">${escapeHtml(m.nombre || 'Sin nombre')}</option>`).join('');
+                    const editModalDiv = document.createElement('div');
+                    editModalDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 shadow-xl w-full max-w-sm"><h4 class="text-xl font-bold mb-4 text-gray-800">Cambiar MÃ©todo de Pago</h4><select id="select-new-metodo" class="form-control w-full">${opcionesHTML}</select><div class="mt-5 flex gap-3 justify-end"><button id="btn-confirm-edit" class="button button-accent px-5 py-2 rounded">Guardar</button><button id="btn-cancel-edit" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
+                    document.body.appendChild(editModalDiv);
+                    const cleanup = () => editModalDiv.remove();
+                    document.getElementById('btn-cancel-edit').onclick = cleanup;
+                    document.getElementById('btn-confirm-edit').onclick = async () => {
+                        const nuevoMetodoId = document.getElementById('select-new-metodo').value;
+                        await currentSupabaseInstance.from('caja').update({ metodo_pago_id: nuevoMetodoId }).eq('id', movimientoId);
+                        cleanup();
+                        showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'MÃ©todo de pago actualizado.');
+                        await loadAndRenderMovements(tBodyEl, summaryEls, turnoId);
+                    };
+                };
+            });
+
+            // Listeners para eliminar movimiento (solo para administradores)
+            if (isAdmin) {
+                tBodyEl.querySelectorAll('button[data-delete-movimiento]').forEach(btn => {
+                    btn.onclick = async () => {
+                        const movimientoId = btn.dataset.deleteMovimiento;
+                        const concepto = btn.dataset.concepto;
+                        const monto = btn.dataset.monto;
+                        const tipo = btn.dataset.tipo;
+                        
+                        const safeConceptoModal = escapeHtml(concepto || 'N/A');
+                        const safeMontoModal = escapeHtml(monto || 'N/A');
+                        let warningMessage = `<p>\u00BFRealmente desea eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded text-left"><strong>Concepto:</strong> ${safeConceptoModal}<br><strong>Monto:</strong> ${safeMontoModal}</div><p class="font-bold text-red-600">\u00A1Esta acci\u00F3n es irreversible!</p>`;
+                        if (tipo === 'apertura') {
+                          warningMessage = `<p class="font-bold text-lg text-red-700">\u00A1ADVERTENCIA M\u00C1XIMA!</p><p>Est\u00E1 a punto de eliminar el movimiento de <strong>APERTURA DE TURNO</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded text-left"><strong>Monto:</strong> ${safeMontoModal}</div><p>Eliminar esto afectar\u00E1 todos los c\u00E1lculos. \u00BFEst\u00E1 seguro?</p>`;
+                        }
+                        
+                        const confirmDiv = document.createElement('div');
+                        confirmDiv.innerHTML = `<div class="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[99999]"><div class="bg-white rounded-xl p-6 border-4 border-red-200 shadow-xl w-full max-w-md text-center"><h4 class="text-xl font-bold mb-3 text-red-800">Confirmar EliminaciÃ³n</h4><div class="text-gray-700">${warningMessage}</div><div class="mt-5 flex gap-3 justify-center"><button id="btn-confirm-delete" class="button bg-red-600 hover:bg-red-700 text-white font-bold px-5 py-2 rounded">SÃ­, Eliminar</button><button id="btn-cancel-delete" class="button button-neutral px-5 py-2 rounded">Cancelar</button></div></div></div>`;
+                        document.body.appendChild(confirmDiv);
+                        
+                        document.getElementById('btn-cancel-delete').onclick = () => confirmDiv.remove();
+            
+                        document.getElementById('btn-confirm-delete').onclick = async () => {
+                            const confirmBtn = document.getElementById('btn-confirm-delete');
+                            confirmBtn.disabled = true;
+                            confirmBtn.textContent = 'Procesando...';
+            
+                            const { error: rpcError } = await currentSupabaseInstance.rpc('registrar_y_eliminar_mov_caja', {
+                                movimiento_id_param: movimientoId,
+                                eliminado_por_usuario_id_param: currentModuleUser.id
+                            });
+            
+                            if (rpcError) {
+                                alert('Error al eliminar el movimiento: ' + rpcError.message);
+                                confirmBtn.disabled = false;
+                                confirmBtn.textContent = 'SÃ­, Eliminar';
+                            } else {
+                                confirmDiv.remove();
+                                showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado y registrado.');
+                                await loadAndRenderMovements(tBodyEl, summaryEls, turnoId);
+                            }
+                        };
+                    };
+                });
+            }
+             // --- FIN DE LA SECCIÃ“N RESTAURADA ---
+        }
+        
+        const balance = apertura + ingresos - egresos;
+        summaryEls.ingresos.textContent = formatCurrency(ingresos);
+        summaryEls.egresos.textContent = formatCurrency(egresos);
+        summaryEls.balance.textContent = formatCurrency(balance);
+        summaryEls.balance.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
+
     } catch (err) {
         showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error cargando movimientos: ${err.message}`);
-        console.error('Error en loadAndRenderMovements:', err);
+        console.error("Error en loadAndRenderMovements:", err);
     }
 }
 
@@ -712,6 +442,9 @@ async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId, movementRefs
 
 
 async function renderizarUIAbierta() {
+    console.log("renderizarUIAbierta llamado");
+
+    // 1. DETERMINAR QUÃ‰ TURNO MOSTRAR (EL PROPIO O EL SUPERVISADO)
     const esModoSupervision = !!turnoEnSupervision;
     const turnoParaMostrar = turnoEnSupervision || turnoActivo;
     
@@ -721,191 +454,79 @@ async function renderizarUIAbierta() {
         return;
     }
 
-    const isAdmin = isAdminUser();
-    const usuarioTurnoNombre = escapeHtml(turnoParaMostrar.usuarios?.nombre || currentModuleUser?.nombre || currentModuleUser?.email || 'Usuario');
-    const fechaAperturaLabel = formatDateTime(turnoParaMostrar.fecha_apertura);
-    const tiempoAbiertoLabel = getTurnElapsedLabel(turnoParaMostrar.fecha_apertura);
-
+    const isAdmin = currentUserRole && ['admin', 'administrador'].includes(currentUserRole.toLowerCase());
+    
+    // 2. CONSTRUIR EL HTML DE LA INTERFAZ
     const supervisionBannerHtml = esModoSupervision
         ? `
-        <div class="bg-amber-50 border border-amber-200 text-amber-800 p-4 mb-5 rounded-2xl flex flex-col gap-3 md:flex-row md:justify-between md:items-center" role="alert">
+        <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4 rounded-md flex justify-between items-center" role="alert">
             <div>
-                <p class="font-bold text-sm uppercase tracking-wide">Modo supervision</p>
-                <p>Estas gestionando el turno de: <strong>${usuarioTurnoNombre}</strong> (Inicio: ${fechaAperturaLabel})</p>
+                <p class="font-bold">Modo Supervisi\u00F3n</p>
+                <p>Est\u00E1s gestionando el turno de: <strong>${escapeHtml(turnoParaMostrar.usuarios?.nombre || 'Usuario')}</strong> (Inici\u00F3: ${formatDateTime(turnoParaMostrar.fecha_apertura)})</p>
             </div>
-            <button id="btn-salir-supervision" class="button bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-xl">Salir de supervision</button>
+            <button id="btn-salir-supervision" class="button bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded">Salir de Supervisi\u00F3n</button>
         </div>`
         : '';
 
     currentContainerEl.innerHTML = `
-    <div class="card caja-module shadow-xl rounded-3xl overflow-hidden border border-slate-200">
-      <div class="card-header bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 p-5 border-b text-white">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.22em] text-slate-300 mb-2">Caja y turnos</p>
-            <h2 class="text-2xl font-semibold">${esModoSupervision ? 'Gestionando turno ajeno' : 'Turno activo'}</h2>
-            <p class="text-sm text-slate-300 mt-2">Controla ingresos, egresos, arqueo y trazabilidad del turno actual.</p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
+    <div class="card caja-module shadow-lg rounded-lg">
+      <div class="card-header bg-gray-100 p-4 border-b flex justify-between items-center">
+        <h2 class="text-xl font-semibold text-gray-800">${esModoSupervision ? 'Gestionando Turno Ajeno' : 'Turno Activo'}</h2>
+        <div class="flex items-center space-x-2">
           ${isAdmin ? `
-            <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2 px-4 rounded-xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver turnos abiertos</button>
-            <button id="btn-ver-eliminados" class="button button-neutral py-2 px-4 rounded-xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver eliminados</button>
+            <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2 px-4 rounded-md shadow-sm">ðŸ‘¥ Ver Turnos Abiertos</button>
+            <button id="btn-ver-eliminados" class="button button-neutral py-2 px-4 rounded-md shadow-sm">ðŸ“œ Ver Eliminados</button>
           ` : ''}
-            <button id="btn-cerrar-turno" class="button ${esModoSupervision ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold py-2 px-4 rounded-xl shadow-sm">
-              ${esModoSupervision ? 'Forzar cierre de este turno' : 'Realizar corte de caja'}
-            </button>
-          </div>
+          <button id="btn-cerrar-turno" class="button ${esModoSupervision ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'} text-white font-bold py-2 px-4 rounded-md shadow-sm">
+            ${esModoSupervision ? 'Forzar Cierre de este Turno' : 'Realizar Corte de Caja'}
+          </button>
         </div>
       </div>
-      <div class="card-body p-4 md:p-6 bg-slate-50/60">
+      <div class="card-body p-4 md:p-6">
         ${supervisionBannerHtml} 
         <div id="turno-global-feedback" role="status" aria-live="polite" class="feedback-message mb-4"></div>
-
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[1.8fr,1fr]">
-          <div class="space-y-4">
-            <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Cajero</span>
-                <span class="block text-base font-semibold text-slate-800 mt-2">${usuarioTurnoNombre}</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Inicio</span>
-                <span id="turno-opened-at" class="block text-base font-semibold text-slate-800 mt-2">${fechaAperturaLabel}</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Tiempo abierto</span>
-                <span id="turno-open-duration" class="block text-base font-semibold text-slate-800 mt-2">${tiempoAbiertoLabel}</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Movimientos</span>
-                <span id="turno-movements-count" class="block text-base font-semibold text-slate-800 mt-2">0</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Modo</span>
-                <span class="block text-base font-semibold text-slate-800 mt-2">${esModoSupervision ? 'Supervision' : 'Operacion normal'}</span>
-              </div>
-            </section>
-
-            <section class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-              <div class="p-4 bg-green-50 rounded-2xl shadow-sm border border-green-100"><span class="block text-sm text-gray-500">Ingresos del turno</span><span id="turno-total-ingresos" class="text-2xl font-bold text-green-600">$0</span></div>
-              <div class="p-4 bg-red-50 rounded-2xl shadow-sm border border-red-100"><span class="block text-sm text-gray-500">Egresos del turno</span><span id="turno-total-egresos" class="text-2xl font-bold text-red-600">$0</span></div>
-              <div class="p-4 bg-blue-50 rounded-2xl shadow-sm border border-blue-100"><span class="block text-sm text-gray-500">Balance del turno</span><span id="turno-balance" class="text-2xl font-bold text-blue-600">$0</span></div>
-            </section>
-
-            <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
-              <div class="p-5 border-b border-slate-200">
-                <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div>
-                    <h3 class="text-lg font-semibold text-slate-800">Movimientos del turno</h3>
-                    <p id="movements-results" class="text-sm text-slate-500 mt-1">Cargando movimientos...</p>
-                  </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto lg:min-w-[640px]">
-                    <label class="text-sm text-slate-600">
-                      Buscar
-                      <input id="movements-search" type="search" class="form-control mt-1" placeholder="Concepto, cliente, usuario o metodo">
-                    </label>
-                    <label class="text-sm text-slate-600">
-                      Tipo
-                      <select id="movements-type-filter" class="form-control mt-1">
-                        <option value="todos">Todos</option>
-                        <option value="ingreso">Ingresos</option>
-                        <option value="egreso">Egresos</option>
-                        <option value="apertura">Aperturas</option>
-                      </select>
-                    </label>
-                    <label class="text-sm text-slate-600">
-                      Metodo
-                      <select id="movements-method-filter" class="form-control mt-1">
-                        <option value="todos">Todos los metodos</option>
-                      </select>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <div class="table-container overflow-x-auto">
-                <table class="tabla-estilizada w-full">
-                  <thead class="bg-slate-50 text-slate-600">
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Tipo</th>
-                      <th>Monto</th>
-                      <th>Concepto</th>
-                      <th>Usuario</th>
-                      <th>Metodo de pago</th>
-                    </tr>
-                  </thead>
-                  <tbody id="turno-movements-body"></tbody>
-                </table>
-              </div>
-
-              <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between p-4 border-t border-slate-200 bg-slate-50">
-                <p class="text-sm text-slate-500">La tabla usa la fecha real del movimiento cuando fue registrada manualmente.</p>
-                <div class="flex items-center gap-2">
-                  <button id="movements-prev-page" class="button button-neutral px-3 py-2 rounded-xl bg-white border border-slate-200">Anterior</button>
-                  <span id="movements-page-info" class="text-sm text-slate-500 min-w-[120px] text-center">Pagina 1 de 1</span>
-                  <button id="movements-next-page" class="button button-neutral px-3 py-2 rounded-xl bg-white border border-slate-200">Siguiente</button>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <aside class="space-y-4">
-            <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
-              <div class="p-5 border-b border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800">Agregar nuevo movimiento</h3>
-                <p class="text-sm text-slate-500 mt-1">Registra ingresos, egresos o ajustes fuera del turno de forma controlada.</p>
-              </div>
-              <form id="turno-add-form" class="form p-5 bg-white">
-                <div class="grid grid-cols-1 gap-4 mb-4">
-                  <div><label>Tipo *</label><select name="tipo" class="form-control" required><option value="">-- Seleccione --</option><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
-                  <div><label>Monto *</label><input type="number" name="monto" class="form-control" step="0.01" min="0.01" required /></div>
-                  <div><label>Metodo de pago *</label><select name="metodoPagoId" class="form-control" required><option value="">Cargando...</option></select></div>
-                </div>
-                <div class="mb-4"><label>Concepto / descripcion *</label><input type="text" name="concepto" class="form-control" required minlength="3" placeholder="Ej. Compra de insumos, abono, venta adicional"></div>
-                
-                <div class="space-y-3 mb-4">
-                  <label class="flex items-start gap-3 text-sm text-slate-600">
-                    <input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" class="mt-1">
-                    <span>
-                      <strong>Registrar fuera del turno/caja</strong>
-                      <small id="fuera-turno-help" class="block text-slate-400 mt-1">Usa esta opcion para dejar un movimiento fuera del arqueo del turno actual.</small>
-                    </span>
-                  </label>
-                  <label class="flex items-start gap-3 text-sm text-slate-600">
-                    <input type="checkbox" id="fecha-anterior-check" name="fecha_anterior_check" class="mt-1">
-                    <span>
-                      <strong>Registrar con fecha anterior</strong>
-                      <small class="block text-slate-400 mt-1">La fecha ingresada sera la que se vea en caja, reportes e impresion.</small>
-                    </span>
-                  </label>
-                </div>
-
-                <div id="fecha-anterior-container" class="mb-4 hidden">
-                  <label>Fecha y hora del movimiento *</label>
-                  <input type="datetime-local" id="fecha-movimiento-custom" name="fecha_movimiento_custom" class="form-control">
-                </div>
-
-                <button type="submit" class="button button-accent w-full py-3 rounded-2xl text-base font-semibold">+ Agregar movimiento</button>
-                <div id="turno-add-feedback" class="feedback-message mt-3"></div>
-              </form>
-            </section>
-
-            <section class="rounded-3xl bg-slate-900 text-white shadow-sm overflow-hidden">
-              <div class="p-5 border-b border-white/10">
-                <h3 class="text-lg font-semibold">Buenas practicas</h3>
-              </div>
-              <div class="p-5 text-sm text-slate-300 space-y-3">
-                <p>1. Usa "fuera del turno" solo cuando el movimiento no debe afectar el arqueo actual.</p>
-                <p>2. Si corriges una fecha, verifica el corte antes de cerrar.</p>
-                <p>3. Antes del cierre revisa metodo de pago y cliente para dejar el reporte limpio.</p>
-              </div>
-            </section>
-          </aside>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 text-center">
+          <div class="p-3 bg-green-50 rounded-md shadow"><span class="block text-sm text-gray-500">Ingresos del Turno</span><span id="turno-total-ingresos" class="text-2xl font-bold text-green-600">$0.00</span></div>
+          <div class="p-3 bg-red-50 rounded-md shadow"><span class="block text-sm text-gray-500">Egresos del Turno</span><span id="turno-total-egresos" class="text-2xl font-bold text-red-600">$0.00</span></div>
+          <div class="p-3 bg-blue-50 rounded-md shadow"><span class="block text-sm text-gray-500">Balance del Turno</span><span id="turno-balance" class="text-2xl font-bold text-blue-600">$0.00</span></div>
         </div>
+        <div class="table-container overflow-x-auto mb-6">
+          <table class="tabla-estilizada w-full">
+            <thead class="bg-gray-50"><tr><th>Fecha</th><th>Tipo</th><th>Monto</th><th>Concepto</th><th>Usuario</th><th>MÃ©todo Pago</th></tr></thead>
+            <tbody id="turno-movements-body"></tbody>
+          </table>
+        </div>
+        <hr class="my-6"/>
+        <h3 class="text-lg font-semibold text-gray-700 mb-3">Agregar Nuevo Movimiento</h3>
+        <form id="turno-add-form" class="form p-4 border rounded-md bg-gray-50 shadow-sm">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
+            <div><label>Tipo *</label><select name="tipo" class="form-control" required><option value="">-- Seleccione --</option><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
+            <div><label>Monto *</label><input type="number" name="monto" class="form-control" step="0.01" min="0.01" required /></div>
+            <div><label>MÃ©todo de Pago *</label><select name="metodoPagoId" class="form-control" required><option value="">Cargando...</option></select></div>
+          </div>
+          <div class="mb-4"><label>Concepto/DescripciÃ³n *</label><input type="text" name="concepto" class="form-control" required minlength="3" /></div>
+          
+          <div class="flex items-center gap-6 mb-4">
+            <div style="display:flex;align-items:center;gap:7px;">
+              <input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" style="transform:scale(1.3);">
+              <label for="egreso-fuera-turno" style="margin:0;">Registrar fuera del turno/caja</label>
+            </div>
+            <div style="display:flex;align-items:center;gap:7px;">
+              <input type="checkbox" id="fecha-anterior-check" name="fecha_anterior_check" style="transform:scale(1.3);">
+              <label for="fecha-anterior-check" style="margin:0;">Registrar con fecha anterior</label>
+            </div>
+          </div>
+          <div id="fecha-anterior-container" class="mb-4" style="display:none;">
+            <label>Fecha y Hora del Movimiento *</label>
+            <input type="datetime-local" id="fecha-movimiento-custom" name="fecha_movimiento_custom" class="form-control">
+          </div>
+          <button type="submit" class="button button-accent">ï¼‹ Agregar Movimiento</button>
+          <div id="turno-add-feedback" class="feedback-message mt-3"></div>
+        </form>
       </div>
     </div>`;
 
+    // 3. LIMPIAR Y ASIGNAR LISTENERS
     moduleListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
     moduleListeners = [];
 
@@ -915,18 +536,8 @@ async function renderizarUIAbierta() {
         egresos: currentContainerEl.querySelector('#turno-total-egresos'),
         balance: currentContainerEl.querySelector('#turno-balance')
     };
-    const movementRefs = {
-        searchInputEl: currentContainerEl.querySelector('#movements-search'),
-        typeFilterEl: currentContainerEl.querySelector('#movements-type-filter'),
-        methodFilterEl: currentContainerEl.querySelector('#movements-method-filter'),
-        resultsEl: currentContainerEl.querySelector('#movements-results'),
-        pageInfoEl: currentContainerEl.querySelector('#movements-page-info'),
-        prevBtn: currentContainerEl.querySelector('#movements-prev-page'),
-        nextBtn: currentContainerEl.querySelector('#movements-next-page'),
-        countEl: currentContainerEl.querySelector('#turno-movements-count')
-    };
     
-    await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id, movementRefs);
+    await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
 
     if (esModoSupervision) {
         const salirBtn = currentContainerEl.querySelector('#btn-salir-supervision');
@@ -956,73 +567,39 @@ async function renderizarUIAbierta() {
     const resumenHandler = () => mostrarResumenCorteDeCaja();
     cerrarTurnoBtn.addEventListener('click', resumenHandler);
     moduleListeners.push({ element: cerrarTurnoBtn, type: 'click', handler: resumenHandler });
-
-    const tableClickHandler = (event) => handleMovementTableClick(event, tBodyEl, summaryEls, turnoParaMostrar.id, movementRefs);
-    tBodyEl.addEventListener('click', tableClickHandler);
-    moduleListeners.push({ element: tBodyEl, type: 'click', handler: tableClickHandler });
-
-    const searchHandler = (event) => {
-        movementTableState.search = event.target.value || '';
-        movementTableState.currentPage = 1;
-        renderMovementRows(tBodyEl, summaryEls, movementRefs);
-    };
-    movementRefs.searchInputEl.addEventListener('input', searchHandler);
-    moduleListeners.push({ element: movementRefs.searchInputEl, type: 'input', handler: searchHandler });
-
-    const typeFilterHandler = (event) => {
-        movementTableState.type = event.target.value || 'todos';
-        movementTableState.currentPage = 1;
-        renderMovementRows(tBodyEl, summaryEls, movementRefs);
-    };
-    movementRefs.typeFilterEl.addEventListener('change', typeFilterHandler);
-    moduleListeners.push({ element: movementRefs.typeFilterEl, type: 'change', handler: typeFilterHandler });
-
-    const methodFilterHandler = (event) => {
-        movementTableState.method = event.target.value || 'todos';
-        movementTableState.currentPage = 1;
-        renderMovementRows(tBodyEl, summaryEls, movementRefs);
-    };
-    movementRefs.methodFilterEl.addEventListener('change', methodFilterHandler);
-    moduleListeners.push({ element: movementRefs.methodFilterEl, type: 'change', handler: methodFilterHandler });
-
-    const prevPageHandler = () => {
-        if (movementTableState.currentPage <= 1) return;
-        movementTableState.currentPage -= 1;
-        renderMovementRows(tBodyEl, summaryEls, movementRefs);
-    };
-    movementRefs.prevBtn.addEventListener('click', prevPageHandler);
-    moduleListeners.push({ element: movementRefs.prevBtn, type: 'click', handler: prevPageHandler });
-
-    const nextPageHandler = () => {
-        const totalPages = Math.max(1, Math.ceil(getFilteredMovements().length / movementTableState.pageSize));
-        if (movementTableState.currentPage >= totalPages) return;
-        movementTableState.currentPage += 1;
-        renderMovementRows(tBodyEl, summaryEls, movementRefs);
-    };
-    movementRefs.nextBtn.addEventListener('click', nextPageHandler);
-    moduleListeners.push({ element: movementRefs.nextBtn, type: 'click', handler: nextPageHandler });
     
     const addFormEl = currentContainerEl.querySelector('#turno-add-form');
     const metodoPagoSelect = addFormEl.elements.metodoPagoId;
     await popularMetodosPagoSelect(metodoPagoSelect);
 
+    // â–¼â–¼â–¼ LISTENER PARA EL CHECKBOX 'fecha-anterior-check' â–¼â–¼â–¼
     const fechaAnteriorCheck = addFormEl.querySelector('#fecha-anterior-check');
     const fechaAnteriorContainer = addFormEl.querySelector('#fecha-anterior-container');
-    const fechaAnteriorHandler = () => {
-        fechaAnteriorContainer.classList.toggle('hidden', !fechaAnteriorCheck.checked);
-    };
-    fechaAnteriorCheck.addEventListener('change', fechaAnteriorHandler);
-    moduleListeners.push({ element: fechaAnteriorCheck, type: 'change', handler: fechaAnteriorHandler });
+    fechaAnteriorCheck.addEventListener('change', () => {
+        fechaAnteriorContainer.style.display = fechaAnteriorCheck.checked ? 'block' : 'none';
+    });
+    // â–²â–²â–² FIN DEL LISTENER â–²â–²â–²
 
+    // --- INICIO DEL submitHandler CORREGIDO ---
     const submitHandler = async (e) => {
         e.preventDefault();
         const formData = new FormData(addFormEl);
+        
+        // --- ðŸž AQUÃ ESTÃ EL ARREGLO ---
+        
+        // 1. Leemos el valor del checkbox (lo renombramos para claridad)
         const esFueraTurno = !!formData.get('egreso_fuera_turno');
+        
+        // 2. Asignamos el ID del turno actual por defecto
         let turnoIdToSave = turnoParaMostrar.id;
+
+        // 3. Si el checkbox estÃ¡ marcado (SIN IMPORTAR EL TIPO), ponemos el ID en null
         if (esFueraTurno) {
             turnoIdToSave = null;
         }
-
+        // --- FIN DEL ARREGLO ---
+        
+        // â–¼â–¼â–¼ LÃ“GICA DE FECHA (sin cambios) â–¼â–¼â–¼
         const esFechaAnterior = !!formData.get('fecha_anterior_check');
         const fechaCustom = formData.get('fecha_movimiento_custom');
 
@@ -1033,24 +610,23 @@ async function renderizarUIAbierta() {
             metodo_pago_id: formData.get('metodoPagoId'),
             usuario_id: currentModuleUser.id,
             hotel_id: currentHotelId,
-            turno_id: turnoIdToSave,
+            turno_id: turnoIdToSave, // Se usa la variable corregida
             fecha_movimiento: (esFechaAnterior && fechaCustom) ? new Date(fechaCustom).toISOString() : new Date().toISOString()
         };
+        // â–²â–²â–² FIN DE LA LÃ“GICA DE FECHA â–²â–²â–²
 
         const feedbackEl = addFormEl.querySelector('#turno-add-feedback');
-        const submitButton = addFormEl.querySelector('button[type="submit"]');
-        setFormLoadingState(addFormEl, true, submitButton, '+ Agregar movimiento', 'Guardando...');
-        clearFeedback(feedbackEl);
+        setFormLoadingState(addFormEl, true);
 
         if (!(newMovement.monto > 0) || !newMovement.concepto || !newMovement.metodo_pago_id || !newMovement.tipo) {
             showError(feedbackEl, 'Todos los campos son obligatorios.');
-            setFormLoadingState(addFormEl, false, submitButton, '+ Agregar movimiento');
+            setFormLoadingState(addFormEl, false);
             return;
         }
         
         if (esFechaAnterior && !fechaCustom) {
-            showError(feedbackEl, 'Debes seleccionar una fecha y hora si marcas la opcion de fecha anterior.');
-            setFormLoadingState(addFormEl, false, submitButton, '+ Agregar movimiento');
+            showError(feedbackEl, 'Debes seleccionar una fecha y hora si marcas la opciÃ³n de fecha anterior.');
+            setFormLoadingState(addFormEl, false);
             return;
         }
 
@@ -1058,14 +634,14 @@ async function renderizarUIAbierta() {
         if (error) {
             showError(feedbackEl, `Error: ${error.message}`);
         } else {
-            showSuccess(feedbackEl, esFueraTurno ? 'Movimiento agregado fuera del turno actual.' : 'Movimiento agregado al turno actual.');
+            showSuccess(feedbackEl, 'Movimiento agregado.');
             addFormEl.reset();
-            fechaAnteriorContainer.classList.add('hidden');
-            movementTableState.currentPage = 1;
-            await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id, movementRefs);
+            fechaAnteriorContainer.style.display = 'none'; // Ocultar el campo de fecha despuÃ©s de agregar
+            await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id);
         }
-        setFormLoadingState(addFormEl, false, submitButton, '+ Agregar movimiento');
+        setFormLoadingState(addFormEl, false);
     };
+    // --- FIN DEL submitHandler CORREGIDO ---
 
     addFormEl.addEventListener('submit', submitHandler);
     moduleListeners.push({ element: addFormEl, type: 'submit', handler: submitHandler });
@@ -1094,17 +670,14 @@ async function mostrarLogEliminados() {
         } else {
             tableRowsHtml = logs.map(log => {
                 const datos = log.datos_eliminados || {};
-                const usuarioElimino = escapeHtml(log.eliminado_por_usuario?.nombre || 'Desconocido');
-                const tipoOriginal = escapeHtml(datos.tipo || 'N/A');
-                const conceptoOriginal = escapeHtml(datos.concepto || 'N/A');
                 return `
                     <tr class="hover:bg-gray-50 border-b">
                         <td class="p-3 text-sm">${formatDateTime(log.creado_en)}</td>
-                        <td class="p-3 text-sm text-red-600 font-medium">${usuarioElimino}</td>
+                        <td class="p-3 text-sm text-red-600 font-medium">${log.eliminado_por_usuario?.nombre || 'Desconocido'}</td>
                         <td class="p-3 text-sm">${formatDateTime(datos.creado_en)}</td>
-                        <td class="p-3 text-sm font-semibold ${datos.tipo === 'ingreso' ? 'text-green-700' : 'text-orange-700'}">${tipoOriginal}</td>
+                        <td class="p-3 text-sm font-semibold ${datos.tipo === 'ingreso' ? 'text-green-700' : 'text-orange-700'}">${datos.tipo || 'N/A'}</td>
                         <td class="p-3 text-sm font-bold">${formatCurrency(datos.monto || 0)}</td>
-                        <td class="p-3 text-sm text-left">${conceptoOriginal}</td>
+                        <td class="p-3 text-sm text-left">${datos.concepto || 'N/A'}</td>
                     </tr>
                 `;
             }).join('');
@@ -1120,7 +693,7 @@ async function mostrarLogEliminados() {
                     <table class="w-full text-left">
                         <thead class="bg-gray-100 sticky top-0">
                             <tr>
-                                <th class="p-3 text-sm font-semibold">Fecha eliminacion</th>
+                                <th class="p-3 text-sm font-semibold">Fecha EliminaciÃ³n</th>
                                 <th class="p-3 text-sm font-semibold">Eliminado Por</th>
                                 <th class="p-3 text-sm font-semibold">Fecha Original</th>
                                 <th class="p-3 text-sm font-semibold">Tipo Original</th>
@@ -1140,7 +713,7 @@ async function mostrarLogEliminados() {
 
     } catch (err) {
         modalContainer.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md text-center">
-            <p class="text-red-600">Error al cargar el historial: ${escapeHtml(err.message)}</p>
+            <p class="text-red-600">Error al cargar el historial: ${err.message}</p>
             <button id="btn-cerrar-log-modal" class="button button-neutral mt-4">Cerrar</button>
         </div>`;
         modalContainer.querySelector('#btn-cerrar-log-modal').onclick = () => modalContainer.remove();
@@ -1152,31 +725,36 @@ async function mostrarLogEliminados() {
 // Reemplaza tu funciÃ³n mostrarTurnosAbiertos con esta versiÃ³n
 // REEMPLAZA TU FUNCIÃ“N ACTUAL CON ESTA VERSIÃ“N MEJORADA
 async function mostrarTurnosAbiertos(event) {
+    // 1. Prevenir duplicados: Si el modal ya existe, no hacemos nada.
     if (document.getElementById('modal-turnos-abiertos')) {
         return;
     }
 
+    // --- LÃ³gica de posicionamiento ---
     const boton = event.currentTarget;
     const rect = boton.getBoundingClientRect();
-    const top = rect.bottom + window.scrollY + 5;
-    const right = window.innerWidth - rect.right;
+    const top = rect.bottom + window.scrollY + 5; // 5px debajo del botÃ³n
+    const right = window.innerWidth - rect.right; // Alineado a la derecha del botÃ³n
 
     const modalContainer = document.createElement('div');
     modalContainer.id = "modal-turnos-abiertos";
+    // --- 2. Estilos para que sea un popover flotante ---
     modalContainer.style.position = 'absolute';
     modalContainer.style.top = `${top}px`;
     modalContainer.style.right = `${right}px`;
-    modalContainer.style.zIndex = '1000';
+    modalContainer.style.zIndex = '1000'; // Asegura que estÃ© por encima de otros elementos
     modalContainer.className = "bg-white rounded-lg shadow-xl border w-full max-w-sm text-center";
     modalContainer.innerHTML = `<div class="p-4"><p>Buscando turnos abiertos...</p></div>`;
     document.body.appendChild(modalContainer);
 
+    // --- 3. LÃ³gica para cerrar el modal al hacer clic fuera ---
     const closeOnClickOutside = (e) => {
         if (!modalContainer.contains(e.target) && e.target !== boton) {
             modalContainer.remove();
             document.removeEventListener('click', closeOnClickOutside);
         }
     };
+    // AÃ±adimos el listener un instante despuÃ©s para evitar que se cierre con el mismo clic que lo abriÃ³
     setTimeout(() => document.addEventListener('click', closeOnClickOutside), 0);
     
     try {
@@ -1188,11 +766,10 @@ async function mostrarTurnosAbiertos(event) {
             .order('fecha_apertura', { ascending: true });
 
         if (error) throw error;
-        turnosAbiertosCache = new Map((turnos || []).map((turno) => [String(turno.id), turno]));
 
         let tableRowsHtml = '';
         if (!turnos || turnos.length === 0) {
-            tableRowsHtml = '<tr><td class="text-center p-4">Excelente. No hay turnos abiertos.</td></tr>';
+            tableRowsHtml = '<tr><td class="text-center p-4">Â¡Excelente! No hay turnos abiertos.</td></tr>';
         } else {
             tableRowsHtml = turnos.map(turno => {
                 const nombreUsuario = turno.usuarios?.nombre || turno.usuarios?.email || 'Usuario Desconocido';
@@ -1200,11 +777,11 @@ async function mostrarTurnosAbiertos(event) {
 
                 const botonGestion = esMiTurno
                     ? `<span class="text-gray-400 italic">Es tu turno actual</span>`
-                    : `<button class="button bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded" data-turno-id="${escapeAttribute(turno.id || '')}">Gestionar turno</button>`;
+                    : `<button class="button bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded" data-turno-json='${JSON.stringify(turno)}'>Gestionar Turno</button>`;
 
                 return `
                     <tr class="hover:bg-gray-50 border-b">
-                        <td class="p-3 text-sm text-left">${escapeHtml(nombreUsuario)}</td>
+                        <td class="p-3 text-sm text-left">${nombreUsuario}</td>
                         <td class="p-3 text-sm text-left">${formatDateTime(turno.fecha_apertura)}</td>
                         <td class="p-3 text-sm text-center">${botonGestion}</td>
                     </tr>
@@ -1227,27 +804,22 @@ async function mostrarTurnosAbiertos(event) {
         `;
         modalContainer.innerHTML = modalContent;
         
+        // El botÃ³n 'X' tambiÃ©n debe cerrar el popover y el listener
         modalContainer.querySelector('#btn-cerrar-turnos-modal').onclick = () => {
             modalContainer.remove();
             document.removeEventListener('click', closeOnClickOutside);
         };
         
-        modalContainer.querySelectorAll('button[data-turno-id]').forEach(btn => {
+        modalContainer.querySelectorAll('button[data-turno-json]').forEach(btn => {
             btn.onclick = async (e) => {
-                const turnoId = e.currentTarget.dataset.turnoId;
-                const turnoData = turnosAbiertosCache.get(String(turnoId));
-                document.removeEventListener('click', closeOnClickOutside);
-                modalContainer.remove();
-                if (!turnoData) {
-                    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No se pudo cargar el turno seleccionado.');
-                    return;
-                }
+                const turnoData = JSON.parse(e.target.dataset.turnoJson);
+                document.removeEventListener('click', closeOnClickOutside); // Limpiar listener antes de cambiar de vista
                 await iniciarModoSupervision(turnoData);
             };
         });
 
     } catch (err) {
-        modalContainer.innerHTML = `<div class="p-4 text-red-600">Error: ${escapeHtml(err.message)}</div>`;
+        modalContainer.innerHTML = `<div class="p-4 text-red-600">Error: ${err.message}</div>`;
     }
 }
 
@@ -1256,28 +828,31 @@ async function mostrarTurnosAbiertos(event) {
 
 function renderizarUICerrada() {
   currentContainerEl.innerHTML = `
-    <div class="card shadow-xl rounded-3xl overflow-hidden border border-slate-200">
-      <div class="card-body p-8 text-center bg-gradient-to-br from-slate-50 to-white">
+    <div class="card shadow-lg rounded-lg">
+      <div class="card-body p-6 text-center">
         <div id="turno-global-feedback" class="feedback-message mb-4"></div>
-        <p class="text-xs uppercase tracking-[0.22em] text-slate-400 mb-2">Caja</p>
-        <h2 class="text-3xl font-semibold text-gray-700 mb-4">La caja esta cerrada</h2>
-        <p class="text-gray-500 mb-6 max-w-xl mx-auto">No hay un turno activo. Para registrar ingresos o egresos, inicia un nuevo turno y deja la apertura asociada al cajero correcto.</p>
-        <button id="btn-abrir-turno" class="button button-primary button-lg py-3 px-8 text-lg rounded-2xl">Abrir turno</button>
+        <h2 class="text-2xl font-semibold text-gray-700 mb-4">La caja estÃ¡ cerrada</h2>
+        <p class="text-gray-500 mb-6">No hay un turno activo. Para registrar ingresos o egresos, por favor, inicia un nuevo turno.</p>
+        <button id="btn-abrir-turno" class="button button-primary button-lg py-3 px-6 text-lg">Abrir Turno</button>
       </div>
     </div>`;
   const abrirTurnoBtn = currentContainerEl.querySelector('#btn-abrir-turno');
-  const abrirTurnoHandler = () => abrirTurno();
-  abrirTurnoBtn.addEventListener('click', abrirTurnoHandler);
-  moduleListeners.push({ element: abrirTurnoBtn, type: 'click', handler: abrirTurnoHandler });
+  abrirTurnoBtn.addEventListener('click', abrirTurno);
+  moduleListeners.push({ element: abrirTurnoBtn, type: 'click', handler: abrirTurnoBtn });
 }
 
 // Reemplaza tu funciÃ³n renderizarUI con esta
 async function renderizarUI() {
+    console.log("renderizarUI llamado");
+  
+    // Si estamos en modo supervisiÃ³n, no necesitamos verificar el turno del admin.
+    // Usaremos el que ya tenemos guardado en `turnoEnSupervision`.
     if (turnoEnSupervision) {
         await renderizarUIAbierta();
         return;
     }
-
+  
+    // Si no, procedemos con la lÃ³gica normal
     turnoActivo = await verificarTurnoActivo();
     if (turnoActivo) {
         await renderizarUIAbierta();
@@ -1356,21 +931,25 @@ function procesarMovimientosParaReporte(movimientos) {
   return reporte;
 }
 
+// REEMPLAZA TU FUNCIÃ“N renderizarModalArqueo ACTUAL CON ESTA VERSIÃ“N (CON CALCULADORA DE BILLETES)
 function renderizarModalArqueo(metodosDePago, onConfirm) {
+  // Encontrar el ID del mÃ©todo "Efectivo" para asociarle la calculadora
   const metodoEfectivo = metodosDePago.find(m => m.nombre.toLowerCase().includes('efectivo'));
   const idEfectivo = metodoEfectivo ? metodoEfectivo.id : null;
 
+  // Creamos el HTML de los inputs por cada mÃ©todo de pago
   const inputsHtml = metodosDePago.map(metodo => {
     const esEfectivo = metodo.id === idEfectivo;
     
+    // Si es efectivo, agregamos el botÃ³n de calculadora
     const botonCalc = esEfectivo 
-        ? `<button type="button" id="btn-abrir-calc" class="absolute inset-y-0 right-0 px-3 flex items-center bg-gray-100 hover:bg-gray-200 border-l text-gray-600 rounded-r-md transition" title="Abrir calculadora de billetes">Contar</button>` 
+        ? `<button type="button" id="btn-abrir-calc" class="absolute inset-y-0 right-0 px-3 flex items-center bg-gray-100 hover:bg-gray-200 border-l text-gray-600 rounded-r-md transition" title="Abrir calculadora de billetes">ðŸ§® Contar</button>` 
         : '';
     
     return `
     <div class="mb-4">
       <label class="block text-sm font-medium text-gray-700 mb-1">
-        ${metodo.nombre} (Dinero fisico / real)
+        ${metodo.nombre} (Dinero FÃ­sico/Real)
       </label>
       <div class="relative group">
         <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">$</span>
@@ -1387,6 +966,7 @@ function renderizarModalArqueo(metodosDePago, onConfirm) {
     </div>
   `}).join('');
 
+  // HTML de la Calculadora (Oculta por defecto)
   const calculadoraHtml = `
     <div id="panel-calculadora" class="hidden bg-gray-50 p-4 rounded-md border border-gray-200 mb-4 animate-fadeIn">
         <div class="flex justify-between items-center mb-2">
@@ -1416,10 +996,10 @@ function renderizarModalArqueo(metodosDePago, onConfirm) {
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-fade-in-down transform transition-all">
       <div class="bg-gradient-to-r from-blue-600 to-blue-500 p-4 border-b">
         <h3 class="text-lg font-bold text-white flex items-center gap-2">
-          Arqueo de caja
+          ðŸ›¡ï¸ Arqueo de Caja
         </h3>
         <p class="text-blue-100 text-xs mt-1">
-          Cuenta el dinero fisico antes de ver el reporte.
+          Cuenta el dinero fÃ­sico antes de ver el reporte.
         </p>
       </div>
       <div class="p-6">
@@ -1443,6 +1023,7 @@ function renderizarModalArqueo(metodosDePago, onConfirm) {
   modalContainer.innerHTML = modalHtml;
   document.body.appendChild(modalContainer);
 
+  // --- LÃ“GICA DE LA CALCULADORA ---
   if (idEfectivo) {
     const btnAbrir = modalContainer.querySelector('#btn-abrir-calc');
     const panelCalc = modalContainer.querySelector('#panel-calculadora');
@@ -1453,16 +1034,19 @@ function renderizarModalArqueo(metodosDePago, onConfirm) {
     const btnLimpiar = modalContainer.querySelector('#btn-limpiar-calc');
 
     if (btnAbrir) {
+        // Toggle abrir/cerrar
         btnAbrir.onclick = () => {
             const isHidden = panelCalc.classList.contains('hidden');
             if (isHidden) {
                 panelCalc.classList.remove('hidden');
+                // Movemos el panel calc para que quede justo arriba del input efectivo si es posible, o lo dejamos arriba
                 inputsBilletes[0].focus();
             } else {
                 panelCalc.classList.add('hidden');
             }
         };
 
+        // FunciÃ³n de suma
         const recalcular = () => {
             let total = 0;
             inputsBilletes.forEach(inp => {
@@ -1472,20 +1056,28 @@ function renderizarModalArqueo(metodosDePago, onConfirm) {
             });
             total += (parseFloat(inputMonedas.value) || 0);
             
+            // Actualizar visual y el input real
             displayTotal.textContent = formatCurrency(total);
-            inputEfectivo.value = total;
+            inputEfectivo.value = total; // Actualiza el input principal automÃ¡ticamente
         };
 
+        // Listeners en inputs de calculadora
         inputsBilletes.forEach(inp => inp.addEventListener('input', recalcular));
         inputMonedas.addEventListener('input', recalcular);
 
+        // Limpiar
         btnLimpiar.onclick = () => {
             inputsBilletes.forEach(inp => inp.value = '');
             inputMonedas.value = '';
             recalcular();
         };
+        
+        // Si el usuario escribe manualmente en el input principal, no borramos la calc, 
+        // pero podrÃ­amos desincronizarla. Por simpleza, dejamos que la calc sobreescriba.
     }
   }
+
+  // --- FIN LÃ“GICA CALCULADORA ---
 
   modalContainer.querySelector('#btn-cancelar-arqueo').onclick = () => modalContainer.remove();
 
@@ -1508,29 +1100,29 @@ function renderizarModalArqueo(metodosDePago, onConfirm) {
 } 
 
 
+// REEMPLAZA TU FUNCIÃ“N mostrarResumenCorteDeCaja CON ESTA VERSIÃ“N (CON ARQUEO CIEGO)
 async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
   const turnoParaResumir = turnoEnSupervision || turnoActivo;
   const esCierreForzoso = !!turnoEnSupervision;
 
   if (!turnoParaResumir) {
-    showError(currentContainerEl.querySelector('#turno-global-feedback'), 'No hay ningun turno activo para generar un resumen.');
+    alert("Error: No hay ningÃºn turno activo para generar un resumen.");
     return;
   }
 
+  // Solo mostramos loading si NO venimos del arqueo (para evitar parpadeos feos)
   if (!valoresRealesArqueo) showGlobalLoading('Preparando cierre...');
 
   try {
+    // 1. Obtener Datos (Igual que antes)
     const { data: metodosDePago, error: metodosError } = await currentSupabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', currentHotelId).eq('activo', true).order('nombre', { ascending: true });
-    if (metodosError) throw new Error('No se encontraron metodos de pago activos.');
+    if (metodosError) throw new Error("No se encontraron mÃ©todos de pago activos.");
 
     const { data: configHotel } = await currentSupabaseInstance.from('configuracion_hotel').select('*').eq('hotel_id', currentHotelId).maybeSingle();
 
-    const { data: movimientos, error: movError } = await currentSupabaseInstance
-      .from('caja')
-      .select('*, usuarios(nombre), metodos_pago(nombre)')
-      .eq('turno_id', turnoParaResumir.id);
+    const { data: movimientos, error: movError } = await currentSupabaseInstance.from('caja').select('*, usuarios(nombre), metodos_pago(nombre)').eq('turno_id', turnoParaResumir.id).order('creado_en', { ascending: true });
     
-    if (!valoresRealesArqueo) hideGlobalLoading();
+    if (!valoresRealesArqueo) hideGlobalLoading(); // Ocultamos el loading inicial
 
     if (movError) throw movError;
     if (!movimientos || movimientos.length === 0) {
@@ -1538,18 +1130,21 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
       return;
     }
 
-    const movimientosOrdenados = sortMovementsByDate(movimientos, true);
-
+    // --- PUNTO DE INTERCEPCIÃ“N PARA EL ARQUEO CIEGO ---
+    // Si la funciÃ³n se llamÃ³ sin valores (primera vez), mostramos el modal de conteo
     if (!valoresRealesArqueo) {
         renderizarModalArqueo(metodosDePago, (valoresCapturados) => {
+            // Cuando el usuario confirme el conteo, volvemos a llamar a esta funciÃ³n pero pasando los valores
             mostrarResumenCorteDeCaja(valoresCapturados);
         });
-        return;
+        return; // Detenemos la ejecuciÃ³n aquÃ­ hasta que el usuario cuente
     }
+    // --------------------------------------------------
 
-    const reporte = procesarMovimientosParaReporte(movimientosOrdenados);
+    const reporte = procesarMovimientosParaReporte(movimientos);
     const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
     
+    // Calcular totales del sistema
     const totalesPorMetodo = {};
     metodosDePago.forEach(metodo => {
       const nombreMetodo = metodo.nombre;
@@ -1562,16 +1157,21 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
     const totalGastos = calcularTotalFila(reporte.gastos);
     const balanceFinal = totalIngresos - totalGastos;
 
+    // --- GENERAR HTML DE COMPARACIÃ“N (SISTEMA vs REAL) ---
+    // Esta tabla reemplaza la fila de totales simples para mostrar discrepancias
+    
     const filasComparativas = metodosDePago.map(m => {
         const sistema = totalesPorMetodo[m.nombre].balance;
         const real = valoresRealesArqueo[m.nombre] || 0;
         const diferencia = real - sistema;
         
+        // Estilos segÃºn la diferencia
         let claseDif = "text-gray-500";
-        let icono = "Cuadra";
-        if (diferencia < 0) { claseDif = "text-red-600 font-bold"; icono = "Falta"; }
-        else if (diferencia > 0) { claseDif = "text-blue-600 font-bold"; icono = "Sobra"; }
+        let icono = "âœ…";
+        if (diferencia < 0) { claseDif = "text-red-600 font-bold"; icono = "âš ï¸ Falta"; } // Falta dinero
+        else if (diferencia > 0) { claseDif = "text-blue-600 font-bold"; icono = "ðŸ¤” Sobra"; } // Sobra dinero
         
+        // Evitamos mostrar decimales innecesarios si es exacto
         const difFormat = diferencia === 0 ? '$0' : formatCurrency(diferencia);
 
         return `
@@ -1584,6 +1184,8 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
         `;
     }).join('');
 
+
+    // --- HTML DEL MODAL FINAL (REPORTAJE) ---
     const modalHtml = `
       <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-4xl mx-auto border border-slate-200 relative animate-fade-in-down max-h-[90vh] flex flex-col">
         <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-blue-100 to-green-100 flex items-center justify-between">
@@ -1600,7 +1202,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
             <table class="w-full text-sm">
                 <thead class="bg-gray-100 text-gray-700">
                     <tr>
-                        <th class="px-4 py-2 text-left">Metodo</th>
+                        <th class="px-4 py-2 text-left">MÃ©todo</th>
                         <th class="px-4 py-2 text-right">Sistema (Esperado)</th>
                         <th class="px-4 py-2 text-right bg-yellow-100">Declarado (Real)</th>
                         <th class="px-4 py-2 text-right">Diferencia</th>
@@ -1615,7 +1217,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
           <details class="group mb-4">
             <summary class="flex justify-between items-center font-medium cursor-pointer list-none p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition">
                 <span>Ver desglose por conceptos (Habitaciones, Tienda, etc.)</span>
-                <span class="transition group-open:rotate-180">v</span>
+                <span class="transition group-open:rotate-180">â–¼</span>
             </summary>
             <div class="text-xs mt-3 text-gray-500 group-open:animate-fadeIn">
                 <div class="overflow-x-auto">
@@ -1625,32 +1227,37 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
           </details>
 
           <div class="flex flex-col md:flex-row justify-end gap-3 mt-6 pt-4 border-t">
-            <button id="btn-imprimir-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-slate-100 hover:bg-blue-100 text-blue-800 font-semibold transition order-2 md:order-1">Imprimir reporte</button>
-            <button id="btn-cancelar-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition order-1 md:order-2">Volver / corregir</button>
-            <button id="btn-confirmar-corte-caja" class="button button-primary px-4 py-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold shadow transition order-3">Cerrar turno definitivamente</button>
+            <button id="btn-imprimir-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-slate-100 hover:bg-blue-100 text-blue-800 font-semibold transition order-2 md:order-1">ðŸ–¨ï¸ Imprimir Reporte</button>
+            <button id="btn-cancelar-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition order-1 md:order-2">Volver / Corregir</button>
+            <button id="btn-confirmar-corte-caja" class="button button-primary px-4 py-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold shadow transition order-3">âœ… Cerrar Turno Definitivamente</button>
           </div>
         </div>
       </div>
     `;
 
+    // MOSTRAR EL MODAL
     const modal = document.createElement('div');
     modal.id = "modal-corte-caja";
     modal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50 p-4";
     modal.innerHTML = modalHtml;
     document.body.appendChild(modal);
 
+    // LISTENERS
     modal.querySelector('#btn-cancelar-corte-caja').onclick = () => modal.remove();
     
     modal.querySelector('#btn-confirmar-corte-caja').onclick = async () => {
+      // AQUÃ PODRÃAS GUARDAR LAS DIFERENCIAS EN LA BASE DE DATOS SI QUISIERAS
+      // Por ahora, procedemos al cierre normal
       modal.remove();
       if (esCierreForzoso) {
-        await cerrarTurno(turnoParaResumir, turnoParaResumir.usuarios, valoresRealesArqueo);
+        await cerrarTurno(turnoParaResumir, turnoParaResumir.usuarios);
       } else {
-        await cerrarTurno(null, null, valoresRealesArqueo);
+        await cerrarTurno();
       }
     };
 
     modal.querySelector('#btn-imprimir-corte-caja').onclick = () => {
+        // Datos para imprimir (Mantenemos la impresiÃ³n del sistema por ahora)
         const ingresosPorMetodo = {};
         const egresosPorMetodo = {};
         const balancesPorMetodo = {};
@@ -1658,6 +1265,9 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
         metodosDePago.forEach(m => { 
             ingresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.ingreso || 0;
             egresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.gasto || 0;
+            // OJO: Â¿Quieres imprimir lo que dice el sistema o lo que contÃ³ el usuario?
+            // Usualmente se imprime el reporte del SISTEMA, y a mano se anota la diferencia, 
+            // O se imprime el "Balance" del sistema. DejÃ©moslo como sistema para consistencia contable.
             balancesPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.balance || 0;
         });
         
@@ -1666,7 +1276,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
 
         imprimirCorteCajaAdaptable(
             configHotel, 
-            movimientosOrdenados, 
+            movimientos, 
             totalIngresos, 
             totalGastos, 
             balanceFinal, 
@@ -1681,6 +1291,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
     
   } catch (e) {
     hideGlobalLoading();
+    // Si hay error y existe el modal, quitarlo para mostrar el error
     document.getElementById('modal-corte-caja')?.remove(); 
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error generando el resumen: ${e.message}`);
     console.error('Error en mostrarResumenCorteDeCaja:', e);
@@ -1691,33 +1302,39 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
 
 
 
+// REEMPLAZA TU FUNCIÃ“N imprimirCorteCajaAdaptable CON ESTA (INCLUYE ALERTA DE DESCUADRE)
 function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo, usuarioNombre, fechaCierre, valoresReales = null) {
   let tamano = (config?.tamano_papel || '').toLowerCase();
   const esTermica = tamano === '58mm' || tamano === '80mm';
   const widthPage = tamano === '58mm' ? '58mm' : (tamano === '80mm' ? '78mm' : '100%');
   const fontSize = tamano === '58mm' ? '10px' : (tamano === '80mm' ? '11px' : '12px');
 
+  // Datos del Encabezado
   let logoUrl = config?.mostrar_logo !== false && config?.logo_url ? config.logo_url : null;
   let hotelNombre = config?.nombre_hotel || 'Hotel';
   let direccion = config?.direccion_fiscal || '';
   let nit = config?.nit_rut || '';
   let pie = config?.pie_ticket || '';
 
+  // LÃ³gica de Descuadre
   let alertaHtml = '';
   if (valoresReales) {
+      // Sumar todo lo que el usuario declarÃ³ tener fÃ­sicamente
       let totalDeclarado = 0;
       Object.values(valoresReales).forEach(val => totalDeclarado += val);
       
       let diferencia = totalDeclarado - balance;
       
+      // Si la diferencia es mayor a 1 peso (para evitar errores de redondeo decimal)
       if (Math.abs(diferencia) > 1) {
           const esFaltante = diferencia < 0;
           const tipo = esFaltante ? 'FALTANTE (DEUDA)' : 'SOBRANTE';
+          const color = esFaltante ? '#000' : '#000'; // En ticket tÃ©rmico el color no importa tanto, usamos negrita
           const borde = esFaltante ? '2px dashed black' : '1px solid black';
           
           alertaHtml = `
             <div style="margin: 10px 0; padding: 8px; border: ${borde}; text-align: center;">
-                <div style="font-weight: bold; font-size: 1.2em;">DESCUADRE DETECTADO</div>
+                <div style="font-weight: bold; font-size: 1.2em;">âš ï¸ Â¡DESCUADRE DETECTADO!</div>
                 <div style="margin-top: 4px;">Sistema espera: ${formatCurrency(balance)}</div>
                 <div>Cajero entrega: ${formatCurrency(totalDeclarado)}</div>
                 <div style="margin-top: 5px; font-weight: bold; font-size: 1.3em;">
@@ -1728,6 +1345,7 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
       }
   }
 
+  // ESTILOS CSS
   let style = `
     @page { margin: ${esTermica ? '0' : '15mm'}; size: auto; }
     body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: ${fontSize}; margin: 0; padding: ${esTermica ? '5px' : '20px'}; width: ${esTermica ? widthPage : 'auto'}; color: #000; }
@@ -1772,6 +1390,7 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
     </div>
   `;
 
+  // Lista de dinero a entregar (lo que dice el sistema)
   let listaBalances = Object.entries(balancesPorMetodo).map(([metodo, valor]) => {
      if(valor === 0) return '';
      return `<div class="resumen-row"><span>${metodo}:</span> <span class="bold">${formatCurrency(valor)}</span></div>`;
@@ -1785,8 +1404,8 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
   `;
 
   let filasMovimientos = movimientos.map(mv => {
-    let hora = getMovementTimeLabel(mv);
-    let tipoSigno = mv.tipo === 'ingreso' ? '+' : (mv.tipo === 'egreso' ? '-' : '*');
+    let hora = formatDateTime(mv.creado_en).split(',')[1].trim().slice(0, 5);
+    let tipoSigno = mv.tipo === 'ingreso' ? '+' : (mv.tipo === 'egreso' ? '-' : 'â€¢');
     return `<tr><td class="col-hora">${hora}</td><td class="col-tipo">${tipoSigno}</td><td class="col-concepto">${mv.concepto || 'Sin concepto'}</td><td class="col-metodo">${(mv.metodos_pago?.nombre || 'N/A')}</td><td class="col-monto">${formatCurrency(mv.monto)}</td></tr>`;
   }).join('');
 
@@ -1861,12 +1480,14 @@ function generarHTMLReporteCierre(
   const balanceFinal = reporte.apertura + totalIngresos - totalGastos;
 
 
+  // --- 2. GENERAR ALERTA DE ARQUEO CIEGO (DESCUADRE) ---
   let alertaDescuadreHtml = '';
   if (valoresReales) {
       let totalDeclarado = 0;
       let filasDescuadre = metodosDePago.map(m => {
           let sistema = totalesPorMetodo[m.nombre].balance;
           
+          // Sumar apertura al efectivo si aplica, para comparar peras con peras
           if (m.nombre.toLowerCase().includes('efectivo')) {
               sistema += reporte.apertura;
           }
@@ -1875,7 +1496,7 @@ function generarHTMLReporteCierre(
           totalDeclarado += real;
           const dif = real - sistema;
           
-          if (Math.abs(dif) < 1) return '';
+          if (Math.abs(dif) < 1) return ''; // Si cuadra exacto no mostramos lÃ­nea
           
           const color = dif < 0 ? 'red' : 'blue';
           const signo = dif > 0 ? '+' : '';
@@ -1897,9 +1518,9 @@ function generarHTMLReporteCierre(
 
             alertaDescuadreHtml = `
             <div style="background-color: ${colorFondo}; border: 2px dashed ${colorTexto}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                <h3 style="color: ${colorTexto}; margin-top: 0; text-align: center;">${tituloEstado}</h3>
+                <h3 style="color: ${colorTexto}; margin-top: 0; text-align: center;">âš ï¸ ${tituloEstado}</h3>
                 <p style="text-align:center; font-size:16px;">
-                    El sistema calculo <b>${formatCurrency(balanceFinal)}</b>, pero el cajero declaro tener <b>${formatCurrency(totalDeclarado)}</b>.
+                    El sistema calculÃ³ <b>${formatCurrency(balanceFinal)}</b>, pero el cajero declarÃ³ tener <b>${formatCurrency(totalDeclarado)}</b>.
                 </p>
                 <div style="text-align:center; font-size:20px; font-weight:bold; color:${colorTexto}; margin-bottom:10px;">
                    Diferencia Total: ${diferenciaTotal > 0 ? '+' : ''}${formatCurrency(diferenciaTotal)}
@@ -1907,7 +1528,7 @@ function generarHTMLReporteCierre(
                 <table style="width:100%; font-size:13px; background:white; border-collapse:collapse;">
                     <thead>
                         <tr style="background:#f3f4f6; color:#555;">
-                            <th style="padding:5px; text-align:left;">Metodo</th>
+                            <th style="padding:5px; text-align:left;">MÃ©todo</th>
                             <th style="padding:5px; text-align:right;">Sistema (Esperado)</th>
                             <th style="padding:5px; text-align:right;">Real (Declarado)</th>
                             <th style="padding:5px; text-align:right;">Diferencia</th>
@@ -1942,6 +1563,9 @@ function generarHTMLReporteCierre(
   const tdTotalesGastos = metodosDePago.map(m => `<td style="${styles.tdTotal} color:red;">(${formatCurrency(totalesPorMetodo[m.nombre].gasto)})</td>`).join('');
   const tdTotalesBalance = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].balance)}</td>`).join('');
   
+  // --- 5. GENERACIÃ“N DE TABLAS DE DETALLE (Tu lÃ³gica original restaurada) ---
+
+  // Detalle de Caja
   const detalleCajaHtml = `
     <h2 style="${styles.headerDetalle}">Detalle de Movimientos de Caja</h2>
     <table style="${styles.table}">
@@ -1950,14 +1574,14 @@ function generarHTMLReporteCierre(
           <th style="${styles.th}">Fecha</th>
           <th style="${styles.th}">Tipo</th>
           <th style="${styles.th}">Concepto</th>
-          <th style="${styles.th}">Metodo</th>
+          <th style="${styles.th}">MÃ©todo</th>
           <th style="${styles.th}">Monto</th>
         </tr>
       </thead>
       <tbody>
         ${(movsCaja && movsCaja.length > 0) ? movsCaja.map(mv => `
           <tr>
-            <td style="${styles.td} text-align:left; min-width: 130px;">${formatMovementDateTime(mv)}</td>
+            <td style="${styles.td} text-align:left; min-width: 130px;">${formatDateTime(mv.creado_en)}</td>
             <td style="${styles.tdConcepto}">${mv.tipo}</td>
             <td style="${styles.tdConcepto}">${mv.concepto}</td>
             <td style="${styles.tdConcepto}">${mv.metodos_pago?.nombre || 'N/A'}</td>
@@ -1970,6 +1594,7 @@ function generarHTMLReporteCierre(
     </table>
   `;
 
+  // Detalle de Amenidades (Agrupado)
   const amenidadesAgrupadas = {};
   if (movsAmenidades && movsAmenidades.length > 0) {
     movsAmenidades.forEach(mv => {
@@ -1981,12 +1606,12 @@ function generarHTMLReporteCierre(
     });
   }
   const detalleAmenidadesHtml = `
-    <h2 style="${styles.headerDetalle}">Registro de Amenidades (Agrupado por Habitacion)</h2>
+    <h2 style="${styles.headerDetalle}">Registro de Amenidades (Agrupado por HabitaciÃ³n)</h2>
     <table style="${styles.table}">
       <thead>
         <tr>
-          <th style="${styles.th}">Habitacion</th>
-          <th style="${styles.th}">Articulos entregados en el turno</th>
+          <th style="${styles.th}">HabitaciÃ³n</th>
+          <th style="${styles.th}">ArtÃ­culos Entregados en el Turno</th>
         </tr>
       </thead>
       <tbody>
@@ -2000,14 +1625,15 @@ function generarHTMLReporteCierre(
     </table>
   `;
 
+  // Detalle de LencerÃ­a
   const detalleLenceriaHtml = `
-    <h2 style="${styles.headerDetalle}">Registro de Lenceria (Ropa de cama)</h2>
+    <h2 style="${styles.headerDetalle}">Registro de LencerÃ­a (Ropa de Cama)</h2>
     <table style="${styles.table}">
       <thead>
         <tr>
           <th style="${styles.th}">Fecha</th>
-          <th style="${styles.th}">Habitacion</th>
-          <th style="${styles.th}">Articulo</th>
+          <th style="${styles.th}">HabitaciÃ³n</th>
+          <th style="${styles.th}">ArtÃ­culo</th>
           <th style="${styles.th}">Cantidad</th>
         </tr>
       </thead>
@@ -2019,20 +1645,21 @@ function generarHTMLReporteCierre(
             <td style="${styles.tdConcepto}">${mv.inventario_lenceria?.nombre_item || 'N/A'}</td>
             <td style="${styles.td} text-align:center; font-weight:bold;">${mv.cantidad_usada}</td>
           </tr>
-        `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de lenceria.</td></tr>`}
+        `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de lencerÃ­a.</td></tr>`}
       </tbody>
     </table>
   `;
 
+  // Detalle de PrÃ©stamos
   const detallePrestamosHtml = `
-    <h2 style="${styles.headerDetalle}">Registro de Prestamos</h2>
+    <h2 style="${styles.headerDetalle}">Registro de PrÃ©stamos</h2>
     <table style="${styles.table}">
       <thead>
         <tr>
           <th style="${styles.th}">Fecha</th>
-          <th style="${styles.th}">Habitacion</th>
-          <th style="${styles.th}">Articulo</th>
-          <th style="${styles.th}">Accion</th>
+          <th style="${styles.th}">HabitaciÃ³n</th>
+          <th style="${styles.th}">ArtÃ­culo</th>
+          <th style="${styles.th}">AcciÃ³n</th>
         </tr>
       </thead>
       <tbody>
@@ -2043,15 +1670,16 @@ function generarHTMLReporteCierre(
             <td style="${styles.tdConcepto}">${mv.articulo_nombre}</td>
             <td style="${styles.tdConcepto}">${mv.accion}</td>
           </tr>
-        `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de prestamos.</td></tr>`}
+        `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de prÃ©stamos.</td></tr>`}
       </tbody>
     </table>
   `;
   
+  // Stock de Amenidades
   const stockAmenidadesHtml = `
     <h2 style="${styles.headerDetalle}">Stock Actual de Amenidades</h2>
     <table style="${styles.table}">
-      <thead><tr><th style="${styles.th}">Articulo</th><th style="${styles.th}">Stock Actual</th></tr></thead>
+      <thead><tr><th style="${styles.th}">ArtÃ­culo</th><th style="${styles.th}">Stock Actual</th></tr></thead>
       <tbody>
         ${(stockAmenidades && stockAmenidades.length > 0) ? stockAmenidades.map(item => `
           <tr>
@@ -2063,14 +1691,15 @@ function generarHTMLReporteCierre(
     </table>
   `;
 
+  // Stock de LencerÃ­a
   const stockLenceriaHtml = `
-    <h2 style="${styles.headerDetalle}">Stock Actual de Lenceria</h2>
+    <h2 style="${styles.headerDetalle}">Stock Actual de LencerÃ­a</h2>
     <table style="${styles.table}">
       <thead>
         <tr>
-          <th style="${styles.th}">Articulo</th>
-          <th style="${styles.th}">Limpio (Almacen)</th>
-          <th style="${styles.th}">En Lavanderia</th>
+          <th style="${styles.th}">ArtÃ­culo</th>
+          <th style="${styles.th}">Limpio (AlmacÃ©n)</th>
+          <th style="${styles.th}">En LavanderÃ­a</th>
           <th style="${styles.th}">Stock Total</th>
         </tr>
       </thead>
@@ -2088,6 +1717,8 @@ function generarHTMLReporteCierre(
   `;
 
 
+  // --- 6. ARMADO DEL HTML FINAL ---
+  // AquÃ­ inyectamos alertaDescuadreHtml AL PRINCIPIO y luego todo el reporte detallado
   return `
     <body style="${styles.body}">
       <div style="${styles.container}">
@@ -2102,7 +1733,7 @@ function generarHTMLReporteCierre(
           <thead>
             <tr>
               <th style="${styles.th}">Concepto</th>
-              <th style="${styles.th}">No. Ventas</th>
+              <th style="${styles.th}">NÂ° Ventas</th>
               <th style="${styles.th}">Transac.</th>
               ${thMetodos}
               <th style="${styles.th} text-align:right;">Totales</th>
@@ -2169,7 +1800,7 @@ function generarHTMLReporteCierre(
         ${stockAmenidadesHtml}
         ${stockLenceriaHtml}
 
-        <div style="${styles.footer}">Este es un reporte automatico generado por el sistema.</div>
+        <div style="${styles.footer}">Este es un reporte automÃ¡tico generado por el sistema.</div>
       </div>
     </body>`;
 }
@@ -2187,10 +1818,8 @@ async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
     toCorreos = currentModuleUser.email || "tucorreo@tudominio.com";
   }
   if (!toCorreos || !toCorreos.split(',').some(correo => correo.trim().includes('@'))) {
-    return {
-      sent: false,
-      reason: 'invalid_destination'
-    };
+    showError(feedbackEl, "No hay correo de destino vÃ¡lido para enviar el cierre de caja. ConfigÃºralo en Ajustes.");
+    return;
   }
   toCorreos = toCorreos.split(',').map(c => c.trim()).filter(c => !!c).join(',');
   const fromCorreo = config?.correo_remitente || "no-reply@gestiondehotel.com";
@@ -2206,12 +1835,8 @@ async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    return {
-      sent: false,
-      reason: 'request_failed'
-    };
+    showError(feedbackEl, 'No se pudo enviar el reporte por email.');
   }
-  return { sent: true };
 }
 
 // --- MOUNT / UNMOUNT ---
@@ -2219,25 +1844,20 @@ async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
 // En el archivo caja.js
 
 export async function mount(container, supabaseInst, user) {
+  console.log("MOUNT caja.js llamado");
   unmount();
   currentContainerEl = container;
   currentSupabaseInstance = supabaseInst;
   currentModuleUser = user;
 
-  const { data: perfil } = await supabaseInst
-    .from('usuarios')
-    .select('hotel_id, rol, nombre, email')
-    .eq('id', user.id)
-    .single();
+  const { data: perfil } = await supabaseInst.from('usuarios').select('hotel_id, rol').eq('id', user.id).single();
   
   currentHotelId = perfil?.hotel_id;
   currentUserRole = perfil?.rol;
-  currentModuleUser = {
-    ...user,
-    nombre: perfil?.nombre || user?.user_metadata?.nombre || user?.nombre || '',
-    email: perfil?.email || user?.email || '',
-    rol: perfil?.rol || user?.rol || null
-  };
+
+  // --- AÃ‘ADE ESTA LÃNEA PARA DEPURAR ---
+  console.log('ROL DEL USUARIO ACTUAL:', currentUserRole); 
+  // ------------------------------------
 
   if (!currentHotelId) {
     container.innerHTML = `<div class="p-4 text-red-600">Error: Hotel no identificado.</div>`;
@@ -2249,6 +1869,7 @@ export async function mount(container, supabaseInst, user) {
 
 
 export function unmount() {
+  // Limpia todos los listeners registrados
   moduleListeners.forEach(({ element, type, handler }) => {
     element?.removeEventListener(type, handler);
   });
@@ -2257,9 +1878,5 @@ export function unmount() {
   currentHotelId = null;
   currentModuleUser = null;
   currentContainerEl = null;
-  currentUserRole = null;
   turnoActivo = null;
-  turnoEnSupervision = null;
-  turnosAbiertosCache = new Map();
-  resetMovementTableState();
 }

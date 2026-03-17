@@ -1,0 +1,669 @@
+import { turnoService } from '../../services/turnoService.js';
+import { showError } from '../../uiUtils.js';
+import { tiendaState } from './state.js';
+import { formatCurrency, getTabContentEl } from './helpers.js';
+
+let descuentoAplicado = null;
+let posProductos = [];
+let posMetodosPago = [];
+let posHabitacionesOcupadas = [];
+let posCarrito = [];
+let posFiltro = '';
+let ventaPOSenCurso = false;
+
+export async function cargarDatosPOS() {
+  const { data: productos } = await tiendaState.currentSupabase
+    .from('productos_tienda')
+    .select('id, nombre, precio_venta, imagen_url, stock_actual, categoria_id, codigo_barras')
+    .eq('hotel_id', tiendaState.currentHotelId)
+    .eq('activo', true)
+    .gt('stock_actual', 0);
+
+  const { data: categorias } = await tiendaState.currentSupabase
+    .from('categorias_producto')
+    .select('id, nombre');
+
+  const catMap = Object.fromEntries((categorias || []).map((cat) => [cat.id, cat.nombre]));
+  posProductos = (productos || []).map((producto) => ({
+    ...producto,
+    categoria_nombre: catMap[producto.categoria_id] || 'Sin Cat.',
+  }));
+
+  const { data: metodos } = await tiendaState.currentSupabase
+    .from('metodos_pago')
+    .select('id, nombre')
+    .eq('hotel_id', tiendaState.currentHotelId)
+    .eq('activo', true);
+
+  posMetodosPago = [
+    { id: 'mixto', nombre: 'Pago Mixto (varios metodos)' },
+    ...(metodos || []),
+  ];
+
+  const { data: habitaciones } = await tiendaState.currentSupabase
+    .from('habitaciones')
+    .select('id, nombre')
+    .eq('hotel_id', tiendaState.currentHotelId)
+    .eq('estado', 'ocupada');
+
+  posHabitacionesOcupadas = habitaciones || [];
+}
+
+export async function renderPOS() {
+  const cont = getTabContentEl();
+  if (!cont) return;
+
+  cont.innerHTML = '<div>Cargando...</div>';
+  await cargarDatosPOS();
+
+  cont.innerHTML = `
+    <div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start; justify-content:center; background:#f3f6fa; border-radius:16px; padding:32px 18px 26px 18px; box-shadow:0 6px 32px #23408c12; margin-top:20px;">
+      <div style="flex:1 1 340px; background:#fff; border-radius:16px; box-shadow:0 2px 18px #b6d0f912; padding:28px 22px; min-width:320px; margin-bottom:12px;">
+        <h2 style="font-size:1.4rem; color:#2563eb; font-weight:bold; margin-bottom:22px; letter-spacing:1px;">Productos disponibles</h2>
+        <input id="buscadorPOS" placeholder="Buscar producto, categoria o codigo..." style="width:100%;margin-bottom:16px;padding:11px 15px;font-size:16px;border-radius:9px;border:1.5px solid #cbd5e1; background:#f9fafb; outline:none;">
+        <div id="productosPOS" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:18px; margin-bottom:8px;"></div>
+      </div>
+      <div style="min-width:340px; max-width:410px; flex:1 1 340px; background:#fff; border-radius:16px; box-shadow:0 2px 14px #b6d0f922; padding:28px 24px; position:sticky; top:20px; align-self:flex-start; z-index:10;">
+        <h2 style="font-size:1.4rem; color:#22c55e; font-weight:bold; margin-bottom:16px; letter-spacing:1px;">Carrito de venta</h2>
+        <table style="width:100%;font-size:15px;margin-bottom:14px;border-radius:10px;overflow:hidden;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th>Producto</th>
+              <th>Cant.</th>
+              <th>Precio</th>
+              <th>Subtotal</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="carritoPOS"></tbody>
+        </table>
+        <div id="resumen-pago-pos">
+          <div style="text-align:right;font-size:1.1rem;font-weight:600;margin-bottom:8px;">Subtotal: <span id="subtotalPOS">$0</span></div>
+          <div id="lineaDescuentoPOS" style="text-align:right;font-size:1rem;font-weight:600;margin-bottom:8px;color:#22c55e;display:none;">
+            Descuento (<span id="nombreDescuentoPOS"></span>): -<span id="montoDescuentoPOS">$0</span>
+          </div>
+          <div style="text-align:right;font-size:1.3rem;font-weight:700;margin-bottom:14px;border-top:1px solid #eee;padding-top:8px;">Total: <span id="totalPOS" style="color:#1d4ed8">$0</span></div>
+        </div>
+
+        <div id="aplicar-descuento-cont" style="display:flex; gap:8px; margin-bottom:14px;">
+          <input id="codigoDescuentoInput" placeholder="Codigo de descuento" style="flex-grow:1; padding:8px 12px; border-radius:7px; border:1.5px solid #e5e7eb;">
+          <button id="btnAplicarDescuento" style="background:#5a67d8; color:white; border:none; padding:0 18px; border-radius:7px; font-weight:600; cursor:pointer;">Aplicar</button>
+          <button id="btnRemoverDescuento" style="background:#e53e3e; color:white; border:none; padding:0 15px; border-radius:7px; font-weight:600; cursor:pointer; display:none;">X</button>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <select id="modoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;">
+            <option value="inmediato">Pago Inmediato</option>
+            <option value="habitacion">Cargar a Habitacion</option>
+          </select>
+          <select id="metodoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
+          <select id="habitacionPOS" style="flex:1;display:none;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
+        </div>
+        <input id="clientePOS" placeholder="Cliente (opcional)" style="width:100%;margin-bottom:12px;padding:8px 12px;font-size:1rem;border-radius:7px;border:1.5px solid #e5e7eb;">
+        <button id="btnVentaPOS" style="width:100%; background:linear-gradient(90deg,#22c55e,#38bdf8 92%); color:#fff;font-size:1.13rem;font-weight:700; border:none;padding:13px 0;border-radius:9px;box-shadow:0 2px 6px #22c55e33; margin-bottom:4px;letter-spacing:0.8px;cursor:pointer;">Registrar Venta</button>
+        <div id="msgPOS" style="color:#e11d48;margin-top:10px;font-weight:bold;min-height:28px;"></div>
+      </div>
+    </div>
+  `;
+
+  const buscadorPOSEl = document.getElementById('buscadorPOS');
+  buscadorPOSEl.oninput = (event) => {
+    posFiltro = event.target.value.toLowerCase();
+    renderProductosPOS();
+  };
+
+  const modoPOSEl = document.getElementById('modoPOS');
+  modoPOSEl.onchange = (event) => {
+    const modo = event.target.value;
+    document.getElementById('metodoPOS').style.display = modo === 'inmediato' ? 'block' : 'none';
+    document.getElementById('clientePOS').style.display = modo === 'inmediato' ? 'block' : 'none';
+    document.getElementById('habitacionPOS').style.display = modo === 'habitacion' ? 'block' : 'none';
+  };
+  modoPOSEl.dispatchEvent(new Event('change'));
+
+  renderProductosPOS();
+  renderCarritoPOS();
+  renderMetodosPagoPOS();
+  renderHabitacionesPOS();
+
+  document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
+  document.getElementById('btnAplicarDescuento').onclick = aplicarDescuentoPOS;
+  document.getElementById('btnRemoverDescuento').onclick = removerDescuentoPOS;
+}
+
+function getDiscountableBase(discount, cart) {
+  const aplicabilidad = discount.aplicabilidad;
+  const itemsAplicables = discount.habitaciones_aplicables || [];
+
+  if (aplicabilidad === 'reserva_total') {
+    return cart.reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
+  }
+  if (aplicabilidad === 'productos_tienda') {
+    if (!itemsAplicables.length) return 0;
+    return cart
+      .filter((item) => itemsAplicables.includes(item.id))
+      .reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
+  }
+  if (aplicabilidad === 'categorias_restaurante') {
+    if (!itemsAplicables.length) return 0;
+    return cart
+      .filter((item) => itemsAplicables.includes(item.categoria_id))
+      .reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
+  }
+  return 0;
+}
+
+export async function aplicarDescuentoPOS() {
+  const codigoInput = document.getElementById('codigoDescuentoInput');
+  const codigo = codigoInput.value.trim().toUpperCase();
+  const msgEl = document.getElementById('msgPOS');
+
+  if (!codigo) {
+    msgEl.textContent = 'Por favor, ingresa un codigo.';
+    return;
+  }
+
+  msgEl.textContent = 'Buscando descuento...';
+
+  const { data: discount, error } = await tiendaState.currentSupabase
+    .from('descuentos')
+    .select('*')
+    .eq('hotel_id', tiendaState.currentHotelId)
+    .eq('codigo', codigo)
+    .single();
+
+  if (error || !discount) {
+    msgEl.textContent = 'Codigo de descuento no valido o no encontrado.';
+    descuentoAplicado = null;
+    renderCarritoPOS();
+    return;
+  }
+
+  if (!discount.activo) {
+    msgEl.textContent = 'Este codigo de descuento ya no esta activo.';
+    return;
+  }
+  if (discount.usos_maximos > 0 && (discount.usos_actuales || 0) >= discount.usos_maximos) {
+    msgEl.textContent = 'Este codigo alcanzo su limite de usos.';
+    return;
+  }
+
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  if (discount.fecha_inicio && new Date(discount.fecha_inicio) > hoy) {
+    msgEl.textContent = 'Este descuento aun no es valido.';
+    return;
+  }
+  if (discount.fecha_fin && new Date(discount.fecha_fin) < hoy) {
+    msgEl.textContent = 'Este descuento ha expirado.';
+    return;
+  }
+
+  const baseDescuento = getDiscountableBase(discount, posCarrito);
+  if (baseDescuento <= 0) {
+    msgEl.textContent = 'El codigo no aplica a los productos en tu carrito.';
+    return;
+  }
+
+  descuentoAplicado = discount;
+  msgEl.textContent = `Descuento "${discount.nombre}" aplicado.`;
+  renderCarritoPOS();
+}
+
+export function removerDescuentoPOS() {
+  descuentoAplicado = null;
+  document.getElementById('codigoDescuentoInput').value = '';
+  document.getElementById('msgPOS').textContent = 'Descuento removido.';
+  renderCarritoPOS();
+}
+
+function renderMetodosPagoPOS() {
+  const sel = document.getElementById('metodoPOS');
+  if (!sel) return;
+  sel.innerHTML = posMetodosPago.map((metodo, index) => `
+    <option value="${metodo.id}" ${index === 0 ? 'selected' : ''}>${metodo.nombre}</option>
+  `).join('');
+}
+
+function renderHabitacionesPOS() {
+  const sel = document.getElementById('habitacionPOS');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Selecciona habitacion...</option>' + posHabitacionesOcupadas.map((hab) => `
+    <option value="${hab.id}">${hab.nombre}</option>
+  `).join('');
+}
+
+function renderProductosPOS() {
+  const cont = document.getElementById('productosPOS');
+  if (!cont) return;
+
+  let productosFiltrados = posProductos;
+  if (posFiltro?.trim()) {
+    const filtro = posFiltro.trim().toLowerCase();
+    productosFiltrados = productosFiltrados.filter((producto) =>
+      (producto.nombre || '').toLowerCase().includes(filtro) ||
+      (producto.categoria_nombre || '').toLowerCase().includes(filtro) ||
+      (producto.codigo_barras || '').toLowerCase().includes(filtro)
+    );
+  }
+
+  if (!productosFiltrados.length) {
+    cont.innerHTML = '<div style="color:#888;">No hay productos encontrados</div>';
+    return;
+  }
+
+  cont.innerHTML = '';
+  productosFiltrados.forEach((prod) => {
+    const card = document.createElement('div');
+    card.style = `
+      border:1px solid #e5e7eb;
+      padding:14px 12px 16px 12px;
+      border-radius:14px;
+      background:#fff;
+      width:100%;
+      max-width:220px;
+      text-align:center;
+      box-shadow:0 2px 12px #8bb5e628;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:8px;
+      margin-bottom:12px;
+      transition:box-shadow 0.23s, transform 0.18s;
+      font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    `;
+    card.onmouseover = () => {
+      card.style.boxShadow = '0 8px 20px #2dd4b680';
+      card.style.transform = 'translateY(-5px) scale(1.025)';
+    };
+    card.onmouseout = () => {
+      card.style.boxShadow = '0 2px 12px #8bb5e628';
+      card.style.transform = 'none';
+    };
+    card.innerHTML = `
+      <img src="${prod.imagen_url || 'https://via.placeholder.com/180x180?text=Sin+Imagen'}" style="width:170px;height:140px;object-fit:contain;border-radius:8px;background:#f7fafc;margin-bottom:5px;">
+      <div style="font-weight:600;color:#1e293b;word-break:break-all;margin-bottom:2px;">${prod.nombre}</div>
+      <div style="font-size:13px;color:#64748b;word-break:break-all;margin-bottom:2px;"><span style="font-weight:500;">Categoria:</span> ${prod.categoria_nombre || 'Sin Cat.'}</div>
+      <div style="font-size:13px;color:#334155;word-break:break-all;margin-bottom:2px;"><span style="font-weight:500;">Codigo:</span> ${prod.codigo_barras || '-'}</div>
+      <div style="font-size:1.05em;color:#22c55e;font-weight:bold;">${formatCurrency(prod.precio_venta)}</div>
+      <div style="font-size:13px;color:#666;">Stock: ${prod.stock_actual}</div>
+      <button class="agregar-btn-pos" style="margin-top:7px;background:linear-gradient(90deg,#2563eb,#22d3ee);color:#fff;border:none;padding:7px 15px;border-radius:6px;cursor:pointer;font-weight:600;">Agregar</button>
+    `;
+    card.querySelector('.agregar-btn-pos').onclick = () => addToCartPOS(prod.id);
+    cont.appendChild(card);
+  });
+}
+
+function renderCarritoPOS() {
+  const tbody = document.getElementById('carritoPOS');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const subtotalEl = document.getElementById('subtotalPOS');
+  const totalEl = document.getElementById('totalPOS');
+  const lineaDescuentoEl = document.getElementById('lineaDescuentoPOS');
+  const nombreDescuentoEl = document.getElementById('nombreDescuentoPOS');
+  const montoDescuentoEl = document.getElementById('montoDescuentoPOS');
+  const btnAplicar = document.getElementById('btnAplicarDescuento');
+  const btnRemover = document.getElementById('btnRemoverDescuento');
+  const codigoInput = document.getElementById('codigoDescuentoInput');
+
+  let subtotal = 0;
+  posCarrito.forEach((item) => {
+    const itemSubtotal = item.cantidad * item.precio_venta;
+    subtotal += itemSubtotal;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${item.nombre}</td>
+      <td><input type="number" min="1" max="${item.stock_actual}" value="${item.cantidad}" style="width:40px;" onchange="updateQtyPOS('${item.id}',this.value)"></td>
+      <td>${formatCurrency(item.precio_venta)}</td>
+      <td>${formatCurrency(itemSubtotal)}</td>
+      <td><button onclick="removeCartPOS('${item.id}')" style="color:#e11;">X</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  let montoDescuento = 0;
+  let totalFinal = subtotal;
+
+  if (descuentoAplicado && subtotal > 0) {
+    const baseDescuento = getDiscountableBase(descuentoAplicado, posCarrito);
+    if (baseDescuento > 0) {
+      montoDescuento = descuentoAplicado.tipo === 'porcentaje'
+        ? baseDescuento * (descuentoAplicado.valor / 100)
+        : descuentoAplicado.valor;
+      montoDescuento = Math.min(montoDescuento, baseDescuento);
+      totalFinal = subtotal - montoDescuento;
+    } else {
+      descuentoAplicado = null;
+    }
+  }
+
+  subtotalEl.textContent = formatCurrency(subtotal);
+  totalEl.textContent = formatCurrency(totalFinal);
+
+  if (descuentoAplicado && montoDescuento > 0) {
+    lineaDescuentoEl.style.display = 'block';
+    nombreDescuentoEl.textContent = descuentoAplicado.nombre;
+    montoDescuentoEl.textContent = formatCurrency(montoDescuento);
+    btnAplicar.style.display = 'none';
+    btnRemover.style.display = 'block';
+    codigoInput.disabled = true;
+  } else {
+    lineaDescuentoEl.style.display = 'none';
+    btnAplicar.style.display = 'block';
+    btnRemover.style.display = 'none';
+    codigoInput.disabled = false;
+  }
+}
+
+export function updateQtyPOS(id, val) {
+  const item = posCarrito.find((entry) => entry.id === id);
+  if (!item) return;
+  const value = parseInt(val, 10);
+  if (value > 0 && value <= item.stock_actual) {
+    item.cantidad = value;
+  }
+  renderCarritoPOS();
+}
+
+export function removeCartPOS(id) {
+  posCarrito = posCarrito.filter((item) => item.id !== id);
+  renderCarritoPOS();
+}
+
+function addToCartPOS(id) {
+  const prod = posProductos.find((item) => item.id === id);
+  if (!prod) return;
+  const item = posCarrito.find((entry) => entry.id === id);
+  if (item) {
+    if (item.cantidad < prod.stock_actual) item.cantidad++;
+  } else {
+    posCarrito.push({ ...prod, cantidad: 1 });
+  }
+  renderCarritoPOS();
+}
+
+export async function registrarVentaPOS() {
+  if (ventaPOSenCurso) return;
+  ventaPOSenCurso = true;
+  const btnVentaPOSEl = document.getElementById('btnVentaPOS');
+  if (btnVentaPOSEl) btnVentaPOSEl.disabled = true;
+
+  try {
+    if (!posCarrito.length) {
+      document.getElementById('msgPOS').textContent = 'Carrito vacio';
+      return;
+    }
+
+    const modo = document.getElementById('modoPOS').value;
+    let habitacion_id = null;
+    let cliente_temporal = null;
+
+    if (modo === 'inmediato') {
+      const metodo_pago_id = document.getElementById('metodoPOS').value;
+      cliente_temporal = document.getElementById('clientePOS').value || null;
+      const total = posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
+
+      if (metodo_pago_id === 'mixto') {
+        await mostrarModalPagoMixto(total, async (pagos) => {
+          if (!pagos) return;
+          await procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo, total });
+        });
+        return;
+      }
+
+      await procesarVentaConPagos({
+        pagos: [{ metodo_pago_id, monto: total }],
+        habitacion_id,
+        cliente_temporal,
+        modo,
+        total,
+      });
+      return;
+    }
+
+    habitacion_id = document.getElementById('habitacionPOS').value;
+    if (!habitacion_id) {
+      document.getElementById('msgPOS').textContent = 'Selecciona una habitacion';
+      return;
+    }
+    await procesarVentaConPagos({ pagos: [], habitacion_id, cliente_temporal, modo, total: null });
+  } catch (err) {
+    document.getElementById('msgPOS').textContent = err.message;
+  } finally {
+    ventaPOSenCurso = false;
+    if (btnVentaPOSEl) btnVentaPOSEl.disabled = false;
+  }
+}
+
+async function mostrarModalPagoMixto(totalAPagar, callback) {
+  const modalContainer = document.createElement('div');
+  modalContainer.id = 'modal-pago-mixto-pos';
+  modalContainer.style = 'position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; z-index:1002;';
+
+  const metodosDisponibles = posMetodosPago.filter((metodo) => metodo.id !== 'mixto');
+  const opcionesMetodosHTML = metodosDisponibles
+    .map((metodo) => `<option value="${metodo.id}">${metodo.nombre}</option>`)
+    .join('');
+
+  modalContainer.innerHTML = `
+    <div style="background:white; border-radius:12px; padding:24px; width:95%; max-width:500px; max-height:90vh; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <h3 style="margin:0; font-size:1.2em; color:#1e3a8a;">Registrar Pago Mixto (POS)</h3>
+        <button class="btn-cerrar" style="background:none; border:none; font-size:1.5em; cursor:pointer;">&times;</button>
+      </div>
+      <p style="text-align:center; font-size:1.1em; margin-bottom:15px;">Total a Pagar: <strong style="color:#c2410c; font-size:1.2em;">${formatCurrency(totalAPagar)}</strong></p>
+      <form id="form-pago-mixto-pos" style="overflow-y:auto; flex-grow:1; padding-right:10px;">
+        <div id="lista-pagos-mixtos-pos" class="space-y-3"></div>
+        <button type="button" id="btn-agregar-pago-mixto-pos" style="font-size:0.9em; color:#1d4ed8; background:none; border:none; cursor:pointer; margin-top:10px;">+ Agregar otro metodo</button>
+      </form>
+      <div style="margin-top:15px; padding-top:15px; border-top:1px solid #eee; font-weight:600;">
+        <div style="display:flex; justify-content:space-between;"><span>Total ingresado:</span> <span id="total-ingresado-mixto-pos">$0</span></div>
+        <div style="display:flex; justify-content:space-between; color:#ef4444;" id="linea-restante-pos"><span>Restante:</span> <span id="restante-mixto-pos">${formatCurrency(totalAPagar)}</span></div>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button type="submit" form="form-pago-mixto-pos" id="btn-confirmar-pago-mixto-pos" style="flex:1; background:#16a34a; color:white; border:none; padding:10px; border-radius:6px; font-weight:600; cursor:pointer;" disabled>Confirmar Pago</button>
+        <button type="button" class="btn-cerrar" style="flex:1; background:#6b7280; color:white; border:none; padding:10px; border-radius:6px; font-weight:600; cursor:pointer;">Cancelar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modalContainer);
+
+  const form = modalContainer.querySelector('#form-pago-mixto-pos');
+  const listaPagosDiv = modalContainer.querySelector('#lista-pagos-mixtos-pos');
+  const btnConfirmar = modalContainer.querySelector('#btn-confirmar-pago-mixto-pos');
+
+  const closeAction = () => {
+    modalContainer.remove();
+    callback(null);
+  };
+  modalContainer.querySelectorAll('.btn-cerrar').forEach((btn) => {
+    btn.onclick = closeAction;
+  });
+
+  const actualizarTotales = () => {
+    let totalIngresado = 0;
+    listaPagosDiv.querySelectorAll('.pago-mixto-row-pos').forEach((row) => {
+      totalIngresado += Number(row.querySelector('.monto-pago-mixto-pos').value) || 0;
+    });
+    const restante = totalAPagar - totalIngresado;
+    modalContainer.querySelector('#total-ingresado-mixto-pos').textContent = formatCurrency(totalIngresado);
+    modalContainer.querySelector('#restante-mixto-pos').textContent = formatCurrency(restante);
+    const lineaRestante = modalContainer.querySelector('#linea-restante-pos');
+    if (Math.abs(restante) < 0.01) {
+      btnConfirmar.disabled = false;
+      lineaRestante.style.color = '#16a34a';
+    } else {
+      btnConfirmar.disabled = true;
+      lineaRestante.style.color = '#ef4444';
+    }
+  };
+
+  const agregarFila = () => {
+    const newRow = document.createElement('div');
+    newRow.className = 'pago-mixto-row-pos';
+    newRow.style = 'display:flex; gap:8px; align-items:center;';
+    newRow.innerHTML = `
+      <select class="metodo-pago-mixto-pos" style="flex:2; padding:8px; border:1px solid #ccc; border-radius:4px;" required>${opcionesMetodosHTML}</select>
+      <input type="number" class="monto-pago-mixto-pos" placeholder="Monto" style="flex:1; padding:8px; border:1px solid #ccc; border-radius:4px;" required min="0">
+      <button type="button" class="btn-remover-fila-pos" style="background:#fee2e2; color:#dc2626; border:none; padding:5px 8px; border-radius:4px; cursor:pointer;">X</button>
+    `;
+    listaPagosDiv.appendChild(newRow);
+    newRow.querySelector('.btn-remover-fila-pos').onclick = () => {
+      newRow.remove();
+      actualizarTotales();
+    };
+  };
+
+  modalContainer.querySelector('#btn-agregar-pago-mixto-pos').onclick = agregarFila;
+  listaPagosDiv.addEventListener('input', actualizarTotales);
+  agregarFila();
+  const primerInput = listaPagosDiv.querySelector('.monto-pago-mixto-pos');
+  if (primerInput) primerInput.value = totalAPagar;
+  actualizarTotales();
+
+  form.onsubmit = (event) => {
+    event.preventDefault();
+    const pagosConfirmados = [];
+    listaPagosDiv.querySelectorAll('.pago-mixto-row-pos').forEach((row) => {
+      const metodoId = row.querySelector('.metodo-pago-mixto-pos').value;
+      const monto = Number(row.querySelector('.monto-pago-mixto-pos').value);
+      if (metodoId && monto > 0) {
+        pagosConfirmados.push({ metodo_pago_id: metodoId, monto });
+      }
+    });
+    if (pagosConfirmados.length > 0) {
+      callback(pagosConfirmados);
+      modalContainer.remove();
+    }
+  };
+}
+
+async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo }) {
+  const msgPOSEl = document.getElementById('msgPOS');
+  const subtotalVenta = posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
+  let montoDescuento = 0;
+  let totalVentaFinal = subtotalVenta;
+
+  if (descuentoAplicado) {
+    const baseDescuento = getDiscountableBase(descuentoAplicado, posCarrito);
+    if (baseDescuento > 0) {
+      montoDescuento = descuentoAplicado.tipo === 'porcentaje'
+        ? baseDescuento * (descuentoAplicado.valor / 100)
+        : descuentoAplicado.valor;
+      montoDescuento = Math.min(montoDescuento, baseDescuento);
+      totalVentaFinal = subtotalVenta - montoDescuento;
+    }
+  }
+
+  let reservaId = null;
+  if (habitacion_id) {
+    const { data: reservasActivas } = await tiendaState.currentSupabase
+      .from('reservas')
+      .select('id')
+      .eq('habitacion_id', habitacion_id)
+      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+      .order('fecha_inicio', { ascending: false })
+      .limit(1);
+    if (reservasActivas?.length) {
+      reservaId = reservasActivas[0].id;
+    }
+  }
+
+  const ventaPayload = {
+    hotel_id: tiendaState.currentHotelId,
+    usuario_id: tiendaState.currentUser.id,
+    habitacion_id,
+    reserva_id: reservaId,
+    total_venta: totalVentaFinal,
+    fecha: new Date().toISOString(),
+    creado_en: new Date().toISOString(),
+    cliente_temporal,
+    metodo_pago_id: modo === 'inmediato' && pagos.length === 1 ? pagos[0].metodo_pago_id : null,
+    descuento_id: descuentoAplicado ? descuentoAplicado.id : null,
+    monto_descuento: montoDescuento > 0 ? montoDescuento : null,
+  };
+
+  const { data: ventas, error } = await tiendaState.currentSupabase
+    .from('ventas_tienda')
+    .insert([ventaPayload])
+    .select();
+  if (error || !ventas?.[0]) throw new Error(`Error guardando venta: ${error?.message}`);
+
+  const ventaId = ventas[0].id;
+
+  if (descuentoAplicado && montoDescuento > 0) {
+    const { error: rpcError } = await tiendaState.currentSupabase.rpc('incrementar_uso_descuento', {
+      descuento_id_param: descuentoAplicado.id,
+    });
+    if (rpcError) {
+      console.error('Advertencia: No se pudo incrementar el uso del descuento en la tienda.', rpcError);
+    }
+  }
+
+  for (const item of posCarrito) {
+    await tiendaState.currentSupabase.from('detalle_ventas_tienda').insert([{
+      venta_id: ventaId,
+      producto_id: item.id,
+      cantidad: item.cantidad,
+      precio_unitario_venta: item.precio_venta,
+      subtotal: item.cantidad * item.precio_venta,
+      hotel_id: tiendaState.currentHotelId,
+      creado_en: new Date().toISOString(),
+    }]);
+
+    await tiendaState.currentSupabase.rpc('increment', {
+      table_name: 'productos_tienda',
+      column_name: 'stock_actual',
+      row_id: item.id,
+      amount: -item.cantidad,
+    });
+  }
+
+  const turnoId = turnoService.getActiveTurnId();
+  if (modo === 'inmediato') {
+    if (!turnoId) {
+      showError(msgPOSEl, 'No hay un turno de caja activo.');
+      return;
+    }
+
+    const nombresProductos = posCarrito.map((item) => `${item.nombre} x${item.cantidad}`).join(', ');
+    for (const pago of pagos) {
+      await tiendaState.currentSupabase.from('caja').insert({
+        hotel_id: tiendaState.currentHotelId,
+        tipo: 'ingreso',
+        monto: Number(pago.monto),
+        concepto: `Venta Tienda: ${nombresProductos}`,
+        fecha_movimiento: new Date().toISOString(),
+        metodo_pago_id: pago.metodo_pago_id,
+        usuario_id: tiendaState.currentUser.id,
+        venta_tienda_id: ventaId,
+        turno_id: turnoId,
+      });
+    }
+    msgPOSEl.textContent = 'Venta registrada.';
+  } else {
+    msgPOSEl.textContent = 'Consumo cargado a la cuenta de la habitacion.';
+  }
+
+  posCarrito = [];
+  descuentoAplicado = null;
+  document.getElementById('codigoDescuentoInput').value = '';
+  renderCarritoPOS();
+  await cargarDatosPOS();
+  renderProductosPOS();
+  setTimeout(() => {
+    msgPOSEl.textContent = '';
+  }, 2500);
+}
+
+export function resetPOSState() {
+  descuentoAplicado = null;
+  posProductos = [];
+  posMetodosPago = [];
+  posHabitacionesOcupadas = [];
+  posCarrito = [];
+  posFiltro = '';
+  ventaPOSenCurso = false;
+}

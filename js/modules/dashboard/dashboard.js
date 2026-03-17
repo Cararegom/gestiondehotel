@@ -1,15 +1,149 @@
 // js/modules/dashboard/dashboard.js
 import { showAppFeedback, clearAppFeedback, formatDateTime, formatCurrency } from '../../uiUtils.js';
+import { escapeHtml } from '../../security.js';
 
 let chartRevenueInstance = null;
 let chartOcupacionInstance = null;
 let moduleDashboardListeners = [];
+let dashboardLastUpdatedAt = null;
+let dashboardIsRefreshing = false;
 
 // Declaraciones de variables a nivel de módulo
 let currentContainerGlobal = null;
 let currentSupabaseInstanceGlobal = null;
 let currentHotelIdGlobal = null;
 let isMounted = false; // Flag para controlar el estado de montaje
+
+function formatDashboardTimestamp(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return 'Sin sincronizar';
+  return `Ultima actualizacion: ${date.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+}
+
+function updateRefreshControls(containerEl) {
+  if (!containerEl || !isMounted) return;
+
+  const refreshButton = containerEl.querySelector('#dashboard-refresh-btn');
+  const statusLabel = containerEl.querySelector('#dashboard-last-updated');
+
+  if (refreshButton) {
+    refreshButton.disabled = dashboardIsRefreshing;
+    refreshButton.textContent = dashboardIsRefreshing ? 'Actualizando...' : 'Actualizar';
+    refreshButton.classList.toggle('opacity-70', dashboardIsRefreshing);
+    refreshButton.classList.toggle('cursor-not-allowed', dashboardIsRefreshing);
+  }
+
+  if (statusLabel) {
+    statusLabel.textContent = dashboardIsRefreshing
+      ? 'Actualizando datos...'
+      : formatDashboardTimestamp(dashboardLastUpdatedAt);
+  }
+}
+
+function getScheduleMeta(item, type) {
+  const fechaBase = type === 'check-in' ? item?.fecha_inicio : item?.fecha_fin;
+  const eventDate = fechaBase ? new Date(fechaBase) : null;
+  const diffMs = eventDate ? eventDate.getTime() - Date.now() : null;
+  const diffMinutes = diffMs == null ? null : Math.round(diffMs / 60000);
+
+  if (diffMinutes == null || Number.isNaN(diffMinutes)) {
+    return {
+      timeLabel: 'Sin hora',
+      statusLabel: 'Sin programacion',
+      cardClass: 'border-slate-200 bg-slate-50',
+      badgeClass: 'bg-slate-100 text-slate-700',
+      helperText: 'No hay hora registrada para este movimiento.'
+    };
+  }
+
+  if (diffMinutes < 0) {
+    return {
+      timeLabel: `${Math.abs(diffMinutes)} min tarde`,
+      statusLabel: type === 'check-in' ? 'Check-in vencido' : 'Checkout vencido',
+      cardClass: 'border-red-200 bg-red-50/80',
+      badgeClass: 'bg-red-100 text-red-700',
+      helperText: type === 'check-in' ? 'Esta llegada ya deberia haberse atendido.' : 'Esta salida ya deberia haberse cerrado.'
+    };
+  }
+
+  if (diffMinutes <= 120) {
+    return {
+      timeLabel: `${diffMinutes} min`,
+      statusLabel: 'Prioridad alta',
+      cardClass: 'border-amber-200 bg-amber-50/80',
+      badgeClass: 'bg-amber-100 text-amber-700',
+      helperText: type === 'check-in' ? 'Llega pronto. Conviene preparar la recepcion.' : 'Sale pronto. Conviene revisar saldo y habitacion.'
+    };
+  }
+
+  return {
+    timeLabel: formatDateTime(eventDate, undefined, { hour: 'numeric', minute: '2-digit', hour12: true }),
+    statusLabel: 'En seguimiento',
+    cardClass: 'border-slate-200 bg-white',
+    badgeClass: 'bg-blue-50 text-blue-700',
+    helperText: type === 'check-in' ? 'Movimiento programado para hoy.' : 'Salida programada dentro del dia.'
+  };
+}
+
+function renderPriorityStrip(containerEl, kpis, checkins, checkouts) {
+  if (!containerEl || !isMounted) return;
+
+  const strip = containerEl.querySelector('#dashboard-priority-strip');
+  if (!strip) return;
+
+  const safeCheckins = Array.isArray(checkins) ? checkins : [];
+  const safeCheckouts = Array.isArray(checkouts) ? checkouts : [];
+  const upcomingCheckins = safeCheckins.filter((item) => {
+    const diff = new Date(item.fecha_inicio).getTime() - Date.now();
+    return diff >= 0 && diff <= 2 * 60 * 60 * 1000;
+  }).length;
+  const upcomingCheckouts = safeCheckouts.filter((item) => {
+    const diff = new Date(item.fecha_fin).getTime() - Date.now();
+    return diff >= 0 && diff <= 2 * 60 * 60 * 1000;
+  }).length;
+  const overdueCheckouts = safeCheckouts.filter((item) => new Date(item.fecha_fin).getTime() < Date.now()).length;
+  const ocupadasAhora = Number(kpis?.habitaciones_ocupadas_ahora || 0);
+  const totalHabitaciones = Number(kpis?.habitaciones_activas_total || 0);
+  const ocupacionActual = totalHabitaciones > 0 ? Math.round((ocupadasAhora / totalHabitaciones) * 100) : 0;
+
+  const priorityCards = [
+    {
+      label: 'Llegadas proximas',
+      value: upcomingCheckins,
+      helper: upcomingCheckins > 0 ? 'En las proximas 2 horas' : 'Sin llegadas criticas ahora',
+      accent: 'text-blue-700',
+      bg: 'border-blue-200 bg-blue-50/80'
+    },
+    {
+      label: 'Salidas proximas',
+      value: upcomingCheckouts,
+      helper: upcomingCheckouts > 0 ? 'Revisa saldo y checkout' : 'Sin salidas urgentes ahora',
+      accent: 'text-indigo-700',
+      bg: 'border-indigo-200 bg-indigo-50/80'
+    },
+    {
+      label: 'Salidas vencidas',
+      value: overdueCheckouts,
+      helper: overdueCheckouts > 0 ? 'Necesitan atencion inmediata' : 'Todo al dia',
+      accent: overdueCheckouts > 0 ? 'text-red-700' : 'text-emerald-700',
+      bg: overdueCheckouts > 0 ? 'border-red-200 bg-red-50/80' : 'border-emerald-200 bg-emerald-50/80'
+    },
+    {
+      label: 'Ocupacion actual',
+      value: `${ocupacionActual}%`,
+      helper: `${ocupadasAhora}/${totalHabitaciones} habitaciones ocupadas`,
+      accent: 'text-slate-800',
+      bg: 'border-slate-200 bg-white'
+    }
+  ];
+
+  strip.innerHTML = priorityCards.map((card) => `
+    <article class="rounded-2xl border p-4 shadow-sm ${card.bg}">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">${card.label}</p>
+      <p class="mt-2 text-3xl font-black ${card.accent}">${card.value}</p>
+      <p class="mt-2 text-sm text-slate-500">${card.helper}</p>
+    </article>
+  `).join('');
+}
 
 function updateCardContent(containerEl, cardId, value, comparisonValue = null, isCurrency = false, isLoading = false, customText = null) {
   if (!containerEl || !isMounted) return; 
@@ -29,7 +163,7 @@ function updateCardContent(containerEl, cardId, value, comparisonValue = null, i
   valueEl.classList.remove('text-red-500', 'text-green-600', 'text-blue-600', 'text-gray-800'); 
 
   if (isLoading) {
-    valueEl.innerHTML = `<span class="text-2xl text-gray-400">Cargando...</span>`;
+    valueEl.innerHTML = `<span class="text-2xl text-gray-400 animate-pulse">Cargando...</span>`;
     comparisonEl.textContent = ''; 
     comparisonEl.className = 'dashboard-metric-comparison text-xs text-gray-400 mt-1';
     return;
@@ -59,10 +193,10 @@ function updateCardContent(containerEl, cardId, value, comparisonValue = null, i
             percentageChange = 100; 
         }
 
-        let arrow = '― '; 
+        let arrow = '= '; 
         let textColor = 'text-gray-500'; 
-        if (change > 0) { arrow = '▲ '; textColor = 'text-green-500'; }
-        else if (change < 0) { arrow = '▼ '; textColor = 'text-red-500'; }
+        if (change > 0) { arrow = '+ '; textColor = 'text-green-500'; }
+        else if (change < 0) { arrow = '- '; textColor = 'text-red-500'; }
         
         comparisonEl.textContent = `${arrow}${Math.abs(percentageChange).toFixed(0)}% vs ayer`;
         comparisonEl.className = `dashboard-metric-comparison text-xs ${textColor} mt-1`;
@@ -83,22 +217,42 @@ function renderChecklist(containerEl, listId, items, type) {
 
   listEl.innerHTML = ''; 
   if (!items || items.length === 0) {
-      listEl.innerHTML = `<li class="text-gray-500 text-sm p-2">No hay ${type === 'check-in' ? 'llegadas programadas' : 'salidas programadas'} para hoy.</li>`;
+      listEl.innerHTML = `
+        <li class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          No hay ${type === 'check-in' ? 'llegadas programadas' : 'salidas programadas'} para hoy.
+        </li>
+      `;
       return;
   }
 
   items.forEach(item => {
       const li = document.createElement('li');
-      li.className = 'py-2 border-b border-gray-200 last:border-b-0';
+      li.className = 'rounded-2xl border p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md';
       const fecha = type === 'check-in' ? item.fecha_inicio : item.fecha_fin;
-      const nombreHabitacion = item.habitacion_nombre || item.habitaciones_nombre || 'N/A'; 
+      const nombreHabitacion = item.habitacion_nombre || item.habitaciones_nombre || 'N/A';
+      const clienteNombre = item.cliente_nombre || 'Cliente';
+      const meta = getScheduleMeta(item, type);
+      li.classList.add(...meta.cardClass.split(' '));
       li.innerHTML = `
-          <div class="flex justify-between items-center">
-              <span class="font-medium text-gray-700 text-sm">${item.cliente_nombre || 'Cliente'}</span>
-              <span class="text-xs text-gray-500">Hab: ${nombreHabitacion}</span>
+          <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                  <div class="flex flex-wrap items-center gap-2">
+                      <span class="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${meta.badgeClass}">${type === 'check-in' ? 'Check-in' : 'Check-out'}</span>
+                      <span class="text-xs font-semibold text-slate-400">Hab. ${escapeHtml(String(nombreHabitacion))}</span>
+                  </div>
+                  <p class="mt-3 truncate text-base font-bold text-slate-800">${escapeHtml(String(clienteNombre))}</p>
+                  <p class="mt-1 text-sm text-slate-500">${formatDateTime(fecha, undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+              </div>
+              <div class="text-right">
+                  <p class="text-sm font-black text-slate-700">${meta.timeLabel}</p>
+                  <p class="mt-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">${meta.statusLabel}</p>
+              </div>
           </div>
-          <div class="text-xs ${type === 'check-in' ? 'text-blue-600' : 'text-indigo-600'}">
-              ${type === 'check-in' ? 'Llega' : 'Sale'}: ${formatDateTime(fecha, undefined, { hour: 'numeric', minute: '2-digit', hour12: true })}
+          <div class="mt-4 flex items-center justify-between gap-3">
+              <p class="text-xs text-slate-500">${meta.helperText}</p>
+              <button type="button" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50" data-navegar="${type === 'check-in' ? '#/reservas' : '#/mapa-habitaciones'}">
+                Ver
+              </button>
           </div>`;
       listEl.appendChild(li);
   });
@@ -119,50 +273,68 @@ async function fetchChartData(hotelId, supabaseInstance, numDays = 7) {
     labels.push(date.toISOString().slice(0, 10));
   }
 
+  const labelIndexMap = new Map(labels.map((label, index) => [label, index]));
+  const startOfRange = `${labels[0]}T00:00:00.000Z`;
+  const endOfRange = `${labels[labels.length - 1]}T23:59:59.999Z`;
+
   try {
-    const { count: totalHabitacionesActivas, error: errTotalHab } = await supabaseInstance
-      .from('habitaciones')
-      .select('id', { count: 'exact', head: true })
-      .eq('hotel_id', hotelId)
-      .eq('activo', true);
+    const [
+      { count: totalHabitacionesActivas, error: errTotalHab },
+      { data: revenueRows, error: revenueError },
+      { data: reservasRows, error: reservasError }
+    ] = await Promise.all([
+      supabaseInstance
+        .from('habitaciones')
+        .select('id', { count: 'exact', head: true })
+        .eq('hotel_id', hotelId)
+        .eq('activo', true),
+      supabaseInstance
+        .from('caja')
+        .select('monto, creado_en')
+        .eq('hotel_id', hotelId)
+        .eq('tipo', 'ingreso')
+        .gte('creado_en', startOfRange)
+        .lte('creado_en', endOfRange)
+        .is('venta_tienda_id', null),
+      supabaseInstance
+        .from('reservas')
+        .select('fecha_inicio, fecha_fin')
+        .eq('hotel_id', hotelId)
+        .in('estado', ['activa', 'ocupada'])
+        .lte('fecha_inicio', endOfRange)
+        .gte('fecha_fin', startOfRange)
+    ]);
+
     if (errTotalHab) console.error('[Dashboard] Error obteniendo total de habitaciones:', errTotalHab);
 
-    const promises = labels.map(async (day, index) => {
-      const startOfDay = `${day}T00:00:00.000Z`;
-      const endOfDay = `${day}T23:59:59.999Z`;
+    if (revenueError) {
+      console.warn('[Dashboard] Error obteniendo ingresos del rango del dashboard:', revenueError.message);
+    } else {
+      (revenueRows || []).forEach((entry) => {
+        const dayKey = new Date(entry.creado_en).toISOString().slice(0, 10);
+        const index = labelIndexMap.get(dayKey);
+        if (typeof index === 'number') {
+          dailyRevenueData[index] += Number(entry.monto) || 0;
+        }
+      });
+    }
 
-      try {
-        const { data: revenueData, error: revenueError } = await supabaseInstance.from('caja')
-          .select('monto')
-          .eq('hotel_id', hotelId)
-          .eq('tipo', 'ingreso')
-          .gte('creado_en', startOfDay)
-          .lte('creado_en', endOfDay)
-          .is('venta_tienda_id', null); 
-        if (revenueError) throw revenueError;
-        dailyRevenueData[index] = (revenueData || []).reduce((sum, entry) => sum + (Number(entry.monto) || 0), 0);
-      } catch (revErr) {
-          console.warn(`[Dashboard] Error obteniendo ingresos de habitaciones para ${day}:`, revErr.message);
-          dailyRevenueData[index] = 0;
-      }
+    if (reservasError) {
+      console.warn('[Dashboard] Error obteniendo ocupacion del rango del dashboard:', reservasError.message);
+    } else if (totalHabitacionesActivas != null && totalHabitacionesActivas > 0) {
+      labels.forEach((day, index) => {
+        const startOfDayMs = new Date(`${day}T00:00:00.000Z`).getTime();
+        const endOfDayMs = new Date(`${day}T23:59:59.999Z`).getTime();
+        const ocupacionCount = (reservasRows || []).reduce((sum, reserva) => {
+          const reservaInicio = reserva?.fecha_inicio ? new Date(reserva.fecha_inicio).getTime() : null;
+          const reservaFin = reserva?.fecha_fin ? new Date(reserva.fecha_fin).getTime() : null;
+          if (reservaInicio === null || reservaFin === null) return sum;
+          return (reservaInicio <= endOfDayMs && reservaFin >= startOfDayMs) ? sum + 1 : sum;
+        }, 0);
 
-      try {
-        if (totalHabitacionesActivas != null && totalHabitacionesActivas > 0) {
-          const { count: ocupacionCount, error: ocupacionError } = await supabaseInstance.from('reservas')
-            .select('id', { count: 'exact', head: true })
-            .eq('hotel_id', hotelId)
-            .lte('fecha_inicio', endOfDay)
-            .gte('fecha_fin', startOfDay)
-            .in('estado', ['activa', 'ocupada']);
-          if (ocupacionError) throw ocupacionError;
-          dailyOcupacionData[index] = ocupacionCount > 0 ? Math.round((ocupacionCount / totalHabitacionesActivas) * 100) : 0;
-        } else { dailyOcupacionData[index] = 0; }
-      } catch (ocupErr) {
-          console.warn(`[Dashboard] Error obteniendo ocupación para ${day}:`, ocupErr.message);
-          dailyOcupacionData[index] = 0;
-      }
-    });
-    await Promise.all(promises);
+        dailyOcupacionData[index] = ocupacionCount > 0 ? Math.round((ocupacionCount / totalHabitacionesActivas) * 100) : 0;
+      });
+    }
   } catch (e) {
     console.error("[Dashboard] Error GENERAL en fetchChartData:", e);
   }
@@ -279,25 +451,57 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
     const ocupacionText = `${ocupacionRate}% (${habitacionesOcupadas}/${totalHabitaciones})`;
     updateCardContent(containerEl, 'card-ocupacion', ocupacionRate, null, false, false, ocupacionText);
 
+    renderPriorityStrip(containerEl, kpis, rpcData.checkins || [], rpcData.checkouts || []);
     renderChecklist(containerEl, 'list-next-checkins', rpcData.checkins || [], 'check-in');
     renderChecklist(containerEl, 'list-next-checkouts', rpcData.checkouts || [], 'check-out');
+    return true;
 
   } catch (err) {
     console.error("[Dashboard] Error general en loadDashboardPageData:", err);
     if (isMounted && mainErrorDiv) showAppFeedback(mainErrorDiv, `Error al cargar datos principales: ${err.message}`, 'error');
+    renderPriorityStrip(containerEl, {}, [], []);
+    renderChecklist(containerEl, 'list-next-checkins', [], 'check-in');
+    renderChecklist(containerEl, 'list-next-checkouts', [], 'check-out');
     ['card-reservas-activas', 'card-ingresos-hoy', 'card-ocupacion', 'card-ventas-tienda'].forEach(id => {
         if (isMounted && containerEl.querySelector(`#${id}`)) updateCardContent(containerEl, id, 0, 0, false, false, 'Error');
     });
+    return false;
   }
-  console.log('[Dashboard] loadDashboardPageData finalizado.');
+  finally {
+    console.log('[Dashboard] loadDashboardPageData finalizado.');
+  }
+}
+
+async function refreshDashboardData(containerEl, hotelId, supabaseInstance) {
+  if (!containerEl || !isMounted || dashboardIsRefreshing) return;
+
+  dashboardIsRefreshing = true;
+  updateRefreshControls(containerEl);
+
+  try {
+    const metricsLoaded = await loadDashboardPageData(containerEl, hotelId, supabaseInstance);
+
+    if (!isMounted) return;
+
+    if (window.Chart && containerEl.querySelector('#chart-revenue') && containerEl.querySelector('#chart-ocupacion')) {
+      await renderCharts(containerEl, hotelId, supabaseInstance);
+    }
+
+    if (metricsLoaded) {
+      dashboardLastUpdatedAt = new Date();
+    }
+  } finally {
+    dashboardIsRefreshing = false;
+    updateRefreshControls(containerEl);
+  }
 }
 
 export async function mount(container, supabaseInstance, currentUser) {
   if (isMounted && currentContainerGlobal === container) {
     console.log('[Dashboard] Mount llamado pero ya está montado en este contenedor. Se intentará refrescar datos si es necesario.');
-    // Opcional: Forzar refresco si la lógica del router no lo previene bien.
-    // await loadDashboardPageData(container, currentHotelIdGlobal, supabaseInstance);
-    // await renderCharts(container, currentHotelIdGlobal, supabaseInstance);
+    if (currentHotelIdGlobal && currentSupabaseInstanceGlobal) {
+      await refreshDashboardData(container, currentHotelIdGlobal, currentSupabaseInstanceGlobal);
+    }
     return;
   }
   
@@ -307,38 +511,155 @@ export async function mount(container, supabaseInstance, currentUser) {
   isMounted = true;
   currentContainerGlobal = container; 
   currentSupabaseInstanceGlobal = supabaseInstance; 
+  dashboardLastUpdatedAt = null;
+  dashboardIsRefreshing = false;
   
   console.log('[Dashboard] Iniciando mount en nuevo contenedor o por primera vez...');
   container.innerHTML = `
-    <header class="main-header mb-6">
-      <h1 class="text-2xl font-bold text-gray-800 mb-2">Panel de Control</h1>
-      <p class="text-gray-500 text-sm mb-3">Resumen de actividad, ingresos y ocupación general.</p>
-      <div id="dashboard-main-error" class="feedback-message mb-2" role="alert" style="display:none;"></div>
+    <header class="main-header mb-6 overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-900 via-blue-950 to-cyan-900 p-6 text-white shadow-xl">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p class="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80">Dashboard operativo</p>
+          <h1 class="mb-2 text-3xl font-black tracking-tight text-white">Panel de Control</h1>
+          <p class="max-w-2xl text-sm text-slate-200">Resumen de actividad, ingresos y ocupacion general para recepcion y administracion.</p>
+        </div>
+        <div class="flex flex-col items-start gap-2 lg:items-end">
+          <span id="dashboard-last-updated" class="text-xs font-medium text-slate-300">Sin sincronizar</span>
+          <button id="dashboard-refresh-btn" class="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-white/20">Actualizar</button>
+        </div>
+      </div>
+      <div id="dashboard-main-error" class="feedback-message mt-4" role="alert" style="display:none;"></div>
     </header>
-    <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 dashboard-cards">
-      <div id="card-reservas-activas" class="card dashboard-card p-4 rounded-lg shadow-md bg-white"><h3 class="text-sm font-medium text-gray-500 mb-1">Reservas Activas Hoy</h3><p class="dashboard-metric-value text-3xl font-bold">Cargando...</p><p class="dashboard-metric-comparison text-xs text-gray-400 mt-1"></p></div>
-      <div id="card-ingresos-hoy" class="card dashboard-card p-4 rounded-lg shadow-md bg-white"><h3 class="text-sm font-medium text-gray-500 mb-1">Ingresos Habitaciones Hoy</h3><p class="dashboard-metric-value text-3xl font-bold">Cargando...</p><p class="dashboard-metric-comparison text-xs text-gray-400 mt-1"></p></div>
-      <div id="card-ocupacion" class="card dashboard-card p-4 rounded-lg shadow-md bg-white"><h3 class="text-sm font-medium text-gray-500 mb-1">Ocupación Actual</h3><p class="dashboard-metric-value text-3xl font-bold">Cargando...</p><p class="dashboard-metric-comparison text-xs text-gray-400 mt-1"></p></div>
-      <div id="card-ventas-tienda" class="card dashboard-card p-4 rounded-lg shadow-md bg-white"><h3 class="text-sm font-medium text-gray-500 mb-1">Ventas Tienda Hoy</h3><p class="dashboard-metric-value text-3xl font-bold">Cargando...</p><p class="dashboard-metric-comparison text-xs text-gray-400 mt-1"></p></div>
+    <section id="dashboard-priority-strip" class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-9 w-16 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-40 animate-pulse rounded bg-slate-100"></div></article>
+      <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-9 w-16 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-40 animate-pulse rounded bg-slate-100"></div></article>
+      <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-9 w-16 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-40 animate-pulse rounded bg-slate-100"></div></article>
+      <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-9 w-16 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-40 animate-pulse rounded bg-slate-100"></div></article>
     </section>
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-      <div class="card p-4 rounded-lg shadow-md bg-white"><h3 class="text-lg font-semibold text-gray-700 border-b pb-2 mb-2">Próximos Check-Ins (Hoy)</h3><ul id="list-next-checkins" class="space-y-2" style="padding-left: 0;"><li>Cargando...</li></ul></div>
-      <div class="card p-4 rounded-lg shadow-md bg-white"><h3 class="text-lg font-semibold text-gray-700 border-b pb-2 mb-2">Próximos Check-Outs (Hoy)</h3><ul id="list-next-checkouts" class="space-y-2" style="padding-left: 0;"><li>Cargando...</li></ul></div>
+    <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6 dashboard-cards">
+      <article id="card-reservas-activas" class="dashboard-card group cursor-pointer overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg" data-navegar="#/reservas">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Reservas activas</p>
+            <p class="dashboard-metric-value mt-3 text-4xl font-black tracking-tight text-slate-900">Cargando...</p>
+            <p class="dashboard-metric-comparison mt-2 text-xs text-slate-400"></p>
+          </div>
+          <span class="rounded-2xl bg-blue-50 px-3 py-2 text-xl text-blue-600">R</span>
+        </div>
+        <p class="mt-4 text-sm text-slate-500">Controla el pulso actual de la operacion hotelera.</p>
+      </article>
+      <article id="card-ingresos-hoy" class="dashboard-card group cursor-pointer overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg" data-navegar="#/caja">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ingresos de hoy</p>
+            <p class="dashboard-metric-value mt-3 text-4xl font-black tracking-tight text-slate-900">Cargando...</p>
+            <p class="dashboard-metric-comparison mt-2 text-xs text-slate-400"></p>
+          </div>
+          <span class="rounded-2xl bg-emerald-50 px-3 py-2 text-xl text-emerald-600">$</span>
+        </div>
+        <p class="mt-4 text-sm text-slate-500">Vista rapida del ingreso de habitaciones del dia.</p>
+      </article>
+      <article id="card-ocupacion" class="dashboard-card group cursor-pointer overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg" data-navegar="#/mapa-habitaciones">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Ocupacion actual</p>
+            <p class="dashboard-metric-value mt-3 text-4xl font-black tracking-tight text-slate-900">Cargando...</p>
+            <p class="dashboard-metric-comparison mt-2 text-xs text-slate-400"></p>
+          </div>
+          <span class="rounded-2xl bg-indigo-50 px-3 py-2 text-xl text-indigo-600">%</span>
+        </div>
+        <p class="mt-4 text-sm text-slate-500">Salta directo al mapa para revisar habitaciones.</p>
+      </article>
+      <article id="card-ventas-tienda" class="dashboard-card group cursor-pointer overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg" data-navegar="#/tienda">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tienda hoy</p>
+            <p class="dashboard-metric-value mt-3 text-4xl font-black tracking-tight text-slate-900">Cargando...</p>
+            <p class="dashboard-metric-comparison mt-2 text-xs text-slate-400"></p>
+          </div>
+          <span class="rounded-2xl bg-amber-50 px-3 py-2 text-xl text-amber-600">T</span>
+        </div>
+        <p class="mt-4 text-sm text-slate-500">Mide rapido lo que esta sumando la venta adicional.</p>
+      </article>
     </section>
-    <section class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6 dashboard-charts">
-      <div class="card chart-card p-4 rounded-lg shadow-md bg-white"><h3 class="text-lg font-semibold text-gray-700 border-b pb-2 mb-2">Ingresos Habitaciones (Últimos 7 Días)</h3><div class="chart-container" style="height:300px; position: relative;"><canvas id="chart-revenue"></canvas></div></div>
-      <div class="card chart-card p-4 rounded-lg shadow-md bg-white"><h3 class="text-lg font-semibold text-gray-700 border-b pb-2 mb-2">Ocupación (Últimos 7 Días)</h3><div class="chart-container" style="height:300px; position: relative;"><canvas id="chart-ocupacion"></canvas></div></div>
+    <section class="grid grid-cols-1 gap-6 xl:grid-cols-[1.2fr_1fr] mb-6">
+      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 class="text-lg font-bold text-slate-800">Movimientos del dia</h3>
+            <p class="text-sm text-slate-500">Check-ins y check-outs con prioridad visual.</p>
+          </div>
+          <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-500">Hoy</span>
+        </div>
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div>
+            <div class="mb-3 flex items-center justify-between">
+              <h4 class="text-sm font-semibold uppercase tracking-[0.16em] text-blue-700">Check-ins</h4>
+              <button type="button" class="text-xs font-semibold text-blue-600 hover:text-blue-700" data-navegar="#/reservas">Ver reservas</button>
+            </div>
+            <ul id="list-next-checkins" class="space-y-3" style="padding-left: 0;"><li>Cargando...</li></ul>
+          </div>
+          <div>
+            <div class="mb-3 flex items-center justify-between">
+              <h4 class="text-sm font-semibold uppercase tracking-[0.16em] text-indigo-700">Check-outs</h4>
+              <button type="button" class="text-xs font-semibold text-indigo-600 hover:text-indigo-700" data-navegar="#/mapa-habitaciones">Ir al mapa</button>
+            </div>
+            <ul id="list-next-checkouts" class="space-y-3" style="padding-left: 0;"><li>Cargando...</li></ul>
+          </div>
+        </div>
+      </div>
+      <section class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 class="text-lg font-bold text-slate-800">Accesos rapidos</h3>
+            <p class="text-sm text-slate-500">Entra rapido a los modulos mas usados.</p>
+          </div>
+        </div>
+        <div class="atajos-buttons grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-blue-200 hover:bg-blue-50" data-navegar="#/reservas">
+            <span class="block text-sm font-bold text-slate-800">Nueva Reserva</span>
+            <span class="mt-1 block text-xs text-slate-500">Registra o revisa reservas del dia</span>
+          </button>
+          <button class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50" data-navegar="#/mapa-habitaciones">
+            <span class="block text-sm font-bold text-slate-800">Mapa Hotel</span>
+            <span class="mt-1 block text-xs text-slate-500">Gestiona habitaciones y tiempos</span>
+          </button>
+          <button class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-emerald-200 hover:bg-emerald-50" data-navegar="#/caja">
+            <span class="block text-sm font-bold text-slate-800">Ir a Caja</span>
+            <span class="mt-1 block text-xs text-slate-500">Revisa movimientos y pagos</span>
+          </button>
+          <button class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-amber-200 hover:bg-amber-50" data-navegar="#/tienda">
+            <span class="block text-sm font-bold text-slate-800">Tienda</span>
+            <span class="mt-1 block text-xs text-slate-500">Gestiona ventas adicionales del hotel</span>
+          </button>
+        </div>
+      </section>
     </section>
-    <section class="card atajos-card p-4 rounded-lg shadow-md bg-white">
-      <h3 class="text-lg font-semibold text-gray-700 border-b pb-2 mb-3">Accesos Rápidos</h3>
-      <div class="atajos-buttons flex flex-wrap gap-3">
-        <button class="button button-primary py-2 px-4 rounded-md text-sm" data-navegar="#/reservas">Nueva Reserva</button>
-        <button class="button button-accent py-2 px-4 rounded-md text-sm" data-navegar="#/mapa-habitaciones">Mapa Hotel</button>
-        <button class="button button-success py-2 px-4 rounded-md text-sm" data-navegar="#/caja">Ir a Caja</button>
+    <section class="grid grid-cols-1 gap-6 xl:grid-cols-2 dashboard-charts">
+      <div class="chart-card overflow-hidden rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 class="text-lg font-bold text-slate-800">Ingresos Habitaciones</h3>
+            <p class="text-sm text-slate-500">Comportamiento de los ultimos 7 dias.</p>
+          </div>
+          <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">7 dias</span>
+        </div>
+        <div class="chart-container" style="height:320px; position: relative;"><canvas id="chart-revenue"></canvas></div>
+      </div>
+      <div class="chart-card overflow-hidden rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="mb-4 flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 class="text-lg font-bold text-slate-800">Ocupacion</h3>
+            <p class="text-sm text-slate-500">Tendencia real de habitaciones ocupadas.</p>
+          </div>
+          <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">7 dias</span>
+        </div>
+        <div class="chart-container" style="height:320px; position: relative;"><canvas id="chart-ocupacion"></canvas></div>
       </div>
     </section>
   `;
   console.log('[Dashboard] HTML insertado en el contenedor.');
+  updateRefreshControls(container);
 
   // Esperar un breve momento para que el DOM se actualice completamente
   await new Promise(resolve => setTimeout(resolve, 50)); // Reducido a 50ms
@@ -373,18 +694,8 @@ export async function mount(container, supabaseInstance, currentUser) {
   
   const initializePage = async () => {
       if (!isMounted) return; 
-      console.log('[Dashboard] Llamando a loadDashboardPageData desde initializePage...');
-      await loadDashboardPageData(container, hotelId, supabaseInstance);
-      
-      if (!isMounted) return; 
-      if (window.Chart && container.querySelector('#chart-revenue') && container.querySelector('#chart-ocupacion')) {
-          console.log('[Dashboard] Llamando a renderCharts desde initializePage (Chart.js y canvas presentes).');
-          renderCharts(container, hotelId, supabaseInstance);
-      } else {
-          console.warn('[Dashboard] Chart.js o canvas no disponibles al intentar renderizar gráficos post-inicialización.');
-          // La lógica de carga de Chart.js ya se habrá ejecutado si fue necesario.
-          // Si aún no está, es un problema de carga del script.
-      }
+      console.log('[Dashboard] Refrescando dashboard desde initializePage...');
+      await refreshDashboardData(container, hotelId, supabaseInstance);
   };
 
   // Lógica de carga de Chart.js
@@ -420,16 +731,24 @@ export async function mount(container, supabaseInstance, currentUser) {
       initializePage();
   }
 
-  const atajosContainer = container.querySelector('.atajos-card .atajos-buttons');
-  if (atajosContainer) {
-      const atajosHandler = (e) => {
-          const targetButton = e.target.closest('button[data-navegar]');
-          if (targetButton && targetButton.dataset.navegar) {
-              window.location.hash = targetButton.dataset.navegar;
+  const navigationHandler = (e) => {
+      const targetButton = e.target.closest('[data-navegar]');
+      if (targetButton && targetButton.dataset.navegar) {
+          window.location.hash = targetButton.dataset.navegar;
+      }
+  };
+  container.addEventListener('click', navigationHandler);
+  moduleDashboardListeners.push({ element: container, type: 'click', handler: navigationHandler });
+
+  const refreshButton = container.querySelector('#dashboard-refresh-btn');
+  if (refreshButton) {
+      const refreshHandler = () => {
+          if (!dashboardIsRefreshing) {
+              refreshDashboardData(container, hotelId, supabaseInstance);
           }
       };
-      atajosContainer.addEventListener('click', atajosHandler);
-      moduleDashboardListeners.push({ element: atajosContainer, type: 'click', handler: atajosHandler });
+      refreshButton.addEventListener('click', refreshHandler);
+      moduleDashboardListeners.push({ element: refreshButton, type: 'click', handler: refreshHandler });
   }
   console.log('[Dashboard] Mount finalizado.');
 }
@@ -467,6 +786,8 @@ function loadChartJsAndInitialize(callback) {
 export function unmount(containerContext) { 
   console.log(`[Dashboard] Iniciando unmount para el contenedor: ${containerContext === currentContainerGlobal ? 'actual.' : 'anterior o diferente.'}`);
   isMounted = false; 
+  dashboardIsRefreshing = false;
+  dashboardLastUpdatedAt = null;
   if (chartRevenueInstance) {
       chartRevenueInstance.destroy();
       chartRevenueInstance = null;

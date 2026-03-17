@@ -10,8 +10,9 @@ let supabaseClient = null; // Assigned in mount
 let hotelConfigGlobal = null;
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { formatCurrency, formatDateTime, showConsumosYFacturarModal, mostrarInfoModalGlobal } from '../../uiUtils.js';
+import { escapeAttribute, escapeHtml } from '../../security.js';
 
-window.handleVerConsumosDesdeReporte = (roomContext) => {
+function legacyHandleVerConsumosDesdeReporte(roomContext) {
     // Esta función se encarga de llamar al modal, pasándole las variables
     // globales del módulo de reportes que necesita para funcionar.
     showConsumosYFacturarModal(
@@ -257,6 +258,25 @@ function limpiarAreaResultados(resultsContainerEl) {
   currentChartInstances = {};
 }
 
+function handleReporteResultsClick(event) {
+    const button = event.target.closest('[data-report-room-id]');
+    if (!button) return;
+
+    const roomId = button.getAttribute('data-report-room-id');
+    if (!roomId) return;
+
+    showConsumosYFacturarModal(
+        {
+            id: roomId,
+            nombre: button.getAttribute('data-report-room-name') || 'N/A'
+        },
+        supabaseClient,
+        currentModuleUser,
+        currentHotelId,
+        document.getElementById('app-container')
+    );
+}
+
 
 
 async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInput, fechaFinInput) {
@@ -314,8 +334,11 @@ async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInpu
                     <tbody class="bg-white divide-y divide-gray-200">`;
 
         reservas.forEach(r => {
-            const roomContext = { id: r.habitacion_id, nombre: r.habitaciones?.nombre || 'N/A' };
-            const roomContextString = JSON.stringify(roomContext).replace(/"/g, "'");
+            const safeCliente = escapeHtml(r.cliente_nombre || 'N/A');
+            const safeRoomName = escapeHtml(r.habitaciones?.nombre || 'N/A');
+            const safeEstado = escapeHtml(r.estado || 'N/A');
+            const roomIdAttr = escapeAttribute(r.habitacion_id || '');
+            const roomNameAttr = escapeAttribute(r.habitaciones?.nombre || 'N/A');
 
             const estadoLower = String(r.estado).toLowerCase();
             let estadoClass = 'bg-yellow-100 text-yellow-800';
@@ -326,14 +349,14 @@ async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInpu
             
             html += `
                 <tr class="hover:bg-gray-50 transition-colors duration-150">
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${r.cliente_nombre || 'N/A'}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${r.habitaciones?.nombre || 'N/A'}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700">${safeCliente}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${safeRoomName}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${formatDateLocal(r.fecha_inicio)}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="badge px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoClass}">${r.estado || 'N/A'}</span></td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm"><span class="badge px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${estadoClass}">${safeEstado}</span></td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500 text-right font-medium">${formatCurrencyLocal(r.monto_total)}</td>
                     
                     <td class="px-4 py-3 whitespace-nowrap text-center text-sm font-medium">
-                        <button onclick="window.handleVerConsumosDesdeReporte(${roomContextString})" 
+                        <button type="button" data-report-room-id="${roomIdAttr}" data-report-room-name="${roomNameAttr}"
                                 class="bg-blue-100 text-blue-700 hover:bg-blue-200 px-4 py-1 rounded-full font-semibold transition-colors duration-200">
                             Ver Consumos
                         </button>
@@ -572,10 +595,10 @@ function renderTablaMovimientos(movimientos, tituloTabla) {
             tablaHtml += `
                 <tr class="hover:bg-gray-50 transition-colors duration-150">
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${row[0]}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-medium">${row[1]}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600 break-words min-w-[200px] max-w-[400px]">${row[2]}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-medium">${escapeHtml(row[1])}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600 break-words min-w-[200px] max-w-[400px]">${escapeHtml(row[2])}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold ${mov.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${row[3]}</td>
-                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${row[4]}</td>
+                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${escapeHtml(row[4])}</td>
                 </tr>`;
         });
     }
@@ -1726,6 +1749,8 @@ export async function mount(container, sbInstance, user) {
   const feedbackEl = container.querySelector('#reportes-feedback');
   const loadingEl = container.querySelector('#reportes-loading');
   const resultadoContainerEl = container.querySelector('#reporte-resultado-container');
+  resultadoContainerEl.addEventListener('click', handleReporteResultsClick);
+  moduleListeners.push({ element: resultadoContainerEl, type: 'click', handler: handleReporteResultsClick });
 
   const today = new Date();
   const thirtyDaysAgo = new Date();
