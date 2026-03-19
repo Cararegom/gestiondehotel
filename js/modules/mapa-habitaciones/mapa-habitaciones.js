@@ -59,6 +59,25 @@ function sortRooms(rooms) {
   });
 }
 
+function isUpcomingReservation(reserva, referenceDate = new Date()) {
+  if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
+    return false;
+  }
+
+  const fechaInicio = new Date(reserva.fecha_inicio);
+  return !Number.isNaN(fechaInicio.getTime()) && fechaInicio.getTime() > referenceDate.getTime();
+}
+
+function filterReservationsForMap(reservas, referenceDate = new Date()) {
+  return (Array.isArray(reservas) ? reservas : []).filter((reserva) => {
+    if (['activa', 'ocupada', 'tiempo agotado'].includes(reserva?.estado)) {
+      return true;
+    }
+
+    return isUpcomingReservation(reserva, referenceDate);
+  });
+}
+
 function applyUpcomingReservationLocks(rooms) {
   const ahora = new Date();
   const dosHorasMs = 2 * 60 * 60 * 1000;
@@ -68,7 +87,7 @@ function applyUpcomingReservationLocks(rooms) {
     if (!Array.isArray(room.reservas) || room.reservas.length === 0) return;
 
     const reservasFuturas = room.reservas
-      .filter((r) => (r.estado === 'reservada' || r.estado === 'confirmada') && new Date(r.fecha_inicio) > ahora)
+      .filter((r) => isUpcomingReservation(r, ahora))
       .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio));
 
     if (reservasFuturas.length === 0) return;
@@ -235,7 +254,8 @@ async function fetchRoomsMapData(supabase, hotelId) {
     throw reservasResult.error;
   }
 
-  const reservasBase = Array.isArray(reservasResult.data) ? reservasResult.data : [];
+  const now = new Date();
+  const reservasBase = filterReservationsForMap(reservasResult.data, now);
   const reservaIds = reservasBase.map((reserva) => reserva.id).filter(Boolean);
 
   let historialByReserva = {};

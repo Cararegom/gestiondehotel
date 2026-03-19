@@ -51,6 +51,27 @@ function getActiveReservation(room) {
         : null;
 }
 
+function isUpcomingReservation(reserva, referenceDate = new Date()) {
+    if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
+        return false;
+    }
+
+    const fechaInicio = new Date(reserva.fecha_inicio);
+    return !Number.isNaN(fechaInicio.getTime()) && fechaInicio.getTime() > referenceDate.getTime();
+}
+
+function getUpcomingReservation(room, referenceDate = new Date()) {
+    if (isUpcomingReservation(room?.proximaReservaData, referenceDate)) {
+        return room.proximaReservaData;
+    }
+
+    return Array.isArray(room?.reservas)
+        ? room.reservas
+            .filter((reserva) => isUpcomingReservation(reserva, referenceDate))
+            .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio))[0] || null
+        : null;
+}
+
 function getPendingLoanedItems(reservaActiva) {
     const saldoPorArticulo = new Map();
     const historial = Array.isArray(reservaActiva?.historial_articulos_prestados)
@@ -173,11 +194,12 @@ function roomMatchesSearch(room, searchTerm) {
     if (!searchTerm) return true;
 
     const reservaActiva = getActiveReservation(room);
+    const reservaFutura = getUpcomingReservation(room);
     const searchable = [
         room?.nombre,
         getRoomTypeLabel(room),
         reservaActiva?.cliente_nombre,
-        room?.proximaReservaData?.cliente_nombre,
+        reservaFutura?.cliente_nombre,
         room?.piso
     ]
         .filter(Boolean)
@@ -445,8 +467,7 @@ function parseAmenities(room) {
 }
 
 function buildFutureReservationHtml(room) {
-    const reservaFutura = room.proximaReservaData
-        || (Array.isArray(room.reservas) ? room.reservas.find((reserva) => ['reservada', 'confirmada'].includes(reserva.estado)) : null);
+    const reservaFutura = getUpcomingReservation(room);
 
     if (!reservaFutura?.fecha_inicio) return '';
 

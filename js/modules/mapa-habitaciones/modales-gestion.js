@@ -122,11 +122,22 @@ function getReservaActivaLocal(room) {
     : null;
 }
 
+function isReservaFuturaLocal(reserva, referenceDate = new Date()) {
+  if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
+    return false;
+  }
+
+  const fechaInicio = new Date(reserva.fecha_inicio);
+  return !Number.isNaN(fechaInicio.getTime()) && fechaInicio.getTime() > referenceDate.getTime();
+}
+
 function getReservaFuturaLocal(room) {
-  if (room?.proximaReservaData) return room.proximaReservaData;
+  if (isReservaFuturaLocal(room?.proximaReservaData)) return room.proximaReservaData;
 
   return Array.isArray(room?.reservas)
-    ? room.reservas.find((reserva) => ['reservada', 'confirmada'].includes(reserva.estado))
+    ? room.reservas
+      .filter((reserva) => isReservaFuturaLocal(reserva))
+      .sort((a, b) => new Date(a.fecha_inicio) - new Date(b.fecha_inicio))[0] || null
     : null;
 }
 
@@ -428,6 +439,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
       .select('id, cliente_nombre, telefono, cantidad_huespedes, fecha_inicio, fecha_fin')
       .eq('habitacion_id', room.id)
       .eq('estado', 'reservada')
+      .gte('fecha_fin', new Date().toISOString())
       .order('fecha_inicio', { ascending: true }) // La más próxima
       .limit(1)
       .maybeSingle();
