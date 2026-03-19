@@ -51,13 +51,37 @@ function getActiveReservation(room) {
         : null;
 }
 
+function getReservationArrivalDayDeadline(reserva) {
+    if (!reserva?.fecha_inicio) return null;
+
+    const fechaInicio = new Date(reserva.fecha_inicio);
+    if (Number.isNaN(fechaInicio.getTime())) return null;
+
+    return new Date(
+        fechaInicio.getFullYear(),
+        fechaInicio.getMonth(),
+        fechaInicio.getDate(),
+        23,
+        59,
+        59,
+        999
+    );
+}
+
 function isUpcomingReservation(reserva, referenceDate = new Date()) {
     if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
         return false;
     }
 
     const fechaInicio = new Date(reserva.fecha_inicio);
-    return !Number.isNaN(fechaInicio.getTime()) && fechaInicio.getTime() > referenceDate.getTime();
+    if (Number.isNaN(fechaInicio.getTime())) return false;
+
+    if (fechaInicio.getTime() > referenceDate.getTime()) {
+        return true;
+    }
+
+    const limiteLlegada = getReservationArrivalDayDeadline(reserva);
+    return Boolean(limiteLlegada) && referenceDate.getTime() <= limiteLlegada.getTime();
 }
 
 function getUpcomingReservation(room, referenceDate = new Date()) {
@@ -471,15 +495,17 @@ function buildFutureReservationHtml(room) {
 
     if (!reservaFutura?.fecha_inicio) return '';
 
+    const ahora = new Date();
     const fechaObj = new Date(reservaFutura.fecha_inicio);
     const horaStr = fechaObj.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', hour12: true });
     const fechaStr = fechaObj.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' });
+    const titulo = fechaObj.getTime() <= ahora.getTime() ? 'Reserva pendiente' : 'Próxima Reserva';
 
     return `
         <div class="mt-2 mb-1 p-2 bg-indigo-50 border border-indigo-100 rounded-lg flex flex-col">
             <div class="flex items-center w-full">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-600 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                <span class="text-[11px] font-bold text-indigo-700 uppercase tracking-wide">Pr\u00f3xima Reserva</span>
+                <span class="text-[11px] font-bold text-indigo-700 uppercase tracking-wide">${escapeHtml(titulo)}</span>
             </div>
             <div class="pl-5 text-sm text-indigo-900 font-semibold">${fechaStr} - ${horaStr}</div>
             <div class="pl-5 text-xs text-indigo-500 truncate w-full">${escapeHtml(reservaFutura.cliente_nombre || 'Cliente')}</div>

@@ -1,6 +1,8 @@
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
 const OPENAI_WORKFLOW_ID =
   Deno.env.get('OPENAI_WORKFLOW_ID') ?? 'wf_69b97a86e2f4819087d103eaeba5e56c0bebc52a8ae89a9c';
+const OPENAI_SUPPORT_WORKFLOW_ID =
+  Deno.env.get('OPENAI_SUPPORT_WORKFLOW_ID') ?? 'wf_69bb83adeb50819085018e4e9c8c403201673fe45e2c1f5d';
 
 const ALLOWED_ORIGINS = new Set([
   'https://gestiondehotel.com',
@@ -23,6 +25,23 @@ function sanitizeVisitorId(rawVisitorId: unknown) {
   const input = typeof rawVisitorId === 'string' ? rawVisitorId : '';
   const cleaned = input.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
   return cleaned || crypto.randomUUID().replace(/-/g, '');
+}
+
+function resolveWorkflowId(payload: Record<string, unknown>) {
+  const source = typeof payload?.source === 'string' ? payload.source.toLowerCase() : '';
+  const channel = typeof payload?.channel === 'string' ? payload.channel.toLowerCase() : '';
+
+  if (source === 'internal' || channel === 'support' || source === 'support') {
+    return {
+      workflowId: OPENAI_SUPPORT_WORKFLOW_ID,
+      errorMessage: 'No fue posible iniciar la sesion del chat de soporte.'
+    };
+  }
+
+  return {
+    workflowId: OPENAI_WORKFLOW_ID,
+    errorMessage: 'No fue posible iniciar la sesion del chat comercial.'
+  };
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200, origin: string | null = null) {
@@ -59,6 +78,7 @@ Deno.serve(async (req) => {
   try {
     const payload = await req.json().catch(() => ({}));
     const visitorId = sanitizeVisitorId(payload?.visitorId);
+    const { workflowId, errorMessage } = resolveWorkflowId(payload);
 
     const openAIResponse = await fetch('https://api.openai.com/v1/chatkit/sessions', {
       method: 'POST',
@@ -69,7 +89,7 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         workflow: {
-          id: OPENAI_WORKFLOW_ID
+          id: workflowId
         },
         user: visitorId
       })
@@ -80,7 +100,7 @@ Deno.serve(async (req) => {
     if (!openAIResponse.ok || !sessionData?.client_secret) {
       console.error('Error creando sesion ChatKit:', sessionData);
       return jsonResponse(
-        { error: 'No fue posible iniciar la sesion del chat comercial.' },
+        { error: errorMessage },
         502,
         origin
       );

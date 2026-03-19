@@ -59,13 +59,37 @@ function sortRooms(rooms) {
   });
 }
 
+function getReservationArrivalDayDeadline(reserva) {
+  if (!reserva?.fecha_inicio) return null;
+
+  const fechaInicio = new Date(reserva.fecha_inicio);
+  if (Number.isNaN(fechaInicio.getTime())) return null;
+
+  return new Date(
+    fechaInicio.getFullYear(),
+    fechaInicio.getMonth(),
+    fechaInicio.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
+}
+
 function isUpcomingReservation(reserva, referenceDate = new Date()) {
   if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
     return false;
   }
 
   const fechaInicio = new Date(reserva.fecha_inicio);
-  return !Number.isNaN(fechaInicio.getTime()) && fechaInicio.getTime() > referenceDate.getTime();
+  if (Number.isNaN(fechaInicio.getTime())) return false;
+
+  if (fechaInicio.getTime() > referenceDate.getTime()) {
+    return true;
+  }
+
+  const limiteLlegada = getReservationArrivalDayDeadline(reserva);
+  return Boolean(limiteLlegada) && referenceDate.getTime() <= limiteLlegada.getTime();
 }
 
 function filterReservationsForMap(reservas, referenceDate = new Date()) {
@@ -95,10 +119,14 @@ function applyUpcomingReservationLocks(rooms) {
     const proxima = reservasFuturas[0];
     const inicioReserva = new Date(proxima.fecha_inicio);
     const tiempoFaltante = inicioReserva.getTime() - ahora.getTime();
+    const limiteLlegada = getReservationArrivalDayDeadline(proxima);
+    const reservaPendienteMismoDia = Boolean(limiteLlegada)
+      && tiempoFaltante <= 0
+      && ahora.getTime() <= limiteLlegada.getTime();
 
     room.proximaReservaData = proxima;
 
-    if (tiempoFaltante <= dosHorasMs && tiempoFaltante > 0) {
+    if ((tiempoFaltante <= dosHorasMs && tiempoFaltante > 0) || reservaPendienteMismoDia) {
       if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(room.estado)) {
         room.estado = 'reservada';
       }

@@ -122,13 +122,37 @@ function getReservaActivaLocal(room) {
     : null;
 }
 
+function getLimiteLlegadaReservaLocal(reserva) {
+  if (!reserva?.fecha_inicio) return null;
+
+  const fechaInicio = new Date(reserva.fecha_inicio);
+  if (Number.isNaN(fechaInicio.getTime())) return null;
+
+  return new Date(
+    fechaInicio.getFullYear(),
+    fechaInicio.getMonth(),
+    fechaInicio.getDate(),
+    23,
+    59,
+    59,
+    999
+  );
+}
+
 function isReservaFuturaLocal(reserva, referenceDate = new Date()) {
   if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
     return false;
   }
 
   const fechaInicio = new Date(reserva.fecha_inicio);
-  return !Number.isNaN(fechaInicio.getTime()) && fechaInicio.getTime() > referenceDate.getTime();
+  if (Number.isNaN(fechaInicio.getTime())) return false;
+
+  if (fechaInicio.getTime() > referenceDate.getTime()) {
+    return true;
+  }
+
+  const limiteLlegada = getLimiteLlegadaReservaLocal(reserva);
+  return Boolean(limiteLlegada) && referenceDate.getTime() <= limiteLlegada.getTime();
 }
 
 function getReservaFuturaLocal(room) {

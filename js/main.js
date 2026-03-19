@@ -4,6 +4,7 @@ import { getCurrentUser, handleLogout, onAuthStateChange } from './authService.j
 import { showAppFeedback, showGlobalLoading, hideGlobalLoading } from './uiUtils.js';
 import { fetchTurnoActivo } from './services/turnoService.js';
 import { escapeHtml, installLegacyTextNormalizer } from './security.js';
+import { initInternalSupportChat, destroyInternalSupportChat } from './app-support-chat.js';
 
 // Importa tus mÃ³dulos
 import * as Dashboard from './modules/dashboard/dashboard.js';
@@ -570,6 +571,8 @@ async function initializeApp() {
         campanitaInicializada = true;
       }
 
+      await initInternalSupportChat(appUser, currentActiveHotel);
+
       if (window.location.pathname.endsWith('/login.html')) {
         let targetHash = window.location.hash || '#/dashboard';
         console.log(`[Auth] Usuario autenticado en login.html, redirigiendo a la app con hash: ${targetHash}`);
@@ -589,6 +592,7 @@ async function initializeApp() {
         if (notificacionesCampanitaContainer) notificacionesCampanitaContainer.innerHTML = '';
         campanitaInicializada = false;
       }
+      destroyInternalSupportChat();
       updateUserInfo(null);
       renderNavigation(null);
       currentPathLoaded = null;
