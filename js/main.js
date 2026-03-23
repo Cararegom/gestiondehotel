@@ -26,6 +26,7 @@ import * as Descuentos from './modules/descuentos/descuentos.js';
 import * as Micuenta from './modules/micuenta/micuenta.js';
 import * as Clientes from './modules/clientes/clientes.js';
 import * as faq from './modules/faq/faq.js';
+import * as Bitacora from './modules/bitacora/bitacora.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -63,7 +64,8 @@ const routes = {
   '/mantenimiento': { module: Mantenimiento, moduleKey: 'mantenimiento' },
   '/descuentos': { module: Descuentos, moduleKey: 'descuentos' },
   '/micuenta': { module: Micuenta, moduleKey: 'micuenta' },
-  '/faq': { module: faq, moduleKey: 'faq' }
+  '/faq': { module: faq, moduleKey: 'faq' },
+  '/bitacora': { module: Bitacora, moduleKey: 'bitacora' }
 };
 
 const navLinksConfig = [
@@ -84,6 +86,7 @@ const navLinksConfig = [
   { path: '#/configuracion', text: 'Configuraci\u00F3n', icon: '\u2699\uFE0F', moduleKey: 'configuracion' },
   { path: '#/integraciones', text: 'Integraciones', icon: '\u{1F517}', moduleKey: 'integraciones' },
   { path: '#/notificaciones', text: 'Ver Notificaciones', icon: '\u{1F4DC}', moduleKey: 'notificaciones_page' },
+  { path: '#/bitacora?scope=soporte-global', text: 'Incidencias SaaS', icon: '\u{1F6DF}\uFE0F', moduleKey: 'bitacora', superadminOnly: true },
   { path: '#/micuenta', text: 'Mi cuenta', icon: '\u{1F6E1}\uFE0F', moduleKey: 'micuenta' },
   { path: '#/faq', text: 'FAQ', icon: '\u2753', moduleKey: 'faq' }
 ];
@@ -194,9 +197,15 @@ function renderNavigation(user) {
 
     // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
     // Se aÃ±ade la misma lista de mÃ³dulos exentos que en el router.
-    const modulosExentos = ['micuenta', 'faq'];
+    const modulosExentos = ['micuenta', 'faq', 'bitacora'];
 
     navLinksConfig.forEach(linkConfig => {
+      if (linkConfig.adminOnly && !esAdminNavegacion) {
+        return;
+      }
+      if (linkConfig.superadminOnly && currentUserRole !== 'superadmin') {
+        return;
+      }
       // Un enlace se muestra si su 'moduleKey' estÃ¡ en la lista de permitidos O en la lista de exentos.
       if (modulosPermitidos.includes(linkConfig.moduleKey) || modulosExentos.includes(linkConfig.moduleKey)) {
         const a = buildNavLinkElement(linkConfig);
@@ -389,7 +398,7 @@ async function router() {
 
       // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
       // Creamos una lista de mÃ³dulos que SIEMPRE deben estar accesibles.
-      const modulosExentos = ['micuenta', 'faq'];
+      const modulosExentos = ['micuenta', 'faq', 'bitacora'];
 
       // Verificamos si el mÃ³dulo actual estÃ¡ en la lista de exentos.
       const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
@@ -409,6 +418,20 @@ async function router() {
     if (hotelIdForModule && userForModule && currentActiveHotel) {
       const usuarioId = userForModule.id;
       const esAdminRouter = (currentUserRole === 'admin' || currentUserRole === 'superadmin' || usuarioId === currentActiveHotel.creado_por);
+
+      const routeConfig = navLinksConfig.find((linkConfig) => linkConfig.moduleKey === moduleKeyFromRoute);
+      if (routeConfig?.adminOnly && !esAdminRouter) {
+        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso restringido</h2><p class="text-gray-700">Esta vista es solo para administradores del hotel.</p></div>`;
+        hideGlobalLoading();
+        routerBusy = false;
+        return;
+      }
+      if (routeConfig?.superadminOnly && currentUserRole !== 'superadmin') {
+        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso restringido</h2><p class="text-gray-700">Esta vista es solo para mantenimiento SaaS o superadministradores.</p></div>`;
+        hideGlobalLoading();
+        routerBusy = false;
+        return;
+      }
 
       if (isSubscriptionFueraDeGracia) {
         if (esAdminRouter) {

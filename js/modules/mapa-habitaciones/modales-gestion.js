@@ -669,7 +669,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
       const { data: habsLibres, error: errHabs } = await supabase.from('habitaciones')
         .select('id, nombre')
         .eq('hotel_id', hotelId)
-        .in('estado', ['libre', 'disponible'])
+        .eq('estado', 'libre')
         .neq('id', room.id);
 
       if (errHabs) {

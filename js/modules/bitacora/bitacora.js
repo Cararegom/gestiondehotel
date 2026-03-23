@@ -15,6 +15,8 @@ let currentPage = 1;
 const ITEMS_PER_PAGE = 15;
 let totalRecords = 0;
 let currentSupabaseInstance = null; // Para almacenar la instancia de Supabase pasada a mount
+let currentScope = 'general';
+let hotelNamesByIdCache = {};
 
 // Referencias a elementos del DOM
 let tBodyEl, pagContainerEl, infoSpanEl, btnPrevEl, btnNextEl, feedbackEl, loadingEl;
@@ -74,6 +76,7 @@ async function cargarYRenderizarBitacora(page = 1) {
     let query = currentSupabaseInstance // Usar la instancia pasada
       .from('bitacora')
       .select(`
+        hotel_id,
         creado_en,
         modulo,
         accion,
@@ -81,8 +84,17 @@ async function cargarYRenderizarBitacora(page = 1) {
         usuario_id,
         usuarios (nombre, correo) 
       `, { count: 'exact' }) // Asegurar que el JOIN con usuarios es correcto y tienes RLS configurado
-      .eq('hotel_id', hotelIdGlobal)
       .order('creado_en', { ascending: false });
+
+    if (currentScope !== 'soporte-global') {
+      query = query.eq('hotel_id', hotelIdGlobal);
+    }
+
+    if (currentScope === 'soporte') {
+      query = query.eq('accion', 'REPORTE_INCIDENCIA_CHAT');
+    } else if (currentScope === 'soporte-global') {
+      query = query.eq('accion', 'REPORTE_INCIDENCIA_CHAT');
+    }
 
     if (fechaInicio) query = query.gte('creado_en', `${fechaInicio}T00:00:00.000Z`);
     if (fechaFin)    query = query.lte('creado_en', `${fechaFin}T23:59:59.999Z`);
@@ -113,6 +125,7 @@ async function cargarYRenderizarBitacora(page = 1) {
         tr.className = 'border-b hover:bg-gray-50'; // Estilo para las filas
         tr.innerHTML = `
           <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">${formatDateTime(b.creado_en)}</td>
+          ${currentScope === 'soporte-global' ? `<td class="px-4 py-2 text-sm text-gray-700">${hotelNamesByIdCache[b.hotel_id] || b.hotel_id || 'Sin hotel'}</td>` : ''}
           <td class="px-4 py-2 text-sm text-gray-700">${actorName}</td>
           <td class="px-4 py-2 text-sm text-gray-700">${b.modulo || 'N/A'}</td>
           <td class="px-4 py-2 text-sm text-gray-700">${b.accion || 'N/A'}</td>
@@ -141,24 +154,33 @@ async function cargarYRenderizarBitacora(page = 1) {
  * Carga los usuarios del hotel para el selector de filtro.
  */
 async function cargarUsuariosParaFiltro(selectEl) {
-  if (!selectEl || !hotelIdGlobal || !currentSupabaseInstance) {
+  if (!selectEl || !currentSupabaseInstance || (currentScope !== 'soporte-global' && !hotelIdGlobal)) {
       console.warn("Bitácora: No se puede cargar usuarios para filtro sin selectEl, hotelIdGlobal o instancia de Supabase.");
       return;
   }
   selectEl.innerHTML = '<option value="">Cargando usuarios...</option>';
   try {
-    const { data: usuarios, error } = await currentSupabaseInstance // Usar la instancia pasada
+    let query = currentSupabaseInstance // Usar la instancia pasada
       .from('usuarios')
-      .select('id, nombre, correo')
-      .eq('hotel_id', hotelIdGlobal)
+      .select('id, nombre, correo, hotel_id')
       .order('nombre'); // Ordenar por nombre es buena práctica
+
+    if (currentScope !== 'soporte-global') {
+      query = query.eq('hotel_id', hotelIdGlobal);
+    }
+
+    const { data: usuarios, error } = await query;
     if (error) throw error;
     
     let htmlOptions = '<option value="">Todos los usuarios</option>';
     if (usuarios && usuarios.length > 0) {
       usuarios.forEach(u => {
         // Mostrar nombre, y si no hay nombre, mostrar correo.
-        const displayText = u.nombre || u.correo || u.id; 
+        const displayBase = u.nombre || u.correo || u.id;
+        const hotelSuffix = currentScope === 'soporte-global'
+          ? ` · ${hotelNamesByIdCache[u.hotel_id] || u.hotel_id || 'Sin hotel'}`
+          : '';
+        const displayText = `${displayBase}${hotelSuffix}`; 
         htmlOptions += `<option value="${u.id}">${displayText}</option>`;
       });
     } else {
@@ -171,6 +193,28 @@ async function cargarUsuariosParaFiltro(selectEl) {
   }
 }
 
+async function cargarHotelesParaScopeGlobal() {
+  if (!currentSupabaseInstance || currentScope !== 'soporte-global') {
+    hotelNamesByIdCache = {};
+    return;
+  }
+
+  try {
+    const { data: hoteles, error } = await currentSupabaseInstance
+      .from('hoteles')
+      .select('id, nombre');
+
+    if (error) throw error;
+
+    hotelNamesByIdCache = Object.fromEntries(
+      (hoteles || []).map((hotel) => [hotel.id, hotel.nombre || hotel.id])
+    );
+  } catch (error) {
+    console.error('Bitácora: Error cargando hoteles para incidencias globales:', error);
+    hotelNamesByIdCache = {};
+  }
+}
+
 /**
  * Monta el módulo de bitácora.
  */
@@ -179,6 +223,7 @@ export async function mount(container, sbInstance, user, hotelId) { // Recibe ho
   currentUserGlobal = user;
   currentSupabaseInstance = sbInstance; // Almacenar la instancia de Supabase
   activeListeners = [];
+  currentScope = new URLSearchParams((window.location.hash.split('?')[1] || '')).get('scope')?.toLowerCase() || 'general';
   
   hotelIdGlobal = hotelId; // Usar el hotelId pasado desde main.js
 
@@ -194,11 +239,30 @@ export async function mount(container, sbInstance, user, hotelId) { // Recibe ho
     }
   }
 
+  const isSupportScope = currentScope === 'soporte' || currentScope === 'soporte-global';
+  const isGlobalSupportScope = currentScope === 'soporte-global';
+  const headingTitle = isGlobalSupportScope
+    ? 'Incidencias SaaS'
+    : isSupportScope
+    ? 'Incidencias de Soporte'
+    : 'Bitácora de Actividad del Sistema';
+  const headingDescription = isGlobalSupportScope
+    ? 'Aquí verás, como encargado del SaaS, los reportes de fallas y daños registrados desde todos los hoteles.'
+    : isSupportScope
+    ? 'Aquí verás los reportes de fallas y daños que Valeria haya dejado estructurados desde el chat interno.'
+    : 'Consulta la actividad registrada del hotel y aplica filtros por fecha, usuario o módulo.';
+
   container.innerHTML = `
     <div class="p-4 sm:p-6 md:p-8">
       <div class="bg-white shadow-md rounded-lg">
         <div class="px-6 py-4 border-b border-gray-200">
-          <h2 class="text-xl font-semibold text-gray-700">Bitácora de Actividad del Sistema</h2>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-xl font-semibold text-gray-700">${headingTitle}</h2>
+              <p class="text-sm text-gray-500">${headingDescription}</p>
+            </div>
+            ${isSupportScope ? `<span class="inline-flex items-center rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-blue-700">${isGlobalSupportScope ? 'SaaS + Valeria' : 'Valeria + Bitácora'}</span>` : ''}
+          </div>
         </div>
         <div class="p-6">
           <div id="bitacora-feedback" class="mb-4" style="display:none;" role="alert"></div>
@@ -234,6 +298,7 @@ export async function mount(container, sbInstance, user, hotelId) { // Recibe ho
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha y Hora</th>
+                  ${isGlobalSupportScope ? '<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Hotel</th>' : ''}
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario Actor</th>
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Módulo</th>
                   <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Acción</th>
@@ -270,9 +335,17 @@ export async function mount(container, sbInstance, user, hotelId) { // Recibe ho
   filterModuloEl = container.querySelector('#bitacora-modulo-filtro');
   const btnLimpiarFiltros = container.querySelector('#bitacora-btn-limpiar-filtros');
 
-  if (!hotelIdGlobal) {
+  if (!hotelIdGlobal && currentScope !== 'soporte-global') {
     if (feedbackEl) showAppFeedback(feedbackEl, 'Error crítico: No se pudo identificar el hotel para cargar la bitácora.', 'error');
     return;
+  }
+
+  if (isGlobalSupportScope) {
+    await cargarHotelesParaScopeGlobal();
+  }
+
+  if (isSupportScope && filterModuloEl) {
+    filterModuloEl.value = 'Soporte interno';
   }
 
   await cargarUsuariosParaFiltro(filterUsuarioEl);
@@ -337,6 +410,8 @@ export function unmount() {
   currentSupabaseInstance = null;
   currentPage = 1;
   totalRecords = 0;
+  currentScope = 'general';
+  hotelNamesByIdCache = {};
 
   // Resetear referencias al DOM
   tBodyEl = pagContainerEl = infoSpanEl = btnPrevEl = btnNextEl = feedbackEl = loadingEl = null;
