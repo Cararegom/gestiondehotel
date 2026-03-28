@@ -6,6 +6,7 @@ import { buscarDescuentoParaServicios } from './descuentos-helper.js';
 import { showModalTarea as importarMantenimientoUI } from '../mantenimiento/mantenimiento.js';
 import { showGlobalLoading, hideGlobalLoading, formatCurrency } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
+import { escapeHtml } from '../../security.js';
 
 function refreshMapaHabitaciones() {
   document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
@@ -219,13 +220,16 @@ async function getHabitacionResumenOperativo(room, supabase, hotelId) {
     saldoPendienteBase: 0,
     reservasRecientes: [],
     tareaMantenimientoActiva: null,
-    tareaMantenimientoProgramada: null
+    tareaMantenimientoProgramada: null,
+    tareasMantenimientoRecientes: [],
+    inspeccionesRecientes: [],
+    historialTimeline: []
   };
 
   resumen.articulosPendientesCount = getArticulosPendientesCount(resumen.reservaActiva);
   resumen.saldoPendienteBase = Math.max(0, Number(resumen.reservaActiva?.monto_total || 0) - Number(resumen.reservaActiva?.monto_pagado || 0));
 
-  const [reservasResult, tareaResult] = await Promise.all([
+  const [reservasResult, tareaResult, tareasHistoricasResult, inspeccionesResult] = await Promise.all([
     supabase
       .from('reservas')
       .select('id, estado, fecha_inicio, fecha_fin, cliente_nombre, monto_total, monto_pagado')
@@ -239,6 +243,20 @@ async function getHabitacionResumenOperativo(room, supabase, hotelId) {
       .eq('hotel_id', hotelId)
       .eq('habitacion_id', room.id)
       .in('estado', ['pendiente', 'en_progreso'])
+      .order('creado_en', { ascending: false })
+      .limit(4),
+    supabase
+      .from('tareas_mantenimiento')
+      .select('id, titulo, descripcion, estado, creado_en, fecha_completada, tipo, frecuencia')
+      .eq('hotel_id', hotelId)
+      .eq('habitacion_id', room.id)
+      .order('creado_en', { ascending: false })
+      .limit(6),
+    supabase
+      .from('inspecciones_limpieza')
+      .select('id, puntaje, observaciones, creado_en')
+      .eq('hotel_id', hotelId)
+      .eq('habitacion_id', room.id)
       .order('creado_en', { ascending: false })
       .limit(4)
   ]);
@@ -256,6 +274,55 @@ async function getHabitacionResumenOperativo(room, supabase, hotelId) {
     resumen.tareaMantenimientoActiva = tareasAbiertas.find((tarea) => normalizeMaintenanceTaskType(tarea) !== 'programado') || null;
     resumen.tareaMantenimientoProgramada = tareasAbiertas.find((tarea) => normalizeMaintenanceTaskType(tarea) === 'programado') || null;
   }
+
+  if (tareasHistoricasResult?.error) {
+    console.warn('No se pudo cargar el historial de mantenimiento de la habitacion:', tareasHistoricasResult.error);
+  } else {
+    resumen.tareasMantenimientoRecientes = tareasHistoricasResult?.data || [];
+  }
+
+  if (inspeccionesResult?.error) {
+    console.warn('No se pudo cargar el historial de inspecciones de limpieza:', inspeccionesResult.error);
+  } else {
+    resumen.inspeccionesRecientes = inspeccionesResult?.data || [];
+  }
+
+  const timeline = [];
+  (resumen.reservasRecientes || []).forEach((reserva) => {
+    timeline.push({
+      id: `reserva-${reserva.id}`,
+      timestamp: reserva.fecha_inicio,
+      badge: 'Reserva',
+      title: reserva.cliente_nombre || 'Reserva sin cliente',
+      meta: `${reserva.estado || 'N/A'} · ${formatDateTime(reserva.fecha_inicio, 'es-CO', { dateStyle: 'medium', timeStyle: 'short' })}`,
+      tone: 'blue'
+    });
+  });
+  (resumen.tareasMantenimientoRecientes || []).forEach((tarea) => {
+    timeline.push({
+      id: `mant-${tarea.id}`,
+      timestamp: tarea.fecha_completada || tarea.creado_en,
+      badge: 'Mantenimiento',
+      title: tarea.titulo || 'Tarea de mantenimiento',
+      meta: `${tarea.estado || 'pendiente'} · ${normalizeMaintenanceTaskType(tarea) === 'programado' ? 'Programado' : 'Bloqueante'}`,
+      tone: normalizeMaintenanceTaskType(tarea) === 'programado' ? 'violet' : 'amber'
+    });
+  });
+  (resumen.inspeccionesRecientes || []).forEach((inspeccion) => {
+    timeline.push({
+      id: `insp-${inspeccion.id}`,
+      timestamp: inspeccion.creado_en,
+      badge: 'Inspeccion',
+      title: `Puntaje ${inspeccion.puntaje || 0}/5`,
+      meta: inspeccion.observaciones || 'Sin observaciones registradas.',
+      tone: Number(inspeccion.puntaje || 0) >= 4 ? 'emerald' : 'rose'
+    });
+  });
+
+  resumen.historialTimeline = timeline
+    .filter((item) => item.timestamp)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 6);
 
   return resumen;
 }
@@ -281,17 +348,38 @@ function buildHabitacionSummaryHtml(room, resumen) {
   const mantenimientoSecundario = tareaProgramada
     ? `Pendiente: ${tareaProgramada.titulo || 'Trabajo programado'}`
     : 'Sin pendientes programados';
+  const ultimaInspeccion = (resumen.inspeccionesRecientes || [])[0] || null;
+  const ultimaInspeccionLabel = ultimaInspeccion
+    ? `${ultimaInspeccion.puntaje || 0}/5`
+    : 'Sin inspeccion reciente';
+  const ultimaInspeccionMeta = ultimaInspeccion?.creado_en
+    ? formatDateTime(ultimaInspeccion.creado_en, 'es-CO', { dateStyle: 'medium', timeStyle: 'short' })
+    : 'Aun no hay cierre con checklist.';
 
-  const actividadHtml = actividadReciente.length > 0
-    ? actividadReciente.map((reserva) => `
-        <div class="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2">
-          <div>
-            <p class="text-sm font-semibold text-slate-800">${reserva.cliente_nombre || 'Sin cliente'}</p>
-            <p class="text-xs text-slate-500">${formatDateTime(reserva.fecha_inicio, 'es-CO', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+  const actividadHtml = (resumen.historialTimeline || []).length > 0
+    ? resumen.historialTimeline.map((item) => {
+        const toneMap = {
+          blue: 'border-blue-100 bg-blue-50 text-blue-700',
+          amber: 'border-amber-100 bg-amber-50 text-amber-700',
+          violet: 'border-violet-100 bg-violet-50 text-violet-700',
+          emerald: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+          rose: 'border-rose-100 bg-rose-50 text-rose-700'
+        };
+        const badgeClass = toneMap[item.tone] || 'border-slate-100 bg-slate-100 text-slate-700';
+
+        return `
+          <div class="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="rounded-full border px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${badgeClass}">${escapeHtml(item.badge)}</span>
+                <p class="text-sm font-semibold text-slate-800">${escapeHtml(item.title)}</p>
+              </div>
+              <p class="mt-1 text-xs text-slate-500">${escapeHtml(item.meta)}</p>
+            </div>
+            <span class="text-[11px] font-semibold text-slate-400">${formatDateTime(item.timestamp, 'es-CO', { dateStyle: 'short', timeStyle: 'short' })}</span>
           </div>
-          <span class="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-600">${reserva.estado || 'N/A'}</span>
-        </div>
-      `).join('')
+        `;
+      }).join('')
     : '<p class="text-sm text-slate-500">Sin actividad reciente registrada para esta habitacion.</p>';
 
   return `
@@ -318,11 +406,17 @@ function buildHabitacionSummaryHtml(room, resumen) {
           <p class="mt-1 text-xs text-slate-500">${tareaMantenimiento?.creado_en ? `Abierta desde ${formatDateTime(tareaMantenimiento.creado_en, 'es-CO', { dateStyle: 'medium', timeStyle: 'short' })}` : mantenimientoSecundario}</p>
           ${tareaProgramada ? `<p class="mt-1 text-[11px] font-semibold text-violet-600">${mantenimientoSecundario}</p>` : ''}
         </div>
+        <div class="rounded-xl border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Ultima inspeccion</p>
+          <p class="mt-2 text-sm font-bold text-slate-800">${ultimaInspeccionLabel}</p>
+          <p class="mt-1 text-xs text-slate-500">${ultimaInspeccionMeta}</p>
+          ${ultimaInspeccion?.observaciones ? `<p class="mt-1 text-[11px] text-slate-500">${escapeHtml(ultimaInspeccion.observaciones)}</p>` : ''}
+        </div>
       </div>
       <div class="mt-3 rounded-xl border border-slate-200 bg-slate-100/70 p-3">
         <div class="mb-2 flex items-center justify-between gap-2">
-          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Actividad reciente</p>
-          <span class="text-xs font-semibold text-slate-400">${actividadReciente.length} registro${actividadReciente.length === 1 ? '' : 's'}</span>
+          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Historial operativo</p>
+          <span class="text-xs font-semibold text-slate-400">${(resumen.historialTimeline || []).length} evento${(resumen.historialTimeline || []).length === 1 ? '' : 's'}</span>
         </div>
         <div class="space-y-2">
           ${actividadHtml}

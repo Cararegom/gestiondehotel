@@ -1,6 +1,8 @@
 // js/modules/restaurante/restaurante.js
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { turnoService } from '../../services/turnoService.js';
+import { clearPOSDraft, loadPOSDraft, savePOSDraft } from '../../services/posDraftService.js';
+import { imprimirTicketOperacion } from '../../services/thermalPrintService.js';
 import * as inventarioModule from './inventario.js';
 import { getIngredientesList } from './inventario.js';
 import { formatCurrency, showError, registrarUsoDescuento } from '../../uiUtils.js';
@@ -18,6 +20,91 @@ let metodosPagoCache = [];
 let ventaItems = []; // Current POS cart/order items
 let ventasHistorialCache = []; // Cache for sales history
 let activeSubmodule = null; // Para manejar submódulos como inventario
+let restauranteDraftRestored = false;
+
+function getRestauranteDraftContext() {
+    return {
+        hotelId: currentHotelId,
+        userId: currentModuleUser?.id
+    };
+}
+
+function setRestauranteDraftStatus(message = '', tone = 'info') {
+    const statusEl = document.getElementById('pos-restaurante-draft-status');
+    if (!statusEl) return;
+    if (!message) {
+        statusEl.style.display = 'none';
+        statusEl.innerHTML = '';
+        return;
+    }
+    const palette = tone === 'success'
+        ? 'background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;'
+        : tone === 'warning'
+            ? 'background:#fff7ed;border:1px solid #fdba74;color:#c2410c;'
+            : 'background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;';
+    statusEl.style.cssText = `display:block;margin-bottom:14px;padding:10px 12px;border-radius:12px;font-size:0.9rem;font-weight:600;${palette}`;
+    statusEl.innerHTML = message;
+}
+
+function saveRestauranteDraftState() {
+    const { hotelId, userId } = getRestauranteDraftContext();
+    if (!hotelId || !userId) return;
+    savePOSDraft('restaurante', hotelId, userId, {
+        items: ventaItems,
+        filtro: document.getElementById('pos-filtro-platos')?.value || '',
+        discountCode: document.getElementById('codigo-descuento-restaurante')?.value || '',
+        mode: document.getElementById('venta-restaurante-modo')?.value || 'inmediato',
+        metodoPagoId: document.getElementById('venta-restaurante-metodo-pago')?.value || '',
+        habitacionId: document.getElementById('venta-restaurante-habitacion')?.value || '',
+        clienteNombre: document.getElementById('venta-restaurante-cliente')?.value || ''
+    });
+}
+
+function restoreRestauranteDraftState() {
+    const { hotelId, userId } = getRestauranteDraftContext();
+    const draft = loadPOSDraft('restaurante', hotelId, userId);
+    if (!draft?.payload) {
+        restauranteDraftRestored = false;
+        setRestauranteDraftStatus('');
+        return;
+    }
+
+    const availablePlates = new Map(platosCache.map((plato) => [plato.id, plato]));
+    ventaItems = (draft.payload.items || [])
+        .map((item) => {
+            const currentPlate = availablePlates.get(item.plato_id);
+            if (!currentPlate) return null;
+            return {
+                plato_id: currentPlate.id,
+                nombre_plato: currentPlate.nombre,
+                cantidad: Math.max(1, Number(item.cantidad) || 1),
+                precio_unitario: Number(item.precio_unitario || currentPlate.precio || 0),
+                categoria_id: currentPlate.categoria_id
+            };
+        })
+        .filter(Boolean);
+
+    const filtroInput = document.getElementById('pos-filtro-platos');
+    if (filtroInput) filtroInput.value = draft.payload.filtro || '';
+    const codigoInput = document.getElementById('codigo-descuento-restaurante');
+    if (codigoInput) codigoInput.value = draft.payload.discountCode || '';
+    const modeSelect = document.getElementById('venta-restaurante-modo');
+    if (modeSelect && draft.payload.mode) modeSelect.value = draft.payload.mode;
+    const metodoSelect = document.getElementById('venta-restaurante-metodo-pago');
+    if (metodoSelect && draft.payload.metodoPagoId) metodoSelect.value = draft.payload.metodoPagoId;
+    const habitacionSelect = document.getElementById('venta-restaurante-habitacion');
+    if (habitacionSelect && draft.payload.habitacionId) habitacionSelect.value = draft.payload.habitacionId;
+    const clienteInput = document.getElementById('venta-restaurante-cliente');
+    if (clienteInput) clienteInput.value = draft.payload.clienteNombre || '';
+
+    restauranteDraftRestored = ventaItems.length > 0;
+    setRestauranteDraftStatus(
+        restauranteDraftRestored
+            ? `Se recuperó un borrador del pedido. Última actualización: ${new Date(draft.updatedAt || Date.now()).toLocaleString('es-CO')}.`
+            : '',
+        'info'
+    );
+}
 
 // --- UTILITIES ---
 const formatCurrencyLocal = (value, currency = 'COP') => {
@@ -417,6 +504,14 @@ async function renderVentaItemsUI(tbodyEl) {
     if (totalDisplayEl) {
         totalDisplayEl.textContent = formatCurrencyLocal(totalFinal);
     }
+
+    if (!ventaItems.length) {
+        setRestauranteDraftStatus('');
+    } else if (restauranteDraftRestored) {
+        setRestauranteDraftStatus('Borrador recuperado y listo para continuar.', 'info');
+    }
+
+    saveRestauranteDraftState();
 }
 
 /**
@@ -922,6 +1017,7 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
                     <tbody id="pos-pedido-items-body" class="divide-y divide-slate-200 dark:divide-slate-700">
                         </tbody>
                 </table>
+                <div id="pos-restaurante-draft-status" style="display:none;"></div>
                 
                 <form id="form-finalizar-venta-restaurante" class="space-y-4">
                     <div>
@@ -1060,13 +1156,36 @@ try {
             if(item) item.cantidad++; else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
             renderVentaItemsUI(posPedidoItemsBodyEl);
         });
+        saveRestauranteDraftState();
     };
 
     selectModoVentaEl.onchange = () => {
         grupoMetodoPagoEl.style.display = selectModoVentaEl.value === "inmediato" ? "" : "none";
         grupoHabitacionEl.style.display = selectModoVentaEl.value === "habitacion" ? "" : "none";
+        saveRestauranteDraftState();
     };
     selectModoVentaEl.dispatchEvent(new Event('change'));
+    selectMetodoPagoVentaEl.onchange = saveRestauranteDraftState;
+    selectHabitacionEl.onchange = saveRestauranteDraftState;
+    const clienteVentaInput = document.getElementById('venta-restaurante-cliente');
+    if (clienteVentaInput) clienteVentaInput.oninput = saveRestauranteDraftState;
+    const descuentoInput = document.getElementById('codigo-descuento-restaurante');
+    if (descuentoInput) descuentoInput.oninput = saveRestauranteDraftState;
+
+    restoreRestauranteDraftState();
+    selectModoVentaEl.dispatchEvent(new Event('change'));
+    if (filtroPlatosInputEl.value.trim()) {
+        const platosFiltrados = platosCache.filter(p => p.nombre.toLowerCase().includes(filtroPlatosInputEl.value.toLowerCase()));
+        renderPOSPlatosUI(posPlatosRenderAreaEl, platosFiltrados, plato => {
+            const item = ventaItems.find(i => i.plato_id === plato.id);
+            if(item) item.cantidad++; else ventaItems.push({ plato_id: plato.id, nombre_plato: plato.nombre, cantidad: 1, precio_unitario: plato.precio });
+            renderVentaItemsUI(posPedidoItemsBodyEl);
+        });
+    }
+    await renderVentaItemsUI(posPedidoItemsBodyEl);
+    if (descuentoInput?.value) {
+        await handleAplicarDescuentoRestaurante();
+    }
 
     // --- Handler Finalizar Venta ---
 // --- Handler Finalizar Venta ---
@@ -1173,11 +1292,42 @@ const finalizarVentaHandler = async (e) => {
             const itemsParaInsertar = ventaItems.map(item => ({ venta_id: ventaData.id, plato_id: item.plato_id, cantidad: item.cantidad, precio_unitario_venta: item.precio_unitario, subtotal: item.cantidad * item.precio_unitario }));
             await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
 
+            const carritoImpresion = ventaItems.map((item) => ({
+                nombre: item.nombre_plato,
+                cantidad: item.cantidad,
+                precio: item.precio_unitario,
+                total: item.cantidad * item.precio_unitario
+            }));
             showRestauranteFeedback(posFeedbackEl, `Consumo cargado a la habitación.`, 'success-indicator');
             ventaItems = []; descuentoAplicadoRestaurante = null;
+            restauranteDraftRestored = false;
+            clearPOSDraft('restaurante', currentHotelId, currentModuleUser?.id);
             await renderVentaItemsUI(document.getElementById('pos-pedido-items-body'), configuracionImpuestos);
             formFinalizarVentaEl.reset();
             document.getElementById('feedback-descuento-restaurante').textContent = '';
+            setRestauranteDraftStatus('Venta registrada. El borrador del pedido se limpió automáticamente.', 'success');
+            try {
+                await imprimirTicketOperacion({
+                    supabase: currentSupabaseInstance,
+                    hotelId: currentHotelId,
+                    documentLabel: 'Consumo Restaurante a Habitación',
+                    reference: ventaData.id,
+                    clientName: cliente || null,
+                    meta: [
+                        { label: 'Habitación', value: selectHabitacionEl.options[selectHabitacionEl.selectedIndex]?.text || '-' },
+                        { label: 'Reserva', value: reserva.id }
+                    ],
+                    items: carritoImpresion,
+                    subtotal: montoBruto,
+                    discount: montoDescontado,
+                    taxes: montoImpuesto,
+                    total: totalFinal,
+                    payments: [],
+                    notes: 'Consumo pendiente de cargo a la habitación.'
+                });
+            } catch (printError) {
+                console.warn('[Restaurante] No se pudo imprimir el comprobante de consumo:', printError);
+            }
         }
     } catch (error) {
         showRestauranteFeedback(posFeedbackEl, error.message, 'error-indicator', 0);
@@ -1199,6 +1349,12 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     const btnFinalizarVentaEl = document.getElementById('btn-finalizar-venta-restaurante');
     const posFeedbackEl = document.getElementById('posVentaFeedback');
     const posPedidoItemsBodyEl = document.getElementById('pos-pedido-items-body');
+    const carritoImpresion = ventaItems.map((item) => ({
+        nombre: item.nombre_plato,
+        cantidad: item.cantidad,
+        precio: item.precio_unitario,
+        total: item.cantidad * item.precio_unitario
+    }));
 
     try {
         const { data: ventaData, error: ventaError } = await currentSupabaseInstance
@@ -1267,9 +1423,34 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
         showRestauranteFeedback(posFeedbackEl, `✅ ¡Venta #${ventaId.substring(0, 8)} registrada con éxito!`, 'success-indicator');
         ventaItems = [];
         descuentoAplicadoRestaurante = null;
+        restauranteDraftRestored = false;
+        clearPOSDraft('restaurante', currentHotelId, currentModuleUser?.id);
         await renderVentaItemsUI(posPedidoItemsBodyEl, configuracionImpuestos);
         formFinalizarVentaEl.reset();
         document.getElementById('feedback-descuento-restaurante').textContent = '';
+        setRestauranteDraftStatus('Venta registrada. El borrador del pedido se limpió automáticamente.', 'success');
+
+        try {
+            await imprimirTicketOperacion({
+                supabase: currentSupabaseInstance,
+                hotelId: currentHotelId,
+                documentLabel: 'Ticket POS Restaurante',
+                reference: ventaId,
+                clientName: nombreClienteTemporal,
+                items: carritoImpresion,
+                subtotal: carritoImpresion.reduce((acc, item) => acc + Number(item.total || 0), 0),
+                discount: montoDescontado,
+                taxes: montoImpuesto,
+                total: montoTotalVenta,
+                payments: pagos.map((pago) => ({
+                    label: metodosPagoCache.find((metodo) => metodo.id === pago.metodo_pago_id)?.nombre || 'Método',
+                    amount: pago.monto
+                })),
+                notes: configuracionImpuestos?.nombre ? `Impuesto aplicado: ${configuracionImpuestos.nombre}.` : ''
+            });
+        } catch (printError) {
+            console.warn('[Restaurante] No se pudo imprimir el ticket POS:', printError);
+        }
 
     } catch (error) {
         console.error("Error completo al finalizar venta:", error);

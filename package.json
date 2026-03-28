@@ -3,6 +3,7 @@
     "schema:snapshot": "node scripts/fetch-supabase-schema-snapshot.js",
     "schema:baseline": "node scripts/build-supabase-baseline.js",
     "rls:audit": "node scripts/generate-rls-audit.js",
+    "check:syntax": "node scripts/check-syntax.js",
     "test": "node --test \"tests/**/*.test.cjs\""
   },
   "dependencies": {

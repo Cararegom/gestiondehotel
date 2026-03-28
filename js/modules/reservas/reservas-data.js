@@ -16,7 +16,7 @@ export async function cargarHabitaciones({
 
   const { data: rooms, error } = await supabase
     .from('habitaciones')
-    .select('id, nombre, tipo, estado, precio, capacidad_base, capacidad_maxima, precio_huesped_adicional, precio_1_persona, precio_2_personas')
+    .select('id, nombre, tipo, estado, precio, capacidad_base, capacidad_maxima, precio_huesped_adicional, precio_1_persona, precio_2_personas, tipo_habitacion_id')
     .eq('hotel_id', hotelId)
     .eq('activo', true)
     .order('nombre', { ascending: true });
@@ -51,6 +51,7 @@ export async function cargarHabitaciones({
         data-capacidad-base="${room.capacidad_base || 2}"
         data-capacidad-maxima="${capMax}"
         data-precio-extra="${room.precio_huesped_adicional || 0}"
+        data-tipo-habitacion-id="${room.tipo_habitacion_id || ''}"
         ${disabledAttribute}
       >
         ${room.nombre} (${formatCurrency(room.precio_2_personas || room.precio, state.configHotel?.moneda_local_simbolo || '$')})${statusLabel}
@@ -177,7 +178,10 @@ export async function loadInitialData({
         nombre_impuesto_principal,
         moneda_local_simbolo,
         moneda_codigo_iso_info,
-        moneda_decimales_info
+        moneda_decimales_info,
+        minutos_tolerancia_llegada,
+        minutos_alerta_reserva,
+        minutos_alerta_checkout
       `)
       .eq('hotel_id', hotelId)
       .single();
@@ -199,6 +203,9 @@ export async function loadInitialData({
       state.configHotel.moneda_decimales_info = config.moneda_decimales_info !== null
         ? String(config.moneda_decimales_info)
         : '0';
+      state.configHotel.minutos_tolerancia_llegada = Number(config.minutos_tolerancia_llegada) || 60;
+      state.configHotel.minutos_alerta_reserva = Number(config.minutos_alerta_reserva) || 120;
+      state.configHotel.minutos_alerta_checkout = Number(config.minutos_alerta_checkout) || 30;
     } else {
       console.warn(`[Reservas] No se encontro configuracion para el hotel ${hotelId}. Usando valores predeterminados.`);
     }
@@ -210,6 +217,28 @@ export async function loadInitialData({
       showError(ui.feedbackDiv, 'Error critico: No se pudo cargar la configuracion del hotel.');
     }
     ui.togglePaymentFieldsVisibility(state.configHotel.cobro_al_checkin);
+  }
+
+  try {
+    const { data: pricingRules, error: pricingRulesError } = await supabase
+      .from('reglas_tarifas')
+      .select('*')
+      .eq('hotel_id', hotelId)
+      .eq('activo', true)
+      .order('prioridad', { ascending: false });
+
+    if (pricingRulesError) {
+      console.warn('[Reservas] No se pudieron cargar las reglas de tarifa dinamica:', pricingRulesError.message);
+      state.pricingRules = [];
+      state.pricingRulesAvailable = false;
+    } else {
+      state.pricingRules = pricingRules || [];
+      state.pricingRulesAvailable = true;
+    }
+  } catch (error) {
+    console.warn('[Reservas] Carga de reglas dinamicas omitida:', error.message);
+    state.pricingRules = [];
+    state.pricingRulesAvailable = false;
   }
 
   await Promise.all([

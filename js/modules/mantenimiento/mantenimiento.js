@@ -1,5 +1,6 @@
 import { showLoading, showError } from '../../uiUtils.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
+import { getEvidenceAcceptString, uploadEvidenceFiles } from '../../services/evidenceUploadService.js';
 
 let mantenimientoSubscription = null;
 let supabaseInstance = null;
@@ -12,6 +13,13 @@ const TASK_TYPES = {
 const OPEN_TASK_STATES = ['pendiente', 'en_progreso'];
 const CLOSED_TASK_STATES = ['completada', 'cancelada'];
 const PROGRAMMED_TASK_MARKER = '[PROGRAMADO]';
+const TASK_FREQUENCY_LABELS = {
+  unica: 'Unica',
+  diaria: 'Diaria',
+  semanal: 'Semanal',
+  mensual: 'Mensual',
+  personalizada: 'Personalizada'
+};
 
 export async function mount(container, supabase, currentUser, hotelId) {
   supabaseInstance = supabase;
@@ -102,6 +110,17 @@ function normalizeTaskType(tipo) {
   return tipo === TASK_TYPES.programado ? TASK_TYPES.programado : TASK_TYPES.bloqueante;
 }
 
+function normalizeTaskFrequency(frecuencia) {
+  const normalized = String(frecuencia || 'unica');
+  return Object.prototype.hasOwnProperty.call(TASK_FREQUENCY_LABELS, normalized)
+    ? normalized
+    : 'unica';
+}
+
+function getTaskFrequencyLabel(frecuencia) {
+  return TASK_FREQUENCY_LABELS[normalizeTaskFrequency(frecuencia)] || 'Unica';
+}
+
 function hasProgrammedTaskMarker(value) {
   return String(value ?? '').includes(PROGRAMMED_TASK_MARKER);
 }
@@ -126,8 +145,10 @@ function normalizeTaskRecord(task) {
   return {
     ...task,
     tipo: markerPresent ? TASK_TYPES.programado : normalizeTaskType(task.tipo),
+    frecuencia: normalizeTaskFrequency(task.frecuencia),
     titulo: stripProgrammedTaskMarker(task.titulo),
-    descripcion: stripProgrammedTaskMarker(task.descripcion)
+    descripcion: stripProgrammedTaskMarker(task.descripcion),
+    adjuntos: Array.isArray(task.adjuntos) ? task.adjuntos.filter(Boolean) : []
   };
 }
 
@@ -228,9 +249,16 @@ function renderResumen(container, tareas) {
   const bloqueantes = openTasks.filter((task) => isBlockingTaskType(task.tipo));
   const programadas = openTasks.filter((task) => !isBlockingTaskType(task.tipo));
   const completadas = (tareas || []).filter((task) => task.estado === 'completada');
+  const preventivas = openTasks.filter((task) => normalizeTaskFrequency(task.frecuencia) !== 'unica');
+  const hoy = new Date();
+  const preventivasVencidas = preventivas.filter((task) => {
+    if (!task.fecha_programada) return false;
+    const fechaProgramada = new Date(`${task.fecha_programada}T23:59:59`);
+    return !Number.isNaN(fechaProgramada.getTime()) && fechaProgramada.getTime() < hoy.getTime();
+  });
 
   resumen.innerHTML = `
-    <div class="grid gap-3 sm:grid-cols-3">
+    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <div class="rounded-2xl border border-red-200 bg-red-50 p-4">
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Bloqueantes abiertas</p>
         <p class="mt-2 text-3xl font-bold text-red-700">${bloqueantes.length}</p>
@@ -245,6 +273,11 @@ function renderResumen(container, tareas) {
         <p class="text-xs font-semibold uppercase tracking-[0.18em] text-green-600">Completadas</p>
         <p class="mt-2 text-3xl font-bold text-green-700">${completadas.length}</p>
         <p class="mt-1 text-xs text-green-600">Historial resuelto con seguimiento.</p>
+      </div>
+      <div class="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Preventivo real</p>
+        <p class="mt-2 text-3xl font-bold text-blue-700">${preventivas.length}</p>
+        <p class="mt-1 text-xs text-blue-600">${preventivasVencidas.length > 0 ? `${preventivasVencidas.length} vencida(s) por ejecutar.` : 'Sin preventivos vencidos.'}</p>
       </div>
     </div>
   `;
@@ -272,6 +305,61 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function renderAttachmentLinks(attachments = []) {
+  if (!attachments.length) {
+    return '<span class="text-xs text-slate-400">Sin adjuntos</span>';
+  }
+
+  return attachments.map((attachment, index) => `
+    <a
+      href="${escapeHtml(attachment.url || '#')}"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="inline-flex items-center rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-100"
+    >
+      ${attachment.kind === 'image' ? 'Captura' : 'Archivo'} ${index + 1}
+    </a>
+  `).join('');
+}
+
+function renderEditableAttachmentList(attachments = []) {
+  if (!attachments.length) {
+    return '<p class="text-xs text-slate-500">Sin adjuntos guardados.</p>';
+  }
+
+  return `
+    <div class="space-y-2">
+      ${attachments.map((attachment, index) => `
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <a href="${escapeHtml(attachment.url || '#')}" target="_blank" rel="noopener noreferrer" class="truncate font-semibold text-blue-700 hover:text-blue-900">
+            ${escapeHtml(attachment.name || `Adjunto ${index + 1}`)}
+          </a>
+          <button type="button" class="mant-remove-attachment rounded-full bg-rose-100 px-2 py-1 font-semibold text-rose-700 hover:bg-rose-200" data-index="${index}">
+            Quitar
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderSelectedFilesPreview(files = []) {
+  if (!files.length) {
+    return '<p class="text-xs text-slate-500">Puedes adjuntar capturas, PDF o archivos de apoyo.</p>';
+  }
+
+  return `
+    <div class="space-y-2">
+      ${files.map((file) => `
+        <div class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+          <span class="truncate pr-3">${escapeHtml(file.name)}</span>
+          <strong>${escapeHtml(`${(Number(file.size || 0) / 1024 / 1024).toFixed(2)} MB`)}</strong>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 async function renderTareas(container, supabase, hotelId, currentUser) {
   const list = container.querySelector('#mant-list');
   if (!list) return;
@@ -296,7 +384,7 @@ async function renderTareas(container, supabase, hotelId, currentUser) {
 
   let query = supabase
     .from('tareas_mantenimiento')
-    .select('id, habitacion_id, titulo, descripcion, prioridad, estado, tipo, fecha_programada, fecha_completada, asignada_a, creado_en')
+    .select('id, habitacion_id, titulo, descripcion, prioridad, estado, tipo, fecha_programada, fecha_completada, asignada_a, creado_en, adjuntos, frecuencia, ultima_realizacion')
     .eq('hotel_id', hotelId);
 
   if (estadoFiltro) {
@@ -362,12 +450,19 @@ async function renderTareas(container, supabase, hotelId, currentUser) {
               <td class="px-3 py-2">
                 <p class="font-medium text-slate-800">${task.titulo || '-'}</p>
                 <p class="mt-1 text-xs text-slate-500">${task.descripcion ? escapeHtml(task.descripcion).slice(0, 90) : 'Sin descripcion'}</p>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <span class="rounded-full border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-600">Frecuencia: ${escapeHtml(getTaskFrequencyLabel(task.frecuencia))}</span>
+                  ${renderAttachmentLinks(task.adjuntos || [])}
+                </div>
               </td>
               <td class="px-3 py-2">${task.habitacion_id ? (habMap.get(task.habitacion_id) || 'N/A') : 'General'}</td>
               <td class="px-3 py-2 text-center">${renderPrioridad(task.prioridad, true)}</td>
               <td class="px-3 py-2 text-center">${renderEstado(task.estado, true)}</td>
               <td class="px-3 py-2">${task.fecha_programada ? new Date(task.fecha_programada).toLocaleDateString() : 'Sin fecha'}</td>
-              <td class="px-3 py-2">${task.creado_en ? new Date(task.creado_en).toLocaleString() : ''}</td>
+              <td class="px-3 py-2">
+                <p>${task.creado_en ? new Date(task.creado_en).toLocaleString() : ''}</p>
+                ${task.ultima_realizacion ? `<p class="mt-1 text-xs text-slate-500">Ultima: ${new Date(task.ultima_realizacion).toLocaleString()}</p>` : ''}
+              </td>
               <td class="px-3 py-2 text-center">
                 <select class="accion-select rounded-lg border bg-slate-50 px-2 py-1" data-id="${task.id}">
                   <option value="">Accion...</option>
@@ -411,6 +506,83 @@ function getTaskTypeHelpHtml(tipo) {
   return 'Cerrar habitacion: al guardar la tarea como pendiente o en progreso, la habitacion pasa a mantenimiento.';
 }
 
+function calculateNextScheduledDate(task) {
+  const frecuencia = normalizeTaskFrequency(task?.frecuencia);
+  if (!['diaria', 'semanal', 'mensual'].includes(frecuencia)) return null;
+
+  const baseDate = task?.fecha_completada
+    ? new Date(task.fecha_completada)
+    : task?.fecha_programada
+      ? new Date(`${task.fecha_programada}T12:00:00`)
+      : new Date();
+
+  if (Number.isNaN(baseDate.getTime())) return null;
+
+  const nextDate = new Date(baseDate);
+  if (frecuencia === 'diaria') nextDate.setDate(nextDate.getDate() + 1);
+  if (frecuencia === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
+  if (frecuencia === 'mensual') nextDate.setMonth(nextDate.getMonth() + 1);
+
+  return nextDate.toISOString().slice(0, 10);
+}
+
+async function ensureNextPreventiveTask({ supabase, task }) {
+  const frecuencia = normalizeTaskFrequency(task?.frecuencia);
+  if (!['diaria', 'semanal', 'mensual'].includes(frecuencia)) return;
+  if (task?.estado !== 'completada') return;
+
+  const nextDate = calculateNextScheduledDate(task);
+  if (!nextDate) return;
+
+  let existingQuery = supabase
+    .from('tareas_mantenimiento')
+    .select('id')
+    .eq('hotel_id', task.hotel_id)
+    .eq('titulo', task.titulo)
+    .in('estado', OPEN_TASK_STATES)
+    .eq('frecuencia', frecuencia)
+    .eq('fecha_programada', nextDate);
+
+  existingQuery = task.habitacion_id
+    ? existingQuery.eq('habitacion_id', task.habitacion_id)
+    : existingQuery.is('habitacion_id', null);
+
+  const { data: existingTask, error: existingError } = await existingQuery.maybeSingle();
+
+  if (existingError && existingError.code !== 'PGRST116') {
+    console.error('No se pudo verificar la siguiente tarea preventiva:', existingError);
+    return;
+  }
+
+  if (existingTask?.id) return;
+
+  const preventivePayload = {
+    hotel_id: task.hotel_id,
+    titulo: task.titulo,
+    descripcion: task.descripcion || null,
+    estado: 'pendiente',
+    tipo: task.tipo === TASK_TYPES.programado ? null : task.tipo,
+    frecuencia,
+    fecha_programada: nextDate,
+    fecha_completada: null,
+    ultima_realizacion: task.fecha_completada || new Date().toISOString(),
+    creada_por: task.creada_por || task.realizada_por || task.asignada_a || null,
+    asignada_a: task.asignada_a || null,
+    habitacion_id: task.habitacion_id || null,
+    prioridad: Number(task.prioridad) || 0,
+    adjuntos: []
+  };
+
+  const payloadToInsert = task.tipo === TASK_TYPES.programado
+    ? buildProgrammedCompatibilityPayload(preventivePayload)
+    : preventivePayload;
+
+  const { error: insertError } = await supabase.from('tareas_mantenimiento').insert(payloadToInsert);
+  if (insertError) {
+    console.error('No se pudo programar la siguiente tarea preventiva:', insertError);
+  }
+}
+
 export async function showModalTarea(container, supabase, hotelId, currentUser, tarea = null) {
   let modalTargetContainer = container.querySelector('#mant-modal');
   if (!modalTargetContainer) {
@@ -437,6 +609,7 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
   const taskTypeHelp = openedFromSelector
     ? 'Elige si deseas cerrar la habitacion para mantenimiento o dejarla funcionando mientras dejas anotado el trabajo pendiente.'
     : getTaskTypeHelpHtml(taskType);
+  let persistedAttachments = Array.isArray(normalizedTask?.adjuntos) ? [...normalizedTask.adjuntos] : [];
 
   modalTargetContainer.innerHTML = `
     <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -506,6 +679,17 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
               <input name="fecha_programada" type="date" class="form-control w-full rounded-lg border-gray-300 p-2" value="${normalizedTask?.fecha_programada?.split('T')[0] || ''}">
             </div>
 
+            <div>
+              <label class="mb-1 block text-sm font-semibold">Frecuencia preventiva</label>
+              <select name="frecuencia" class="form-control w-full rounded-lg border-gray-300 p-2">
+                <option value="unica" ${normalizeTaskFrequency(normalizedTask?.frecuencia) === 'unica' ? 'selected' : ''}>Unica</option>
+                <option value="diaria" ${normalizeTaskFrequency(normalizedTask?.frecuencia) === 'diaria' ? 'selected' : ''}>Diaria</option>
+                <option value="semanal" ${normalizeTaskFrequency(normalizedTask?.frecuencia) === 'semanal' ? 'selected' : ''}>Semanal</option>
+                <option value="mensual" ${normalizeTaskFrequency(normalizedTask?.frecuencia) === 'mensual' ? 'selected' : ''}>Mensual</option>
+                <option value="personalizada" ${normalizeTaskFrequency(normalizedTask?.frecuencia) === 'personalizada' ? 'selected' : ''}>Personalizada</option>
+              </select>
+            </div>
+
             <div class="md:col-span-2">
               <label class="mb-1 block text-sm font-semibold">Titulo <span class="text-red-500">*</span></label>
               <input type="text" name="titulo" class="form-control w-full rounded-lg border-gray-300 p-2" value="${escapeHtml(normalizedTask?.titulo || '')}" required>
@@ -515,6 +699,27 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
           <div class="mb-5">
             <label class="mb-1 block text-sm font-semibold">Descripcion</label>
             <textarea name="descripcion" class="form-control min-h-[90px] w-full rounded-lg border-gray-300 p-2">${escapeHtml(normalizedTask?.descripcion || '')}</textarea>
+          </div>
+
+          <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div class="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+              <div>
+                <label class="block text-sm font-semibold text-slate-800">Adjuntar capturas o archivos</label>
+                <p class="text-xs text-slate-500">Sirve para dejar evidencia del dano, repuestos, fotos del estado o instrucciones de trabajo.</p>
+              </div>
+              <span class="rounded-full bg-blue-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-blue-700">Hasta 12 MB por archivo</span>
+            </div>
+            <div class="mt-4">
+              <input id="mant-adjuntos" type="file" multiple accept="${getEvidenceAcceptString()}" class="block w-full rounded-xl border border-dashed border-slate-300 bg-white px-4 py-3 text-sm text-slate-600">
+            </div>
+            <div class="mt-4">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Adjuntos guardados</p>
+              <div id="mant-adjuntos-guardados">${renderEditableAttachmentList(persistedAttachments)}</div>
+            </div>
+            <div class="mt-4">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Nuevos archivos seleccionados</p>
+              <div id="mant-adjuntos-nuevos">${renderSelectedFilesPreview([])}</div>
+            </div>
           </div>
 
           <button type="submit" class="w-full rounded-lg bg-blue-600 py-3 text-lg font-bold text-white shadow-lg transition hover:bg-blue-700">
@@ -533,6 +738,29 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
 
   const typeSelect = modalTargetContainer.querySelector('#mant-tipo-tarea');
   const typeHelp = modalTargetContainer.querySelector('#mant-task-type-help');
+  const attachmentsInput = modalTargetContainer.querySelector('#mant-adjuntos');
+  const persistedAttachmentsContainer = modalTargetContainer.querySelector('#mant-adjuntos-guardados');
+  const newAttachmentsContainer = modalTargetContainer.querySelector('#mant-adjuntos-nuevos');
+
+  const rerenderPersistedAttachments = () => {
+    if (!persistedAttachmentsContainer) return;
+    persistedAttachmentsContainer.innerHTML = renderEditableAttachmentList(persistedAttachments);
+    persistedAttachmentsContainer.querySelectorAll('.mant-remove-attachment').forEach((button) => {
+      button.addEventListener('click', () => {
+        const index = Number(button.dataset.index);
+        persistedAttachments = persistedAttachments.filter((_, currentIndex) => currentIndex !== index);
+        rerenderPersistedAttachments();
+      });
+    });
+  };
+
+  attachmentsInput?.addEventListener('change', () => {
+    if (newAttachmentsContainer) {
+      newAttachmentsContainer.innerHTML = renderSelectedFilesPreview(Array.from(attachmentsInput.files || []));
+    }
+  });
+
+  rerenderPersistedAttachments();
   typeSelect?.addEventListener('change', () => {
     if (typeHelp) {
       typeHelp.textContent = getTaskTypeHelpHtml(typeSelect.value);
@@ -550,15 +778,20 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
         }
       : null;
 
-    const dataToSave = {
-      ...formData,
-      prioridad: Number(formData.prioridad),
-      asignada_a: formData.asignada_a || null,
-      habitacion_id: formData.habitacion_id || null,
-      fecha_programada: formData.fecha_programada || null,
-      tipo: normalizeTaskType(formData.tipo),
-      fecha_completada: formData.estado === 'completada' ? new Date().toISOString() : null
-    };
+      const dataToSave = {
+        ...formData,
+        prioridad: Number(formData.prioridad),
+        asignada_a: formData.asignada_a || null,
+        habitacion_id: formData.habitacion_id || null,
+        fecha_programada: formData.fecha_programada || null,
+        tipo: normalizeTaskType(formData.tipo),
+        frecuencia: normalizeTaskFrequency(formData.frecuencia),
+        fecha_completada: formData.estado === 'completada' ? new Date().toISOString() : null,
+        ultima_realizacion: formData.estado === 'completada'
+          ? new Date().toISOString()
+          : (normalizedTask?.ultima_realizacion || null),
+        adjuntos: [...persistedAttachments]
+      };
 
     if (!dataToSave.asignada_a || !String(dataToSave.titulo || '').trim()) {
       alert("Los campos 'Encargado' y 'Titulo' son obligatorios.");
@@ -566,6 +799,18 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
     }
 
     try {
+      const uploadedAttachments = await uploadEvidenceFiles({
+        supabase,
+        hotelId,
+        userId: currentUser?.id,
+        files: Array.from(attachmentsInput?.files || []),
+        scope: 'mantenimiento'
+      });
+
+      if (uploadedAttachments.length) {
+        dataToSave.adjuntos = [...dataToSave.adjuntos, ...uploadedAttachments];
+      }
+
       const persistTask = async (payload) => {
         if (normalizedTask?.id) {
           const { data, error } = await supabase
@@ -603,6 +848,15 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
       }
 
       tareaResult = normalizeTaskRecord(tareaResult);
+
+      await ensureNextPreventiveTask({
+        supabase,
+        task: {
+          ...tareaResult,
+          hotel_id: hotelId,
+          creada_por: normalizedTask?.creada_por || currentUser?.id || null
+        }
+      });
 
       await syncTaskOperationalImpact({
         supabase,
@@ -755,6 +1009,7 @@ async function cambiarEstadoTarea(container, supabase, hotelId, tarea, currentUs
     ...tarea,
     estado: nuevoEstado,
     fecha_completada: nuevoEstado === 'completada' ? new Date().toISOString() : null,
+    ultima_realizacion: nuevoEstado === 'completada' ? new Date().toISOString() : (tarea.ultima_realizacion || null),
     tipo: normalizeTaskType(tarea.tipo)
   };
 
@@ -762,7 +1017,8 @@ async function cambiarEstadoTarea(container, supabase, hotelId, tarea, currentUs
     .from('tareas_mantenimiento')
     .update({
       estado: updatedTask.estado,
-      fecha_completada: updatedTask.fecha_completada
+      fecha_completada: updatedTask.fecha_completada,
+      ultima_realizacion: updatedTask.ultima_realizacion
     })
     .eq('id', tarea.id);
 
@@ -772,6 +1028,15 @@ async function cambiarEstadoTarea(container, supabase, hotelId, tarea, currentUs
   }
 
   try {
+    await ensureNextPreventiveTask({
+      supabase,
+      task: {
+        ...tarea,
+        ...updatedTask,
+        hotel_id: hotelId
+      }
+    });
+
     await syncTaskOperationalImpact({
       supabase,
       task: updatedTask,
@@ -859,6 +1124,7 @@ function imprimirTareasPendientes(tareas, habMap, userMap, roomName = null) {
       <td>${escapeHtml(task.titulo || '-')}</td>
       <td>${escapeHtml(task.habitacion_id ? (habMap.get(task.habitacion_id) || 'N/A') : 'General')}</td>
       <td>${escapeHtml(renderTipo(task.tipo, false))}</td>
+      <td>${escapeHtml(getTaskFrequencyLabel(task.frecuencia))}</td>
       <td>${escapeHtml(renderPrioridad(task.prioridad, false))}</td>
       <td>${escapeHtml(renderEstado(task.estado, false))}</td>
       <td>${escapeHtml(userMap.get(task.asignada_a) || 'No asignado')}</td>
@@ -896,8 +1162,9 @@ function imprimirTareasPendientes(tareas, habMap, userMap, roomName = null) {
             <tr>
               <th>Titulo</th>
               <th>Habitacion</th>
-              <th>Tipo</th>
-              <th>Prioridad</th>
+          <th>Tipo</th>
+          <th>Frecuencia</th>
+          <th>Prioridad</th>
               <th>Estado</th>
               <th>Encargado</th>
               <th>Fecha programada</th>

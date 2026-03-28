@@ -1,6 +1,7 @@
 // js/modules/dashboard/dashboard.js
 import { showAppFeedback, clearAppFeedback, formatDateTime, formatCurrency } from '../../uiUtils.js';
 import { escapeHtml } from '../../security.js';
+import { getReservaToleranceStatus } from '../reservas/reservas-operacion.js';
 
 let chartRevenueInstance = null;
 let chartOcupacionInstance = null;
@@ -143,6 +144,269 @@ function renderPriorityStrip(containerEl, kpis, checkins, checkouts) {
       <p class="mt-2 text-sm text-slate-500">${card.helper}</p>
     </article>
   `).join('');
+}
+
+function getAlertAccentClasses(severity) {
+  switch (severity) {
+    case 'critical':
+      return {
+        border: 'border-red-200',
+        bg: 'bg-red-50/90',
+        pill: 'bg-red-100 text-red-700',
+        icon: 'bg-red-100 text-red-700'
+      };
+    case 'warning':
+      return {
+        border: 'border-amber-200',
+        bg: 'bg-amber-50/90',
+        pill: 'bg-amber-100 text-amber-700',
+        icon: 'bg-amber-100 text-amber-700'
+      };
+    case 'info':
+      return {
+        border: 'border-blue-200',
+        bg: 'bg-blue-50/90',
+        pill: 'bg-blue-100 text-blue-700',
+        icon: 'bg-blue-100 text-blue-700'
+      };
+    default:
+      return {
+        border: 'border-slate-200',
+        bg: 'bg-slate-50/90',
+        pill: 'bg-slate-100 text-slate-700',
+        icon: 'bg-slate-100 text-slate-700'
+      };
+  }
+}
+
+function renderOperationalAlerts(containerEl, alerts = []) {
+  if (!containerEl || !isMounted) return;
+
+  const board = containerEl.querySelector('#dashboard-alerts-board');
+  if (!board) return;
+
+  if (!alerts.length) {
+    board.innerHTML = `
+      <div class="rounded-[26px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-sm">
+        <div class="flex items-start gap-3">
+          <span class="rounded-2xl bg-emerald-100 px-3 py-2 text-lg text-emerald-700">OK</span>
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Operacion al dia</p>
+            <h3 class="mt-2 text-lg font-bold text-slate-900">Sin alertas criticas por ahora</h3>
+            <p class="mt-2 text-sm text-slate-600">No hay no-shows sugeridos, salidas vencidas ni tareas urgentes que esten frenando la operacion.</p>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  board.innerHTML = `
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+      ${alerts.map((alert) => {
+        const accents = getAlertAccentClasses(alert.severity);
+        const contextPills = (alert.context || []).map((item) => `
+          <span class="rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${accents.pill}">
+            ${escapeHtml(item)}
+          </span>
+        `).join('');
+
+        return `
+          <article class="rounded-[26px] border ${accents.border} ${accents.bg} p-5 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex items-start gap-3">
+                <span class="rounded-2xl px-3 py-2 text-lg font-bold ${accents.icon}">${escapeHtml(alert.icon || '!')}</span>
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">${escapeHtml(alert.category || 'Alerta')}</p>
+                  <h3 class="mt-2 text-lg font-bold text-slate-900">${escapeHtml(alert.title || 'Seguimiento operativo')}</h3>
+                </div>
+              </div>
+              ${alert.count != null ? `<span class="rounded-full border border-white/80 bg-white/80 px-3 py-1 text-sm font-black text-slate-800">${escapeHtml(String(alert.count))}</span>` : ''}
+            </div>
+            <p class="mt-3 text-sm leading-6 text-slate-600">${escapeHtml(alert.message || '')}</p>
+            ${contextPills ? `<div class="mt-4 flex flex-wrap gap-2">${contextPills}</div>` : ''}
+            ${alert.route ? `
+              <div class="mt-4">
+                <button type="button" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50" data-navegar="${escapeHtml(alert.route)}">
+                  ${escapeHtml(alert.cta || 'Abrir modulo')}
+                </button>
+              </div>
+            ` : ''}
+          </article>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function loadOperationalAlerts(hotelId, supabaseInstance) {
+  const now = new Date();
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999).toISOString();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+  const alerts = [];
+
+  const [
+    { data: config },
+    { data: reservasPendientes },
+    { data: reservasActivas },
+    { data: tareasAbiertas },
+    { data: habitacionesLimpieza },
+    { data: waitlistPendiente },
+    { data: inspeccionesRecientes }
+  ] = await Promise.all([
+    supabaseInstance
+      .from('configuracion_hotel')
+      .select('minutos_tolerancia_llegada, minutos_alerta_reserva, minutos_alerta_checkout')
+      .eq('hotel_id', hotelId)
+      .maybeSingle(),
+    supabaseInstance
+      .from('reservas')
+      .select('id, cliente_nombre, fecha_inicio, fecha_fin, estado, habitaciones(nombre)')
+      .eq('hotel_id', hotelId)
+      .in('estado', ['reservada', 'confirmada'])
+      .lte('fecha_inicio', endOfToday),
+    supabaseInstance
+      .from('reservas')
+      .select('id, cliente_nombre, fecha_inicio, fecha_fin, estado, habitaciones(nombre)')
+      .eq('hotel_id', hotelId)
+      .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+      .lte('fecha_fin', endOfToday),
+    supabaseInstance
+      .from('tareas_mantenimiento')
+      .select('id, titulo, estado, tipo, frecuencia, fecha_programada, habitaciones(nombre)')
+      .eq('hotel_id', hotelId)
+      .in('estado', ['pendiente', 'en_progreso'])
+      .order('fecha_programada', { ascending: true }),
+    supabaseInstance
+      .from('habitaciones')
+      .select('id, nombre')
+      .eq('hotel_id', hotelId)
+      .eq('estado', 'limpieza'),
+    supabaseInstance
+      .from('lista_espera_reservas')
+      .select('id, cliente_nombre, fecha_inicio, prioridad')
+      .eq('hotel_id', hotelId)
+      .eq('estado', 'pendiente')
+      .order('fecha_inicio', { ascending: true })
+      .limit(8),
+    supabaseInstance
+      .from('inspecciones_limpieza')
+      .select('id, puntaje, creado_en, habitaciones(nombre)')
+      .eq('hotel_id', hotelId)
+      .lte('puntaje', 3)
+      .order('creado_en', { ascending: false })
+      .limit(5)
+  ]);
+
+  const toleranceConfig = {
+    minutos_tolerancia_llegada: Number(config?.minutos_tolerancia_llegada) || 60,
+    minutos_alerta_reserva: Number(config?.minutos_alerta_reserva) || 120,
+    minutos_alerta_checkout: Number(config?.minutos_alerta_checkout) || 30
+  };
+
+  const noShowSuggested = (reservasPendientes || []).filter((reserva) => {
+    const status = getReservaToleranceStatus(reserva, toleranceConfig, now);
+    return status.level === 'no_show_sugerido';
+  });
+
+  if (noShowSuggested.length > 0) {
+    alerts.push({
+      severity: 'critical',
+      category: 'Reservas',
+      icon: 'NS',
+      title: 'Reservas con no-show sugerido',
+      count: noShowSuggested.length,
+      message: 'Estas reservas ya superaron la tolerancia definida para la llegada y conviene revisarlas antes de que sigan bloqueando habitacion.',
+      context: noShowSuggested.slice(0, 3).map((item) => `${item.cliente_nombre || 'Cliente'} · ${item.habitaciones?.nombre || 'Hab.'}`),
+      route: '#/reservas',
+      cta: 'Revisar reservas'
+    });
+  }
+
+  const lateCheckouts = (reservasActivas || []).filter((reserva) => {
+    const checkoutDate = reserva?.fecha_fin ? new Date(reserva.fecha_fin) : null;
+    if (!(checkoutDate instanceof Date) || Number.isNaN(checkoutDate.getTime())) return false;
+    const diffMinutes = Math.round((now.getTime() - checkoutDate.getTime()) / 60000);
+    return diffMinutes > toleranceConfig.minutos_alerta_checkout;
+  });
+
+  if (lateCheckouts.length > 0) {
+    alerts.push({
+      severity: 'warning',
+      category: 'Check-out',
+      icon: 'CO',
+      title: 'Salidas vencidas con seguimiento',
+      count: lateCheckouts.length,
+      message: 'Hay habitaciones que ya superaron la tolerancia del checkout y necesitan cierre, extension o verificacion de saldo.',
+      context: lateCheckouts.slice(0, 3).map((item) => `${item.cliente_nombre || 'Cliente'} · ${item.habitaciones?.nombre || 'Hab.'}`),
+      route: '#/mapa-habitaciones',
+      cta: 'Abrir mapa hotel'
+    });
+  }
+
+  const preventivasAbiertas = (tareasAbiertas || []).filter((tarea) => String(tarea.frecuencia || 'unica') !== 'unica');
+  if (preventivasAbiertas.length > 0) {
+    alerts.push({
+      severity: 'info',
+      category: 'Mantenimiento',
+      icon: 'MP',
+      title: 'Preventivos abiertos por programar o cerrar',
+      count: preventivasAbiertas.length,
+      message: 'El plan preventivo ya tiene tareas abiertas. Conviene revisarlas para que no se queden sin ejecucion o seguimiento.',
+      context: preventivasAbiertas.slice(0, 3).map((item) => `${item.titulo || 'Preventivo'} · ${item.habitaciones?.nombre || 'General'}`),
+      route: '#/mantenimiento',
+      cta: 'Ir a mantenimiento'
+    });
+  }
+
+  if ((habitacionesLimpieza || []).length > 0) {
+    alerts.push({
+      severity: 'info',
+      category: 'Limpieza',
+      icon: 'L',
+      title: 'Habitaciones pendientes de limpieza',
+      count: habitacionesLimpieza.length,
+      message: 'Estas habitaciones siguen en estado limpieza y conviene cerrarlas para que vuelvan a estar disponibles en operacion.',
+      context: (habitacionesLimpieza || []).slice(0, 4).map((item) => item.nombre || 'Habitacion'),
+      route: '#/limpieza',
+      cta: 'Revisar limpieza'
+    });
+  }
+
+  if ((waitlistPendiente || []).length > 0) {
+    alerts.push({
+      severity: 'warning',
+      category: 'Lista de espera',
+      icon: 'LE',
+      title: 'Clientes esperando habitacion',
+      count: waitlistPendiente.length,
+      message: 'Hay clientes en lista de espera que ya pueden requerir seguimiento o una reasignacion inteligente desde reservas.',
+      context: (waitlistPendiente || []).slice(0, 3).map((item) => `${item.cliente_nombre || 'Cliente'} · Prioridad ${item.prioridad || 1}`),
+      route: '#/reservas',
+      cta: 'Abrir reservas'
+    });
+  }
+
+  if ((inspeccionesRecientes || []).length > 0) {
+    alerts.push({
+      severity: 'warning',
+      category: 'Inspeccion',
+      icon: 'IN',
+      title: 'Limpiezas con observaciones recientes',
+      count: inspeccionesRecientes.length,
+      message: 'Las ultimas inspecciones registraron puntajes bajos. Conviene revisar observaciones y reforzar estandar de limpieza.',
+      context: (inspeccionesRecientes || []).slice(0, 3).map((item) => `${item.habitaciones?.nombre || 'Habitacion'} · Puntaje ${item.puntaje}/5`),
+      route: '#/limpieza',
+      cta: 'Ver limpieza'
+    });
+  }
+
+  return alerts
+    .sort((a, b) => {
+      const weight = { critical: 0, warning: 1, info: 2, neutral: 3 };
+      return (weight[a.severity] ?? 9) - (weight[b.severity] ?? 9);
+    })
+    .slice(0, 6);
 }
 
 function updateCardContent(containerEl, cardId, value, comparisonValue = null, isCurrency = false, isLoading = false, customText = null) {
@@ -452,6 +716,8 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
     updateCardContent(containerEl, 'card-ocupacion', ocupacionRate, null, false, false, ocupacionText);
 
     renderPriorityStrip(containerEl, kpis, rpcData.checkins || [], rpcData.checkouts || []);
+    const alerts = await loadOperationalAlerts(hotelId, supabaseInstance);
+    renderOperationalAlerts(containerEl, alerts);
     renderChecklist(containerEl, 'list-next-checkins', rpcData.checkins || [], 'check-in');
     renderChecklist(containerEl, 'list-next-checkouts', rpcData.checkouts || [], 'check-out');
     return true;
@@ -460,6 +726,7 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
     console.error("[Dashboard] Error general en loadDashboardPageData:", err);
     if (isMounted && mainErrorDiv) showAppFeedback(mainErrorDiv, `Error al cargar datos principales: ${err.message}`, 'error');
     renderPriorityStrip(containerEl, {}, [], []);
+    renderOperationalAlerts(containerEl, []);
     renderChecklist(containerEl, 'list-next-checkins', [], 'check-in');
     renderChecklist(containerEl, 'list-next-checkouts', [], 'check-out');
     ['card-reservas-activas', 'card-ingresos-hoy', 'card-ocupacion', 'card-ventas-tienda'].forEach(id => {
@@ -535,6 +802,21 @@ export async function mount(container, supabaseInstance, currentUser) {
       <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-9 w-16 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-40 animate-pulse rounded bg-slate-100"></div></article>
       <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-9 w-16 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-40 animate-pulse rounded bg-slate-100"></div></article>
       <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-9 w-16 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-40 animate-pulse rounded bg-slate-100"></div></article>
+    </section>
+    <section class="mb-6">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Alertas automaticas</p>
+          <h2 class="text-2xl font-black tracking-tight text-slate-900">Radar operativo</h2>
+        </div>
+        <button type="button" class="text-sm font-semibold text-blue-600 hover:text-blue-700" data-navegar="#/soporte">Ir a soporte</button>
+      </div>
+      <div id="dashboard-alerts-board" class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <article class="rounded-[26px] border border-slate-200 bg-slate-50/80 p-5 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-6 w-52 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-full animate-pulse rounded bg-slate-100"></div></article>
+          <article class="rounded-[26px] border border-slate-200 bg-slate-50/80 p-5 shadow-sm"><div class="h-3 w-28 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-6 w-52 animate-pulse rounded bg-slate-200"></div><div class="mt-3 h-3 w-full animate-pulse rounded bg-slate-100"></div></article>
+        </div>
+      </div>
     </section>
     <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 mb-6 dashboard-cards">
       <article id="card-reservas-activas" class="dashboard-card group cursor-pointer overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg" data-navegar="#/reservas">

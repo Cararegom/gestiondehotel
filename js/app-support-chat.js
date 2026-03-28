@@ -630,6 +630,16 @@ export async function initInternalSupportChat(user, hotel) {
   }
 }
 
+export async function openInternalSupportChat() {
+  if (!supportChatState.mounted || !supportChatState.elements) {
+    return false;
+  }
+
+  openSupportChat();
+  await initializeSupportWidget();
+  return true;
+}
+
 export function destroyInternalSupportChat() {
   closeSupportChat();
 

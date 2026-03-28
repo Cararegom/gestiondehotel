@@ -1,8 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
   const SUPABASE_FUNCTIONS_BASE = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1';
   const CHATKIT_SESSION_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/chatkit-session`;
+  const LANDING_TRACK_EVENT_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/landing-track-event`;
+  const LANDING_SAVE_LEAD_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/landing-save-lead`;
   const CHATKIT_DOMAIN_KEY = 'domain_pk_69c15fef533c819795015e543f83ff950af2fea964c34d54';
   const LANDING_CHAT_VISITOR_KEY = 'gestionhotel.sales_chat_visitor_id';
+  const LANDING_SESSION_KEY = 'gestionhotel.landing_session_id';
+  const LANDING_UTM_KEY = 'gestionhotel.landing_utm_first_touch';
 
   const testimonials = [
     {
@@ -162,6 +166,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const status = document.getElementById('sales-chat-status');
   const fallback = document.getElementById('sales-chat-fallback');
   const chatElement = document.getElementById('landing-sales-chat');
+  const leadToggle = document.getElementById('sales-chat-lead-toggle');
+  const leadForm = document.getElementById('sales-chat-lead-form');
+  const leadFeedback = document.getElementById('sales-chat-lead-feedback');
 
   const salesChatState = {
     initialized: false,
@@ -171,13 +178,139 @@ document.addEventListener('DOMContentLoaded', () => {
   let cachedClientSecret = null;
   let clientSecretPromise = null;
 
-  function getLandingVisitorId() {
-    const storedId = window.localStorage.getItem(LANDING_CHAT_VISITOR_KEY);
-    if (storedId) return storedId;
+  function ensureStorageValue(storage, key, prefix) {
+    const storedValue = storage.getItem(key);
+    if (storedValue) return storedValue;
 
-    const generatedId = `landing_${crypto.randomUUID()}`;
-    window.localStorage.setItem(LANDING_CHAT_VISITOR_KEY, generatedId);
-    return generatedId;
+    const generatedValue = `${prefix}_${crypto.randomUUID()}`;
+    storage.setItem(key, generatedValue);
+    return generatedValue;
+  }
+
+  function getLandingVisitorId() {
+    return ensureStorageValue(window.localStorage, LANDING_CHAT_VISITOR_KEY, 'landing');
+  }
+
+  function getLandingSessionId() {
+    return ensureStorageValue(window.sessionStorage, LANDING_SESSION_KEY, 'session');
+  }
+
+  function getFirstTouchUtm() {
+    const params = new URLSearchParams(window.location.search);
+    const currentUtm = {
+      utm_source: params.get('utm_source') || '',
+      utm_medium: params.get('utm_medium') || '',
+      utm_campaign: params.get('utm_campaign') || '',
+      utm_term: params.get('utm_term') || '',
+      utm_content: params.get('utm_content') || ''
+    };
+
+    const hasCurrentData = Object.values(currentUtm).some(Boolean);
+    if (hasCurrentData) {
+      window.localStorage.setItem(LANDING_UTM_KEY, JSON.stringify(currentUtm));
+      return currentUtm;
+    }
+
+    try {
+      return JSON.parse(window.localStorage.getItem(LANDING_UTM_KEY) || '{}');
+    } catch (_) {
+      return {};
+    }
+  }
+
+  async function postLandingPayload(endpoint, payload, { keepalive = false } = {}) {
+    return fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      keepalive,
+      body: JSON.stringify(payload)
+    });
+  }
+
+  function trackLandingEvent(eventName, metadata = {}, { keepalive = false } = {}) {
+    const utm = getFirstTouchUtm();
+    return postLandingPayload(LANDING_TRACK_EVENT_ENDPOINT, {
+      eventName,
+      source: 'landing',
+      visitorId: getLandingVisitorId(),
+      sessionId: getLandingSessionId(),
+      pagePath: `${window.location.pathname}${window.location.hash || ''}`,
+      referrer: document.referrer || '',
+      ...utm,
+      metadata
+    }, { keepalive }).catch((error) => {
+      console.warn(`No se pudo registrar el evento ${eventName}:`, error);
+    });
+  }
+
+  function setLeadFeedback(message, isError = false) {
+    if (!leadFeedback) return;
+    leadFeedback.hidden = !message;
+    leadFeedback.textContent = message || '';
+    leadFeedback.className = `sales-chat-lead-feedback ${isError ? 'is-error' : 'is-success'}`;
+  }
+
+  function setLeadFormExpanded(isExpanded) {
+    if (!leadForm || !leadToggle) return;
+    leadForm.hidden = !isExpanded;
+    leadToggle.setAttribute('aria-expanded', String(isExpanded));
+    leadToggle.textContent = isExpanded
+      ? 'Ocultar formulario de contacto'
+      : 'Quiero que me contacten';
+  }
+
+  function bindLandingConversionTracking() {
+    trackLandingEvent('page_view', {
+      title: document.title,
+      host: window.location.hostname
+    }, { keepalive: true });
+
+    monedaSwitch?.addEventListener('change', () => {
+      trackLandingEvent('pricing_currency_changed', {
+        currency: monedaSwitch.checked ? 'COP' : 'USD'
+      }, { keepalive: true });
+    });
+
+    periodoSwitch?.addEventListener('change', () => {
+      trackLandingEvent('pricing_period_changed', {
+        period: periodoSwitch.checked ? 'annual' : 'monthly'
+      }, { keepalive: true });
+    });
+
+    document.querySelectorAll('[data-bs-target="#registroModal"]').forEach((element) => {
+      element.addEventListener('click', () => {
+        trackLandingEvent('open_registration_modal', {
+          cta_label: (element.textContent || '').trim().slice(0, 120)
+        }, { keepalive: true });
+      });
+    });
+
+    document.querySelectorAll('a[href="#pricing"]').forEach((element) => {
+      element.addEventListener('click', () => {
+        trackLandingEvent('view_pricing_section', {
+          cta_label: (element.textContent || '').trim().slice(0, 120)
+        }, { keepalive: true });
+      });
+    });
+
+    document.querySelectorAll('a[href="#demo-video"]').forEach((element) => {
+      element.addEventListener('click', () => {
+        trackLandingEvent('open_demo_section', {
+          cta_label: (element.textContent || '').trim().slice(0, 120)
+        }, { keepalive: true });
+      });
+    });
+
+    document.querySelectorAll('.plan-button-select').forEach((element) => {
+      element.addEventListener('click', () => {
+        trackLandingEvent('select_plan_from_landing', {
+          plan_id: element.getAttribute('data-plan-id') || '',
+          cta_label: (element.textContent || '').trim().slice(0, 120)
+        }, { keepalive: true });
+      });
+    });
   }
 
   function setLauncherExpanded(isExpanded) {
@@ -415,9 +548,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       salesChatState.initialized = true;
       startChatKitCustomization();
+      trackLandingEvent('sales_chat_ready', {
+        source: 'chatkit',
+        prompts: 4
+      }, { keepalive: true });
       status.hidden = true;
     } catch (error) {
       console.error('Error inicializando el chat comercial:', error);
+      trackLandingEvent('sales_chat_failed', {
+        message: error.message || 'Error desconocido'
+      }, { keepalive: true });
       if (!silent) {
         status.hidden = true;
         fallback.hidden = false;
@@ -432,17 +572,97 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (shouldOpen) {
       openSalesChat();
+      trackLandingEvent('sales_chat_opened', { origin: 'launcher' }, { keepalive: true });
       await initializeSalesChat();
       return;
     }
 
+    trackLandingEvent('sales_chat_closed', { origin: 'launcher' }, { keepalive: true });
     closeSalesChat();
   });
 
-  closeButton?.addEventListener('click', closeSalesChat);
+  closeButton?.addEventListener('click', () => {
+    trackLandingEvent('sales_chat_closed', { origin: 'close_button' }, { keepalive: true });
+    closeSalesChat();
+  });
+
+  leadToggle?.addEventListener('click', () => {
+    const nextExpandedState = leadForm?.hidden ?? true;
+    setLeadFormExpanded(nextExpandedState);
+    if (nextExpandedState) {
+      trackLandingEvent('sales_chat_lead_form_opened', { source: 'chat_panel' }, { keepalive: true });
+    }
+  });
+
+  leadForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const submitButton = leadForm.querySelector('button[type="submit"]');
+    if (!submitButton) return;
+
+    const fullName = leadForm.elements.full_name?.value?.trim() || '';
+    const businessName = leadForm.elements.business_name?.value?.trim() || '';
+    const email = leadForm.elements.email?.value?.trim() || '';
+    const whatsapp = leadForm.elements.whatsapp?.value?.trim() || '';
+    const country = leadForm.elements.country?.value?.trim() || '';
+    const roomCount = leadForm.elements.room_count?.value || '';
+    const notes = leadForm.elements.notes?.value?.trim() || '';
+
+    if (!email && !whatsapp) {
+      setLeadFeedback('Comparte al menos un correo o WhatsApp para poder contactarte.', true);
+      return;
+    }
+
+    submitButton.disabled = true;
+    submitButton.textContent = 'Guardando...';
+    setLeadFeedback('');
+
+    try {
+      const response = await postLandingPayload(LANDING_SAVE_LEAD_ENDPOINT, {
+        source: 'chatbot_comercial',
+        visitorId: getLandingVisitorId(),
+        sessionId: getLandingSessionId(),
+        fullName,
+        businessName,
+        email,
+        whatsapp,
+        country,
+        roomCount: roomCount ? Number(roomCount) : null,
+        interest: 'contacto_comercial',
+        pagePath: `${window.location.pathname}${window.location.hash || ''}`,
+        referrer: document.referrer || '',
+        notes,
+        metadata: {
+          channel: 'chat_panel',
+          panel_open: !(panel?.hidden ?? true)
+        },
+        ...getFirstTouchUtm()
+      });
+
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || 'No fue posible guardar tu contacto.');
+      }
+
+      setLeadFeedback('Perfecto. Ya guardamos tus datos para que el equipo comercial te contacte.', false);
+      trackLandingEvent('sales_chat_lead_saved', {
+        has_email: Boolean(email),
+        has_whatsapp: Boolean(whatsapp),
+        room_count: roomCount ? Number(roomCount) : null
+      }, { keepalive: true });
+      leadForm.reset();
+      setLeadFormExpanded(false);
+    } catch (error) {
+      console.error('Error guardando lead comercial:', error);
+      setLeadFeedback(error.message || 'No pudimos guardar tu contacto.', true);
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Quiero que me contacten';
+    }
+  });
 
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && panel && !panel.hidden) {
+      trackLandingEvent('sales_chat_closed', { origin: 'escape' }, { keepalive: true });
       closeSalesChat();
     }
   });
@@ -461,4 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
   } else {
     window.setTimeout(warmUpChat, 1200);
   }
+
+  bindLandingConversionTracking();
+  setLeadFormExpanded(false);
 });

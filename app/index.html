@@ -2,9 +2,6 @@
 <html lang="es">
 
 <head>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf-autotable.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <meta charset="UTF-8">
   <title>Gestión de Hotel</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,6 +10,7 @@
   <meta name="description" content="Sistema de Gestión Hotelera - Tu hotel bajo control.">
 
   <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="/icons/192x192.png">
   <link rel="preconnect" href="https://cdn.platform.openai.com" crossorigin>
   <link rel="preload" as="script" href="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js" crossorigin>
 
@@ -77,6 +75,7 @@
 </head>
 
 <body>
+  <a class="skip-link" href="#app-container">Saltar al contenido principal</a>
   <!-- Google Tag Manager (noscript) -->
   <noscript>
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK" height="0" width="0"
@@ -104,7 +103,7 @@
         <img src="/icons/logo.jpeg" alt="Gestión de Hotel"
           style="max-width:140px; width:100%; height:auto; display:block; border-radius: 10px;" />
       </a>
-      <nav id="main-nav" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
+      <nav id="main-nav" aria-label="Navegación principal" class="flex-grow w-full mt-4 overflow-y-auto" style="max-height: calc(100vh - 220px);"></nav>
       <div id="user-info-nav" class="mt-auto w-full"></div>
     </aside>
 
@@ -115,6 +114,7 @@
       <div id="app-global-feedback-banner"
         class="app-global-feedback fixed top-5 right-5 p-4 rounded-md shadow-lg z-50 text-sm" style="display:none;">
       </div>
+      <div id="app-pwa-hub" class="app-pwa-hub" hidden></div>
 
       <main id="app-container" class="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6">
         <p class="text-center text-gray-500">Cargando aplicación...</p>
@@ -135,24 +135,13 @@
     class="fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 z-[1050] hidden">
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
-  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js"></script>
-  <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.js"></script>
-  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
+  <script src="https://unpkg.com/jspdf@latest/dist/jspdf.umd.min.js" defer></script>
+  <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.js" defer></script>
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js" defer></script>
   <script src="https://cdn.platform.openai.com/deployments/chatkit/chatkit.js" defer></script>
 
   <script type="module" src="/js/main.js"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('../js/sw.js')
-          .then(reg => console.log('[PWA] SW registrado:', reg.scope))
-          .catch(err => console.error('[PWA] Error al registrar SW:', err));
-      });
-    }
-  </script>
-
-
 </body>
 
 </html>

@@ -1,5 +1,7 @@
 import { turnoService } from '../../services/turnoService.js';
 import { showError } from '../../uiUtils.js';
+import { clearPOSDraft, loadPOSDraft, savePOSDraft } from '../../services/posDraftService.js';
+import { imprimirTicketOperacion } from '../../services/thermalPrintService.js';
 import { tiendaState } from './state.js';
 import { formatCurrency, getTabContentEl } from './helpers.js';
 
@@ -10,6 +12,93 @@ let posHabitacionesOcupadas = [];
 let posCarrito = [];
 let posFiltro = '';
 let ventaPOSenCurso = false;
+let posDraftRestored = false;
+
+function getPOSDraftContext() {
+  return {
+    hotelId: tiendaState.currentHotelId,
+    userId: tiendaState.currentUser?.id
+  };
+}
+
+function savePOSDraftState() {
+  const { hotelId, userId } = getPOSDraftContext();
+  if (!hotelId || !userId) return;
+
+  savePOSDraft('tienda', hotelId, userId, {
+    carrito: posCarrito,
+    filtro: posFiltro,
+    discountCode: document.getElementById('codigoDescuentoInput')?.value || '',
+    mode: document.getElementById('modoPOS')?.value || 'inmediato',
+    metodoPagoId: document.getElementById('metodoPOS')?.value || '',
+    habitacionId: document.getElementById('habitacionPOS')?.value || '',
+    clienteTemporal: document.getElementById('clientePOS')?.value || ''
+  });
+}
+
+function setPOSDraftStatus(message = '', tone = 'info') {
+  const statusEl = document.getElementById('posDraftStatus');
+  if (!statusEl) return;
+  if (!message) {
+    statusEl.style.display = 'none';
+    statusEl.innerHTML = '';
+    return;
+  }
+
+  const palette = tone === 'success'
+    ? 'background:#ecfdf5;border:1px solid #a7f3d0;color:#047857;'
+    : tone === 'warning'
+      ? 'background:#fff7ed;border:1px solid #fdba74;color:#c2410c;'
+      : 'background:#eff6ff;border:1px solid #bfdbfe;color:#1d4ed8;';
+
+  statusEl.style.display = 'block';
+  statusEl.style.cssText = `display:block;margin:0 0 16px;padding:10px 12px;border-radius:12px;font-size:0.9rem;font-weight:600;${palette}`;
+  statusEl.innerHTML = message;
+}
+
+function restorePOSDraftState() {
+  const { hotelId, userId } = getPOSDraftContext();
+  const draft = loadPOSDraft('tienda', hotelId, userId);
+  if (!draft?.payload) {
+    posDraftRestored = false;
+    setPOSDraftStatus('');
+    return;
+  }
+
+  const availableProducts = new Map(posProductos.map((product) => [product.id, product]));
+  posCarrito = (draft.payload.carrito || [])
+    .map((item) => {
+      const currentProduct = availableProducts.get(item.id);
+      if (!currentProduct) return null;
+      return {
+        ...currentProduct,
+        cantidad: Math.max(1, Math.min(Number(item.cantidad) || 1, currentProduct.stock_actual || 1))
+      };
+    })
+    .filter(Boolean);
+  posFiltro = draft.payload.filtro || '';
+  posDraftRestored = posCarrito.length > 0;
+
+  const buscadorEl = document.getElementById('buscadorPOS');
+  if (buscadorEl) buscadorEl.value = posFiltro;
+  const modeEl = document.getElementById('modoPOS');
+  if (modeEl && draft.payload.mode) modeEl.value = draft.payload.mode;
+  const metodoEl = document.getElementById('metodoPOS');
+  if (metodoEl && draft.payload.metodoPagoId) metodoEl.value = draft.payload.metodoPagoId;
+  const habitacionEl = document.getElementById('habitacionPOS');
+  if (habitacionEl && draft.payload.habitacionId) habitacionEl.value = draft.payload.habitacionId;
+  const clienteEl = document.getElementById('clientePOS');
+  if (clienteEl) clienteEl.value = draft.payload.clienteTemporal || '';
+  const codigoEl = document.getElementById('codigoDescuentoInput');
+  if (codigoEl) codigoEl.value = draft.payload.discountCode || '';
+
+  setPOSDraftStatus(
+    posDraftRestored
+      ? `Se recuperó un borrador guardado del carrito. Última actualización: ${new Date(draft.updatedAt || Date.now()).toLocaleString('es-CO')}.`
+      : '',
+    'info'
+  );
+}
 
 export async function cargarDatosPOS() {
   const { data: productos } = await tiendaState.currentSupabase
@@ -89,6 +178,7 @@ export async function renderPOS() {
         </div>
 
         <div style="padding:20px 22px 22px;">
+          <div id="posDraftStatus" style="display:none;"></div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
             <div style="font-weight:700;color:#0f172a;font-size:1rem;">Detalle del carrito</div>
             <button id="btnVaciarCarritoPOS" type="button" style="background:#fff1f2;color:#e11d48;border:1px solid #fecdd3;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer;font-size:0.88rem;">Vaciar</button>
@@ -141,6 +231,7 @@ export async function renderPOS() {
   buscadorPOSEl.oninput = (event) => {
     posFiltro = event.target.value.toLowerCase();
     renderProductosPOS();
+    savePOSDraftState();
   };
 
   const modoPOSEl = document.getElementById('modoPOS');
@@ -149,17 +240,23 @@ export async function renderPOS() {
     document.getElementById('metodoPOS').style.display = modo === 'inmediato' ? 'block' : 'none';
     document.getElementById('clientePOS').style.display = modo === 'inmediato' ? 'block' : 'none';
     document.getElementById('habitacionPOS').style.display = modo === 'habitacion' ? 'block' : 'none';
+    savePOSDraftState();
   };
-  modoPOSEl.dispatchEvent(new Event('change'));
 
-  renderProductosPOS();
-  renderCarritoPOS();
   renderMetodosPagoPOS();
   renderHabitacionesPOS();
+  restorePOSDraftState();
+  modoPOSEl.dispatchEvent(new Event('change'));
+  renderProductosPOS();
+  renderCarritoPOS();
 
   document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
   document.getElementById('btnAplicarDescuento').onclick = aplicarDescuentoPOS;
   document.getElementById('btnRemoverDescuento').onclick = removerDescuentoPOS;
+  document.getElementById('metodoPOS').onchange = savePOSDraftState;
+  document.getElementById('habitacionPOS').onchange = savePOSDraftState;
+  document.getElementById('clientePOS').oninput = savePOSDraftState;
+  document.getElementById('codigoDescuentoInput').oninput = savePOSDraftState;
   document.getElementById('btnVaciarCarritoPOS').onclick = () => {
     posCarrito = [];
     descuentoAplicado = null;
@@ -167,6 +264,10 @@ export async function renderPOS() {
     if (codigoInputEl) codigoInputEl.value = '';
     renderCarritoPOS();
   };
+
+  if (document.getElementById('codigoDescuentoInput')?.value) {
+    await aplicarDescuentoPOS();
+  }
 }
 
 function getDiscountableBase(discount, cart) {
@@ -429,6 +530,14 @@ function renderCarritoPOS() {
     btnRemover.style.display = 'none';
     codigoInput.disabled = false;
   }
+
+  if (!posCarrito.length) {
+    setPOSDraftStatus('');
+  } else if (posDraftRestored) {
+    setPOSDraftStatus('Borrador recuperado y listo para continuar.', 'info');
+  }
+
+  savePOSDraftState();
 }
 
 export function updateQtyPOS(id, val) {
@@ -616,6 +725,12 @@ async function mostrarModalPagoMixto(totalAPagar, callback) {
 
 async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo }) {
   const msgPOSEl = document.getElementById('msgPOS');
+  const carritoParaImpresion = posCarrito.map((item) => ({
+    nombre: item.nombre,
+    cantidad: item.cantidad,
+    precio: item.precio_venta,
+    total: item.cantidad * item.precio_venta
+  }));
   const subtotalVenta = posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
   let montoDescuento = 0;
   let totalVentaFinal = subtotalVenta;
@@ -724,9 +839,37 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
   posCarrito = [];
   descuentoAplicado = null;
   document.getElementById('codigoDescuentoInput').value = '';
+  posDraftRestored = false;
+  clearPOSDraft('tienda', tiendaState.currentHotelId, tiendaState.currentUser?.id);
   renderCarritoPOS();
   await cargarDatosPOS();
   renderProductosPOS();
+  setPOSDraftStatus('Venta registrada. El borrador del carrito se limpió automáticamente.', 'success');
+
+  try {
+    const paymentLabels = pagos.map((pago) => ({
+      label: posMetodosPago.find((metodo) => metodo.id === pago.metodo_pago_id)?.nombre || 'Metodo',
+      amount: pago.monto
+    }));
+    await imprimirTicketOperacion({
+      supabase: tiendaState.currentSupabase,
+      hotelId: tiendaState.currentHotelId,
+      documentLabel: modo === 'inmediato' ? 'Ticket POS Tienda' : 'Comprobante de consumo cargado',
+      reference: ventaId,
+      clientName: cliente_temporal || (habitacion_id ? posHabitacionesOcupadas.find((habitacion) => habitacion.id === habitacion_id)?.nombre : null),
+      meta: habitacion_id ? [{ label: 'Habitación', value: posHabitacionesOcupadas.find((habitacion) => habitacion.id === habitacion_id)?.nombre || '-' }] : [],
+      items: carritoParaImpresion,
+      subtotal: subtotalVenta,
+      discount: montoDescuento,
+      taxes: 0,
+      total: totalVentaFinal,
+      payments: paymentLabels,
+      notes: modo === 'habitacion' ? 'Consumo cargado a la cuenta de la habitación.' : ''
+    });
+  } catch (printError) {
+    console.warn('[POS Tienda] No se pudo imprimir el ticket:', printError);
+  }
+
   setTimeout(() => {
     msgPOSEl.textContent = '';
   }, 2500);
@@ -740,4 +883,5 @@ export function resetPOSState() {
   posCarrito = [];
   posFiltro = '';
   ventaPOSenCurso = false;
+  posDraftRestored = false;
 }

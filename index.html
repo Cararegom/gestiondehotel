@@ -1024,6 +1024,24 @@ Gestiona reservas, caja, limpieza, tienda, restaurante y mantenimiento desde un 
       <span>Escríbenos a <a href="mailto:support@gestiondehotel.com">support@gestiondehotel.com</a> y te ayudamos.</span>
     </div>
     <openai-chatkit id="landing-sales-chat"></openai-chatkit>
+    <section class="sales-chat-lead-strip" id="sales-chat-lead-strip">
+      <button type="button" id="sales-chat-lead-toggle" class="sales-chat-lead-strip__toggle" aria-expanded="false">
+        Quiero que me contacten
+      </button>
+      <form id="sales-chat-lead-form" class="sales-chat-lead-form" hidden>
+        <div class="sales-chat-lead-form__grid">
+          <input type="text" name="full_name" placeholder="Tu nombre" autocomplete="name">
+          <input type="text" name="business_name" placeholder="Hotel o negocio" autocomplete="organization">
+          <input type="email" name="email" placeholder="Correo" autocomplete="email" inputmode="email">
+          <input type="tel" name="whatsapp" placeholder="WhatsApp" autocomplete="tel">
+          <input type="text" name="country" placeholder="Pais o ciudad" autocomplete="address-level1">
+          <input type="number" name="room_count" placeholder="Habitaciones" min="0" step="1" inputmode="numeric">
+        </div>
+        <textarea name="notes" rows="2" placeholder="Cuéntanos qué quieres resolver o qué plan te interesa"></textarea>
+        <button type="submit" class="sales-chat-lead-form__submit">Quiero que me contacten</button>
+      </form>
+      <div id="sales-chat-lead-feedback" class="sales-chat-lead-feedback" hidden></div>
+    </section>
   </div>
 </section>
 

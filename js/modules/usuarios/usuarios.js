@@ -3,6 +3,9 @@ console.log(">>> usuarios.js cargado v3.0 (con turnos globales de 8/12h)");
 
 // Dependencias y variables globales del módulo
 import { supabase } from '../../supabaseClient.js';
+import { registrarAccionSensible } from '../../services/sensitiveAuditService.js';
+import { confirmDestructiveAction } from '../../services/destructiveConfirmationService.js';
+import { applyPermissionTemplate, getPermissionTemplates, suggestTemplateFromRoles } from '../../services/permissionTemplateService.js';
 
 let currentContainerEl = null;
 let currentModuleUser = null;
@@ -12,6 +15,10 @@ let rolesDisponiblesCache = [];
 let permisosDisponiblesCache = [];
 let moduleListeners = [];
 let activePlanDetails = null;
+
+function getRoleNamesFromSelection(selectEl) {
+  return Array.from(selectEl.selectedOptions || []).map((option) => option.textContent.trim()).filter(Boolean);
+}
 
 // ----------- Helpers para UI y feedback -----------
 
@@ -325,6 +332,7 @@ function crearModalPermisos() {
         modal.innerHTML = `
         <div class="bg-white rounded-xl min-w-[320px] max-w-md p-7 shadow-2xl">
             <h3 id="modal-permisos-title" class="text-xl font-bold text-gray-800 mb-4">Editar permisos</h3>
+            <div id="modal-permisos-templates" class="mb-4"></div>
             <form id="form-permisos-usuario">
             <div id="modal-lista-permisos" class="max-h-72 overflow-y-auto mb-6 pr-2"></div>
             <div class="flex gap-2 justify-end">
@@ -347,18 +355,54 @@ async function abrirModalPermisos(usuario) {
 
     document.getElementById('modal-permisos-title').textContent = `Permisos: ${usuario.nombre || usuario.correo}`;
     const listaDiv = document.getElementById('modal-lista-permisos');
+    const templatesDiv = document.getElementById('modal-permisos-templates');
     listaDiv.innerHTML = '<div class="text-center text-gray-500">Cargando permisos...</div>';
 
     if (!permisosDisponiblesCache.length) await cargarPermisosDisponibles();
-    const permisosUsuario = await cargarPermisosUsuario(usuario.id);
+    let permisosUsuario = await cargarPermisosUsuario(usuario.id);
 
-    listaDiv.innerHTML = permisosUsuario.map(p => `
+    const renderPermissions = () => {
+      listaDiv.innerHTML = permisosUsuario.map(p => `
         <label class="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-md">
         <input type="checkbox" name="permiso" value="${p.id}" ${p.checked ? 'checked' : ''} class="form-check-input h-4 w-4">
         <span class="font-medium text-gray-800">${p.nombre}</span>
         <span class="text-xs text-gray-500 ml-auto text-right">${p.descripcion || ''}</span>
         </label>
-    `).join('');
+      `).join('');
+    };
+
+    const templates = getPermissionTemplates(permisosDisponiblesCache).filter((template) => template.matchedPermissionIds.length > 0);
+    const suggestedTemplate = suggestTemplateFromRoles(usuario.roleNames || []);
+
+    templatesDiv.innerHTML = templates.length
+      ? `
+        <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <div class="flex items-center justify-between gap-3 mb-2">
+            <div>
+              <div class="text-sm font-semibold text-slate-800">Plantillas rápidas</div>
+              <div class="text-xs text-slate-500">Aplica una base sugerida y luego ajusta permisos puntuales.</div>
+            </div>
+            ${suggestedTemplate ? `<span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Sugerida: ${templates.find((template) => template.key === suggestedTemplate)?.label || 'Personalizada'}</span>` : ''}
+          </div>
+          <div class="flex flex-wrap gap-2">
+            ${templates.map((template) => `
+              <button type="button" class="button button-outline button-small" data-template-key="${template.key}">
+                ${template.label}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+      `
+      : '';
+
+    renderPermissions();
+
+    templatesDiv.querySelectorAll('[data-template-key]').forEach((button) => {
+      button.onclick = () => {
+        permisosUsuario = applyPermissionTemplate(permisosUsuario, button.dataset.templateKey);
+        renderPermissions();
+      };
+    });
 
     document.getElementById('cancelar-modal-permisos').onclick = () => {
         modal.style.display = 'none';
@@ -378,6 +422,17 @@ async function abrirModalPermisos(usuario) {
                 body: { usuario_id: usuario.id, permisos: permisosSeleccionados },
             });
             if (error) throw error;
+            await registrarAccionSensible({
+              supabase: currentSupabaseInstance,
+              hotelId: currentHotelId,
+              usuarioId: currentModuleUser?.id,
+              modulo: 'Usuarios',
+              accion: 'ACTUALIZAR_PERMISOS_USUARIO',
+              detalles: {
+                usuario_objetivo: usuario.nombre || usuario.correo,
+                permisos_activos: permisosSeleccionados.filter((permission) => permission.checked).length
+              }
+            });
             feedbackEl.style.color = '#16a34a';
             feedbackEl.textContent = 'Permisos actualizados con éxito';
             setTimeout(() => {
@@ -448,7 +503,7 @@ async function cargarYRenderizarUsuarios(tbodyEl, supabaseInstance, hotelIdParaC
           <button class="button button-outline button-small text-xs" data-accion="editar" data-id="${u.id}">Editar</button>
           <button class="button button-small text-xs ${u.activo ? 'button-warning' : 'button-success'}" data-accion="toggle-activo" data-id="${u.id}" data-estado-actual="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>
           <button class="button button-accent button-small text-xs" data-accion="reset-password" data-id="${u.id}" data-correo="${u.correo}">Reset Pass</button>
-          <button class="button button-outline button-small text-xs" style="color:#2563eb;border-color:#2563eb" data-accion="permisos" data-id="${u.id}" data-nombre="${u.nombre || ''}" data-correo="${u.correo}">Permisos</button>
+          <button class="button button-outline button-small text-xs" style="color:#2563eb;border-color:#2563eb" data-accion="permisos" data-id="${u.id}" data-nombre="${u.nombre || ''}" data-correo="${u.correo}" data-roles="${rolesNombres}">Permisos</button>
           <button class="button button-danger button-small text-xs" data-accion="eliminar" data-id="${u.id}" data-nombre="${u.nombre || u.correo}" ${u.id === currentModuleUser.id ? 'disabled' : ''}>Eliminar</button>
           </td>`;
       tbodyEl.appendChild(tr);
@@ -514,6 +569,19 @@ async function formSubmitHandler(event, formUsuarioEl, selectRolesEl, feedbackGl
     const rolesData = roles.map(rol_id => ({ usuario_id: usuarioId, rol_id, hotel_id: currentHotelId }));
     const { error: rolesError } = await currentSupabaseInstance.from('usuarios_roles').insert(rolesData);
     if (rolesError) throw rolesError;
+
+    await registrarAccionSensible({
+      supabase: currentSupabaseInstance,
+      hotelId: currentHotelId,
+      usuarioId: currentModuleUser?.id,
+      modulo: 'Usuarios',
+      accion: usuarioIdEdit ? 'ACTUALIZAR_USUARIO' : 'CREAR_USUARIO',
+      detalles: {
+        usuario_objetivo: nombre,
+        roles: getRoleNamesFromSelection(selectRolesEl),
+        activo
+      }
+    });
 
     showUsuariosFeedback(feedbackGlobalEl, usuarioIdEdit ? 'Usuario actualizado.' : 'Usuario creado.', 'success-indicator');
     await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
@@ -698,6 +766,16 @@ const tableClickHandler = async (event) => {
         const { error } = await currentSupabaseInstance.from('usuarios').update({ activo: !estadoActual }).eq('id', usuarioId);
         if (error) showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
         else {
+            await registrarAccionSensible({
+              supabase: currentSupabaseInstance,
+              hotelId: currentHotelId,
+              usuarioId: currentModuleUser?.id,
+              modulo: 'Usuarios',
+              accion: !estadoActual ? 'ACTIVAR_USUARIO' : 'DESACTIVAR_USUARIO',
+              detalles: {
+                usuario_id_objetivo: usuarioId
+              }
+            });
             showUsuariosFeedback(feedbackGlobalEl, `Usuario ${!estadoActual ? 'activado' : 'desactivado'}.`, 'success-indicator');
             await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
             await renderHorarioTurnosSemanal();
@@ -726,33 +804,50 @@ const tableClickHandler = async (event) => {
             if (error) {
                 showUsuariosFeedback(feedbackGlobalEl, `Error: ${error.message}`, 'error-indicator');
             } else {
+                await registrarAccionSensible({
+                  supabase: currentSupabaseInstance,
+                  hotelId: currentHotelId,
+                  usuarioId: currentModuleUser?.id,
+                  modulo: 'Usuarios',
+                  accion: 'RESET_PASSWORD_USUARIO',
+                  detalles: {
+                    correo_objetivo: email
+                  }
+                });
                 showUsuariosFeedback(feedbackGlobalEl, `Enlace de reseteo enviado a ${email}.`, 'success-indicator');
             }
         }
         // ▲▲▲ FIN DEL CAMBIO ▲▲▲
     } else if (accion === 'permisos') {
-        const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo };
+        const usuario = { id: usuarioId, nombre: button.dataset.nombre, correo: button.dataset.correo, roleNames: String(button.dataset.roles || '').split(',').map((value) => value.trim()).filter(Boolean) };
         await abrirModalPermisos(usuario);
     } 
     else if (accion === 'eliminar') {
         const nombreUsuario = button.dataset.nombre;
-        const confirmacion = await Swal.fire({
-            icon: 'error',
-            title: `¿Estás seguro de eliminar a ${nombreUsuario}?`,
-            html: "¡Esta acción es <strong>totalmente irreversible</strong>! Se borrará el acceso del usuario para siempre.",
-            showCancelButton: true,
-            confirmButtonText: 'Sí, eliminarlo',
-            cancelButtonText: 'No, cancelar',
-            confirmButtonColor: '#d33',
+        const confirmado = await confirmDestructiveAction({
+            title: `Eliminar a ${nombreUsuario}`,
+            html: 'Esta acción es <strong>totalmente irreversible</strong>. Se borrará el acceso del usuario y no se podrá recuperar desde la app.',
+            keyword: 'ELIMINAR',
+            confirmButtonText: 'Sí, eliminar usuario'
         });
 
-        if (confirmacion.isConfirmed) {
+        if (confirmado) {
             showUsuariosFeedback(feedbackGlobalEl, `Eliminando a ${nombreUsuario}...`, 'info-indicator', 0);
             try {
                 const { error } = await currentSupabaseInstance.functions.invoke('delete-user', {
                     body: { user_id: usuarioId },
                 });
                 if (error) throw new Error(error.message);
+                await registrarAccionSensible({
+                  supabase: currentSupabaseInstance,
+                  hotelId: currentHotelId,
+                  usuarioId: currentModuleUser?.id,
+                  modulo: 'Usuarios',
+                  accion: 'ELIMINAR_USUARIO',
+                  detalles: {
+                    usuario_objetivo: nombreUsuario
+                  }
+                });
                 showUsuariosFeedback(feedbackGlobalEl, `Usuario ${nombreUsuario} eliminado correctamente.`, 'success-indicator');
                 await cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId);
             } catch (err) {

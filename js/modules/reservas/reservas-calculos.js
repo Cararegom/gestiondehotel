@@ -1,4 +1,5 @@
 import { formatCurrency, formatDateTime } from '../../uiUtils.js';
+import { applyPricingRule } from './reservas-operacion.js';
 
 export function calculateFechasEstancia(
   fechaEntradaStr,
@@ -58,7 +59,10 @@ export function calculateMontos({
   precioLibreValor,
   tiemposEstanciaDisponibles = [],
   descuentoAplicado = null,
-  configHotel = {}
+  configHotel = {},
+  pricingRules = [],
+  origenReserva = 'directa',
+  fechaEntrada = null
 }) {
   if (!habitacionInfo) {
     return { errorMonto: 'Informacion de habitacion no disponible.' };
@@ -68,6 +72,7 @@ export function calculateMontos({
   let montoPorHuespedesAdicionales = 0;
   let montoDescontado = 0;
   let totalAntesDeImpuestos;
+  let appliedPricingRule = null;
 
   if (precioLibreActivado && typeof precioLibreValor === 'number' && precioLibreValor >= 0) {
     montoEstanciaBaseBruto = precioLibreValor;
@@ -99,6 +104,17 @@ export function calculateMontos({
       }
     }
 
+    const pricingResult = applyPricingRule(montoEstanciaBaseBruto, pricingRules, {
+      fechaEntrada,
+      origenReserva,
+      tipoDuracion,
+      habitacionId: habitacionInfo.id,
+      tipoHabitacionId: habitacionInfo.tipo_habitacion_id
+    });
+
+    montoEstanciaBaseBruto = pricingResult.adjustedBaseAmount;
+    appliedPricingRule = pricingResult.appliedRule;
+
     const totalAntesDeDescuento = montoEstanciaBaseBruto + montoPorHuespedesAdicionales;
     if (descuentoAplicado) {
       if (descuentoAplicado.tipo === 'fijo') {
@@ -128,6 +144,7 @@ export function calculateMontos({
     montoDescontado: Math.round(montoDescontado),
     montoImpuesto: Math.round(montoImpuestoCalculado),
     baseSinImpuestos: Math.round(baseImponibleFinal),
+    appliedPricingRule,
     errorMonto: null
   };
 }
@@ -162,6 +179,7 @@ export async function validateAndCalculateBooking({
     montoDescontado,
     montoImpuesto,
     baseSinImpuestos,
+    appliedPricingRule,
     errorMonto
   } = calculateMontos({
     habitacionInfo,
@@ -173,12 +191,16 @@ export async function validateAndCalculateBooking({
     precioLibreValor: parseFloat(formData.precio_libre_valor),
     tiemposEstanciaDisponibles: state.tiemposEstanciaDisponibles,
     descuentoAplicado: state.descuentoAplicado,
-    configHotel: state.configHotel
+    configHotel: state.configHotel,
+    pricingRules: state.pricingRules || [],
+    origenReserva: formData.origen_reserva || 'directa',
+    fechaEntrada
   });
 
   if (errorMonto) throw new Error(errorMonto);
 
   state.currentBookingTotal = baseSinImpuestos + montoImpuesto;
+  state.currentPricingRule = appliedPricingRule || null;
   if (typeof updateTotalDisplay === 'function') {
     updateTotalDisplay(montoDescontado);
   }
@@ -228,6 +250,10 @@ export async function validateAndCalculateBooking({
     const precioManualStr = `[PRECIO MANUAL: ${formatCurrency(parseFloat(formData.precio_libre_valor), state.configHotel?.moneda_local_simbolo)}]`;
     notasFinales = notasFinales ? `${precioManualStr} ${notasFinales}` : precioManualStr;
   }
+  if (appliedPricingRule?.label) {
+    const pricingStr = `[TARIFA DINAMICA: ${appliedPricingRule.label}]`;
+    notasFinales = notasFinales ? `${pricingStr} ${notasFinales}` : pricingStr;
+  }
 
   const datosReserva = {
     cliente_id: formData.cliente_id,
@@ -252,7 +278,7 @@ export async function validateAndCalculateBooking({
     descuento_aplicado_id: state.descuentoAplicado?.id || null,
     monto_descontado: montoDescontado,
     notas: notasFinales,
-    origen_reserva: 'directa',
+    origen_reserva: formData.origen_reserva || 'directa',
     id_temporal_o_final: state.isEditMode ? state.editingReservaId : `TEMP-${Date.now()}`
   };
 
@@ -262,5 +288,5 @@ export async function validateAndCalculateBooking({
     tipo_pago: formData.tipo_pago
   };
 
-  return { datosReserva, datosPago };
+  return { datosReserva, datosPago, appliedPricingRule };
 }

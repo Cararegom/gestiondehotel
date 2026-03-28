@@ -96,6 +96,14 @@ const LEGACY_TEXT_REPLACEMENTS = [
 
 const LEGACY_TEXT_PATTERN = /[ÂÃâð]/;
 const NORMALIZABLE_ATTRIBUTES = ['title', 'placeholder', 'aria-label', 'alt'];
+const LEGACY_WORD_REPAIRS = [
+  [/Habitaci[^\s()\-:,.;]*n/giu, 'Habitacion'],
+  [/Extensi[^\s()\-:,.;]*n/giu, 'Extension'],
+  [/Recepci[^\s()\-:,.;]*n/giu, 'Recepcion'],
+  [/Configuraci[^\s()\-:,.;]*n/giu, 'Configuracion'],
+  [/Informaci[^\s()\-:,.;]*n/giu, 'Informacion'],
+  [/Acci[^\s()\-:,.;]*n/giu, 'Accion']
+];
 
 export function normalizeLegacyText(value) {
   let normalized = String(value ?? '');
@@ -103,6 +111,10 @@ export function normalizeLegacyText(value) {
 
   for (const [legacyValue, cleanValue] of LEGACY_TEXT_REPLACEMENTS) {
     normalized = normalized.split(legacyValue).join(cleanValue);
+  }
+
+  for (const [legacyPattern, cleanValue] of LEGACY_WORD_REPAIRS) {
+    normalized = normalized.replace(legacyPattern, cleanValue);
   }
 
   return normalized;

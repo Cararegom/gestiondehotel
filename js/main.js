@@ -6,29 +6,7 @@ import { fetchTurnoActivo } from './services/turnoService.js';
 import { destroyMonitoring, initMonitoring, logMonitoringEvent } from './services/monitoringService.js';
 import { escapeHtml, installLegacyTextNormalizer } from './security.js';
 import { initInternalSupportChat, destroyInternalSupportChat } from './app-support-chat.js';
-
-// Importa tus módulos
-import * as Dashboard from './modules/dashboard/dashboard.js';
-import * as Reservas from './modules/reservas/reservas.js';
-import * as Habitaciones from './modules/habitaciones/habitaciones.js';
-import * as Caja from './modules/caja/caja.js';
-import * as Servicios from './modules/servicios/servicios.js';
-import * as Tienda from './modules/tienda/tienda.js';
-import * as Restaurante from './modules/restaurante/restaurante.js';
-import * as Usuarios from './modules/usuarios/usuarios.js';
-import * as Configuracion from './modules/configuracion/configuracion.js';
-import * as Reportes from './modules/reportes/reportes.js';
-import * as Limpieza from './modules/limpieza/limpieza.js';
-import * as Integraciones from './modules/integraciones/integraciones.js';
-import * as MapaHabitaciones from './modules/mapa-habitaciones/mapa-habitaciones.js';
-import * as NotificacionesPage from './modules/notificaciones/notificaciones.js';
-import * as Mantenimiento from './modules/mantenimiento/mantenimiento.js';
-import * as Descuentos from './modules/descuentos/descuentos.js';
-import * as Micuenta from './modules/micuenta/micuenta.js';
-import * as Clientes from './modules/clientes/clientes.js';
-import * as faq from './modules/faq/faq.js';
-import * as Bitacora from './modules/bitacora/bitacora.js';
-import * as OpsSaas from './modules/ops-saas/ops-saas.js';
+import { initPWAExperience } from './services/pwaService.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -48,31 +26,36 @@ let currentUserRole = null;
 let isSubscriptionFueraDeGracia = false;
 
 const routes = {
-  '/dashboard': { module: Dashboard, moduleKey: 'dashboard' },
-  '/reservas': { module: Reservas, moduleKey: 'reservas' },
-  '/habitaciones': { module: Habitaciones, moduleKey: 'habitaciones' },
-  '/mapa-habitaciones': { module: MapaHabitaciones, moduleKey: 'mapa-habitaciones' },
-  '/caja': { module: Caja, moduleKey: 'caja' },
-  '/clientes': { module: Clientes, moduleKey: 'clientes' },
-  '/servicios': { module: Servicios, moduleKey: 'servicios' },
-  '/tienda': { module: Tienda, moduleKey: 'tienda' },
-  '/restaurante': { module: Restaurante, moduleKey: 'restaurante' },
-  '/usuarios': { module: Usuarios, moduleKey: 'usuarios' },
-  '/configuracion': { module: Configuracion, moduleKey: 'configuracion' },
-  '/reportes': { module: Reportes, moduleKey: 'reportes' },
-  '/limpieza': { module: Limpieza, moduleKey: 'limpieza' },
-  '/integraciones': { module: Integraciones, moduleKey: 'integraciones' },
-  '/notificaciones': { module: NotificacionesPage, moduleKey: 'notificaciones_page' },
-  '/mantenimiento': { module: Mantenimiento, moduleKey: 'mantenimiento' },
-  '/descuentos': { module: Descuentos, moduleKey: 'descuentos' },
-  '/micuenta': { module: Micuenta, moduleKey: 'micuenta' },
-  '/faq': { module: faq, moduleKey: 'faq' },
-  '/bitacora': { module: Bitacora, moduleKey: 'bitacora' },
-  '/ops-saas': { module: OpsSaas, moduleKey: 'ops-saas' }
+  '/dashboard': { loadModule: () => import('./modules/dashboard/dashboard.js'), moduleKey: 'dashboard' },
+  '/reservas': { loadModule: () => import('./modules/reservas/reservas.js'), moduleKey: 'reservas' },
+  '/habitaciones': { loadModule: () => import('./modules/habitaciones/habitaciones.js'), moduleKey: 'habitaciones' },
+  '/mapa-habitaciones': { loadModule: () => import('./modules/mapa-habitaciones/mapa-habitaciones.js'), moduleKey: 'mapa-habitaciones' },
+  '/caja': { loadModule: () => import('./modules/caja/caja.js'), moduleKey: 'caja' },
+  '/clientes': { loadModule: () => import('./modules/clientes/clientes.js'), moduleKey: 'clientes' },
+  '/servicios': { loadModule: () => import('./modules/servicios/servicios.js'), moduleKey: 'servicios' },
+  '/tienda': { loadModule: () => import('./modules/tienda/tienda.js'), moduleKey: 'tienda' },
+  '/restaurante': { loadModule: () => import('./modules/restaurante/restaurante.js'), moduleKey: 'restaurante' },
+  '/usuarios': { loadModule: () => import('./modules/usuarios/usuarios.js'), moduleKey: 'usuarios' },
+  '/configuracion': { loadModule: () => import('./modules/configuracion/configuracion.js'), moduleKey: 'configuracion' },
+  '/reportes': { loadModule: () => import('./modules/reportes/reportes.js'), moduleKey: 'reportes' },
+  '/limpieza': { loadModule: () => import('./modules/limpieza/limpieza.js'), moduleKey: 'limpieza' },
+  '/integraciones': { loadModule: () => import('./modules/integraciones/integraciones.js'), moduleKey: 'integraciones' },
+  '/notificaciones': { loadModule: () => import('./modules/notificaciones/notificaciones.js'), moduleKey: 'notificaciones_page' },
+  '/mantenimiento': { loadModule: () => import('./modules/mantenimiento/mantenimiento.js'), moduleKey: 'mantenimiento' },
+  '/descuentos': { loadModule: () => import('./modules/descuentos/descuentos.js'), moduleKey: 'descuentos' },
+  '/micuenta': { loadModule: () => import('./modules/micuenta/micuenta.js'), moduleKey: 'micuenta' },
+  '/faq': { loadModule: () => import('./modules/faq/faq.js'), moduleKey: 'faq' },
+  '/bitacora': { loadModule: () => import('./modules/bitacora/bitacora.js'), moduleKey: 'bitacora' },
+  '/ops-saas': { loadModule: () => import('./modules/ops-saas/ops-saas.js'), moduleKey: 'ops-saas' },
+  '/soporte': { loadModule: () => import('./modules/soporte/soporte.js'), moduleKey: 'soporte' },
+  '/onboarding': { loadModule: () => import('./modules/onboarding/onboarding.js'), moduleKey: 'onboarding' },
+  '/sandbox': { loadModule: () => import('./modules/sandbox/sandbox.js'), moduleKey: 'sandbox' },
+  '/operacion-hoy': { loadModule: () => import('./modules/operacion-hoy/operacion-hoy.js'), moduleKey: 'operacion-hoy' }
 };
 
 const navLinksConfig = [
   { path: '#/dashboard', text: 'Dashboard', icon: '\u{1F4CA}', moduleKey: 'dashboard' },
+  { path: '#/operacion-hoy', text: 'Hoy en operación', icon: '\u{1F4CB}', moduleKey: 'operacion-hoy' },
   { path: '#/reservas', text: 'Reservas', icon: '\u{1F4C5}', moduleKey: 'reservas' },
   { path: '#/mapa-habitaciones', text: 'Mapa Hotel', icon: '\u{1F5FA}\uFE0F', moduleKey: 'mapa-habitaciones' },
   { path: '#/habitaciones', text: 'Habitaciones', icon: '\u{1F6AA}', moduleKey: 'habitaciones' },
@@ -83,17 +66,53 @@ const navLinksConfig = [
   { path: '#/restaurante', text: 'Restaurante', icon: '\u{1F37D}\uFE0F', moduleKey: 'restaurante' },
   { path: '#/limpieza', text: 'Limpieza', icon: '\u{1F9F9}', moduleKey: 'limpieza' },
   { path: '#/reportes', text: 'Reportes', icon: '\u{1F4C8}', moduleKey: 'reportes' },
+  { path: '#/soporte', text: 'Soporte', icon: '\u{1F6DF}\uFE0F', moduleKey: 'soporte' },
   { path: '#/mantenimiento', text: 'Mantenimiento', icon: '\u{1F6E0}\uFE0F', moduleKey: 'mantenimiento' },
   { path: '#/descuentos', text: 'Descuentos', icon: '\u{1F3F7}\uFE0F', moduleKey: 'descuentos' },
   { path: '#/usuarios', text: 'Usuarios', icon: '\u{1F465}', moduleKey: 'usuarios' },
   { path: '#/configuracion', text: 'Configuraci\u00F3n', icon: '\u2699\uFE0F', moduleKey: 'configuracion' },
   { path: '#/integraciones', text: 'Integraciones', icon: '\u{1F517}', moduleKey: 'integraciones' },
   { path: '#/notificaciones', text: 'Ver Notificaciones', icon: '\u{1F4DC}', moduleKey: 'notificaciones_page' },
+  { path: '#/onboarding', text: 'Primeros pasos', icon: '\u{1F6E0}\uFE0F', moduleKey: 'onboarding' },
+  { path: '#/sandbox', text: 'Sandbox', icon: '\u{1F9EA}', moduleKey: 'sandbox' },
   { path: '#/ops-saas', text: 'Consola SaaS', icon: '\u{1F3E2}', moduleKey: 'ops-saas', superadminOnly: true },
   { path: '#/bitacora?scope=soporte-global', text: 'Incidencias SaaS', icon: '\u{1F6DF}\uFE0F', moduleKey: 'bitacora', superadminOnly: true },
   { path: '#/micuenta', text: 'Mi cuenta', icon: '\u{1F6E1}\uFE0F', moduleKey: 'micuenta' },
   { path: '#/faq', text: 'FAQ', icon: '\u2753', moduleKey: 'faq' }
 ];
+
+const SUPERADMIN_EMAILS = new Set(['cararegom@gmail.com']);
+const superadminNavLinksConfig = [
+  { path: '#/ops-saas', text: 'Admin Panel', icon: '\u{1F3E2}', moduleKey: 'ops-saas' },
+  { path: '#/bitacora?scope=soporte-global', text: 'Incidencias SaaS', icon: '\u{1F6DF}\uFE0F', moduleKey: 'bitacora' },
+  { path: '#/soporte', text: 'Centro de Soporte', icon: '\u{1F4AC}', moduleKey: 'soporte' },
+  { path: '#/faq', text: 'FAQ', icon: '\u2753', moduleKey: 'faq' }
+];
+const superadminAllowedRoutes = new Set(['/ops-saas', '/bitacora', '/soporte', '/faq']);
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isWhitelistedSuperadminAccount(user, perfil = null) {
+  const email = normalizeEmail(
+    user?.email ||
+    perfil?.correo ||
+    user?.user_metadata?.email ||
+    user?.app_metadata?.email
+  );
+  return perfil?.rol === 'superadmin' || SUPERADMIN_EMAILS.has(email);
+}
+
+function buildSuperadminPlanDetails() {
+  return {
+    nombre: 'Superadmin SaaS',
+    funcionalidades: {
+      limite_habitaciones: 0,
+      modulos_permitidos: ['ops-saas', 'bitacora', 'soporte', 'faq']
+    }
+  };
+}
 
 function buildNavLinkElement(linkConfig) {
   const link = document.createElement('a');
@@ -109,6 +128,24 @@ function buildNavLinkElement(linkConfig) {
   return link;
 }
 
+function scheduleModuleWarmup(currentRole = null) {
+  const preloadRoutes = currentRole === 'superadmin'
+    ? ['/ops-saas', '/bitacora', '/soporte']
+    : ['/dashboard', '/operacion-hoy', '/reservas', '/mapa-habitaciones', '/caja', '/onboarding'];
+
+  const runner = () => {
+    preloadRoutes.forEach((path) => {
+      routes[path]?.loadModule?.().catch(() => {});
+    });
+  };
+
+  if (typeof window.requestIdleCallback === 'function') {
+    window.requestIdleCallback(runner, { timeout: 2500 });
+  } else {
+    window.setTimeout(runner, 1200);
+  }
+}
+
 function calculateSubscriptionExpiredStatus(hotel) {
   if (!hotel || !hotel.estado_suscripcion || (!hotel.suscripcion_fin && !hotel.trial_fin)) {
     return false;
@@ -116,7 +153,11 @@ function calculateSubscriptionExpiredStatus(hotel) {
   const fechaFinSusc = new Date(hotel.suscripcion_fin || hotel.trial_fin);
   const fechaFinMasGracia = new Date(fechaFinSusc);
   fechaFinMasGracia.setDate(fechaFinSusc.getDate() + 2);
-  return (new Date() > fechaFinMasGracia) && hotel.estado_suscripcion === 'vencido';
+  const graciaManualHasta = hotel.gracia_hasta ? new Date(hotel.gracia_hasta) : null;
+  const fechaLimite = graciaManualHasta && !Number.isNaN(graciaManualHasta.getTime()) && graciaManualHasta > fechaFinMasGracia
+    ? graciaManualHasta
+    : fechaFinMasGracia;
+  return (new Date() > fechaLimite) && hotel.estado_suscripcion === 'vencido';
 }
 
 async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
@@ -129,7 +170,7 @@ async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
   try {
     const { data: hotelData, error: hotelError } = await supabaseInstance
       .from('hoteles')
-      .select('id, nombre, plan, estado_suscripcion, suscripcion_fin, trial_fin, creado_por')
+      .select('id, nombre, plan, estado_suscripcion, suscripcion_fin, trial_fin, gracia_hasta, gracia_motivo, creado_por')
       .eq('id', hotelId)
       .single();
 
@@ -183,6 +224,14 @@ function renderNavigation(user) {
 
   if (!user) return;
 
+  if (currentUserRole === 'superadmin') {
+    superadminNavLinksConfig.forEach((linkConfig) => {
+      const a = buildNavLinkElement(linkConfig);
+      if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
+    });
+    return;
+  }
+
   let esAdminNavegacion = false;
   if (currentActiveHotel && user && currentUserRole) {
     esAdminNavegacion = (currentUserRole === 'admin' || currentUserRole === 'superadmin' || user.id === currentActiveHotel.creado_por);
@@ -201,7 +250,7 @@ function renderNavigation(user) {
 
     // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
     // Se añade la misma lista de módulos exentos que en el router.
-    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas'];
+    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy'];
 
     navLinksConfig.forEach(linkConfig => {
       if (linkConfig.adminOnly && !esAdminNavegacion) {
@@ -233,7 +282,9 @@ function updateUserInfo(user) {
   if (user) {
     const userEmail = user.email || '';
     const displayRol = currentUserRole
-      ? (currentUserRole.charAt(0).toUpperCase() + currentUserRole.slice(1))
+      ? (currentUserRole === 'superadmin'
+          ? 'Superadmin SaaS'
+          : (currentUserRole.charAt(0).toUpperCase() + currentUserRole.slice(1)))
       : (user.app_metadata?.rol || user.user_metadata?.rol || 'Usuario');
     /* Legacy template removed during security hardening.
       <div class="user-profile text-sm p-2 border-t border-gray-700 mt-auto">
@@ -351,7 +402,7 @@ async function router() {
       return;
     }
 
-    const path = window.location.hash.slice(1) || '/dashboard';
+    const path = window.location.hash.slice(1) || (currentUserRole === 'superadmin' ? '/ops-saas' : '/dashboard');
     const baseRoute = path.split('?')[0];
     const routeEntry = routes[baseRoute];
     const moduleKeyFromRoute = routeEntry?.moduleKey;
@@ -380,6 +431,13 @@ async function router() {
 
     const userForModule = getCurrentUser();
 
+    if (currentUserRole === 'superadmin' && !superadminAllowedRoutes.has(baseRoute)) {
+      window.location.hash = '#/ops-saas';
+      hideGlobalLoading();
+      routerBusy = false;
+      return;
+    }
+
     if (!userForModule && baseRoute !== '/login') {
       console.log("[Router] Usuario no autenticado. Redirigiendo a login.html.");
       hideGlobalLoading();
@@ -402,7 +460,7 @@ async function router() {
 
       // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
       // Creamos una lista de módulos que SIEMPRE deben estar accesibles.
-      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas'];
+      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy'];
 
       // Verificamos si el módulo actual está en la lista de exentos.
       const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
@@ -453,7 +511,9 @@ async function router() {
       }
     }
 
-    const moduleDefinition = routeEntry?.module;
+    const moduleDefinition = routeEntry?.loadModule
+      ? await routeEntry.loadModule()
+      : null;
 
     if (moduleDefinition) {
       if (typeof moduleDefinition.mount !== 'function') {
@@ -533,6 +593,8 @@ async function initializeApp() {
   userInfoNav = document.getElementById('user-info-nav');
   notificacionesCampanitaContainer = document.getElementById('notificaciones-campanita-container');
 
+  await initPWAExperience();
+
   if (!appContainer || !mainNav) {
     console.error("initializeApp: Faltan elementos HTML esenciales (app-container o main-nav). La aplicación no puede continuar.");
     if (document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Faltan elementos base de la aplicación. Revise los IDs #app-container y #main-nav en su HTML.</p>";
@@ -572,12 +634,14 @@ async function initializeApp() {
         .eq('id', appUser.id)
         .single();
 
-      if (perfilError) {
+      const esSuperadminWhitelisted = isWhitelistedSuperadminAccount(appUser, perfil);
+
+      if (perfilError && !esSuperadminWhitelisted) {
         console.error("onAuthStateChange: Error obteniendo perfil (hotel_id, rol):", perfilError.message);
         currentUserRole = "Usuario";
-      } else if (perfil) {
-        if (!hotelIdToLoad) hotelIdToLoad = perfil.hotel_id;
-        currentUserRole = perfil.rol || "Usuario";
+      } else if (perfil || esSuperadminWhitelisted) {
+        if (!hotelIdToLoad) hotelIdToLoad = perfil?.hotel_id || null;
+        currentUserRole = esSuperadminWhitelisted ? 'superadmin' : (perfil.rol || "Usuario");
       } else {
         console.warn("onAuthStateChange: No se encontró perfil de usuario en la tabla 'usuarios'.");
         currentUserRole = "Usuario";
@@ -585,7 +649,11 @@ async function initializeApp() {
 
       updateUserInfo(appUser);
 
-      if (hotelIdToLoad) {
+      if (currentUserRole === 'superadmin') {
+        currentActiveHotel = null;
+        currentActivePlanDetails = buildSuperadminPlanDetails();
+        isSubscriptionFueraDeGracia = false;
+      } else if (hotelIdToLoad) {
         await loadHotelAndPlanDetails(hotelIdToLoad, supabase);
         if (currentActiveHotel) {
           isSubscriptionFueraDeGracia = calculateSubscriptionExpiredStatus(currentActiveHotel);
@@ -621,7 +689,7 @@ async function initializeApp() {
       }
 
       // Precargar turno activo en memoria para evitar que se resetee al recargar
-      if (hotelIdToLoad && appUser) {
+      if (hotelIdToLoad && appUser && currentUserRole !== 'superadmin') {
         try {
           await fetchTurnoActivo(supabase, hotelIdToLoad, appUser.id);
         } catch (e) {
@@ -630,8 +698,9 @@ async function initializeApp() {
       }
 
       renderNavigation(appUser);
+      scheduleModuleWarmup(currentUserRole);
 
-      if (notificacionesCampanitaContainer && !campanitaInicializada && hotelIdToLoad) {
+      if (notificacionesCampanitaContainer && !campanitaInicializada && hotelIdToLoad && currentUserRole !== 'superadmin') {
         await inicializarCampanitaGlobal(notificacionesCampanitaContainer, supabase, appUser, hotelIdToLoad);
         campanitaInicializada = true;
       }
@@ -639,7 +708,7 @@ async function initializeApp() {
       await initInternalSupportChat(appUser, currentActiveHotel);
 
       if (window.location.pathname.endsWith('/login.html')) {
-        let targetHash = window.location.hash || '#/dashboard';
+        let targetHash = window.location.hash || (currentUserRole === 'superadmin' ? '#/ops-saas' : '#/dashboard');
         console.log(`[Auth] Usuario autenticado en login.html, redirigiendo a la app con hash: ${targetHash}`);
         window.location.href = `/app/index.html${targetHash}`;
       } else {

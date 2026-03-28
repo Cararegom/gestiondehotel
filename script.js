@@ -15,6 +15,7 @@ import { supabase } from '/js/supabaseClient.js';
 
 // Debes poner aquí el rol_id real de "Administrador" en tu tabla "roles"
 const ADMIN_ROL_ID = '76b034c3-e70d-44a1-98ee-9c6eabde6f2b';
+const LANDING_TRACK_EVENT_ENDPOINT = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1/landing-track-event';
 
 // ===================================================================
 // ========= INICIO: FUNCIONES DE UTILIDAD (NECESARIAS) =========
@@ -35,6 +36,53 @@ function showAlert(element, message, type = 'info', duration = 0) {
 function isValidEmail(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).toLowerCase());
 }
+function getLandingVisitorId() {
+  const key = 'gestionhotel.sales_chat_visitor_id';
+  const storedId = window.localStorage.getItem(key);
+  if (storedId) return storedId;
+
+  const generatedId = `landing_${crypto.randomUUID()}`;
+  window.localStorage.setItem(key, generatedId);
+  return generatedId;
+}
+
+function getLandingSessionId() {
+  const key = 'gestionhotel.landing_session_id';
+  const storedId = window.sessionStorage.getItem(key);
+  if (storedId) return storedId;
+
+  const generatedId = `session_${crypto.randomUUID()}`;
+  window.sessionStorage.setItem(key, generatedId);
+  return generatedId;
+}
+
+function trackLandingEvent(eventName, metadata = {}) {
+  const urlParams = new URLSearchParams(window.location.search);
+  return fetch(LANDING_TRACK_EVENT_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    keepalive: true,
+    body: JSON.stringify({
+      eventName,
+      source: 'landing',
+      visitorId: getLandingVisitorId(),
+      sessionId: getLandingSessionId(),
+      pagePath: `${window.location.pathname}${window.location.hash || ''}`,
+      referrer: document.referrer || '',
+      utm_source: urlParams.get('utm_source') || '',
+      utm_medium: urlParams.get('utm_medium') || '',
+      utm_campaign: urlParams.get('utm_campaign') || '',
+      utm_term: urlParams.get('utm_term') || '',
+      utm_content: urlParams.get('utm_content') || '',
+      metadata
+    })
+  }).catch((error) => {
+    console.warn('No se pudo registrar el evento comercial:', error);
+  });
+}
+
 // ===================================================================
 // ========= FIN: FUNCIONES DE UTILIDAD (NECESARIAS) ==========
 // ===================================================================
@@ -191,6 +239,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 window.dataLayer = window.dataLayer || [];
                 window.dataLayer.push({ 'event': 'crear_cuenta' });
                 console.log("Evento 'crear_cuenta' enviado a dataLayer.");
+                trackLandingEvent('account_created_from_landing', {
+                    hotel_name: hotelName,
+                    email
+                });
                 
                 registrationWasSuccessful = true;
                 if (registroModalInstance) registroModalInstance.hide();    

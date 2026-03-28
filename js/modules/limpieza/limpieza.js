@@ -17,6 +17,13 @@ let currentHotelId = null;
 let supabase = null;
 let user = null;
 let currentUserRole = 'limpieza'; 
+const CLEANING_CHECKLIST_ITEMS = [
+  { key: 'cama_lista', label: 'Cama y lenceria listas' },
+  { key: 'bano_desinfectado', label: 'Bano desinfectado' },
+  { key: 'amenidades_repuestas', label: 'Amenidades repuestas' },
+  { key: 'pisos_revisados', label: 'Pisos y superficies revisadas' },
+  { key: 'basura_retirada', label: 'Basura retirada y olor controlado' }
+];
 
 // --- (Las funciones fetchPendientes, renderPendientes, confirmCleaningById no cambian) ---
 async function fetchPendientes(listEl, feedbackEl) {
@@ -76,6 +83,57 @@ function renderPendientes(pendientes, listEl, feedbackEl) {
     </style>
   `;
 }
+
+function buildCleaningChecklistPayload(formData) {
+  const checklist = {};
+  let completedItems = 0;
+
+  CLEANING_CHECKLIST_ITEMS.forEach((item) => {
+    const completed = formData.get(`checklist_${item.key}`) === 'on';
+    if (completed) completedItems += 1;
+    checklist[item.key] = {
+      label: item.label,
+      completado: completed
+    };
+  });
+
+  const puntaje = Math.round((completedItems / CLEANING_CHECKLIST_ITEMS.length) * 5);
+  return { checklist, puntaje };
+}
+
+async function guardarInspeccionLimpieza(roomId, formData) {
+  const { checklist, puntaje } = buildCleaningChecklistPayload(formData);
+  const observaciones = String(formData.get('observaciones_inspeccion') || '').trim() || null;
+
+  const { data: reservaRelacionada, error: reservaError } = await supabase
+    .from('reservas')
+    .select('id')
+    .eq('hotel_id', currentHotelId)
+    .eq('habitacion_id', roomId)
+    .in('estado', ['activa', 'ocupada', 'tiempo agotado', 'completada'])
+    .order('fecha_inicio', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (reservaError && reservaError.code !== 'PGRST116') {
+    throw new Error(`No se pudo consultar la reserva para la inspeccion: ${reservaError.message}`);
+  }
+
+  const { error: insertError } = await supabase.from('inspecciones_limpieza').insert({
+    hotel_id: currentHotelId,
+    habitacion_id: roomId,
+    reserva_id: reservaRelacionada?.id || null,
+    usuario_id: user?.id || null,
+    checklist,
+    puntaje,
+    observaciones
+  });
+
+  if (insertError) {
+    throw new Error(`No se pudo guardar la inspeccion de limpieza: ${insertError.message}`);
+  }
+}
+
 async function confirmCleaningById(roomId, roomNombre, feedbackEl, listEl) {
   showGlobalLoading();
   try {
@@ -275,6 +333,23 @@ async function showModalConfirmarLimpieza(roomId, roomNombre, tipoHabitacionId, 
                 ${amenidadesHtml}
                 ${lenceriaHtml}
             </div>
+
+            <div class="mt-5 rounded-xl border border-teal-200 bg-teal-50 p-4">
+                <h4 class="text-sm font-bold uppercase tracking-[0.18em] text-teal-700">Checklist de inspeccion</h4>
+                <p class="mt-1 text-xs text-teal-700">Antes de liberar la habitacion, deja marcado como se entrego la limpieza.</p>
+                <div class="mt-4 grid gap-3">
+                    ${CLEANING_CHECKLIST_ITEMS.map((item) => `
+                        <label class="flex items-center gap-3 rounded-lg border border-teal-100 bg-white px-3 py-2 text-sm text-slate-700">
+                            <input type="checkbox" name="checklist_${item.key}" class="h-4 w-4 rounded border-slate-300 text-teal-600" checked>
+                            <span>${item.label}</span>
+                        </label>
+                    `).join('')}
+                </div>
+                <div class="mt-4">
+                    <label for="observaciones_inspeccion" class="block text-sm font-semibold text-slate-700">Observaciones</label>
+                    <textarea id="observaciones_inspeccion" name="observaciones_inspeccion" rows="3" class="form-control mt-1" placeholder="Ej. Se detecto una toalla manchada, revisar reposicion o mantenimiento menor."></textarea>
+                </div>
+            </div>
             
             <div id="inventario-feedback" class="feedback-message mt-3"></div>
 
@@ -349,6 +424,11 @@ async function showModalConfirmarLimpieza(roomId, roomNombre, tipoHabitacionId, 
             if (amenidadesUsadas.length > 0) promises.push(guardarLogAmenidades(roomId, amenidadesUsadas));
             if (lenceriaUsada.length > 0) promises.push(guardarLogLenceria(roomId, lenceriaUsada));
             await Promise.all(promises);
+            try {
+                await guardarInspeccionLimpieza(roomId, formData);
+            } catch (inspectionError) {
+                console.warn('No se pudo guardar la inspeccion de limpieza, pero la habitacion se liberara igual:', inspectionError);
+            }
             if (document.body.contains(modalEl)) document.body.removeChild(modalEl);
             await confirmCleaningById(roomId, roomNombre, feedbackEl, listEl);
         } catch (err) {

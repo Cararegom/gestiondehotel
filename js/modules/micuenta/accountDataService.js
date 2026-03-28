@@ -6,6 +6,24 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function buildReferidosAnalytics(referidos = []) {
+  const total = referidos.length;
+  const activos = referidos.filter((item) => item.estado === 'activo').length;
+  const trial = referidos.filter((item) => item.estado === 'trial').length;
+  const pendientes = referidos.filter((item) => !item.recompensa_otorgada).length;
+  const recompensasOtorgadas = referidos.filter((item) => item.recompensa_otorgada).length;
+  const conversionRate = total > 0 ? (activos / total) * 100 : 0;
+
+  return {
+    total,
+    activos,
+    trial,
+    pendientes,
+    recompensasOtorgadas,
+    conversionRate
+  };
+}
+
 function calcularEstadoDeVencimiento(hotel) {
   const fechaFin = new Date(hotel?.suscripcion_fin || hotel?.trial_fin || Date.now());
   const hoy = new Date();
@@ -14,10 +32,14 @@ function calcularEstadoDeVencimiento(hotel) {
 
   const fechaFinMasGracia = new Date(fechaFin);
   fechaFinMasGracia.setDate(fechaFinMasGracia.getDate() + DIAS_GRACIA);
+  const graciaManualHasta = hotel?.gracia_hasta ? new Date(hotel.gracia_hasta) : null;
+  const fechaLimiteGracia = graciaManualHasta && !Number.isNaN(graciaManualHasta.getTime()) && graciaManualHasta > fechaFinMasGracia
+    ? graciaManualHasta
+    : fechaFinMasGracia;
 
-  if (hotel?.estado_suscripcion === 'vencido' && hoy <= fechaFinMasGracia) {
+  if (hotel?.estado_suscripcion === 'vencido' && hoy <= fechaLimiteGracia) {
     enGracia = true;
-    diasRestantes = Math.ceil((fechaFinMasGracia - hoy) / (1000 * 60 * 60 * 24));
+    diasRestantes = Math.ceil((fechaLimiteGracia - hoy) / (1000 * 60 * 60 * 24));
   }
 
   return {
@@ -64,6 +86,7 @@ export async function loadMiCuentaData(supabase, user, hotelId) {
   const pagos = safeArray(pagosResult.data);
   const cambiosPlan = safeArray(cambiosPlanResult.data);
   const referidos = safeArray(referidosResult.data);
+  const referidosAnalytics = buildReferidosAnalytics(referidos);
 
   const planActivo = plans.find((plan) =>
     plan?.nombre?.toLowerCase() === hotel?.plan?.toLowerCase() || plan?.id === hotel?.plan_id
@@ -84,6 +107,7 @@ export async function loadMiCuentaData(supabase, user, hotelId) {
     pagos,
     cambiosPlan,
     referidos,
+    referidosAnalytics,
     planActivo,
     promoBienvenida,
     fechaFin,

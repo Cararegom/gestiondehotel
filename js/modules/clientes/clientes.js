@@ -2,6 +2,14 @@
 
 // Importaciones de utilidades UI
 import { showError, showSuccess, showLoading, clearFeedback } from '../../uiUtils.js';
+import {
+    buildCampaignActivityRows,
+    buildCampaignSuggestions,
+    buildClientCommercialInsights,
+    summarizeCRMPortfolio
+} from '../../services/crmCommercialService.js';
+import { confirmDestructiveAction } from '../../services/destructiveConfirmationService.js';
+import { registrarAccionSensible } from '../../services/sensitiveAuditService.js';
 
 // NOTA IMPORTANTE sobre Chart.js y SheetJS:
 // Si no estás usando un 'bundler' como Webpack o Vite que maneje las importaciones de npm,
@@ -19,6 +27,18 @@ let clientesData = [];
 let hotelIdActual = null;
 let supabaseInstance = null; // La instancia de Supabase será asignada aquí
 let currentChartInstance = null; // Para mantener la instancia de Chart.js y poder destruirla
+let currentClientesUser = null;
+let crmInsightsByClientId = {};
+let crmPortfolioSummary = {
+    total: 0,
+    vip: 0,
+    frecuentes: 0,
+    enRiesgo: 0,
+    nuevos: 0,
+    valorTotal: 0,
+    pendientes: 0
+};
+let crmCampaignSuggestions = [];
 
 // --- FUNCIONES DE UTILIDAD Y AYUDA ---
 function logDebug(message, ...args) {
@@ -82,6 +102,196 @@ function formatCurrency(amount) {
     return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP' }).format(numAmount);
 }
 
+function getClienteInsight(clienteId) {
+    return crmInsightsByClientId?.[clienteId] || {
+        segment: 'ocasional',
+        label: 'Ocasional',
+        badgeClass: 'bg-slate-100 text-slate-700',
+        totalSpend: 0,
+        visitsCount: 0,
+        pendingActivities: 0,
+        averageTicket: 0,
+        preferredChannel: 'Sin preferencia',
+        inactiveDays: null,
+        lastVisitDate: null
+    };
+}
+
+function formatInsightDate(value) {
+    if (!value) return 'Sin visitas';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? 'Sin visitas' : date.toLocaleDateString('es-CO');
+}
+
+function getNextCRMAction(insight) {
+    if (insight.segment === 'vip') return 'Llamada o WhatsApp preferencial en próximas 72h.';
+    if (insight.segment === 'frecuente') return 'Ofrecer beneficio recurrente o upsell de consumos.';
+    if (insight.segment === 'en_riesgo') return 'Campaña de reactivación con oferta o recordatorio.';
+    if (insight.segment === 'nuevo') return 'Primer seguimiento para convertirlo en cliente recurrente.';
+    return 'Mantener contacto y registrar próxima interacción.';
+}
+
+async function cargarCRMInsightsHotel() {
+    crmInsightsByClientId = {};
+    crmCampaignSuggestions = [];
+    crmPortfolioSummary = {
+        total: clientesData.length,
+        vip: 0,
+        frecuentes: 0,
+        enRiesgo: 0,
+        nuevos: 0,
+        valorTotal: 0,
+        pendientes: 0
+    };
+
+    if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;
+
+    try {
+        const [
+            { data: reservas = [] },
+            { data: ventas = [] },
+            { data: ventasTienda = [] },
+            { data: ventasRestaurante = [] },
+            { data: actividades = [] }
+        ] = await Promise.all([
+            supabaseInstance.from('reservas').select('cliente_id, fecha_inicio, fecha_fin, monto_total, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
+            supabaseInstance.from('ventas').select('cliente_id, total, fecha_venta, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
+            supabaseInstance.from('ventas_tienda').select('cliente_id, total_venta, total, fecha, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
+            supabaseInstance.from('ventas_restaurante').select('cliente_id, monto_total, total_venta, total, fecha_venta, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
+            supabaseInstance.from('crm_actividades').select('cliente_id, tipo, estado, fecha').eq('hotel_id', hotelIdActual)
+        ]);
+
+        crmInsightsByClientId = buildClientCommercialInsights({
+            clientes: clientesData,
+            reservas,
+            ventas,
+            ventasTienda,
+            ventasRestaurante,
+            actividades
+        });
+        crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);
+        crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);
+    } catch (error) {
+        logError('No se pudieron cargar las métricas CRM del hotel:', error);
+    }
+}
+
+function renderCRMInsightsHeader() {
+    const headerEl = document.getElementById('clientes-crm-header');
+    if (!headerEl) return;
+
+    headerEl.innerHTML = `
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3 mb-5">
+            <div class="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+                <div class="text-xs uppercase tracking-wide text-blue-500 font-semibold">Clientes</div>
+                <div class="text-2xl font-bold text-blue-700">${crmPortfolioSummary.total}</div>
+            </div>
+            <div class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+                <div class="text-xs uppercase tracking-wide text-amber-600 font-semibold">VIP</div>
+                <div class="text-2xl font-bold text-amber-700">${crmPortfolioSummary.vip}</div>
+            </div>
+            <div class="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                <div class="text-xs uppercase tracking-wide text-emerald-600 font-semibold">Frecuentes</div>
+                <div class="text-2xl font-bold text-emerald-700">${crmPortfolioSummary.frecuentes}</div>
+            </div>
+            <div class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
+                <div class="text-xs uppercase tracking-wide text-rose-500 font-semibold">En riesgo</div>
+                <div class="text-2xl font-bold text-rose-700">${crmPortfolioSummary.enRiesgo}</div>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Pendientes CRM</div>
+                <div class="text-2xl font-bold text-slate-800">${crmPortfolioSummary.pendientes}</div>
+            </div>
+            <div class="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+                <div class="text-xs uppercase tracking-wide text-indigo-500 font-semibold">Valor comercial</div>
+                <div class="text-xl font-bold text-indigo-700">${formatCurrency(crmPortfolioSummary.valorTotal)}</div>
+            </div>
+        </div>
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between mb-3">
+                <div>
+                    <h3 class="text-base font-semibold text-slate-800">Campañas simples sugeridas</h3>
+                    <p class="text-sm text-slate-500">Crea actividades CRM masivas para reactivación, cumpleaños, VIP y upsell.</p>
+                </div>
+                <div class="text-xs text-slate-400">Las campañas generan tareas pendientes dentro del CRM del hotel.</div>
+            </div>
+            <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                ${crmCampaignSuggestions.map((campaign) => `
+                    <div class="rounded-xl border border-white bg-white px-4 py-4 shadow-sm">
+                        <div class="flex items-start justify-between gap-3">
+                            <div>
+                                <div class="font-semibold text-slate-800">${campaign.title}</div>
+                                <div class="text-sm text-slate-500 mt-1">${campaign.description}</div>
+                            </div>
+                            <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">${campaign.targetEntries.length} cliente(s)</span>
+                        </div>
+                        <div class="mt-3 flex items-center justify-between gap-3">
+                            <div class="text-xs text-slate-500">Canal sugerido: <b>${campaign.channel}</b></div>
+                            <button class="button button-primary button-small" data-action="run-crm-campaign" data-campaign-id="${campaign.id}" ${campaign.targetEntries.length === 0 ? 'disabled' : ''}>Generar tareas</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    headerEl.querySelectorAll('[data-action="run-crm-campaign"]').forEach((button) => {
+        button.onclick = () => ejecutarCampanaCRM(button.dataset.campaignId);
+    });
+}
+
+async function ejecutarCampanaCRM(campaignId) {
+    const campaign = crmCampaignSuggestions.find((item) => item.id === campaignId);
+    const feedbackEl = document.getElementById('clientes-feedback');
+    if (!campaign || !campaign.targetEntries.length) {
+        showError(feedbackEl, 'Esta campaña no tiene clientes objetivo en este momento.');
+        return;
+    }
+
+    const confirmation = typeof Swal !== 'undefined'
+        ? await Swal.fire({
+            icon: 'question',
+            title: campaign.title,
+            html: `Se crearán <b>${campaign.targetEntries.length}</b> actividades CRM pendientes usando el canal sugerido <b>${campaign.channel}</b>.`,
+            showCancelButton: true,
+            confirmButtonText: 'Generar tareas',
+            cancelButtonText: 'Cancelar'
+        })
+        : { isConfirmed: window.confirm(`Se crearán ${campaign.targetEntries.length} tareas CRM. ¿Deseas continuar?`) };
+
+    if (!confirmation.isConfirmed) return;
+
+    showLoading(feedbackEl, `Generando campaña "${campaign.title}"...`);
+
+    try {
+        const payload = buildCampaignActivityRows({
+            campaign,
+            hotelId: hotelIdActual,
+            userId: currentClientesUser?.id
+        });
+        const { error } = await supabaseInstance.from('crm_actividades').insert(payload);
+        if (error) throw error;
+
+        await registrarAccionSensible({
+            supabase: supabaseInstance,
+            hotelId: hotelIdActual,
+            usuarioId: currentClientesUser?.id,
+            modulo: 'Clientes',
+            accion: 'EJECUTAR_CAMPANA_CRM',
+            detalles: {
+                campana: campaign.title,
+                clientes_objetivo: campaign.targetEntries.length,
+                canal: campaign.channel
+            }
+        });
+
+        showSuccess(feedbackEl, `Campaña "${campaign.title}" generada con ${campaign.targetEntries.length} tarea(s).`);
+        await cargarYRenderizarClientes();
+    } catch (error) {
+        showError(feedbackEl, `No se pudo generar la campaña: ${error.message}`);
+    }
+}
+
 // --- MONTAJE Y DESMONTAJE DEL MÓDULO PRINCIPAL ---
 
 /**
@@ -97,7 +307,8 @@ function formatCurrency(amount) {
 export async function mount(container, supabase, user, hotelId, opts = {}) {
     logDebug('Montando módulo de clientes...', { container, user, hotelId, opts });
     hotelIdActual = hotelId;
-    supabaseInstance = supabase; 
+    supabaseInstance = supabase;
+    currentClientesUser = user || null;
     console.log("DEBUG: supabaseInstance en clientes.js mount:", supabaseInstance); 
 
     // Limpia el contenedor y renderiza la estructura base del módulo
@@ -108,6 +319,7 @@ export async function mount(container, supabase, user, hotelId, opts = {}) {
                 <button id="btn-nuevo-cliente" class="button button-primary bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md transition-colors duration-200">＋ Nuevo Cliente</button>
             </div>
             <div class="card-body p-4">
+                <div id="clientes-crm-header" class="mb-6"></div>
                 <div class="flex flex-wrap items-center mb-4 gap-3">
                     <input id="buscar-cliente" class="form-control flex-grow p-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200" type="text" placeholder="Buscar por nombre, email, documento o teléfono">
                     <input type="date" id="filtro-fecha-inicio" class="form-control p-2 border border-gray-300 rounded-md">
@@ -156,7 +368,10 @@ export function unmount(container) {
     // Restablecer variables globales
     hotelIdActual = null;
     supabaseInstance = null; // Asegurarse de limpiar la referencia de Supabase
+    currentClientesUser = null;
     clientesData = [];
+    crmInsightsByClientId = {};
+    crmCampaignSuggestions = [];
     logDebug('Módulo de clientes desmontado.');
 }
 
@@ -335,6 +550,8 @@ async function cargarYRenderizarClientes() {
     showLoading(feedbackEl, 'Cargando clientes...'); // Muestra el mensaje de carga
     try {
         clientesData = await getClientes({ hotelId: hotelIdActual }); // Espera a que los clientes se carguen
+        await cargarCRMInsightsHotel();
+        renderCRMInsightsHeader();
         renderTablaClientes(clientesData); // Renderiza la tabla con los datos
         clearFeedback(feedbackEl); // Limpia el mensaje de carga/error
         logDebug('Clientes cargados y renderizados.');
@@ -410,6 +627,8 @@ function renderTablaClientes(clientes) {
             <thead>
                 <tr class="bg-gray-200">
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Nombre</th>
+                    <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Segmento</th>
+                    <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Valor Comercial</th>
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Documento</th>
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold">Teléfono</th>
                     <th class="py-3 px-4 border-b border-gray-300 text-gray-700 font-bold text-center">Estado</th>
@@ -418,6 +637,7 @@ function renderTablaClientes(clientes) {
             </thead>
             <tbody>
                 ${clientes.map(cli => {
+                    const insight = getClienteInsight(cli.id);
                     // --- INICIO DE LA LÓGICA DINÁMICA ---
                     const esActivo = cli.activo;
                     const filaEstilo = esActivo ? '' : 'opacity-60 bg-gray-50';
@@ -433,6 +653,14 @@ function renderTablaClientes(clientes) {
                     return `
                         <tr class="hover:bg-blue-50 transition-colors duration-150 ease-in-out ${filaEstilo}">
                             <td class="py-2 px-4 border-b border-gray-200">${cli.nombre || ''}</td>
+                            <td class="py-2 px-4 border-b border-gray-200">
+                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${insight.badgeClass}">${insight.label}</span>
+                                <div class="text-[11px] text-gray-500 mt-1">${insight.visitsCount} visita(s) • ${insight.pendingActivities} pendiente(s)</div>
+                            </td>
+                            <td class="py-2 px-4 border-b border-gray-200">
+                                <div class="font-semibold text-slate-700">${formatCurrency(insight.totalSpend)}</div>
+                                <div class="text-[11px] text-gray-500">Última visita: ${formatInsightDate(insight.lastVisitDate)}</div>
+                            </td>
                             <td class="py-2 px-4 border-b border-gray-200">${cli.documento || ''}</td>
                             <td class="py-2 px-4 border-b border-gray-200">${cli.telefono || ''}</td>
                             <td class="py-2 px-4 border-b border-gray-200 text-center">${estadoBadge}</td>
@@ -659,6 +887,7 @@ async function mostrarHistorialCliente(clienteId) {
     const totalVentas = ventas.reduce((sum, item) => sum + (item.total || 0), 0);
     const totalVentasTienda = ventasTienda.reduce((sum, item) => sum + (item.total_venta || item.total || 0), 0);
     const totalVentasRestaurante = ventasRestaurante.reduce((sum, item) => sum + (item.monto_total || item.total_venta || item.total || 0), 0);
+    const clienteInsight = getClienteInsight(clienteId);
 
     modal.innerHTML = `
         <div class="modal-content bg-white rounded-xl shadow-2xl p-6 max-w-4xl mx-auto w-full relative h-5/6 flex flex-col">
@@ -673,6 +902,36 @@ async function mostrarHistorialCliente(clienteId) {
             </div>
             <div id="tab-content" class="flex-grow overflow-y-auto">
                 <div id="tab-datos-generales" class="tab-pane active p-2">
+                    <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                            <div>
+                                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Perfil comercial</div>
+                                <div class="mt-2 flex items-center gap-2">
+                                    <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${clienteInsight.badgeClass}">${clienteInsight.label}</span>
+                                    <span class="text-sm text-slate-500">Canal sugerido: <b>${clienteInsight.preferredChannel}</b></span>
+                                </div>
+                            </div>
+                            <div class="text-sm text-slate-500">Próxima acción sugerida: <b class="text-slate-700">${getNextCRMAction(clienteInsight)}</b></div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
+                            <div class="rounded-xl bg-white border border-slate-200 px-3 py-3">
+                                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Visitas</div>
+                                <div class="text-xl font-bold text-slate-800">${clienteInsight.visitsCount}</div>
+                            </div>
+                            <div class="rounded-xl bg-white border border-slate-200 px-3 py-3">
+                                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Valor total</div>
+                                <div class="text-xl font-bold text-slate-800">${formatCurrency(clienteInsight.totalSpend)}</div>
+                            </div>
+                            <div class="rounded-xl bg-white border border-slate-200 px-3 py-3">
+                                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Ticket promedio</div>
+                                <div class="text-xl font-bold text-slate-800">${formatCurrency(clienteInsight.averageTicket)}</div>
+                            </div>
+                            <div class="rounded-xl bg-white border border-slate-200 px-3 py-3">
+                                <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Última visita</div>
+                                <div class="text-xl font-bold text-slate-800">${formatInsightDate(clienteInsight.lastVisitDate)}</div>
+                            </div>
+                        </div>
+                    </div>
                     <form id="form-cliente-detail">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="nombre" value="${cliente.nombre || ''}"></div>
@@ -809,6 +1068,18 @@ function setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventas
         try {
             const { error } = await supabaseInstance.from('crm_actividades').insert([nuevaActividad]);
             if (error) throw error;
+            await registrarAccionSensible({
+                supabase: supabaseInstance,
+                hotelId: hotelIdActual,
+                usuarioId: currentClientesUser?.id,
+                modulo: 'Clientes',
+                accion: 'CREAR_ACTIVIDAD_CRM',
+                detalles: {
+                    cliente: cliente.nombre,
+                    tipo: data.tipo,
+                    estado: data.estado
+                }
+            });
             const { data: updatedActivities } = await supabaseInstance.from('crm_actividades').select('*').eq('cliente_id', clienteId).order('fecha', { ascending: false });
             modal.querySelector('#lista-actividades-crm').innerHTML = renderActividades(updatedActivities);
             form.reset();
@@ -829,12 +1100,28 @@ function setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventas
             const listItem = button.closest('.actividad-item');
 
             if (action === 'delete-crm') {
-                const confirmed = confirm('¿Estás seguro de que quieres eliminar esta actividad?');
+                const confirmed = await confirmDestructiveAction({
+                    title: 'Eliminar actividad CRM',
+                    html: 'Se borrará el registro de seguimiento y no se podrá recuperar desde esta vista.',
+                    keyword: 'ELIMINAR',
+                    confirmButtonText: 'Sí, eliminar actividad'
+                });
                 if (confirmed) {
                     const { error } = await supabaseInstance.from('crm_actividades').delete().eq('id', activityId);
                     if (error) {
                         alert('Error al eliminar la actividad: ' + error.message);
                     } else {
+                        await registrarAccionSensible({
+                            supabase: supabaseInstance,
+                            hotelId: hotelIdActual,
+                            usuarioId: currentClientesUser?.id,
+                            modulo: 'Clientes',
+                            accion: 'ELIMINAR_ACTIVIDAD_CRM',
+                            detalles: {
+                                cliente: cliente.nombre,
+                                actividad_id: activityId
+                            }
+                        });
                         listItem.remove(); // Elimina el elemento de la vista
                     }
                 }
@@ -881,6 +1168,18 @@ function setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventas
                     if (updateError) {
                         alert('Error al guardar los cambios: ' + updateError.message);
                     } else {
+                        await registrarAccionSensible({
+                            supabase: supabaseInstance,
+                            hotelId: hotelIdActual,
+                            usuarioId: currentClientesUser?.id,
+                            modulo: 'Clientes',
+                            accion: 'ACTUALIZAR_ACTIVIDAD_CRM',
+                            detalles: {
+                                cliente: cliente.nombre,
+                                actividad_id: activityId,
+                                nuevo_estado: newStatus
+                            }
+                        });
                         // Re-renderizar solo este item con la información actualizada
                         const { data: updatedActivitiesList } = await supabaseInstance.from('crm_actividades').select('*').eq('id', activityId).single();
                         listItem.innerHTML = renderActividades([updatedActivitiesList]).replace(/<li.*?>|<\/li>/g, '');

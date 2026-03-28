@@ -20,6 +20,8 @@ Este archivo resume la capa backend actualmente versionada en `supabase/function
 - `outlook-calendar-events`
 - `send-cash-close-report`
 - `send-discount-email`
+- `landing-save-lead`
+- `landing-track-event`
 
 ## Otras funciones activas ya versionadas
 

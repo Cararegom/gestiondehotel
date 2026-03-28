@@ -70,6 +70,7 @@ export async function mount(container, supabase, user, hotelId) {
     pagos: pagosSafe,
     cambiosPlan: cambiosPlanSafe,
     referidos: referidosSafe,
+    referidosAnalytics,
     planActivo,
     promoBienvenida,
     fechaFin,
@@ -193,6 +194,28 @@ export async function mount(container, supabase, user, hotelId) {
       <div class="bg-white shadow rounded-2xl p-6 mb-8">
         <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-share-fill text-indigo-600"></i> Programa de Referidos</h3>
         <p class="text-sm text-gray-600 mb-3">Comparte tu enlace y obtén 30 días gratis por cada hotel que pague su primera suscripción.</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
+          <div class="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3">
+            <div class="text-xs uppercase tracking-wide text-indigo-500 font-semibold">Total referidos</div>
+            <div class="text-2xl font-bold text-indigo-700">${referidosAnalytics.total}</div>
+          </div>
+          <div class="rounded-xl border border-green-100 bg-green-50 px-4 py-3">
+            <div class="text-xs uppercase tracking-wide text-green-500 font-semibold">Activos</div>
+            <div class="text-2xl font-bold text-green-700">${referidosAnalytics.activos}</div>
+          </div>
+          <div class="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+            <div class="text-xs uppercase tracking-wide text-amber-600 font-semibold">En trial</div>
+            <div class="text-2xl font-bold text-amber-700">${referidosAnalytics.trial}</div>
+          </div>
+          <div class="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
+            <div class="text-xs uppercase tracking-wide text-rose-500 font-semibold">Recompensas pendientes</div>
+            <div class="text-2xl font-bold text-rose-700">${referidosAnalytics.pendientes}</div>
+          </div>
+          <div class="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+            <div class="text-xs uppercase tracking-wide text-blue-500 font-semibold">Conversión</div>
+            <div class="text-2xl font-bold text-blue-700">${referidosAnalytics.conversionRate.toFixed(0)}%</div>
+          </div>
+        </div>
         <div class="flex items-center gap-3 mb-2">
           <input type="text" class="form-control w-full" value="${refLink}" readonly id="refLinkInput">
           <button class="btn btn-accent" id="btnCopyRefLink">Copiar enlace</button>

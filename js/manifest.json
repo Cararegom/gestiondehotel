@@ -1,9 +1,13 @@
 {
-  "name": "Gestión de Hotel",
+  "id": "/app/index.html",
+  "name": "Gestion de Hotel",
   "short_name": "GHotel",
-  "start_url": "/app/",
+  "description": "Sistema de operacion hotelera para reservas, caja, habitaciones y soporte.",
+  "start_url": "/app/index.html#/dashboard",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "background_color": "#f7fafc",
   "theme_color": "#1d4ed8",
   "icons": [
     {

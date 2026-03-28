@@ -11,6 +11,7 @@ let hotelConfigGlobal = null;
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { formatCurrency, formatDateTime, showConsumosYFacturarModal, mostrarInfoModalGlobal } from '../../uiUtils.js';
 import { escapeAttribute, escapeHtml } from '../../security.js';
+import { getReservaOriginFunnelStage, getReservaOriginLabel } from '../reservas/reservas-operacion.js';
 
 function legacyHandleVerConsumosDesdeReporte(roomContext) {
     // Esta función se encarga de llamar al modal, pasándole las variables
@@ -47,7 +48,8 @@ const REPORTES_POR_PLAN = {
     'detalle_ingresos_categoria',
     'detalle_egresos_categoria',
     'cierres_de_caja',
-    'kpis_avanzados_hotel'
+    'kpis_avanzados_hotel',
+    'comparativo_gerencial_operacion'
   ]
 };
 
@@ -227,7 +229,8 @@ function renderSelectorReportes(planActivo) {
     { key: 'detalle_ingresos_categoria', label: 'Detalle de Ingresos por Categoría' },
     { key: 'detalle_egresos_categoria', label: 'Detalle de Egresos por Categoría' },
     { key: 'cierres_de_caja', label: 'Historial de Cierres de Caja' },
-    { key: 'kpis_avanzados_hotel', label: 'KPIs de Rendimiento del Hotel' }
+    { key: 'kpis_avanzados_hotel', label: 'KPIs de Rendimiento del Hotel' },
+    { key: 'comparativo_gerencial_operacion', label: 'Comparativo Gerencial de Operacion' }
   ];
   // Reportes permitidos por plan
   const tiposDisponibles = REPORTES_POR_PLAN[planActivo] || REPORTES_POR_PLAN['lite'];
@@ -1474,6 +1477,327 @@ function renderKPIsHTML(kpis, fechaInicio, fechaFin) {
     `;
 }
 
+function formatDeltaLabel(currentValue, previousValue, { currency = false, percentage = false } = {}) {
+    const current = Number(currentValue || 0);
+    const previous = Number(previousValue || 0);
+    const diff = current - previous;
+    const sign = diff > 0 ? '+' : diff < 0 ? '-' : '=';
+    const colorClass = diff > 0 ? 'text-emerald-600' : diff < 0 ? 'text-rose-600' : 'text-slate-500';
+
+    if (percentage) {
+        return `<span class="${colorClass}">${sign} ${Math.abs(diff).toFixed(1)} pts vs periodo anterior</span>`;
+    }
+
+    if (currency) {
+        return `<span class="${colorClass}">${sign} ${formatCurrencyLocal(Math.abs(diff))} vs periodo anterior</span>`;
+    }
+
+    return `<span class="${colorClass}">${sign} ${Math.abs(diff)} vs periodo anterior</span>`;
+}
+
+function aggregateReservationsByOrigin(reservas = []) {
+    return Object.values((reservas || []).reduce((acc, reserva) => {
+        const origin = reserva.origen_reserva || 'directa';
+        const key = String(origin);
+        if (!acc[key]) {
+            acc[key] = {
+                origin,
+                label: getReservaOriginLabel(origin),
+                funnel: getReservaOriginFunnelStage(origin),
+                total: 0,
+                revenue: 0
+            };
+        }
+
+        acc[key].total += 1;
+        acc[key].revenue += Number(reserva.monto_total || 0);
+        return acc;
+    }, {})).sort((a, b) => b.total - a.total || b.revenue - a.revenue);
+}
+
+function aggregateReservationsByFunnel(originSummary = []) {
+    return Object.values((originSummary || []).reduce((acc, item) => {
+        const key = item.funnel || 'Directo';
+        if (!acc[key]) {
+            acc[key] = { funnel: key, total: 0, revenue: 0 };
+        }
+
+        acc[key].total += Number(item.total || 0);
+        acc[key].revenue += Number(item.revenue || 0);
+        return acc;
+    }, {})).sort((a, b) => b.total - a.total || b.revenue - a.revenue);
+}
+
+async function generarReporteComparativoGerencial(resultsContainerEl, fechaInicioInput, fechaFinInput) {
+    if (!resultsContainerEl) return;
+    resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Armando comparativo gerencial...</p>';
+
+    const currentStart = new Date(`${fechaInicioInput}T00:00:00.000Z`);
+    const currentEnd = new Date(`${fechaFinInput}T23:59:59.999Z`);
+    if (Number.isNaN(currentStart.getTime()) || Number.isNaN(currentEnd.getTime()) || currentStart > currentEnd) {
+        resultsContainerEl.innerHTML = '<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">El rango de fechas no es valido.</p>';
+        return;
+    }
+
+    const periodLengthMs = currentEnd.getTime() - currentStart.getTime();
+    const previousEnd = new Date(currentStart.getTime() - 1);
+    const previousStart = new Date(previousEnd.getTime() - periodLengthMs);
+
+    const toIsoStart = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
+    const toIsoEnd = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999).toISOString();
+
+    try {
+        const [
+            reservasCurrentRes,
+            reservasPreviousRes,
+            cajaCurrentRes,
+            cajaPreviousRes,
+            waitlistCurrentRes,
+            waitlistPreviousRes,
+            reglasCurrentRes,
+            inspeccionesCurrentRes,
+            mantenimientoCurrentRes
+        ] = await Promise.all([
+            supabaseClient
+                .from('reservas')
+                .select('id, fecha_inicio, fecha_fin, monto_total, monto_pagado, estado, origen_reserva')
+                .eq('hotel_id', currentHotelId)
+                .gte('fecha_inicio', currentStart.toISOString())
+                .lte('fecha_inicio', currentEnd.toISOString()),
+            supabaseClient
+                .from('reservas')
+                .select('id, fecha_inicio, fecha_fin, monto_total, monto_pagado, estado, origen_reserva')
+                .eq('hotel_id', currentHotelId)
+                .gte('fecha_inicio', previousStart.toISOString())
+                .lte('fecha_inicio', previousEnd.toISOString()),
+            supabaseClient
+                .from('caja')
+                .select('tipo, monto, fecha_movimiento')
+                .eq('hotel_id', currentHotelId)
+                .gte('fecha_movimiento', currentStart.toISOString())
+                .lte('fecha_movimiento', currentEnd.toISOString()),
+            supabaseClient
+                .from('caja')
+                .select('tipo, monto, fecha_movimiento')
+                .eq('hotel_id', currentHotelId)
+                .gte('fecha_movimiento', previousStart.toISOString())
+                .lte('fecha_movimiento', previousEnd.toISOString()),
+            supabaseClient
+                .from('lista_espera_reservas')
+                .select('id, estado, fecha_inicio')
+                .eq('hotel_id', currentHotelId)
+                .gte('fecha_inicio', currentStart.toISOString())
+                .lte('fecha_inicio', currentEnd.toISOString()),
+            supabaseClient
+                .from('lista_espera_reservas')
+                .select('id, estado, fecha_inicio')
+                .eq('hotel_id', currentHotelId)
+                .gte('fecha_inicio', previousStart.toISOString())
+                .lte('fecha_inicio', previousEnd.toISOString()),
+            supabaseClient
+                .from('reglas_tarifas')
+                .select('id, nombre, activo, fecha_inicio, fecha_fin')
+                .eq('hotel_id', currentHotelId)
+                .eq('activo', true),
+            supabaseClient
+                .from('inspecciones_limpieza')
+                .select('id, puntaje, creado_en')
+                .eq('hotel_id', currentHotelId)
+                .gte('creado_en', currentStart.toISOString())
+                .lte('creado_en', currentEnd.toISOString()),
+            supabaseClient
+                .from('tareas_mantenimiento')
+                .select('id, estado, frecuencia, tipo, fecha_programada, fecha_completada')
+                .eq('hotel_id', currentHotelId)
+                .gte('creado_en', currentStart.toISOString())
+                .lte('creado_en', currentEnd.toISOString())
+        ]);
+        const criticalResults = [reservasCurrentRes, reservasPreviousRes, cajaCurrentRes, cajaPreviousRes];
+        const criticalError = criticalResults.find((result) => result.error);
+        if (criticalError?.error) {
+            throw criticalError.error;
+        }
+
+        const missingSources = [];
+        const getSafeData = (result, label) => {
+            if (result?.error) {
+                console.warn(`[Reportes] Fuente opcional no disponible para comparativo gerencial: ${label}`, result.error);
+                missingSources.push(label);
+                return [];
+            }
+            return result?.data || [];
+        };
+
+        const reservasCurrent = reservasCurrentRes.data || [];
+        const reservasPrevious = reservasPreviousRes.data || [];
+        const cajaCurrent = cajaCurrentRes.data || [];
+        const cajaPrevious = cajaPreviousRes.data || [];
+        const waitlistCurrent = getSafeData(waitlistCurrentRes, 'lista de espera');
+        const waitlistPrevious = getSafeData(waitlistPreviousRes, 'lista de espera historica');
+        const reglasCurrent = getSafeData(reglasCurrentRes, 'reglas dinamicas');
+        const inspeccionesCurrent = getSafeData(inspeccionesCurrentRes, 'inspecciones de limpieza');
+        const mantenimientoCurrent = getSafeData(mantenimientoCurrentRes, 'mantenimiento preventivo');
+
+        const ingresosCurrent = cajaCurrent.filter((item) => item.tipo === 'ingreso').reduce((sum, item) => sum + Number(item.monto || 0), 0);
+        const egresosCurrent = cajaCurrent.filter((item) => item.tipo === 'egreso').reduce((sum, item) => sum + Number(item.monto || 0), 0);
+        const ingresosPrevious = cajaPrevious.filter((item) => item.tipo === 'ingreso').reduce((sum, item) => sum + Number(item.monto || 0), 0);
+        const egresosPrevious = cajaPrevious.filter((item) => item.tipo === 'egreso').reduce((sum, item) => sum + Number(item.monto || 0), 0);
+
+        const reservasValidasCurrent = reservasCurrent.filter((item) => !['cancelada', 'no_show'].includes(String(item.estado || '').toLowerCase()));
+        const reservasValidasPrevious = reservasPrevious.filter((item) => !['cancelada', 'no_show'].includes(String(item.estado || '').toLowerCase()));
+        const noShowCurrent = reservasCurrent.filter((item) => String(item.estado || '').toLowerCase() === 'no_show').length;
+        const noShowPrevious = reservasPrevious.filter((item) => String(item.estado || '').toLowerCase() === 'no_show').length;
+        const waitlistPendienteCurrent = waitlistCurrent.filter((item) => item.estado === 'pendiente').length;
+        const waitlistPendientePrevious = waitlistPrevious.filter((item) => item.estado === 'pendiente').length;
+        const avgInspectionCurrent = inspeccionesCurrent.length > 0
+            ? inspeccionesCurrent.reduce((sum, item) => sum + Number(item.puntaje || 0), 0) / inspeccionesCurrent.length
+            : 0;
+        const preventivosCurrent = mantenimientoCurrent.filter((item) => !['unica', null, undefined].includes(item.frecuencia)).length;
+
+        const originSummary = aggregateReservationsByOrigin(reservasValidasCurrent);
+        const funnelSummary = aggregateReservationsByFunnel(originSummary);
+        const reglasActivasPeriodo = reglasCurrent.filter((rule) => {
+            const startRule = rule.fecha_inicio ? new Date(`${rule.fecha_inicio}T00:00:00`) : null;
+            const endRule = rule.fecha_fin ? new Date(`${rule.fecha_fin}T23:59:59`) : null;
+            if (startRule && startRule.getTime() > currentEnd.getTime()) return false;
+            if (endRule && endRule.getTime() < currentStart.getTime()) return false;
+            return true;
+        }).length;
+
+        const availabilityNote = missingSources.length > 0
+            ? `
+                <div class="rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 text-sm text-amber-800">
+                    Algunas fuentes aun no estan disponibles en esta base: <strong>${escapeHtml(missingSources.join(', '))}</strong>. El comparativo sigue mostrando los datos que si estan activos.
+                </div>
+            `
+            : '';
+
+        resultsContainerEl.innerHTML = `
+            <section class="space-y-6">
+                <div class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fbff)] p-6 shadow-sm">
+                    <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                        <div>
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Comparativo gerencial</p>
+                            <h3 class="mt-2 text-3xl font-black tracking-tight text-slate-900">Operacion del hotel frente al periodo anterior</h3>
+                            <p class="mt-2 text-sm text-slate-600">Compara caja, reservas, lista de espera, uso comercial e higiene operativa para tomar decisiones mas rapidas.</p>
+                        </div>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                            <strong>Periodo actual:</strong> ${formatDateLocal(fechaInicioInput, { dateStyle: 'medium' })} - ${formatDateLocal(fechaFinInput, { dateStyle: 'medium' })}
+                        </div>
+                    </div>
+                </div>
+                ${availabilityNote}
+
+                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                    <article class="rounded-[24px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Ingresos del periodo</p>
+                        <p class="mt-3 text-3xl font-black text-slate-900">${formatCurrencyLocal(ingresosCurrent)}</p>
+                        <p class="mt-2 text-sm">${formatDeltaLabel(ingresosCurrent, ingresosPrevious, { currency: true })}</p>
+                    </article>
+                    <article class="rounded-[24px] border border-rose-200 bg-rose-50/80 p-5 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">Egresos del periodo</p>
+                        <p class="mt-3 text-3xl font-black text-slate-900">${formatCurrencyLocal(egresosCurrent)}</p>
+                        <p class="mt-2 text-sm">${formatDeltaLabel(egresosCurrent, egresosPrevious, { currency: true })}</p>
+                    </article>
+                    <article class="rounded-[24px] border border-blue-200 bg-blue-50/80 p-5 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Reservas validas</p>
+                        <p class="mt-3 text-3xl font-black text-slate-900">${reservasValidasCurrent.length}</p>
+                        <p class="mt-2 text-sm">${formatDeltaLabel(reservasValidasCurrent.length, reservasValidasPrevious.length)}</p>
+                    </article>
+                    <article class="rounded-[24px] border border-amber-200 bg-amber-50/80 p-5 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">No-show / espera</p>
+                        <p class="mt-3 text-3xl font-black text-slate-900">${noShowCurrent} / ${waitlistPendienteCurrent}</p>
+                        <p class="mt-2 text-sm text-slate-600">No-show vs periodo anterior: ${formatDeltaLabel(noShowCurrent, noShowPrevious)}<br>Lista de espera: ${formatDeltaLabel(waitlistPendienteCurrent, waitlistPendientePrevious)}</p>
+                    </article>
+                </div>
+
+                <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Resultado neto del periodo</p>
+                        <p class="mt-3 text-3xl font-black ${(ingresosCurrent - egresosCurrent) >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${formatCurrencyLocal(ingresosCurrent - egresosCurrent)}</p>
+                        <p class="mt-2 text-sm text-slate-600">${formatDeltaLabel(ingresosCurrent - egresosCurrent, ingresosPrevious - egresosPrevious, { currency: true })}</p>
+                    </article>
+                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tarifas e inteligencia comercial</p>
+                        <p class="mt-3 text-3xl font-black text-slate-900">${reglasActivasPeriodo}</p>
+                        <p class="mt-2 text-sm text-slate-600">Reglas dinamicas activas en el periodo actual.</p>
+                    </article>
+                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Calidad operativa</p>
+                        <p class="mt-3 text-3xl font-black text-slate-900">${avgInspectionCurrent.toFixed(1)}/5</p>
+                        <p class="mt-2 text-sm text-slate-600">${inspeccionesCurrent.length} inspecciones registradas · ${preventivosCurrent} preventivos creados.</p>
+                    </article>
+                </div>
+
+                <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                    <section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Origen comercial</p>
+                                <h4 class="mt-2 text-xl font-bold text-slate-900">Reservas por fuente</h4>
+                            </div>
+                        </div>
+                        <div class="mt-4 overflow-x-auto">
+                            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left font-semibold text-slate-600">Origen</th>
+                                        <th class="px-3 py-2 text-left font-semibold text-slate-600">Embudo</th>
+                                        <th class="px-3 py-2 text-right font-semibold text-slate-600">Reservas</th>
+                                        <th class="px-3 py-2 text-right font-semibold text-slate-600">Ingreso</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    ${originSummary.length > 0 ? originSummary.map((item) => `
+                                        <tr>
+                                            <td class="px-3 py-2 font-semibold text-slate-800">${escapeHtml(item.label)}</td>
+                                            <td class="px-3 py-2 text-slate-500">${escapeHtml(item.funnel)}</td>
+                                            <td class="px-3 py-2 text-right text-slate-700">${item.total}</td>
+                                            <td class="px-3 py-2 text-right font-semibold text-slate-800">${formatCurrencyLocal(item.revenue)}</td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="4" class="px-3 py-4 text-center text-slate-500">Sin reservas en el periodo.</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+
+                    <section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                        <div class="flex items-center justify-between gap-3">
+                            <div>
+                                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Embudo</p>
+                                <h4 class="mt-2 text-xl font-bold text-slate-900">Agrupado por canal</h4>
+                            </div>
+                        </div>
+                        <div class="mt-4 overflow-x-auto">
+                            <table class="min-w-full divide-y divide-slate-200 text-sm">
+                                <thead class="bg-slate-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left font-semibold text-slate-600">Canal</th>
+                                        <th class="px-3 py-2 text-right font-semibold text-slate-600">Reservas</th>
+                                        <th class="px-3 py-2 text-right font-semibold text-slate-600">Ingreso</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    ${funnelSummary.length > 0 ? funnelSummary.map((item) => `
+                                        <tr>
+                                            <td class="px-3 py-2 font-semibold text-slate-800">${escapeHtml(item.funnel)}</td>
+                                            <td class="px-3 py-2 text-right text-slate-700">${item.total}</td>
+                                            <td class="px-3 py-2 text-right font-semibold text-slate-800">${formatCurrencyLocal(item.revenue)}</td>
+                                        </tr>
+                                    `).join('') : '<tr><td colspan="3" class="px-3 py-4 text-center text-slate-500">Sin datos para embudo comercial.</td></tr>'}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
+                </div>
+            </section>
+        `;
+    } catch (err) {
+        console.error('Error generando comparativo gerencial:', err);
+        resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar comparativo gerencial: ${err.message}</p>`;
+    }
+}
+
 // =================================================================================
 // ▲▲▲ FIN DEL BLOQUE PARA REEMPLAZAR ▲▲▲
 // =================================================================================
@@ -1837,6 +2161,7 @@ export async function mount(container, sbInstance, user) {
       else if (tipoReporte === 'ingresos_por_habitaciones_periodo') await generarReporteIngresosPorPeriodo(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'cierres_de_caja') await generarReporteCierresDeCaja(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'kpis_avanzados_hotel') await generarReporteKPIsAvanzados(resultadoContainerEl, fechaInicio, fechaFin);
+      else if (tipoReporte === 'comparativo_gerencial_operacion') await generarReporteComparativoGerencial(resultadoContainerEl, fechaInicio, fechaFin);
       else if (['movimientos_financieros_global', 'detalle_ingresos_categoria', 'detalle_egresos_categoria'].includes(tipoReporte)) {
         await generarReporteFinancieroGlobal(resultadoContainerEl, fechaInicio, fechaFin, tipoReporte);
       } else {

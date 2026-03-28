@@ -1,18 +1,44 @@
-// js/modules/integraciones/integraciones.js
+import { escapeHtml } from '../../security.js';
+import {
+  ACCOUNTING_INTEGRATIONS,
+  OTA_INTEGRATIONS,
+  renderCatalogCards,
+  renderRequestList
+} from './integrationCatalog.js';
 
 let moduleListeners = [];
 let currentHotelId = null;
 let supabaseInstance = null;
 let userObject = null;
+let currentContainer = null;
 
-// --- Funciones de UI (reutilizadas) ---
+function addEvt(element, type, handler) {
+  if (!element) return;
+  element.addEventListener(type, handler);
+  moduleListeners.push({ element, type, handler });
+}
+
+function cleanupListeners() {
+  moduleListeners.forEach(({ element, type, handler }) => {
+    element?.removeEventListener(type, handler);
+  });
+  moduleListeners = [];
+}
+
 function showFeedback(feedbackEl, message, isError = false, duration = 4000) {
   if (!feedbackEl) return;
   feedbackEl.textContent = message;
-  feedbackEl.className = `feedback-message mt-1 mb-1 p-2 rounded-md text-sm ${isError ? 'bg-red-100 text-red-700 border border-red-300' : 'bg-green-100 text-green-700 border border-green-300'} visible`;
+  feedbackEl.className = `feedback-message mt-2 rounded-xl border px-4 py-3 text-sm ${
+    isError
+      ? 'border-red-200 bg-red-50 text-red-700'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+  }`;
   feedbackEl.style.display = 'block';
+  if (feedbackEl.feedbackTimeout) {
+    window.clearTimeout(feedbackEl.feedbackTimeout);
+  }
   if (duration > 0) {
-    setTimeout(() => clearFeedback(feedbackEl), duration);
+    feedbackEl.feedbackTimeout = window.setTimeout(() => clearFeedback(feedbackEl), duration);
   }
 }
 
@@ -28,500 +54,645 @@ function setLoading(formEl, isLoading, buttonEl, originalButtonText = 'Guardar')
     buttonEl.textContent = isLoading ? 'Procesando...' : originalButtonText;
   }
   if (formEl) {
-    Array.from(formEl.elements).forEach(el => {
-      if (el.type !== 'submit' && el.type !== 'button') {
-        el.disabled = isLoading;
+    Array.from(formEl.elements).forEach((element) => {
+      if (element.type !== 'submit' && element.type !== 'button') {
+        element.disabled = isLoading;
       }
     });
   }
 }
 
-// --- LÓGICA DE CALENDARIOS (GOOGLE/OUTLOOK) ---
+async function loadAlegraConfig(formEl, feedbackEl) {
+  if (!formEl || !currentHotelId || !supabaseInstance) return;
 
-async function listarEventosGoogle(container, uiElements) {
-  const lista = uiElements.google.listaEventosEl;
-  lista.innerHTML = '<li class="text-gray-400 text-sm">Cargando eventos...</li>';
+  try {
+    const { data, error } = await supabaseInstance
+      .from('integraciones_hotel')
+      .select('facturador_nombre, facturador_usuario, facturador_api_key')
+      .eq('hotel_id', currentHotelId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const userInput = formEl.elements.alegra_usuario;
+    const tokenInput = formEl.elements.alegra_token;
+    userInput.value = data?.facturador_usuario || '';
+
+    if (data?.facturador_api_key) {
+      tokenInput.value = '********';
+      tokenInput.dataset.realValue = data.facturador_api_key;
+    } else {
+      tokenInput.value = '';
+      delete tokenInput.dataset.realValue;
+    }
+
+    if (data?.facturador_nombre) {
+      showFeedback(feedbackEl, `Integracion fiscal activa con ${data.facturador_nombre}.`, false);
+    }
+  } catch (err) {
+    console.error('Error cargando configuracion de Alegra:', err);
+  }
+}
+
+async function requestIntegration(provider, category, feedbackEl) {
+  if (!provider || !category || !supabaseInstance) return;
+
+  const notes = window.prompt(
+    `Cuentanos por que te interesa ${provider}. Este detalle ayuda a priorizar la integracion:`,
+    ''
+  ) || '';
+
+  try {
+    const { error } = await supabaseInstance.rpc('solicitar_integracion_hotel', {
+      p_categoria: category,
+      p_proveedor: provider,
+      p_notas: notes,
+      p_source: 'modulo_integraciones'
+    });
+
+    if (error) throw error;
+
+    showFeedback(feedbackEl, `Solicitud registrada para ${provider}.`, false);
+    await loadIntegrationRequests();
+  } catch (err) {
+    console.error('Error registrando solicitud de integracion:', err);
+    showFeedback(feedbackEl, `No se pudo registrar la solicitud: ${err.message}`, true, 0);
+  }
+}
+
+async function loadIntegrationRequests() {
+  const listEl = currentContainer?.querySelector('#integration-request-list');
+  if (!listEl || !supabaseInstance || !currentHotelId) return;
+
+  listEl.innerHTML = `
+    <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">
+      Cargando solicitudes...
+    </div>
+  `;
+
+  try {
+    const { data, error } = await supabaseInstance
+      .from('integraciones_interes')
+      .select('id, created_at, categoria, proveedor, estado, notas')
+      .eq('hotel_id', currentHotelId)
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    if (error) throw error;
+    listEl.innerHTML = renderRequestList(data || []);
+  } catch (err) {
+    console.error('Error cargando solicitudes de integracion:', err);
+    listEl.innerHTML = `
+      <div class="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">
+        No se pudieron cargar las solicitudes: ${escapeHtml(err.message || 'Error desconocido')}
+      </div>
+    `;
+  }
+}
+
+async function listarEventosGoogle(uiElements) {
+  const listEl = uiElements.google.listaEventosEl;
+  listEl.innerHTML = '<li class="text-sm text-gray-400">Cargando eventos...</li>';
+
   try {
     const { data, error } = await supabaseInstance.functions.invoke('calendar-list-events', {
       body: { hotelId: currentHotelId, provider: 'google' }
     });
-    if (error || !data || !Array.isArray(data.items)) {
-      lista.innerHTML = '<li class="text-red-600 text-sm">No se pudieron obtener los eventos.</li>';
+
+    if (error || !Array.isArray(data?.items)) {
+      listEl.innerHTML = '<li class="text-sm text-red-600">No se pudieron obtener los eventos.</li>';
       return;
     }
-    if (data.items.length === 0) {
-      lista.innerHTML = '<li class="text-gray-500 text-sm">No hay eventos próximos.</li>';
+
+    if (!data.items.length) {
+      listEl.innerHTML = '<li class="text-sm text-gray-500">No hay eventos proximos.</li>';
       return;
     }
-    lista.innerHTML = '';
-    data.items.forEach(evento => {
-      const li = document.createElement('li');
-      li.className = 'flex justify-between items-center py-1 border-b border-gray-100';
-      li.innerHTML = `
-        <span>
-          <strong>${evento.summary || 'Sin título'}</strong>
-          <span class="ml-2 text-gray-500 text-xs">${evento.start?.dateTime?.replace('T', ' ').slice(0, 16) || evento.start?.date || ''}</span>
+
+    listEl.innerHTML = data.items.map((evento) => `
+      <li class="flex items-center justify-between gap-3 border-b border-gray-100 py-2">
+        <span class="min-w-0 flex-1">
+          <strong class="block truncate">${escapeHtml(evento.summary || 'Sin titulo')}</strong>
+          <small class="text-gray-500">${escapeHtml(evento.start?.dateTime?.replace('T', ' ').slice(0, 16) || evento.start?.date || '')}</small>
         </span>
-      `;
-      const btn = document.createElement('button');
-      btn.textContent = 'Eliminar';
-      btn.className = 'ml-3 px-2 py-1 rounded bg-red-100 text-red-700 text-xs hover:bg-red-200 transition';
-      btn.onclick = async () => {
-        if (confirm('¿Seguro que deseas borrar este evento?')) {
-          btn.disabled = true;
-          btn.textContent = 'Eliminando...';
-          const { data: delData, error: delError } = await supabaseInstance.functions.invoke('calendar-delete-event', {
-            body: { hotelId: currentHotelId, provider: 'google', eventId: evento.id }
-          });
-          if (delError) {
-            alert('Error al eliminar evento: ' + delError.message);
-            btn.disabled = false;
-            btn.textContent = 'Eliminar';
-            return;
-          }
-          li.remove();
-        }
-      };
-      li.appendChild(btn);
-      lista.appendChild(li);
-    });
+        <button type="button" class="delete-calendar-event rounded-lg bg-red-100 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-200" data-provider="google" data-event-id="${escapeHtml(evento.id)}">
+          Eliminar
+        </button>
+      </li>
+    `).join('');
   } catch (err) {
-    lista.innerHTML = '<li class="text-red-600 text-sm">Error al listar eventos.</li>';
+    console.error('Error listando eventos de Google:', err);
+    listEl.innerHTML = '<li class="text-sm text-red-600">Error al listar eventos.</li>';
   }
 }
 
+async function listarEventosOutlook(uiElements) {
+  const listEl = uiElements.outlook.listaEventosEl;
+  listEl.innerHTML = '<li class="text-sm text-gray-400">Cargando eventos...</li>';
 
-
-// ... (código existente, por ejemplo, después de listarEventosGoogle) ...
-
-async function listarEventosOutlook(container, uiElements) {
-  const lista = uiElements.outlook.listaEventosEl;
-  lista.innerHTML = '<li class="text-gray-400 text-sm">Cargando eventos...</li>';
   try {
-    // CAMBIO CLAVE: Invoca la nueva Edge Function para Outlook
     const { data, error } = await supabaseInstance.functions.invoke('outlook-calendar-events', {
-      body: { hotelId: currentHotelId, action: 'list' } // 'action: list' para indicar que quieres listar
+      body: { hotelId: currentHotelId, action: 'list' }
     });
 
-    if (error || !data || !Array.isArray(data.items)) {
-      lista.innerHTML = `<li class="text-red-600 text-sm">No se pudieron obtener los eventos de Outlook: ${error?.message || 'Error desconocido'}.</li>`;
-      return;
-    }
-    if (data.items.length === 0) {
-      lista.innerHTML = '<li class="text-gray-500 text-sm">No hay eventos próximos en Outlook.</li>';
+    if (error || !Array.isArray(data?.items)) {
+      listEl.innerHTML = '<li class="text-sm text-red-600">No se pudieron obtener los eventos de Outlook.</li>';
       return;
     }
 
-    lista.innerHTML = '';
-    data.items.forEach(evento => {
-      const li = document.createElement('li');
-      li.className = 'flex justify-between items-center py-1 border-b border-gray-100';
-      li.innerHTML = `
-        <span>
-          <strong>${evento.summary || 'Sin título'}</strong>
-          <span class="ml-2 text-gray-500 text-xs">${evento.start?.dateTime?.replace('T', ' ').slice(0, 16) || evento.start?.date || ''}</span>
+    if (!data.items.length) {
+      listEl.innerHTML = '<li class="text-sm text-gray-500">No hay eventos proximos en Outlook.</li>';
+      return;
+    }
+
+    listEl.innerHTML = data.items.map((evento) => `
+      <li class="flex items-center justify-between gap-3 border-b border-gray-100 py-2">
+        <span class="min-w-0 flex-1">
+          <strong class="block truncate">${escapeHtml(evento.summary || 'Sin titulo')}</strong>
+          <small class="text-gray-500">${escapeHtml(evento.start?.dateTime?.replace('T', ' ').slice(0, 16) || evento.start?.date || '')}</small>
         </span>
-      `;
-      const btn = document.createElement('button');
-      btn.textContent = 'Eliminar';
-      btn.className = 'ml-3 px-2 py-1 rounded bg-red-100 text-red-700 text-xs hover:bg-red-200 transition';
-      btn.onclick = async () => {
-        if (confirm('¿Seguro que deseas borrar este evento de Outlook?')) {
-          btn.disabled = true;
-          btn.textContent = 'Eliminando...';
-          // CAMBIO CLAVE: Invoca la nueva Edge Function para eliminar eventos de Outlook
-          const { data: delData, error: delError } = await supabaseInstance.functions.invoke('outlook-calendar-events', {
-            body: { hotelId: currentHotelId, action: 'delete', eventId: evento.id } // 'action: delete'
-          });
-          if (delError) {
-            alert('Error al eliminar evento de Outlook: ' + delError.message);
-            btn.disabled = false;
-            btn.textContent = 'Eliminar';
-            return;
-          }
-          li.remove();
-        }
-      };
-      li.appendChild(btn);
-      lista.appendChild(li);
-    });
+        <button type="button" class="delete-calendar-event rounded-lg bg-red-100 px-2 py-1 text-xs font-semibold text-red-700 hover:bg-red-200" data-provider="outlook" data-event-id="${escapeHtml(evento.id)}">
+          Eliminar
+        </button>
+      </li>
+    `).join('');
   } catch (err) {
-    lista.innerHTML = `<li class="text-red-600 text-sm">Error al listar eventos de Outlook: ${err.message}.</li>`;
-    console.error("Error en listarEventosOutlook:", err);
+    console.error('Error listando eventos de Outlook:', err);
+    listEl.innerHTML = '<li class="text-sm text-red-600">Error al listar eventos.</li>';
   }
 }
 
+async function deleteCalendarEvent(provider, eventId, uiElements) {
+  if (!provider || !eventId) return;
+  if (!window.confirm('Estas seguro de que deseas eliminar este evento?')) return;
 
-// ... (dentro de la función verificarEstadoCalendarios)
+  const invokeConfig = provider === 'google'
+    ? { fn: 'calendar-delete-event', body: { hotelId: currentHotelId, provider, eventId } }
+    : { fn: 'outlook-calendar-events', body: { hotelId: currentHotelId, action: 'delete', eventId } };
 
-async function verificarEstadoCalendarios(uiElements) {
-    if (!currentHotelId || !supabaseInstance) {
-        showFeedback(uiElements.mainFeedback, 'Error: Hotel no identificado.', true, 0);
-        return;
-    }
-    showFeedback(uiElements.mainFeedback, 'Verificando estado de conexión de calendarios...', false, 0);
+  const { error } = await supabaseInstance.functions.invoke(invokeConfig.fn, {
+    body: invokeConfig.body
+  });
 
-    try {
-        const { data, error } = await supabaseInstance.functions.invoke('calendar-get-status', {
-            body: { hotelId: currentHotelId }
-        });
-        if (error) throw error;
-
-        // Actualizar UI de Google
-        if (data.google.connected) {
-            uiElements.google.statusEl.textContent = `✅ Conectado como: ${data.google.user_email}`;
-            uiElements.google.connectBtn.style.display = 'none';
-            uiElements.google.disconnectBtn.style.display = 'inline-block';
-            uiElements.google.testForm.style.display = 'block';
-            uiElements.google.listarBtn.style.display = 'inline-block';
-            listarEventosGoogle(null, uiElements); // Se mantiene para Google
-        } else {
-            uiElements.google.statusEl.textContent = 'No conectado.';
-            uiElements.google.connectBtn.style.display = 'inline-block';
-            uiElements.google.disconnectBtn.style.display = 'none';
-            uiElements.google.testForm.style.display = 'none';
-            uiElements.google.listarBtn.style.display = 'none';
-            uiElements.google.listaEventosEl.innerHTML = '';
-        }
-
-        // Actualizar UI de Outlook (igual que antes)
-        if (data.outlook.connected) {
-            uiElements.outlook.statusEl.textContent = `✅ Conectado como: ${data.outlook.user_email}`;
-            uiElements.outlook.connectBtn.style.display = 'none';
-            uiElements.outlook.disconnectBtn.style.display = 'inline-block';
-            uiElements.outlook.testForm.style.display = 'block';
-            // AÑADIR ESTAS LÍNEAS PARA OUTLOOK
-            uiElements.outlook.listarBtn.style.display = 'inline-block'; // Mostrar el botón
-            listarEventosOutlook(null, uiElements); // Llamar a listar eventos de Outlook
-        } else {
-            uiElements.outlook.statusEl.textContent = 'No conectado.';
-            uiElements.outlook.connectBtn.style.display = 'inline-block';
-            uiElements.outlook.disconnectBtn.style.display = 'none';
-            uiElements.outlook.testForm.style.display = 'none';
-            // AÑADIR ESTAS LÍNEAS PARA OUTLOOK
-            uiElements.outlook.listarBtn.style.display = 'none'; // Ocultar el botón
-            uiElements.outlook.listaEventosEl.innerHTML = ''; // Limpiar la lista
-        }
-        clearFeedback(uiElements.mainFeedback);
-
-    } catch (err) {
-        console.error('Error verificando estado de calendarios:', err);
-        showFeedback(uiElements.mainFeedback, `Error al verificar estado: ${err.message}`, true, 0);
-    }
-}
-
-
-async function iniciarConexionCalendario(provider, feedbackEl) {
-  if (!currentHotelId || !supabaseInstance) {
-    showFeedback(feedbackEl, 'Error: Hotel no identificado.', true, 0);
+  if (error) {
+    window.alert(`No se pudo eliminar el evento: ${error.message}`);
     return;
   }
+
+  if (provider === 'google') {
+    await listarEventosGoogle(uiElements);
+  } else {
+    await listarEventosOutlook(uiElements);
+  }
+}
+
+async function verificarEstadoCalendarios(uiElements) {
+  showFeedback(uiElements.mainFeedback, 'Verificando estado de los calendarios...', false, 0);
+
+  try {
+    const { data, error } = await supabaseInstance.functions.invoke('calendar-get-status', {
+      body: { hotelId: currentHotelId }
+    });
+    if (error) throw error;
+
+    const googleConnected = Boolean(data?.google?.connected);
+    uiElements.google.statusEl.textContent = googleConnected
+      ? `Conectado como: ${data.google.user_email}`
+      : 'No conectado.';
+    uiElements.google.connectBtn.style.display = googleConnected ? 'none' : 'inline-block';
+    uiElements.google.disconnectBtn.style.display = googleConnected ? 'inline-block' : 'none';
+    uiElements.google.testForm.style.display = googleConnected ? 'block' : 'none';
+    if (googleConnected) {
+      await listarEventosGoogle(uiElements);
+    } else {
+      uiElements.google.listaEventosEl.innerHTML = '';
+    }
+
+    const outlookConnected = Boolean(data?.outlook?.connected);
+    uiElements.outlook.statusEl.textContent = outlookConnected
+      ? `Conectado como: ${data.outlook.user_email}`
+      : 'No conectado.';
+    uiElements.outlook.connectBtn.style.display = outlookConnected ? 'none' : 'inline-block';
+    uiElements.outlook.disconnectBtn.style.display = outlookConnected ? 'inline-block' : 'none';
+    uiElements.outlook.testForm.style.display = outlookConnected ? 'block' : 'none';
+    if (outlookConnected) {
+      await listarEventosOutlook(uiElements);
+    } else {
+      uiElements.outlook.listaEventosEl.innerHTML = '';
+    }
+
+    clearFeedback(uiElements.mainFeedback);
+  } catch (err) {
+    console.error('Error verificando estado de calendarios:', err);
+    showFeedback(uiElements.mainFeedback, `No se pudo verificar el estado: ${err.message}`, true, 0);
+  }
+}
+
+async function iniciarConexionCalendario(provider, feedbackEl) {
   showFeedback(feedbackEl, `Redirigiendo a ${provider === 'google' ? 'Google' : 'Outlook'}...`, false, 0);
 
   try {
     const { data, error } = await supabaseInstance.functions.invoke('calendar-get-auth-url', {
-      body: { hotelId: currentHotelId, provider: provider }
+      body: { hotelId: currentHotelId, provider }
     });
     if (error) throw error;
-    if (data.authUrl) {
-      window.location.href = data.authUrl;
-    } else {
-      throw new Error('No se recibió URL de autorización.');
-    }
+    if (!data?.authUrl) throw new Error('No se recibio la URL de autorizacion.');
+    window.location.href = data.authUrl;
   } catch (err) {
-    console.error(`Error al iniciar conexión con ${provider}:`, err);
-    showFeedback(feedbackEl, `Error: ${err.message}`, true, 0);
+    console.error(`Error al iniciar conexion con ${provider}:`, err);
+    showFeedback(feedbackEl, `No se pudo iniciar la conexion: ${err.message}`, true, 0);
   }
 }
 
 async function desconectarCalendario(provider, buttonEl, feedbackEl, uiElements) {
-    if (!currentHotelId || !supabaseInstance) { return; }
-    if (!confirm(`¿Estás seguro de que deseas desconectar tu cuenta de ${provider === 'google' ? 'Google' : 'Outlook'}?`)) {
-      return;
-    }
-    setLoading(null, true, buttonEl, 'Desconectando...');
-    try {
-        const { data, error } = await supabaseInstance.functions.invoke('calendar-disconnect', {
-            body: { hotelId: currentHotelId, provider }
-        });
-        if (error) throw error;
-        showFeedback(feedbackEl, data.message || 'Desconectado correctamente.', false);
-        await verificarEstadoCalendarios(uiElements);
-    } catch (err) {
-        console.error(`Error al desconectar ${provider}:`, err);
-        showFeedback(feedbackEl, `Error al desconectar: ${err.message}`, true, 0);
-    } finally {
-        setLoading(null, false, buttonEl, `Desconectar ${provider === 'google' ? 'Google' : 'Outlook'}`);
-    }
+  if (!window.confirm(`Estas seguro de que deseas desconectar ${provider === 'google' ? 'Google' : 'Outlook'}?`)) {
+    return;
+  }
+
+  setLoading(null, true, buttonEl, 'Desconectando...');
+  try {
+    const { data, error } = await supabaseInstance.functions.invoke('calendar-disconnect', {
+      body: { hotelId: currentHotelId, provider }
+    });
+    if (error) throw error;
+    showFeedback(feedbackEl, data?.message || 'Desconectado correctamente.', false);
+    await verificarEstadoCalendarios(uiElements);
+  } catch (err) {
+    console.error(`Error al desconectar ${provider}:`, err);
+    showFeedback(feedbackEl, `No se pudo desconectar: ${err.message}`, true, 0);
+  } finally {
+    setLoading(null, false, buttonEl, 'Desconectar');
+  }
 }
 
 async function crearEventoDePrueba(provider, formEl, buttonEl, feedbackEl, uiElements) {
-    if (!currentHotelId || !supabaseInstance) { return; }
-    setLoading(formEl, true, buttonEl, 'Creando...');
-    clearFeedback(feedbackEl);
-    try {
-        const now = new Date();
-        const start = new Date(now.getTime() + 60 * 60 * 1000);
-        const end = new Date(start.getTime() + 30 * 60 * 1000);
-        const eventDetails = {
-            summary: formEl.elements.test_event_summary.value.trim() || `Reserva de Prueba Hotel`,
-            description: `Este es un evento de prueba creado desde el software hotelero.`,
-            start: start.toISOString(),
-            end: end.toISOString(),
-        };
-        const { data, error } = await supabaseInstance.functions.invoke('calendar-create-event', {
-            body: { hotelId: currentHotelId, provider, eventDetails }
-        });
-        if (error) throw error;
-        showFeedback(feedbackEl, `✅ Evento de prueba creado exitosamente.`, false);
-        formEl.reset();
-        if(provider === "google") listarEventosGoogle(null, uiElements);
-    } catch (err) {
-        console.error(`Error creando evento de prueba en ${provider}:`, err, err?.response, err?.status, err?.body);
-        showFeedback(feedbackEl, `Error al crear evento: ${err.message}`, true, 0);
-    } finally {
-        setLoading(formEl, false, buttonEl, 'Crear Evento de Prueba');
+  setLoading(formEl, true, buttonEl, 'Creando...');
+  clearFeedback(feedbackEl);
+
+  try {
+    const now = new Date();
+    const start = new Date(now.getTime() + 60 * 60 * 1000);
+    const end = new Date(start.getTime() + 30 * 60 * 1000);
+    const eventDetails = {
+      summary: formEl.elements.test_event_summary.value.trim() || 'Reserva de prueba Gestion de Hotel',
+      description: 'Evento de prueba generado desde Integraciones.',
+      start: start.toISOString(),
+      end: end.toISOString()
+    };
+
+    const { error } = await supabaseInstance.functions.invoke('calendar-create-event', {
+      body: { hotelId: currentHotelId, provider, eventDetails }
+    });
+    if (error) throw error;
+
+    showFeedback(feedbackEl, 'Evento de prueba creado correctamente.', false);
+    formEl.reset();
+
+    if (provider === 'google') {
+      await listarEventosGoogle(uiElements);
+    } else {
+      await listarEventosOutlook(uiElements);
     }
+  } catch (err) {
+    console.error(`Error creando evento en ${provider}:`, err);
+    showFeedback(feedbackEl, `No se pudo crear el evento: ${err.message}`, true, 0);
+  } finally {
+    setLoading(formEl, false, buttonEl, 'Crear evento');
+  }
 }
 
-// --- LÓGICA DE ALEGRA (igual que antes) ---
-
 async function guardarConfiguracionAlegra(formEl, feedbackEl, buttonEl) {
-  if (!currentHotelId || !supabaseInstance) {
-    showFeedback(feedbackEl, 'Error: Hotel no identificado o Supabase no disponible.', true, 0);
-    return;
-  }
   setLoading(formEl, true, buttonEl, 'Guardando...');
-  const originalButtonText = buttonEl.textContent;
   const alegraUsuario = formEl.elements.alegra_usuario.value.trim();
-  const alegraToken = formEl.elements.alegra_token.value.trim();
-  const payload = {
-    hotel_id: currentHotelId,
-    facturador_nombre: 'Alegra',
-    facturador_usuario: alegraUsuario,
-    updated_at: new Date().toISOString(),
-  };
   const tokenInput = formEl.elements.alegra_token;
+  const alegraToken = tokenInput.value.trim();
+  let apiKey = null;
+
   if (alegraToken && alegraToken !== '********') {
-    payload.facturador_api_key = alegraToken;
+    apiKey = alegraToken;
   } else if (tokenInput.dataset.realValue) {
-    payload.facturador_api_key = tokenInput.dataset.realValue;
-  } else {
-    payload.facturador_api_key = null;
+    apiKey = tokenInput.dataset.realValue;
   }
+
   try {
     const { error } = await supabaseInstance.functions.invoke('alegra-save-config', {
       body: {
         hotelId: currentHotelId,
         usuario: alegraUsuario,
-        apiKey: payload.facturador_api_key
+        apiKey
       }
     });
     if (error) throw error;
-    showFeedback(feedbackEl, 'Configuración de Alegra guardada correctamente.', false);
-    if (payload.facturador_api_key) {
-        tokenInput.value = '********';
-        tokenInput.dataset.realValue = payload.facturador_api_key;
+
+    if (apiKey) {
+      tokenInput.value = '********';
+      tokenInput.dataset.realValue = apiKey;
     } else {
-        tokenInput.value = '';
-        delete tokenInput.dataset.realValue;
+      tokenInput.value = '';
+      delete tokenInput.dataset.realValue;
     }
+    showFeedback(feedbackEl, 'Configuracion de Alegra guardada correctamente.', false);
   } catch (err) {
-    console.error('Error guardando configuración de Alegra:', err);
-    showFeedback(feedbackEl, `Error al guardar: ${err.message}`, true, 0);
+    console.error('Error guardando configuracion de Alegra:', err);
+    showFeedback(feedbackEl, `No se pudo guardar: ${err.message}`, true, 0);
   } finally {
-    setLoading(formEl, false, buttonEl, originalButtonText || 'Guardar Configuración Alegra');
+    setLoading(formEl, false, buttonEl, 'Guardar configuracion');
   }
 }
 
 async function probarConexionAlegra(feedbackEl, buttonEl) {
-  if (!currentHotelId || !supabaseInstance) { showFeedback(feedbackEl, 'Error: Hotel no identificado.', true, 0); return; }
   setLoading(null, true, buttonEl, 'Probando...');
-  const originalButtonText = buttonEl.textContent;
-  showFeedback(feedbackEl, 'Iniciando prueba de conexión con Alegra...', false, 0);
   try {
     const { data, error } = await supabaseInstance.functions.invoke('alegra-test-connection', {
-      body: { hotelId: currentHotelId },
+      body: { hotelId: currentHotelId }
     });
     if (error) throw error;
-    if (data.ok) {
-      showFeedback(feedbackEl, `✅ Conexión con Alegra exitosa: ${data.message || ''}`, false);
+
+    if (data?.ok) {
+      showFeedback(feedbackEl, data.message || 'Conexion con Alegra exitosa.', false);
     } else {
-      showFeedback(feedbackEl, `❌ Falló la conexión con Alegra: ${data.message || 'Error desconocido.'}`, true, 0);
+      showFeedback(feedbackEl, data?.message || 'Alegra no respondio como se esperaba.', true, 0);
     }
   } catch (err) {
-    console.error('Error en prueba de conexión Alegra:', err);
-    showFeedback(feedbackEl, `Error al probar conexión: ${err.message || err}`, true, 0);
+    console.error('Error probando conexion con Alegra:', err);
+    showFeedback(feedbackEl, `No se pudo probar la conexion: ${err.message}`, true, 0);
   } finally {
-    setLoading(null, false, buttonEl, originalButtonText || 'Probar Conexión');
+    setLoading(null, false, buttonEl, 'Probar conexion');
   }
 }
 
 async function generarFacturaPruebaAlegra(feedbackEl, buttonEl) {
-  if (!currentHotelId || !supabaseInstance) { showFeedback(feedbackEl, 'Error: Hotel no identificado.', true, 0); return; }
   setLoading(null, true, buttonEl, 'Generando...');
-  const originalButtonText = buttonEl.textContent;
-  showFeedback(feedbackEl, 'Enviando factura de prueba a Alegra...', false, 0);
-  const datosFacturaEjemplo = {
-    cliente: { nombre: "Cliente de Prueba", email: "cliente@prueba.com", identificacion: "123456789" },
-    items: [ { nombre: "Producto Prueba 1", precio: 10000, cantidad: 1 } ],
-  };
   try {
     const { data, error } = await supabaseInstance.functions.invoke('alegra-crear-factura', {
-      body: { hotelId: currentHotelId, facturaData: datosFacturaEjemplo },
+      body: {
+        hotelId: currentHotelId,
+        facturaData: {
+          cliente: {
+            nombre: 'Cliente de prueba',
+            email: 'cliente@prueba.com',
+            identificacion: '123456789'
+          },
+          items: [{ nombre: 'Hospedaje de prueba', precio: 10000, cantidad: 1 }]
+        }
+      }
     });
     if (error) throw error;
-    if (data.ok) {
-      showFeedback(feedbackEl, `✅ Factura de prueba generada/enviada: ${data.message || ''} (ID: ${data.facturaId || ''})`, false);
+
+    if (data?.ok) {
+      showFeedback(feedbackEl, `Factura de prueba enviada correctamente${data.facturaId ? ` (ID ${data.facturaId})` : ''}.`, false);
     } else {
-      showFeedback(feedbackEl, `❌ Error al generar factura: ${data.message || 'Error desconocido.'}`, true, 0);
+      showFeedback(feedbackEl, data?.message || 'No se pudo generar la factura de prueba.', true, 0);
     }
   } catch (err) {
-    console.error('Error generando factura de prueba Alegra:', err);
-    showFeedback(feedbackEl, `Error al generar factura: ${err.message || err}`, true, 0);
+    console.error('Error generando factura de prueba:', err);
+    showFeedback(feedbackEl, `No se pudo generar la factura: ${err.message}`, true, 0);
   } finally {
-    setLoading(null, false, buttonEl, originalButtonText || 'Generar Factura de Prueba');
+    setLoading(null, false, buttonEl, 'Factura de prueba');
   }
 }
 
-// --- FUNCIÓN PRINCIPAL DEL MÓDULO ---
+function renderModuleLayout() {
+  currentContainer.innerHTML = `
+    <div class="space-y-6 p-4 md:p-8">
+      <section class="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p class="text-xs uppercase tracking-[0.35em] text-blue-200">Integraciones</p>
+            <h1 class="mt-2 text-3xl font-black">Centro de integraciones y crecimiento</h1>
+            <p class="mt-2 max-w-3xl text-sm text-blue-100">Gestiona calendarios, habilita facturacion con Alegra y deja trazabilidad real de las integraciones contables, fiscales y OTA que tu hotel necesita.</p>
+          </div>
+          <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-blue-50 backdrop-blur">
+            Lo activo, lo solicitado y lo que esta en evaluacion queda concentrado aqui.
+          </div>
+        </div>
+        <div id="calendar-main-feedback" role="alert" aria-live="assertive" style="display:none;" class="mt-4"></div>
+      </section>
+
+      <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Calendarios conectados</p>
+          <h2 class="mt-1 text-xl font-bold text-slate-900">Google y Outlook</h2>
+          <p class="mt-2 text-sm text-slate-600">Sincroniza reservas, evita sobreventa y valida la conexion con eventos de prueba.</p>
+          <div class="mt-5 space-y-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Google Calendar</h3>
+                  <p id="google-status-text" class="mt-1 text-sm text-slate-500">Verificando estado...</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" id="btn-connect-google" class="button button-primary py-2 px-4 rounded-md">Conectar</button>
+                  <button type="button" id="btn-disconnect-google" class="button button-danger py-2 px-4 rounded-md" style="display:none;">Desconectar</button>
+                  <button type="button" id="btn-listar-google" class="button button-accent py-2 px-4 rounded-md">Ver eventos</button>
+                </div>
+              </div>
+              <form id="google-test-form" style="display:none;" class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <p class="mb-2 text-sm font-medium">Probar la conexion</p>
+                <div class="flex items-center gap-2">
+                  <input type="text" name="test_event_summary" placeholder="Titulo del evento de prueba" class="form-control text-sm flex-grow">
+                  <button type="submit" class="button button-secondary py-1 px-3 text-sm">Crear evento</button>
+                </div>
+                <div id="google-test-feedback" class="mt-2 text-sm"></div>
+              </form>
+              <ul id="google-lista-eventos" class="mt-4 text-sm space-y-1"></ul>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <h3 class="text-lg font-bold text-slate-900">Outlook Calendar</h3>
+                  <p id="outlook-status-text" class="mt-1 text-sm text-slate-500">Verificando estado...</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" id="btn-connect-outlook" class="button button-primary py-2 px-4 rounded-md">Conectar</button>
+                  <button type="button" id="btn-disconnect-outlook" class="button button-danger py-2 px-4 rounded-md" style="display:none;">Desconectar</button>
+                  <button type="button" id="btn-listar-outlook" class="button button-accent py-2 px-4 rounded-md">Ver eventos</button>
+                </div>
+              </div>
+              <form id="outlook-test-form" style="display:none;" class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
+                <p class="mb-2 text-sm font-medium">Probar la conexion</p>
+                <div class="flex items-center gap-2">
+                  <input type="text" name="test_event_summary" placeholder="Titulo del evento de prueba" class="form-control text-sm flex-grow">
+                  <button type="submit" class="button button-secondary py-1 px-3 text-sm">Crear evento</button>
+                </div>
+                <div id="outlook-test-feedback" class="mt-2 text-sm"></div>
+              </form>
+              <ul id="outlook-lista-eventos" class="mt-4 text-sm space-y-1"></ul>
+            </div>
+          </div>
+        </article>
+
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Fiscal / contable</p>
+          <h2 class="mt-1 text-xl font-bold text-slate-900">Alegra y roadmap fiscal</h2>
+          <p class="mt-2 text-sm text-slate-600">Mantiene la configuracion real de Alegra y deja priorizadas otras conexiones contables o tributarias.</p>
+          <form id="alegra-config-form" class="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div>
+              <label class="mb-1 block text-sm font-semibold text-slate-700">Usuario de Alegra</label>
+              <input type="text" name="alegra_usuario" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="correo o usuario">
+            </div>
+            <div>
+              <label class="mb-1 block text-sm font-semibold text-slate-700">Token / API key</label>
+              <input type="password" name="alegra_token" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Token seguro de Alegra">
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button type="submit" id="alegra-save-btn" class="button button-primary py-2 px-4 rounded-md">Guardar configuracion</button>
+              <button type="button" id="alegra-test-btn" class="button button-secondary py-2 px-4 rounded-md">Probar conexion</button>
+              <button type="button" id="alegra-invoice-btn" class="button button-accent py-2 px-4 rounded-md">Factura de prueba</button>
+            </div>
+            <div id="alegra-feedback" style="display:none;" class="mt-2"></div>
+          </form>
+        </article>
+      </section>
+
+      <section class="grid gap-6 xl:grid-cols-[1fr_1fr]">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Catalogo fiscal</p>
+              <h2 class="mt-1 text-xl font-bold text-slate-900">Integraciones contables y fiscales</h2>
+            </div>
+            <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Prioriza por hotel</span>
+          </div>
+          <div class="mt-4 grid gap-4 md:grid-cols-2">
+            ${renderCatalogCards(ACCOUNTING_INTEGRATIONS)}
+          </div>
+        </article>
+
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <p class="text-xs uppercase tracking-[0.25em] text-slate-400">OTAs / channel manager</p>
+              <h2 class="mt-1 text-xl font-bold text-slate-900">Linea futura evaluada</h2>
+            </div>
+            <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">Evaluacion viva</span>
+          </div>
+          <p class="mt-2 text-sm text-slate-600">Aqui dejamos priorizados los conectores que mas pueden elevar ocupacion, reducir carga manual y aumentar el valor comercial del SaaS.</p>
+          <div class="mt-4 grid gap-4 md:grid-cols-2">
+            ${renderCatalogCards(OTA_INTEGRATIONS)}
+          </div>
+        </article>
+      </section>
+
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Historial del hotel</p>
+            <h2 class="mt-1 text-xl font-bold text-slate-900">Solicitudes registradas</h2>
+            <p class="mt-2 text-sm text-slate-600">Todo lo que tu hotel pida desde integraciones queda visible aqui para seguimiento comercial y de producto.</p>
+          </div>
+          <div id="integration-request-feedback" style="display:none;" class="w-full md:max-w-md"></div>
+        </div>
+        <div id="integration-request-list" class="mt-4"></div>
+      </section>
+    </div>
+  `;
+}
 
 export async function mount(container, sbInstance, user) {
-  console.log('[Integraciones.js] Montando el módulo de integraciones...');
+  console.log('[Integraciones.js] Montando el modulo de integraciones...');
   unmount();
 
   supabaseInstance = sbInstance;
   userObject = user;
-  currentHotelId = null;
+  currentContainer = container;
+  currentHotelId = userObject?.user_metadata?.hotel_id || null;
 
-  container.innerHTML = `
-    <div class="card">
-      <div class="card-header"><h2 class="text-xl font-semibold">Configuración de Integraciones Externas</h2></div>
-      <div class="card-body">
-        <p class="text-gray-600 text-sm mb-4">
-          Conecta tu sistema hotelero con plataformas externas para automatizar y sincronizar datos.
-        </p>
-        <fieldset class="config-section p-4 border rounded-md mt-6">
-            <legend class="text-lg font-medium text-gray-900 px-2">📅 Sincronización de Calendarios</legend>
-            <p class="text-sm text-gray-500 px-2 mb-4">Conecta un calendario para sincronizar reservas y disponibilidad.</p>
-            <div id="calendar-main-feedback" role="alert" aria-live="assertive" style="display:none;" class="mt-2 mb-2"></div>
-            <div class="p-4 border rounded-md mb-4 bg-gray-50">
-                <h4 class="font-semibold text-gray-800">Google Calendar</h4>
-                <p id="google-status-text" class="text-sm text-gray-600 my-2">Verificando estado...</p>
-                <div class="flex flex-wrap items-center gap-4">
-                    <button type="button" id="btn-connect-google" class="button button-primary py-2 px-4 rounded-md">Conectar con Google</button>
-                    <button type="button" id="btn-disconnect-google" class="button button-danger py-2 px-4 rounded-md" style="display:none;">Desconectar Google</button>
-                    <button type="button" id="btn-listar-google" class="button button-accent py-2 px-4 rounded-md" style="display:none;">Ver Eventos</button>
-                </div>
-                <form id="google-test-form" style="display:none;" class="mt-4 p-3 border-t">
-                     <p class="text-sm font-medium mb-2">Probar la conexión:</p>
-                     <div class="flex items-center gap-2">
-                         <input type="text" name="test_event_summary" placeholder="Título del evento de prueba" class="form-control text-sm flex-grow">
-                         <button type="submit" class="button button-secondary py-1 px-3 text-sm">Crear Evento</button>
-                     </div>
-                     <div id="google-test-feedback" class="mt-2 text-sm"></div>
-                </form>
-                <ul id="google-lista-eventos" class="mt-4 text-sm space-y-1"></ul>
-            </div>
-            <div class="p-4 border rounded-md bg-gray-50">
-                <h4 class="font-semibold text-gray-800">Outlook Calendar</h4>
-                <p id="outlook-status-text" class="text-sm text-gray-600 my-2">Verificando estado...</p>
-                <div class="flex flex-wrap items-center gap-4">
-                    <button type="button" id="btn-connect-outlook" class="button button-primary py-2 px-4 rounded-md">Conectar con Outlook</button>
-                    <button type="button" id="btn-disconnect-outlook" class="button button-danger py-2 px-4 rounded-md" style="display:none;">Desconectar Outlook</button>
-                    <button type="button" id="btn-listar-outlook" class="button button-accent py-2 px-4 rounded-md" style="display:none;">Ver Eventos</button>
-                </div>
-                <form id="outlook-test-form" style="display:none;" class="mt-4 p-3 border-t">
-                     <p class="text-sm font-medium mb-2">Probar la conexión:</p>
-                     <div class="flex items-center gap-2">
-                         <input type="text" name="test_event_summary" placeholder="Título del evento de prueba" class="form-control text-sm flex-grow">
-                         <button type="submit" class="button button-secondary py-1 px-3 text-sm">Crear Evento</button>
-                     </div>
-                     <div id="outlook-test-feedback" class="mt-2 text-sm"></div>
-                </form>
-                <ul id="outlook-lista-eventos" class="mt-4 text-sm space-y-1"></ul>
-            </div>
-        </fieldset>
-       
-      </div>
-    </div>
-  `;
-
-  // Cargar hotelId
-  currentHotelId = userObject?.user_metadata?.hotel_id;
   if (!currentHotelId && userObject?.id) {
     try {
       const { data: perfil } = await supabaseInstance.from('usuarios').select('hotel_id').eq('id', userObject.id).single();
       currentHotelId = perfil?.hotel_id;
     } catch (err) {
-      console.error("Error fetching hotel_id:", err);
+      console.error('Error fetching hotel_id:', err);
     }
   }
 
   if (!currentHotelId) {
-    container.querySelector('.card-body').innerHTML = '<p class="text-red-600">Error: Hotel no identificado. No se pueden gestionar las integraciones.</p>';
+    container.innerHTML = '<div class="rounded-2xl border border-red-200 bg-red-50 p-8 text-center text-red-700 shadow-sm">No se pudo identificar el hotel actual para gestionar integraciones.</div>';
     return;
   }
-  
-  const addEvt = (el, type, handler) => {
-    if (!el) return;
-    el.addEventListener(type, handler);
-    moduleListeners.push({ element: el, type, handler });
-  };
-  
-  // --- Lógica y Listeners de Calendarios ---
+
+  renderModuleLayout();
+
   const calendarUiElements = {
-      mainFeedback: container.querySelector('#calendar-main-feedback'),
-      google: {
-        statusEl: container.querySelector('#google-status-text'),
-        connectBtn: container.querySelector('#btn-connect-google'),
-        disconnectBtn: container.querySelector('#btn-disconnect-google'),
-        listarBtn: container.querySelector('#btn-listar-google'),
-        testForm: container.querySelector('#google-test-form'),
-        testFeedbackEl: container.querySelector('#google-test-feedback'),
-        listaEventosEl: container.querySelector('#google-lista-eventos')
-      },
-      outlook: { 
-        statusEl: container.querySelector('#outlook-status-text'),
-        connectBtn: container.querySelector('#btn-connect-outlook'),
-        disconnectBtn: container.querySelector('#btn-disconnect-outlook'),
-        testForm: container.querySelector('#outlook-test-form'),
-        testFeedbackEl: container.querySelector('#outlook-test-feedback'),
-        listarBtn: container.querySelector('#btn-listar-outlook'),
-        listaEventosEl: container.querySelector('#outlook-lista-eventos')
-      },
+    mainFeedback: container.querySelector('#calendar-main-feedback'),
+    google: {
+      statusEl: container.querySelector('#google-status-text'),
+      connectBtn: container.querySelector('#btn-connect-google'),
+      disconnectBtn: container.querySelector('#btn-disconnect-google'),
+      listarBtn: container.querySelector('#btn-listar-google'),
+      testForm: container.querySelector('#google-test-form'),
+      testFeedbackEl: container.querySelector('#google-test-feedback'),
+      listaEventosEl: container.querySelector('#google-lista-eventos')
+    },
+    outlook: {
+      statusEl: container.querySelector('#outlook-status-text'),
+      connectBtn: container.querySelector('#btn-connect-outlook'),
+      disconnectBtn: container.querySelector('#btn-disconnect-outlook'),
+      testForm: container.querySelector('#outlook-test-form'),
+      testFeedbackEl: container.querySelector('#outlook-test-feedback'),
+      listarBtn: container.querySelector('#btn-listar-outlook'),
+      listaEventosEl: container.querySelector('#outlook-lista-eventos')
+    }
   };
 
   addEvt(calendarUiElements.google.connectBtn, 'click', () => iniciarConexionCalendario('google', calendarUiElements.google.statusEl));
   addEvt(calendarUiElements.google.disconnectBtn, 'click', (e) => desconectarCalendario('google', e.target, calendarUiElements.google.statusEl, calendarUiElements));
   addEvt(calendarUiElements.google.testForm, 'submit', (e) => { e.preventDefault(); crearEventoDePrueba('google', e.target, e.target.querySelector('button'), calendarUiElements.google.testFeedbackEl, calendarUiElements); });
-  addEvt(calendarUiElements.google.listarBtn, 'click', () => listarEventosGoogle(null, calendarUiElements));
+  addEvt(calendarUiElements.google.listarBtn, 'click', () => listarEventosGoogle(calendarUiElements));
 
   addEvt(calendarUiElements.outlook.connectBtn, 'click', () => iniciarConexionCalendario('outlook', calendarUiElements.outlook.statusEl));
   addEvt(calendarUiElements.outlook.disconnectBtn, 'click', (e) => desconectarCalendario('outlook', e.target, calendarUiElements.outlook.statusEl, calendarUiElements));
   addEvt(calendarUiElements.outlook.testForm, 'submit', (e) => { e.preventDefault(); crearEventoDePrueba('outlook', e.target, e.target.querySelector('button'), calendarUiElements.outlook.testFeedbackEl, calendarUiElements); });
-  addEvt(calendarUiElements.outlook.listarBtn, 'click', () => listarEventosOutlook(null, calendarUiElements));
+  addEvt(calendarUiElements.outlook.listarBtn, 'click', () => listarEventosOutlook(calendarUiElements));
+
+  addEvt(calendarUiElements.google.listaEventosEl, 'click', (event) => {
+    const button = event.target.closest('.delete-calendar-event');
+    if (button) deleteCalendarEvent(button.dataset.provider, button.dataset.eventId, calendarUiElements);
+  });
+  addEvt(calendarUiElements.outlook.listaEventosEl, 'click', (event) => {
+    const button = event.target.closest('.delete-calendar-event');
+    if (button) deleteCalendarEvent(button.dataset.provider, button.dataset.eventId, calendarUiElements);
+  });
+
+  const alegraForm = container.querySelector('#alegra-config-form');
+  const alegraFeedback = container.querySelector('#alegra-feedback');
+  const alegraSaveBtn = container.querySelector('#alegra-save-btn');
+  const alegraTestBtn = container.querySelector('#alegra-test-btn');
+  const alegraInvoiceBtn = container.querySelector('#alegra-invoice-btn');
+  const requestFeedback = container.querySelector('#integration-request-feedback');
+
+  addEvt(alegraForm, 'submit', (event) => {
+    event.preventDefault();
+    guardarConfiguracionAlegra(alegraForm, alegraFeedback, alegraSaveBtn);
+  });
+  addEvt(alegraTestBtn, 'click', () => probarConexionAlegra(alegraFeedback, alegraTestBtn));
+  addEvt(alegraInvoiceBtn, 'click', () => generarFacturaPruebaAlegra(alegraFeedback, alegraInvoiceBtn));
+
+  container.querySelectorAll('.integration-request-btn').forEach((button) => {
+    addEvt(button, 'click', () => requestIntegration(button.dataset.provider, button.dataset.category, requestFeedback));
+  });
 
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.has('calendar_status')) {
     const status = urlParams.get('calendar_status');
     const provider = urlParams.get('provider');
     const message = urlParams.get('message') || '';
-    showFeedback(calendarUiElements.mainFeedback, status === 'success' ? `Conexión con ${provider} exitosa.` : `Falló la autorización con ${provider}: ${message}`, status !== 'success', 5000);
+    showFeedback(calendarUiElements.mainFeedback, status === 'success' ? `Conexion con ${provider} exitosa.` : `Fallo la autorizacion con ${provider}: ${message}`, status !== 'success', 5000);
     window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
   }
-  await verificarEstadoCalendarios(calendarUiElements);
 
+  await Promise.all([
+    verificarEstadoCalendarios(calendarUiElements),
+    loadAlegraConfig(alegraForm, alegraFeedback),
+    loadIntegrationRequests()
+  ]);
 }
 
-
 export function unmount() {
-  moduleListeners.forEach(({ element, type, handler }) => {
-    element?.removeEventListener(type, handler);
-  });
-  moduleListeners = [];
+  cleanupListeners();
   currentHotelId = null;
   supabaseInstance = null;
   userObject = null;
-  console.log('Integraciones module unmounted and listeners cleaned up.');
+  currentContainer = null;
 }
