@@ -65,6 +65,31 @@ const state = {
 };
 
 // --- MÓDULO DE UI (VISTA) ---
+function getEstadoHabitacionSegunReservaPendiente(fechaInicio) {
+    const inicioReserva = new Date(fechaInicio || '');
+    if (Number.isNaN(inicioReserva.getTime())) {
+        return 'libre';
+    }
+
+    const ahora = new Date();
+    const dosHorasMs = 2 * 60 * 60 * 1000;
+    const tiempoFaltante = inicioReserva.getTime() - ahora.getTime();
+    const limiteLlegada = new Date(
+        inicioReserva.getFullYear(),
+        inicioReserva.getMonth(),
+        inicioReserva.getDate(),
+        23,
+        59,
+        59,
+        999
+    );
+    const reservaPendienteMismoDia = tiempoFaltante <= 0 && ahora.getTime() <= limiteLlegada.getTime();
+
+    return (tiempoFaltante > 0 && tiempoFaltante <= dosHorasMs) || reservaPendienteMismoDia
+        ? 'reservada'
+        : 'libre';
+}
+
 const ui = {
     container: null, form: null, feedbackDiv: null, formTitle: null,
     submitButton: null, cancelEditButton: null, reservasListEl: null,
@@ -1582,13 +1607,15 @@ async function updateBooking(payload) {
 
         if (errOldHab) console.error("Error al liberar la habitación original:", errOldHab);
 
-        // Ocupar la nueva habitación
+        const nuevoEstadoHabitacion = getEstadoHabitacionSegunReservaPendiente(updatedReserva.fecha_inicio);
+
+        // Ajustar la nueva habitación según la ventana real de bloqueo
         const { error: errNewHab } = await state.supabase
             .from('habitaciones')
-            .update({ estado: 'reservada' }) // O el estado que corresponda
+            .update({ estado: nuevoEstadoHabitacion })
             .eq('id', nuevaHabitacionId);
 
-        if (errNewHab) console.error("Error al reservar la nueva habitación:", errNewHab);
+        if (errNewHab) console.error("Error al actualizar la nueva habitación de la reserva:", errNewHab);
     }
     // --- FIN DE LA LÓGICA DE CORRECCIÓN ---
 

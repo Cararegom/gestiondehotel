@@ -311,22 +311,13 @@ export async function showConfirmationModal({
   return result.isConfirmed;
 }
 export async function notificarAlegraViaZapier(supabase, hotelId, datosVenta) {
-  const { data } = await supabase
-    .from("hoteles")
-    .select("alegra_webhook_url")
-    .eq("id", hotelId)
-    .single();
-  const urlWebhook = data?.alegra_webhook_url;
-  if (!urlWebhook) return; // Si el hotel no lo configuró, simplemente no se envía
-
   try {
-    await fetch(urlWebhook, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(datosVenta),
+    const { data, error } = await supabase.functions.invoke('alegra-zapier-notify', {
+      body: { hotelId, datosVenta },
     });
+    if (error) throw error;
+    if (data?.skipped) return;
   } catch (err) {
-    // Puedes mostrar feedback al usuario si lo deseas, pero lo normal es solo loguear el error
     console.warn("No se pudo notificar a Zapier/Alegra:", err);
   }
 }

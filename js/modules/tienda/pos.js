@@ -63,45 +63,76 @@ export async function renderPOS() {
         <input id="buscadorPOS" placeholder="Buscar producto, categoria o codigo..." style="width:100%;margin-bottom:16px;padding:11px 15px;font-size:16px;border-radius:9px;border:1.5px solid #cbd5e1; background:#f9fafb; outline:none;">
         <div id="productosPOS" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:18px; margin-bottom:8px;"></div>
       </div>
-      <div style="min-width:340px; max-width:410px; flex:1 1 340px; background:#fff; border-radius:16px; box-shadow:0 2px 14px #b6d0f922; padding:28px 24px; position:sticky; top:20px; align-self:flex-start; z-index:10;">
-        <h2 style="font-size:1.4rem; color:#22c55e; font-weight:bold; margin-bottom:16px; letter-spacing:1px;">Carrito de venta</h2>
-        <table style="width:100%;font-size:15px;margin-bottom:14px;border-radius:10px;overflow:hidden;">
-          <thead>
-            <tr style="background:#f1f5f9;">
-              <th>Producto</th>
-              <th>Cant.</th>
-              <th>Precio</th>
-              <th>Subtotal</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="carritoPOS"></tbody>
-        </table>
-        <div id="resumen-pago-pos">
-          <div style="text-align:right;font-size:1.1rem;font-weight:600;margin-bottom:8px;">Subtotal: <span id="subtotalPOS">$0</span></div>
-          <div id="lineaDescuentoPOS" style="text-align:right;font-size:1rem;font-weight:600;margin-bottom:8px;color:#22c55e;display:none;">
-            Descuento (<span id="nombreDescuentoPOS"></span>): -<span id="montoDescuentoPOS">$0</span>
+      <div style="min-width:360px; max-width:460px; flex:1 1 360px; background:#fff; border-radius:20px; box-shadow:0 18px 40px rgba(15,23,42,0.08); position:sticky; top:20px; align-self:flex-start; z-index:10; overflow:hidden; border:1px solid #dbeafe;">
+        <div style="padding:22px 24px 18px; background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 56%,#22c55e 100%); color:#fff;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+            <div>
+              <div style="font-size:0.84rem;letter-spacing:0.18em;text-transform:uppercase;opacity:0.8;margin-bottom:6px;">Punto de venta</div>
+              <h2 style="font-size:1.45rem;font-weight:800;margin:0 0 6px;">Carrito de venta</h2>
+              <p style="margin:0;font-size:0.96rem;opacity:0.9;">Controla artículos, descuentos y forma de pago en un solo bloque.</p>
+            </div>
+            <div style="padding:10px 12px;border-radius:16px;background:rgba(255,255,255,0.14);min-width:88px;text-align:center;border:1px solid rgba(255,255,255,0.16);">
+              <div style="font-size:0.73rem;text-transform:uppercase;letter-spacing:0.12em;opacity:0.8;">Items</div>
+              <div id="cartItemsCountPOS" style="font-size:1.4rem;font-weight:800;line-height:1.1;">0</div>
+            </div>
           </div>
-          <div style="text-align:right;font-size:1.3rem;font-weight:700;margin-bottom:14px;border-top:1px solid #eee;padding-top:8px;">Total: <span id="totalPOS" style="color:#1d4ed8">$0</span></div>
+          <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:16px;">
+            <div style="padding:11px 12px;border-radius:14px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.12);">
+              <div style="font-size:0.74rem;text-transform:uppercase;letter-spacing:0.12em;opacity:0.75;">Unidades</div>
+              <div id="cartUnitsCountPOS" style="font-size:1.2rem;font-weight:800;margin-top:4px;">0</div>
+            </div>
+            <div style="padding:11px 12px;border-radius:14px;background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.12);">
+              <div style="font-size:0.74rem;text-transform:uppercase;letter-spacing:0.12em;opacity:0.75;">Estado</div>
+              <div style="font-size:1rem;font-weight:700;margin-top:4px;">Listo para cobrar</div>
+            </div>
+          </div>
         </div>
 
-        <div id="aplicar-descuento-cont" style="display:flex; gap:8px; margin-bottom:14px;">
-          <input id="codigoDescuentoInput" placeholder="Codigo de descuento" style="flex-grow:1; padding:8px 12px; border-radius:7px; border:1.5px solid #e5e7eb;">
-          <button id="btnAplicarDescuento" style="background:#5a67d8; color:white; border:none; padding:0 18px; border-radius:7px; font-weight:600; cursor:pointer;">Aplicar</button>
-          <button id="btnRemoverDescuento" style="background:#e53e3e; color:white; border:none; padding:0 15px; border-radius:7px; font-weight:600; cursor:pointer; display:none;">X</button>
-        </div>
+        <div style="padding:20px 22px 22px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div style="font-weight:700;color:#0f172a;font-size:1rem;">Detalle del carrito</div>
+            <button id="btnVaciarCarritoPOS" type="button" style="background:#fff1f2;color:#e11d48;border:1px solid #fecdd3;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer;font-size:0.88rem;">Vaciar</button>
+          </div>
 
-        <div style="display:flex;gap:8px;margin-bottom:12px;">
-          <select id="modoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;">
-            <option value="inmediato">Pago Inmediato</option>
-            <option value="habitacion">Cargar a Habitacion</option>
-          </select>
-          <select id="metodoPOS" style="flex:1;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
-          <select id="habitacionPOS" style="flex:1;display:none;max-width:160px;padding:8px 10px;border-radius:7px;border:1.5px solid #cbd5e1;"></select>
+          <div id="carritoPOS" style="display:flex;flex-direction:column;gap:10px;max-height:310px;overflow:auto;padding-right:2px;margin-bottom:16px;"></div>
+
+          <div id="resumen-pago-pos" style="background:linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%);border:1px solid #e2e8f0;border-radius:18px;padding:16px 16px 14px;margin-bottom:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:0.98rem;color:#334155;">
+              <span>Subtotal</span>
+              <strong id="subtotalPOS" style="font-size:1.02rem;color:#0f172a;">$0</strong>
+            </div>
+            <div id="lineaDescuentoPOS" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:0.96rem;color:#16a34a;font-weight:700;">
+              <span>Descuento (<span id="nombreDescuentoPOS"></span>)</span>
+              <span>-<span id="montoDescuentoPOS">$0</span></span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid #cbd5e1;">
+              <span style="font-size:0.84rem;text-transform:uppercase;letter-spacing:0.12em;color:#64748b;">Total a cobrar</span>
+              <strong id="totalPOS" style="font-size:1.55rem;color:#1d4ed8;line-height:1;">$0</strong>
+            </div>
+          </div>
+
+          <div id="aplicar-descuento-cont" style="display:flex; gap:8px; margin-bottom:14px;">
+            <input id="codigoDescuentoInput" placeholder="Codigo de descuento" style="flex-grow:1; padding:10px 12px; border-radius:10px; border:1.5px solid #dbe4f0; background:#fff;">
+            <button id="btnAplicarDescuento" style="background:#4f46e5; color:white; border:none; padding:0 18px; border-radius:10px; font-weight:700; cursor:pointer;">Aplicar</button>
+            <button id="btnRemoverDescuento" style="background:#ef4444; color:white; border:none; padding:0 15px; border-radius:10px; font-weight:700; cursor:pointer; display:none;">Quitar</button>
+          </div>
+
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 14px 12px;margin-bottom:14px;">
+            <div style="font-size:0.82rem;text-transform:uppercase;letter-spacing:0.12em;color:#64748b;font-weight:700;margin-bottom:10px;">Forma de venta</div>
+            <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+              <select id="modoPOS" style="flex:1 1 160px;padding:10px 12px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;">
+                <option value="inmediato">Pago Inmediato</option>
+                <option value="habitacion">Cargar a Habitacion</option>
+              </select>
+              <select id="metodoPOS" style="flex:1 1 160px;padding:10px 12px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;"></select>
+              <select id="habitacionPOS" style="flex:1 1 160px;display:none;padding:10px 12px;border-radius:10px;border:1.5px solid #cbd5e1;background:#fff;"></select>
+            </div>
+            <input id="clientePOS" placeholder="Cliente (opcional)" style="width:100%;padding:10px 12px;font-size:1rem;border-radius:10px;border:1.5px solid #dbe4f0;background:#fff;">
+          </div>
+
+          <button id="btnVentaPOS" style="width:100%; background:linear-gradient(90deg,#16a34a 0%,#22c55e 44%,#38bdf8 100%); color:#fff;font-size:1.08rem;font-weight:800; border:none;padding:14px 0;border-radius:14px;box-shadow:0 12px 24px rgba(34,197,94,0.18); margin-bottom:6px;letter-spacing:0.02em;cursor:pointer;">Registrar Venta</button>
+          <div id="msgPOS" style="margin-top:10px;font-weight:700;min-height:24px;color:#e11d48;"></div>
         </div>
-        <input id="clientePOS" placeholder="Cliente (opcional)" style="width:100%;margin-bottom:12px;padding:8px 12px;font-size:1rem;border-radius:7px;border:1.5px solid #e5e7eb;">
-        <button id="btnVentaPOS" style="width:100%; background:linear-gradient(90deg,#22c55e,#38bdf8 92%); color:#fff;font-size:1.13rem;font-weight:700; border:none;padding:13px 0;border-radius:9px;box-shadow:0 2px 6px #22c55e33; margin-bottom:4px;letter-spacing:0.8px;cursor:pointer;">Registrar Venta</button>
-        <div id="msgPOS" style="color:#e11d48;margin-top:10px;font-weight:bold;min-height:28px;"></div>
       </div>
     </div>
   `;
@@ -129,6 +160,13 @@ export async function renderPOS() {
   document.getElementById('btnVentaPOS').onclick = registrarVentaPOS;
   document.getElementById('btnAplicarDescuento').onclick = aplicarDescuentoPOS;
   document.getElementById('btnRemoverDescuento').onclick = removerDescuentoPOS;
+  document.getElementById('btnVaciarCarritoPOS').onclick = () => {
+    posCarrito = [];
+    descuentoAplicado = null;
+    const codigoInputEl = document.getElementById('codigoDescuentoInput');
+    if (codigoInputEl) codigoInputEl.value = '';
+    renderCarritoPOS();
+  };
 }
 
 function getDiscountableBase(discount, cart) {
@@ -295,9 +333,9 @@ function renderProductosPOS() {
 }
 
 function renderCarritoPOS() {
-  const tbody = document.getElementById('carritoPOS');
-  if (!tbody) return;
-  tbody.innerHTML = '';
+  const carritoEl = document.getElementById('carritoPOS');
+  if (!carritoEl) return;
+  carritoEl.innerHTML = '';
 
   const subtotalEl = document.getElementById('subtotalPOS');
   const totalEl = document.getElementById('totalPOS');
@@ -307,21 +345,55 @@ function renderCarritoPOS() {
   const btnAplicar = document.getElementById('btnAplicarDescuento');
   const btnRemover = document.getElementById('btnRemoverDescuento');
   const codigoInput = document.getElementById('codigoDescuentoInput');
+  const cartItemsCountEl = document.getElementById('cartItemsCountPOS');
+  const cartUnitsCountEl = document.getElementById('cartUnitsCountPOS');
 
   let subtotal = 0;
+  let unidades = 0;
   posCarrito.forEach((item) => {
     const itemSubtotal = item.cantidad * item.precio_venta;
     subtotal += itemSubtotal;
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${item.nombre}</td>
-      <td><input type="number" min="1" max="${item.stock_actual}" value="${item.cantidad}" style="width:40px;" onchange="updateQtyPOS('${item.id}',this.value)"></td>
-      <td>${formatCurrency(item.precio_venta)}</td>
-      <td>${formatCurrency(itemSubtotal)}</td>
-      <td><button onclick="removeCartPOS('${item.id}')" style="color:#e11;">X</button></td>
+    unidades += item.cantidad;
+
+    const card = document.createElement('div');
+    card.style = `
+      display:grid;
+      grid-template-columns:56px minmax(0,1fr) auto;
+      gap:12px;
+      align-items:center;
+      padding:12px;
+      border-radius:16px;
+      border:1px solid #e2e8f0;
+      background:#fff;
+      box-shadow:0 6px 14px rgba(15,23,42,0.04);
     `;
-    tbody.appendChild(tr);
+    card.innerHTML = `
+      <img src="${item.imagen_url || 'https://via.placeholder.com/96x96?text=Sin+Foto'}" alt="${item.nombre}" style="width:56px;height:56px;border-radius:14px;object-fit:cover;background:#f8fafc;border:1px solid #e2e8f0;">
+      <div style="min-width:0;">
+        <div style="font-weight:800;color:#0f172a;font-size:0.96rem;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${item.nombre}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;font-size:0.84rem;color:#64748b;">
+          <span>Unitario: <strong style="color:#334155;">${formatCurrency(item.precio_venta)}</strong></span>
+          <span>Subtotal: <strong style="color:#16a34a;">${formatCurrency(itemSubtotal)}</strong></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+          <span style="font-size:0.8rem;color:#64748b;font-weight:700;">Cantidad</span>
+          <input type="number" min="1" max="${item.stock_actual}" value="${item.cantidad}" style="width:68px;padding:7px 8px;border-radius:10px;border:1.5px solid #cbd5e1;font-weight:700;" onchange="updateQtyPOS('${item.id}',this.value)">
+        </div>
+      </div>
+      <button onclick="removeCartPOS('${item.id}')" style="align-self:flex-start;background:#fff1f2;color:#e11d48;border:1px solid #fecdd3;border-radius:999px;padding:8px 10px;cursor:pointer;font-weight:800;">X</button>
+    `;
+    carritoEl.appendChild(card);
   });
+
+  if (!posCarrito.length) {
+    carritoEl.innerHTML = `
+      <div style="padding:22px 18px;border:1.5px dashed #cbd5e1;border-radius:18px;background:#f8fafc;text-align:center;color:#64748b;">
+        <div style="font-size:2rem;line-height:1;margin-bottom:10px;">🛒</div>
+        <div style="font-weight:800;color:#334155;margin-bottom:4px;">Tu carrito esta vacio</div>
+        <div style="font-size:0.92rem;">Agrega productos desde la izquierda para comenzar la venta.</div>
+      </div>
+    `;
+  }
 
   let montoDescuento = 0;
   let totalFinal = subtotal;
@@ -341,9 +413,11 @@ function renderCarritoPOS() {
 
   subtotalEl.textContent = formatCurrency(subtotal);
   totalEl.textContent = formatCurrency(totalFinal);
+  if (cartItemsCountEl) cartItemsCountEl.textContent = String(posCarrito.length);
+  if (cartUnitsCountEl) cartUnitsCountEl.textContent = String(unidades);
 
   if (descuentoAplicado && montoDescuento > 0) {
-    lineaDescuentoEl.style.display = 'block';
+    lineaDescuentoEl.style.display = 'flex';
     nombreDescuentoEl.textContent = descuentoAplicado.nombre;
     montoDescuentoEl.textContent = formatCurrency(montoDescuento);
     btnAplicar.style.display = 'none';

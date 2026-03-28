@@ -1,20 +1,21 @@
 ﻿// modules/micuenta/micuenta.js
 
 // --- IMPORTACIONES ---
-import { abrirMercadoPagoCheckout } from './mercadoPagoService.js';
+import { abrirCheckoutSuscripcion } from './checkoutSuscripcionService.js';
+import { loadMiCuentaData } from './accountDataService.js';
+import {
+  USD_PRICES,
+  PROMO_BIENVENIDA_MESES,
+  alertaVencimientoHTML,
+  applyPromoBienvenida,
+  formatMoneda,
+  getBasePlanAmounts,
+  getPromoBienvenidaHTML
+} from './pricing.js';
+import { registrarAccionSensible } from '../../services/sensitiveAuditService.js';
 
 // --- CONSTANTES Y VARIABLES GLOBALES ---
-const WOMPI_PUBLIC_KEY = 'pub_prod_7qQum1STAjqRoaupXWNwcSvwSFZ9ANq0';
 let snackbarTimeout = null;
-const USD_PRICES = {
-  lite: 30,
-  pro: 45,
-  max: 60
-};
-let CURRENCY_RATE_CACHE = { rate: 4000, last: 0 };
-const PROMO_BIENVENIDA_INICIO = new Date('2026-03-17T00:00:00-05:00');
-const PROMO_BIENVENIDA_MESES = 3;
-const PROMO_BIENVENIDA_DESCUENTO = 0.5;
 
 // =======================================================================
 // ========================== FUNCIONES DE UTILIDAD ========================
@@ -40,224 +41,60 @@ function showSnackbar(container, message, type = 'success') {
   snackbarTimeout = setTimeout(() => { snackbar.style.opacity = '0'; }, 3300);
 }
 
-function alertaVencimientoHTML(diasRestantes, estado, enGracia) {
-  if (estado === 'vencido') {
-    return `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 mb-6 rounded">
-      <b>Â¡Tu suscripciÃ³n estÃ¡ vencida!</b> Tienes <b>${diasRestantes}</b> dÃ­as de gracia para renovar antes del bloqueo total.
-    </div>`;
-  }
-  if (enGracia) {
-    return `<div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 mb-6 rounded">
-      <b>Â¡AtenciÃ³n!</b> Tu periodo de gracia termina en <b>${diasRestantes}</b> dÃ­as. Renueva tu plan para evitar bloqueo.
-    </div>`;
-  }
-  if (diasRestantes <= 3 && estado !== 'trial') {
-    return `<div class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-900 p-3 mb-6 rounded">
-      <b>Â¡Tu suscripciÃ³n vence pronto!</b> Quedan <b>${diasRestantes}</b> dÃ­as para renovar o cambiar de plan.
-    </div>`;
-  }
-  return '';
-}
-
-function formatMoneda(valor, moneda = 'COP') {
-  if (moneda === 'USD') {
-    return '$' + valor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-  return '$' + valor.toLocaleString('es-CO', { maximumFractionDigits: 0 });
-}
-
-async function getUsdToCopRate() {
-  const now = Date.now();
-  if (CURRENCY_RATE_CACHE.rate && (now - CURRENCY_RATE_CACHE.last) < 120000) {
-    return CURRENCY_RATE_CACHE.rate;
-  }
-  try {
-    const resp = await fetch('https://api.exchangerate.host/latest?base=USD&symbols=COP');
-    const data = await resp.json();
-    if (data && data.rates && data.rates.COP) {
-      CURRENCY_RATE_CACHE = { rate: data.rates.COP, last: now };
-      return data.rates.COP;
-    }
-  } catch (e) {
-    console.error("Error fetching currency rate:", e);
-  }
-  return 4000;
-}
-
-function getPositiveSubscriptionPayments(pagos = []) {
-  return (Array.isArray(pagos) ? pagos : []).filter((pago) => {
-    const monto = Number(pago?.monto ?? 0);
-    return Number.isFinite(monto) && monto > 0 && Boolean(pago?.plan);
-  });
-}
-
-function getPromoBienvenidaStatus(hotel, pagos = []) {
-  const trialStart = hotel?.trial_inicio ? new Date(hotel.trial_inicio) : null;
-  const elegiblePorFecha = Boolean(
-    trialStart &&
-    !Number.isNaN(trialStart.getTime()) &&
-    trialStart >= PROMO_BIENVENIDA_INICIO
-  );
-  const ahora = Date.now();
-  const promoWindowEnd = trialStart ? new Date(trialStart) : null;
-  if (promoWindowEnd) {
-    promoWindowEnd.setDate(promoWindowEnd.getDate() + 120);
-  }
-  const vigentePorTiempo = Boolean(
-    promoWindowEnd &&
-    !Number.isNaN(promoWindowEnd.getTime()) &&
-    ahora <= promoWindowEnd.getTime()
-  );
-  const pagosRegistrados = getPositiveSubscriptionPayments(pagos).length;
-  const pagosUsados = Math.min(PROMO_BIENVENIDA_MESES, pagosRegistrados);
-  const mesesRestantes = Math.max(0, PROMO_BIENVENIDA_MESES - pagosUsados);
-
-  return {
-    aplica: elegiblePorFecha && vigentePorTiempo && mesesRestantes > 0,
-    elegiblePorFecha,
-    vigentePorTiempo,
-    pagosRegistrados,
-    pagosUsados,
-    mesesRestantes,
-    siguienteMesPromo: pagosUsados + 1,
-    porcentaje: Math.round(PROMO_BIENVENIDA_DESCUENTO * 100),
-    aplicaEnPeriodo(periodo) {
-      return this.aplica && periodo === 'mensual';
-    }
-  };
-}
-
-function getBasePlanAmounts(plan, periodo = 'mensual') {
-  const planKey = plan?.nombre?.trim().toLowerCase() || '';
-  const baseCOP = periodo === 'anual'
-    ? Number(plan?.precio_mensual || 0) * 10
-    : Number(plan?.precio_mensual || 0);
-  let baseUSD = USD_PRICES[planKey] || 0;
-  if (periodo === 'anual') {
-    baseUSD *= 10;
-  }
-  return { baseCOP, baseUSD };
-}
-
-function applyPromoBienvenida({ baseCOP = 0, baseUSD = 0, periodo = 'mensual', promoStatus }) {
-  const promoAplica = Boolean(promoStatus?.aplicaEnPeriodo?.(periodo));
-  const factor = promoAplica ? (1 - PROMO_BIENVENIDA_DESCUENTO) : 1;
-  const finalCOP = Number((baseCOP * factor).toFixed(2));
-  const finalUSD = Number((baseUSD * factor).toFixed(2));
-  const ahorroCOP = Number((baseCOP - finalCOP).toFixed(2));
-  const ahorroUSD = Number((baseUSD - finalUSD).toFixed(2));
-  return { promoAplica, baseCOP, baseUSD, finalCOP, finalUSD, ahorroCOP, ahorroUSD };
-}
-
-function getPromoBienvenidaHTML(promoStatus, periodoActual) {
-  if (!promoStatus?.aplica) {
-    return '';
-  }
-
-  const mensajePeriodo = periodoActual === 'mensual'
-    ? `Tu siguiente mensualidad se cobrara con <b>${promoStatus.porcentaje}% OFF</b>.`
-    : `El ${promoStatus.porcentaje}% OFF aplica solo en pagos mensuales. Si eliges anual, se mantienen los 2 meses gratis del plan anual.`;
-
-  return `
-    <div class="mb-6 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-lime-50 p-4 shadow-sm">
-      <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div class="text-sm font-semibold uppercase tracking-wide text-amber-700">Promocion de bienvenida activa</div>
-          <div class="mt-1 text-base font-semibold text-slate-800">Primer mes gratis + 3 meses al 50% para cuentas nuevas.</div>
-          <div class="mt-1 text-sm text-slate-600">${mensajePeriodo}</div>
-        </div>
-        <div class="rounded-xl bg-white px-4 py-3 text-sm shadow-sm border border-amber-100">
-          <div class="font-semibold text-slate-800">Te quedan ${promoStatus.mesesRestantes} de ${PROMO_BIENVENIDA_MESES} meses promocionales</div>
-          <div class="text-slate-500">El siguiente seria tu mes promocional ${promoStatus.siguienteMesPromo}.</div>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
 // =======================================================================
-// ========================== FUNCIÃ“N PRINCIPAL (MOUNT) ====================
+// ========================== FUNCIÓN PRINCIPAL (MOUNT) ====================
 // =======================================================================
 
 export async function mount(container, supabase, user, hotelId) {
   container.innerHTML = `<div class="flex justify-center items-center min-h-[60vh] text-xl text-gray-500 animate-pulse">Cargando tu cuenta...</div>`;
 
-  const { data: userProfile } = await supabase.from('usuarios').select('*').eq('id', user.id).single();
-  const { data: hotel } = await supabase.from('hoteles').select('*').eq('id', hotelId).single();
-  const { data: plans } = await supabase.from('planes').select('*').order('precio_mensual', { ascending: true });
-  const { data: pagos = [] } = await supabase.from('pagos').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false });
-  const pagosSafe = Array.isArray(pagos) ? pagos : [];
-  const promoBienvenida = getPromoBienvenidaStatus(hotel, pagosSafe);
-  const { data: cambiosPlan = [] } = await supabase.from('cambios_plan').select('*').eq('hotel_id', hotelId).order('fecha', { ascending: false });
-  const cambiosPlanSafe = Array.isArray(cambiosPlan) ? cambiosPlan : [];
-
-
-  let referidosSafe = [];
-
-// âœ… Mostramos quÃ© hotelId se estÃ¡ usando
-console.log("ðŸ“¦ hotelId recibido en Mi Cuenta:", hotelId);
-
-try {
-  // âœ… Ejecutamos la consulta corregida
-  const { data: referidosRaw, error: errorReferidos } = await supabase
-    .from('referidos')
-    .select('nombre_hotel_referido, fecha_registro, estado, recompensa_otorgada') // Campo corregido
-    .eq('referidor_id', hotelId)
-    .order('fecha_registro', { ascending: false }); // Campo corregido
-
-  // âœ… Mostramos lo que devuelve la base de datos
-  console.log("ðŸ” Resultado referidosRaw:", referidosRaw);
-
-  // âœ… Validamos si hubo error o si vino vacÃ­o
-  if (errorReferidos) {
-    console.error("âŒ Error al consultar referidos:", errorReferidos.message);
-  } else if (!referidosRaw || referidosRaw.length === 0) {
-    console.warn("âš ï¸ Consulta ejecutada correctamente pero no devolviÃ³ ningÃºn referido.");
-  }
-
-  // âœ… Guardamos los datos si vinieron bien
-  referidosSafe = Array.isArray(referidosRaw) ? referidosRaw : [];
-
-} catch (err) {
-  console.error("âŒ ExcepciÃ³n al cargar referidos:", err);
-}
-
-
-  const { count: conteoHabitaciones, error: errHabitaciones } = await supabase
-      .from('habitaciones')
-      .select('id', { count: 'exact', head: true })
-      .eq('hotel_id', hotelId);
-
-  const { count: conteoUsuarios, error: errUsuarios } = await supabase
-      .from('usuarios')
-      .select('id', { count: 'exact', head: true })
-      .eq('hotel_id', hotelId);
-  
-  if (errHabitaciones || errUsuarios) {
-      console.error("Error obteniendo conteo de recursos:", errHabitaciones, errUsuarios);
-      showSnackbar(container, 'Error al verificar uso actual del hotel.', 'error');
-  }
-
-  const esSuperAdmin = (userProfile.rol === 'admin' || userProfile.rol === 'superadmin' || (hotel.creado_por && userProfile.id === hotel.creado_por));
-  if (!esSuperAdmin) {
-    container.innerHTML = `<div class="flex flex-col justify-center items-center min-h-[60vh]"><span class="text-5xl mb-3">ðŸ”’</span><div class="text-2xl font-bold mb-2 text-red-600">Acceso restringido</div><div class="text-gray-500 text-lg text-center">Esta secciÃ³n solo estÃ¡ disponible para el creador de la cuenta o superadministrador.<br>Si necesitas cambiar tu plan o tus datos de cuenta, contacta al responsable de tu hotel.</div></div>`;
+  let dataContext;
+  try {
+    dataContext = await loadMiCuentaData(supabase, user, hotelId);
+  } catch (error) {
+    console.error('[Mi Cuenta] Error cargando informacion base:', error);
+    container.innerHTML = `
+      <div class="flex min-h-[60vh] flex-col items-center justify-center gap-3 text-center">
+        <div class="text-4xl">⚠️</div>
+        <div class="text-xl font-semibold text-slate-800">No pudimos cargar la cuenta.</div>
+        <div class="max-w-lg text-sm text-slate-500">Intenta recargar la pagina. Si el problema continua, escribe a soporte.</div>
+      </div>
+    `;
     return;
   }
-  
-  const planActivo = plans?.find(p => p.nombre?.toLowerCase() === hotel.plan?.toLowerCase() || p.id === hotel.plan_id);
-  const fechaFin = new Date(hotel.suscripcion_fin || hotel.trial_fin);
-  const hoy = new Date();
-  let diasRestantes = Math.ceil((fechaFin - hoy) / (1000 * 60 * 60 * 24));
-  const DIAS_GRACIA = 2;
-  let enGracia = false;
-  const fechaFinMasGracia = new Date(fechaFin);
-  fechaFinMasGracia.setDate(fechaFin.getDate() + DIAS_GRACIA);
 
-  if (hotel.estado_suscripcion === 'vencido' && hoy <= fechaFinMasGracia) {
-    enGracia = true;
-    diasRestantes = Math.ceil((fechaFinMasGracia - hoy) / (1000 * 60 * 60 * 24));
+  const {
+    userProfile,
+    hotel,
+    plans,
+    pagos: pagosSafe,
+    cambiosPlan: cambiosPlanSafe,
+    referidos: referidosSafe,
+    planActivo,
+    promoBienvenida,
+    fechaFin,
+    diasRestantes,
+    enGracia,
+    esSuperAdmin,
+    conteoHabitaciones,
+    conteoUsuarios,
+    countErrors,
+    referidosError
+  } = dataContext;
+
+  if (referidosError) {
+    console.warn('[Mi Cuenta] La consulta de referidos no devolvio datos validos:', referidosError.message);
   }
-  diasRestantes = Math.max(0, diasRestantes);
+
+  if (countErrors?.habitaciones || countErrors?.usuarios) {
+    console.error('Error obteniendo conteo de recursos:', countErrors.habitaciones, countErrors.usuarios);
+    showSnackbar(container, 'Error al verificar uso actual del hotel.', 'error');
+  }
+
+  if (!esSuperAdmin) {
+    container.innerHTML = `<div class="flex flex-col justify-center items-center min-h-[60vh]"><span class="text-5xl mb-3">🔒</span><div class="text-2xl font-bold mb-2 text-red-600">Acceso restringido</div><div class="text-gray-500 text-lg text-center">Esta sección solo está disponible para el creador de la cuenta o superadministrador.<br>Si necesitas cambiar tu plan o tus datos de cuenta, contacta al responsable de tu hotel.</div></div>`;
+    return;
+  }
 
   const refLink = `https://gestiondehotel.com/index.html?ref=${hotel.id}`;
   let monedaActual = 'COP';
@@ -266,7 +103,7 @@ try {
   container.innerHTML = `
     <div class="max-w-4xl mx-auto py-8 px-2 relative">
       <div class="flex items-center mb-8 gap-4">
-        <div class="flex items-center justify-center w-14 h-14 rounded-full bg-blue-100 text-blue-600 text-3xl shadow-sm"><span>ðŸ‘¤</span></div>
+        <div class="flex items-center justify-center w-14 h-14 rounded-full bg-blue-100 text-blue-600 text-3xl shadow-sm"><span>👤</span></div>
         <div>
           <h2 class="text-2xl font-bold mb-0 flex items-center gap-2">Mi cuenta <span class="text-gray-400 text-xl">|</span> <span class="text-base text-gray-500">${userProfile.nombre || user.email}</span></h2>
           <div class="text-sm text-gray-400">Hotel: <span class="font-medium text-blue-600">${hotel.nombre}</span></div>
@@ -317,7 +154,7 @@ try {
           </button>
           <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-gray-500 to-gray-700 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnCambiarPass">
             <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-key-fill"></i></span>
-            Cambiar contraseÃ±a
+            Cambiar contraseña
           </button>
           <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-green-500 to-emerald-600 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnRenovarPlan">
               <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-arrow-repeat"></i></span>
@@ -334,7 +171,7 @@ try {
           <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-clock-history text-blue-500"></i> Historial de Pagos</h3>
           <div class="overflow-auto">
             <table class="w-full text-xs">
-              <thead><tr class="text-left text-gray-600 border-b"><th class="py-2">Fecha</th><th>Plan</th><th>Monto</th><th>MÃ©todo</th></tr></thead>
+              <thead><tr class="text-left text-gray-600 border-b"><th class="py-2">Fecha</th><th>Plan</th><th>Monto</th><th>Método</th></tr></thead>
               <tbody>
                 ${pagosSafe.length === 0 ? `<tr><td colspan="4" class="text-gray-400 py-3 text-center">Sin pagos registrados</td></tr>` : pagosSafe.map(p => `<tr><td>${new Date(p.fecha).toLocaleDateString('es-CO')}</td><td>${p.plan}</td><td>${formatMoneda(p.monto, p.moneda)}</td><td>${p.metodo_pago}</td></tr>`).join('')}
               </tbody>
@@ -355,7 +192,7 @@ try {
       </div>
       <div class="bg-white shadow rounded-2xl p-6 mb-8">
         <h3 class="text-lg font-semibold mb-4 flex items-center gap-2"><i class="bi bi-share-fill text-indigo-600"></i> Programa de Referidos</h3>
-        <p class="text-sm text-gray-600 mb-3">Comparte tu enlace y obtÃ©n 30 dÃ­as gratis por cada hotel que pague su primera suscripciÃ³n.</p>
+        <p class="text-sm text-gray-600 mb-3">Comparte tu enlace y obtén 30 días gratis por cada hotel que pague su primera suscripción.</p>
         <div class="flex items-center gap-3 mb-2">
           <input type="text" class="form-control w-full" value="${refLink}" readonly id="refLinkInput">
           <button class="btn btn-accent" id="btnCopyRefLink">Copiar enlace</button>
@@ -365,14 +202,14 @@ try {
             <thead>
               <tr class="text-left text-gray-600 border-b">
                 <th class="py-2">Hotel Referido</th>
-                <th>Estado SuscripciÃ³n</th>
+                <th>Estado Suscripción</th>
                 <th>Fecha Registro</th>
                 <th>Recompensa</th>
               </tr>
             </thead>
             <tbody>
               ${referidosSafe.length === 0 ? `
-                <tr><td colspan="4" class="text-gray-400 py-3 text-center">AÃºn no tienes hoteles referidos. Â¡Comparte tu enlace!</td></tr>
+                <tr><td colspan="4" class="text-gray-400 py-3 text-center">Aún no tienes hoteles referidos. ¡Comparte tu enlace!</td></tr>
               ` : referidosSafe.map(r => `
                 <tr>
                   <td>${r.nombre_hotel_referido || '-'}</td>
@@ -382,7 +219,7 @@ try {
                       'bg-red-100 text-red-700'
                   }">${r.estado || '-'}</span></td>
 <td>${r.fecha_registro ? new Date(r.fecha_registro).toLocaleDateString('es-CO') : '-'}</td>
-                  <td>${r.recompensa_otorgada ? 'âœ”ï¸ Otorgada' : 'â³ Pendiente de pago'}</td>
+                  <td>${r.recompensa_otorgada ? '✔️ Otorgada' : '⏳ Pendiente de pago'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -390,7 +227,7 @@ try {
         </div>
       </div>
       <div class="flex flex-col items-center justify-center text-xs text-gray-400 pt-8 pb-2">
-        GestiÃ³n de Hotel es un producto de Grupo Empresarial Areiza Gomez
+        Gestión de Hotel es un producto de Grupo Empresarial Areiza Gomez
       </div>
     </div>
     <div id="modalUpgrade" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden">
@@ -398,7 +235,7 @@ try {
         <button id="closeUpgradeModal" class="absolute top-2 right-3 text-gray-400 hover:text-red-400 text-2xl">&times;</button>
         <h3 class="font-bold text-lg mb-2 text-blue-700">Confirmar cambio de plan</h3>
         <div class="mb-2"><span id="modalPlanName"></span></div>
-        <div class="mb-3 text-sm text-gray-500">Tu ciclo actual vence el <b>${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>. Quedan <b>${diasRestantes}</b> dÃ­as en este ciclo.</div>
+        <div class="mb-3 text-sm text-gray-500">Tu ciclo actual vence el <b>${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>. Quedan <b>${diasRestantes}</b> días en este ciclo.</div>
         <div id="prorrateoDetalle" class="mb-4 p-3 bg-blue-50/70 rounded-lg text-blue-900"></div>
         <button id="confirmUpgrade" class="group w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-lg text-white bg-gradient-to-br from-green-500 to-emerald-600 font-semibold transition-all duration-300 shadow-md hover:shadow-lg hover:scale-[1.03] disabled:opacity-70 disabled:scale-100">
             <span class="btn-text">Pagar y cambiar plan</span>
@@ -422,13 +259,13 @@ try {
     <div id="modalPass" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 hidden">
       <div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full relative animate-fade-in">
         <button id="closePassModal" class="absolute top-2 right-3 text-gray-400 hover:text-red-400 text-2xl">&times;</button>
-        <h3 class="font-bold text-lg mb-4 text-blue-700">Cambiar contraseÃ±a</h3>
+        <h3 class="font-bold text-lg mb-4 text-blue-700">Cambiar contraseña</h3>
         <form id="formPass">
-          <label class="block text-sm mb-1">Nueva contraseÃ±a</label>
+          <label class="block text-sm mb-1">Nueva contraseña</label>
           <input type="password" class="form-control mb-3" id="nuevoPass" required minlength="8">
-          <label class="block text-sm mb-1">Confirmar contraseÃ±a</label>
+          <label class="block text-sm mb-1">Confirmar contraseña</label>
           <input type="password" class="form-control mb-3" id="confirmarPass" required minlength="8">
-          <button class="btn btn-primary w-full mt-1" type="submit">Actualizar contraseÃ±a</button>
+          <button class="btn btn-primary w-full mt-1" type="submit">Actualizar contraseña</button>
         </form>
       </div>
     </div>
@@ -439,57 +276,16 @@ try {
   const planesList = container.querySelector('#planes-list');
   const promoBanner = container.querySelector('#promo-bienvenida-banner');
 
-  async function iniciarProcesoDePago(plan, tipo, montoPagarCOP, montoPagarUSD) {
-    if (monedaActual === 'USD') {
-      await abrirMercadoPagoCheckout(plan, tipo, montoPagarUSD, hotel.id, user.email);
-    } else {
-      await abrirWompi(plan, tipo, montoPagarCOP);
-    }
-  }
-
-  async function abrirWompi(plan, tipo, montoPagar) {
-    const ref = `${tipo}-${hotel.id}-${plan.id}-${Date.now()}`;
-    const amountInCents = Math.round(montoPagar * 100);
-
-    try {
-      window.dataLayer = window.dataLayer || [];
-      window.dataLayer.push({
-        'event': tipo === 'upgrade' ? 'cambio_plan_wompi' : 'renovacion_plan_wompi',
-        'currency': 'COP',
-        'value': montoPagar,
-        'plan': plan.nombre,
-        'hotel_id': hotel.id,
-        'periodo': periodoActual
-      });
-    } catch (e) { console.error("GA Error:", e); }
-
-    if (typeof Swal !== 'undefined') {
-      const usdCop = await getUsdToCopRate();
-      Swal.fire({
-        icon: 'info',
-        title: 'SerÃ¡s redirigido a la pasarela de pago',
-        html: `<b>El pago serÃ¡ a nombre de<br>Grupo Empresarial Areiza Gomez</b><br>
-          <span class="text-gray-500">propietario del sistema hotelero GestiÃ³n de Hotel.</span>
-          <br><br>
-          Monto a pagar: <b>${formatMoneda(montoPagar, 'COP')}</b>
-          <br><span class="text-xs">Tasa de cambio (ref): ${formatMoneda(usdCop, 'COP')}</span><br>
-          Â¿Deseas continuar?`,
-        confirmButtonText: 'SÃ­, continuar',
-        cancelButtonText: 'Cancelar',
-        showCancelButton: true,
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#c026d3'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          window.open(
-            `https://checkout.wompi.co/p/?public-key=${WOMPI_PUBLIC_KEY}&currency=COP&amount-in-cents=${amountInCents}&reference=${ref}&customer-email=${user.email}`,
-            '_blank'
-          );
-        }
-      });
-    } else {
-      window.open(`https://checkout.wompi.co/p/?public-key=${WOMPI_PUBLIC_KEY}&currency=COP&amount-in-cents=${amountInCents}&reference=${ref}&customer-email=${user.email}`, '_blank');
-    }
+  async function iniciarProcesoDePago(plan, tipo) {
+    await abrirCheckoutSuscripcion({
+      plan,
+      paymentType: tipo,
+      billingPeriod: periodoActual,
+      currency: monedaActual,
+      hotelId: hotel.id,
+      userEmail: user.email,
+      userId: user.id
+    });
   }
 
   function procesarCambioDePlan(planSeleccionado, tipo) {
@@ -523,7 +319,7 @@ try {
         const costoRestanteMostrar = monedaActual === 'USD' ? costoNuevoRestanteUSD : costoNuevoRestanteCOP;
 
         const detalleHTML = `
-            <ul class="text-sm space-y-2"><li class="flex justify-between items-center"><span>Costo de ${planSeleccionado.nombre} (${diasRestantesSeguro} dÃ­as)</span><span class="font-semibold">${formatMoneda(costoRestanteMostrar, monedaActual)}</span></li><li class="flex justify-between items-center text-green-600"><span>(-) CrÃ©dito plan ${planActivo.nombre}</span><span class="font-semibold">${formatMoneda(creditoMostrar, monedaActual)}</span></li></ul>
+            <ul class="text-sm space-y-2"><li class="flex justify-between items-center"><span>Costo de ${planSeleccionado.nombre} (${diasRestantesSeguro} días)</span><span class="font-semibold">${formatMoneda(costoRestanteMostrar, monedaActual)}</span></li><li class="flex justify-between items-center text-green-600"><span>(-) Crédito plan ${planActivo.nombre}</span><span class="font-semibold">${formatMoneda(creditoMostrar, monedaActual)}</span></li></ul>
             <hr class="my-3 border-dashed">
             <div class="text-lg font-bold flex justify-between items-center"><span>Total a pagar hoy:</span><span class="text-green-700">${formatMoneda(montoMostar, monedaActual)}</span></div>
         `;
@@ -537,7 +333,7 @@ try {
         btnConfirmar.parentNode.replaceChild(newBtn, btnConfirmar);
         
         newBtn.addEventListener('click', () => {
-            iniciarProcesoDePago(planSeleccionado, 'upgrade', montoProrrateadoCOP, montoProrrateadoUSD);
+            iniciarProcesoDePago(planSeleccionado, 'upgrade');
             modal.classList.add('hidden');
         });
     } else if (tipo === 'downgrade') {
@@ -554,11 +350,11 @@ try {
         const baseMostrar = monedaActual === 'USD' ? promoAplicada.baseUSD : promoAplicada.baseCOP;
 
         modal.querySelector('#modalPlanName').innerHTML = `De <b>${planActivo.nombre}</b> a <b class="text-orange-600">${planSeleccionado.nombre}</b>`;
-        modal.querySelector('.text-blue-700').textContent = 'Confirmar pago para prÃ³ximo ciclo';
+        modal.querySelector('.text-blue-700').textContent = 'Confirmar pago para próximo ciclo';
 
         const detalleHTML = `
           <div class="text-sm text-gray-700 space-y-3">
-            <p>Vas a pagar hoy por tu prÃ³ximo ciclo para asegurar un precio mÃ¡s bajo.</p>
+            <p>Vas a pagar hoy por tu próximo ciclo para asegurar un precio más bajo.</p>
             <div class="text-lg font-bold flex justify-between items-center">
               <span>Total a pagar ahora:</span>
               <span class="text-green-700">${formatMoneda(montoAPagar, monedaActual)}</span>
@@ -575,8 +371,8 @@ try {
               </div>
             ` : ''}
             <div class="p-3 bg-blue-50 border-l-4 border-blue-500 text-blue-800 rounded">
-              <p>Tu plan actual <b class="font-semibold">${planActivo.nombre}</b> seguirÃ¡ activo hasta el <b class="font-semibold">${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>.</p>
-              <p class="mt-1">El nuevo plan <b class="font-semibold">${planSeleccionado.nombre}</b> se activarÃ¡ automÃ¡ticamente despuÃ©s de esa fecha.</p>
+              <p>Tu plan actual <b class="font-semibold">${planActivo.nombre}</b> seguirá activo hasta el <b class="font-semibold">${fechaFin ? fechaFin.toLocaleDateString('es-CO') : ''}</b>.</p>
+              <p class="mt-1">El nuevo plan <b class="font-semibold">${planSeleccionado.nombre}</b> se activará automáticamente después de esa fecha.</p>
             </div>
           </div>
         `;
@@ -584,13 +380,13 @@ try {
 
         const btnConfirmar = modal.querySelector('#confirmUpgrade');
         const newBtn = btnConfirmar.cloneNode(true);
-        newBtn.querySelector('.btn-text').textContent = 'Pagar prÃ³ximo ciclo ahora';
+        newBtn.querySelector('.btn-text').textContent = 'Pagar próximo ciclo ahora';
         newBtn.classList.remove('from-green-500', 'to-emerald-600');
         newBtn.classList.add('from-orange-500', 'to-red-500');
         btnConfirmar.parentNode.replaceChild(newBtn, btnConfirmar);
 
         newBtn.addEventListener('click', () => {
-            iniciarProcesoDePago(planSeleccionado, 'renew-downgrade', precioRenovacionCOP, precioRenovacionUSD);
+            iniciarProcesoDePago(planSeleccionado, 'renew-downgrade');
             modal.classList.add('hidden');
         });
     }
@@ -623,10 +419,10 @@ try {
         let motivoDeshabilitado = '';
 
         if (typeof limiteHabitaciones === 'number' && conteoHabitacionesActual > limiteHabitaciones) {
-            motivoDeshabilitado = `Excedes el lÃ­mite de ${limiteHabitaciones} habitaciones.`;
+            motivoDeshabilitado = `Excedes el límite de ${limiteHabitaciones} habitaciones.`;
         }
         else if (typeof limiteUsuarios === 'number' && conteoUsuariosActual > limiteUsuarios) {
-            motivoDeshabilitado = `Excedes el lÃ­mite de ${limiteUsuarios} usuarios.`;
+            motivoDeshabilitado = `Excedes el límite de ${limiteUsuarios} usuarios.`;
         }
         
         const puedeElegirPlan = !motivoDeshabilitado;
@@ -709,22 +505,26 @@ try {
 
   await renderPlanes(conteoHabitaciones || 0, conteoUsuarios || 0);
 
-  container.querySelector('#btnCopyRefLink')?.addEventListener('click', () => {
+  container.querySelector('#btnCopyRefLink')?.addEventListener('click', async () => {
     const input = container.querySelector('#refLinkInput');
-    input.select();
-    document.execCommand('copy');
-    showSnackbar(container, 'Â¡Enlace copiado!', 'success');
+    const value = input?.value || '';
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+      } else {
+        input.select();
+        document.execCommand('copy');
+      }
+      showSnackbar(container, 'Enlace copiado.', 'success');
+    } catch (error) {
+      console.error('[Mi Cuenta] Error copiando enlace de referido:', error);
+      showSnackbar(container, 'No se pudo copiar el enlace.', 'error');
+    }
   });
 
   container.querySelector('#btnRenovarPlan')?.addEventListener('click', () => {
       if (planActivo) {
-          const baseAmounts = getBasePlanAmounts(planActivo, periodoActual);
-          const promoAplicada = applyPromoBienvenida({
-            ...baseAmounts,
-            periodo: periodoActual,
-            promoStatus: promoBienvenida
-          });
-          iniciarProcesoDePago(planActivo, 'renew', promoAplicada.finalCOP, promoAplicada.finalUSD);
+          iniciarProcesoDePago(planActivo, 'renew');
       }
   });
 
@@ -741,6 +541,16 @@ try {
     if (error) {
       showSnackbar(container, 'Error: ' + error.message, 'error');
     } else {
+      await registrarAccionSensible({
+        supabase,
+        hotelId: hotel.id,
+        usuarioId: user.id,
+        accion: 'ACTUALIZAR_CORREO_CUENTA',
+        detalles: {
+          correo_nuevo: nuevoCorreo,
+          ejecutado_por: userProfile?.nombre || user.email
+        }
+      });
       showSnackbar(container, 'Correo actualizado. Revisa tu nuevo correo para confirmar.', 'success');
       container.querySelector('#modalCorreo').classList.add('hidden');
     }
@@ -754,20 +564,30 @@ try {
       showSnackbar(container, 'La contrase\u00F1a debe tener al menos 8 caracteres', 'error'); return;
     }
     if (nuevoPass !== confirmar) {
-      showSnackbar(container, 'Las contraseÃ±as no coinciden', 'error'); return;
+      showSnackbar(container, 'Las contraseñas no coinciden', 'error'); return;
     }
     const { error } = await supabase.auth.updateUser({ password: nuevoPass });
     if (error) {
       showSnackbar(container, 'Error: ' + error.message, 'error');
     } else {
-      showSnackbar(container, 'ContraseÃ±a actualizada correctamente', 'success');
+      await registrarAccionSensible({
+        supabase,
+        hotelId: hotel.id,
+        usuarioId: user.id,
+        accion: 'ACTUALIZAR_PASSWORD_CUENTA',
+        detalles: {
+          longitud_password: nuevoPass.length,
+          ejecutado_por: userProfile?.nombre || user.email
+        }
+      });
+      showSnackbar(container, 'Contraseña actualizada correctamente', 'success');
       container.querySelector('#modalPass').classList.add('hidden');
     }
   });
 }
 
 // =======================================================================
-// ========================== FUNCIÃ“N DE DESMONTAJE ======================
+// ========================== FUNCIÓN DE DESMONTAJE ======================
 // =======================================================================
 
 export function unmount(container) {

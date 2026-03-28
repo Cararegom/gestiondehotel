@@ -19,7 +19,7 @@ let currentHotelId = null;
 let currentModuleUser = null;
 let currentContainerEl = null;
 let currentUserRole = null;
-let turnoActivo = null; // GuardarÃ¡ el estado del turno actual
+let turnoActivo = null; // Guardará el estado del turno actual
 let turnoEnSupervision = null;
 let turnosAbiertosCache = new Map();
 let movementTableState = {
@@ -33,7 +33,6 @@ let movementTableState = {
 };
 
 
-const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb44ip8u876";
 const ADMIN_ROLES = ['admin', 'administrador'];
 
 function isAdminUser() {
@@ -204,16 +203,16 @@ async function confirmAction(options) {
 
 // ...
 
-// NUEVA FUNCIÃ“N para entrar en modo supervisiÃ³n
+// NUEVA FUNCIÃ“N para entrar en modo supervisión
 async function iniciarModoSupervision(turno) {
   turnoEnSupervision = turno;
   // Cerramos el modal de la lista de turnos
   document.getElementById('modal-turnos-abiertos')?.remove();
-  // Volvemos a renderizar toda la UI, que ahora detectarÃ¡ el modo supervisiÃ³n
+  // Volvemos a renderizar toda la UI, que ahora detectará el modo supervisión
   await renderizarUI();
 }
 
-// NUEVA FUNCIÃ“N para salir del modo supervisiÃ³n
+// NUEVA FUNCIÃ“N para salir del modo supervisión
 async function salirModoSupervision() {
   turnoEnSupervision = null;
   // Volvemos a renderizar la UI para mostrar la vista normal del admin
@@ -248,7 +247,7 @@ async function verificarTurnoActivo() {
 
   if (turnosAbiertos.length > 1) {
     console.warn(
-      `[Caja] Hay ${turnosAbiertos.length} turnos abiertos para este usuario. TomarÃ© el mÃ¡s reciente. IDs:`,
+      `[Caja] Hay ${turnosAbiertos.length} turnos abiertos para este usuario. Tomaré el más reciente. IDs:`,
       turnosAbiertos.map(t => t.id)
     );
   }
@@ -270,15 +269,13 @@ async function abrirTurno() {
 
   showGlobalLoading('Abriendo nuevo turno...');
   try {
-    const { data: nuevoTurno, error } = await currentSupabaseInstance
-      .from('turnos')
-      .insert({
-        usuario_id: currentModuleUser.id,
-        hotel_id: currentHotelId,
-        estado: 'abierto'
-      })
-      .select()
-      .single();
+    const fechaMovimiento = new Date().toISOString();
+    const { data: nuevoTurno, error } = await currentSupabaseInstance.rpc('abrir_turno_con_apertura', {
+      p_hotel_id: currentHotelId,
+      p_usuario_id: currentModuleUser.id,
+      p_monto_inicial: montoInicial,
+      p_fecha_movimiento: fechaMovimiento
+    });
     if (error) throw error;
 
     const turnoPreparado = {
@@ -288,21 +285,6 @@ async function abrirTurno() {
         email: currentModuleUser?.email || ''
       }
     };
-
-    const { error: aperturaError } = await currentSupabaseInstance.from('caja').insert({
-      tipo: 'apertura',
-      monto: montoInicial,
-      concepto: 'Apertura de caja',
-      hotel_id: currentHotelId,
-      usuario_id: currentModuleUser.id,
-      turno_id: turnoPreparado.id,
-      fecha_movimiento: new Date().toISOString()
-    });
-
-    if (aperturaError) {
-      await currentSupabaseInstance.from('turnos').delete().eq('id', turnoPreparado.id);
-      throw new Error(`No se pudo registrar la apertura de caja: ${aperturaError.message}`);
-    }
 
     turnoActivo = turnoPreparado;
     turnoService.setActiveTurn(turnoActivo.id);
@@ -394,10 +376,7 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, v
 
     const movimientosOrdenados = sortMovementsByDate(movimientos, true);
     const reporte = procesarMovimientosParaReporte(movimientos);
-    const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
-    const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
-    const totalGastos = calcularTotalFila(reporte.gastos);
-    const balanceFinalEnCaja = reporte.apertura + totalIngresos - totalGastos;
+    const { balanceFinal: balanceFinalEnCaja } = calcularTotalesSistemaCierre(reporte, metodosDePago);
     
     const fechaCierreLocal = new Date(fechaCierreISO).toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
     const usuarioNombre = usuarioDelTurno?.nombre || usuarioDelTurno?.email || 'Sistema';
@@ -427,11 +406,12 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, v
       feedbackEl: currentContainerEl.querySelector('#turno-global-feedback')
     });
 
-    const { error: updateError } = await currentSupabaseInstance.from('turnos').update({
-        estado: 'cerrado',
-        fecha_cierre: fechaCierreISO,
-        balance_final: balanceFinalEnCaja,
-      }).eq('id', turnoACerrar.id);
+    const { error: updateError } = await currentSupabaseInstance.rpc('cerrar_turno_con_balance', {
+      p_turno_id: turnoACerrar.id,
+      p_usuario_id: currentModuleUser?.id || usuarioDelTurnoId,
+      p_balance_final: balanceFinalEnCaja,
+      p_fecha_cierre: fechaCierreISO
+    });
 
     if (updateError) throw updateError;
     
@@ -517,11 +497,19 @@ function renderMovementRows(tBodyEl, summaryEls, movementRefs = {}) {
         if (movement.tipo === 'egreso') egresos += Number(movement.monto || 0);
     });
 
-    const balance = apertura + ingresos - egresos;
-    summaryEls.ingresos.textContent = formatCurrency(ingresos);
-    summaryEls.egresos.textContent = formatCurrency(egresos);
-    summaryEls.balance.textContent = formatCurrency(balance);
-    summaryEls.balance.className = `text-2xl font-bold ${balance < 0 ? 'text-red-600' : 'text-green-600'}`;
+    const balanceOperativo = ingresos - egresos;
+    const balance = apertura + balanceOperativo;
+    if (summaryEls.apertura) summaryEls.apertura.textContent = formatCurrency(apertura);
+    if (summaryEls.ingresos) summaryEls.ingresos.textContent = formatCurrency(ingresos);
+    if (summaryEls.egresos) summaryEls.egresos.textContent = formatCurrency(egresos);
+    if (summaryEls.operativo) {
+        summaryEls.operativo.textContent = formatCurrency(balanceOperativo);
+        summaryEls.operativo.className = `block text-2xl font-bold mt-3 leading-tight ${balanceOperativo < 0 ? 'text-red-600' : 'text-sky-600'}`;
+    }
+    if (summaryEls.balance) {
+        summaryEls.balance.textContent = formatCurrency(balance);
+        summaryEls.balance.className = `block text-2xl font-bold mt-3 leading-tight ${balance < 0 ? 'text-red-600' : 'text-emerald-600'}`;
+    }
 
     const totalPages = Math.max(1, Math.ceil(filteredMovements.length / movementTableState.pageSize));
     if (movementTableState.currentPage > totalPages) {
@@ -716,7 +704,7 @@ async function renderizarUIAbierta() {
     const turnoParaMostrar = turnoEnSupervision || turnoActivo;
     
     if (!turnoParaMostrar) {
-        console.error("Se intentÃ³ renderizar UI abierta sin un turno vÃ¡lido.");
+        console.error("Se intentó renderizar UI abierta sin un turno válido.");
         renderizarUICerrada();
         return;
     }
@@ -738,172 +726,248 @@ async function renderizarUIAbierta() {
         : '';
 
     currentContainerEl.innerHTML = `
-    <div class="card caja-module shadow-xl rounded-3xl overflow-hidden border border-slate-200">
-      <div class="card-header bg-gradient-to-r from-slate-900 via-slate-800 to-slate-700 p-5 border-b text-white">
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.22em] text-slate-300 mb-2">Caja y turnos</p>
-            <h2 class="text-2xl font-semibold">${esModoSupervision ? 'Gestionando turno ajeno' : 'Turno activo'}</h2>
-            <p class="text-sm text-slate-300 mt-2">Controla ingresos, egresos, arqueo y trazabilidad del turno actual.</p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-          ${isAdmin ? `
-            <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2 px-4 rounded-xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver turnos abiertos</button>
-            <button id="btn-ver-eliminados" class="button button-neutral py-2 px-4 rounded-xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver eliminados</button>
-          ` : ''}
-            <button id="btn-cerrar-turno" class="button ${esModoSupervision ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold py-2 px-4 rounded-xl shadow-sm">
-              ${esModoSupervision ? 'Forzar cierre de este turno' : 'Realizar corte de caja'}
-            </button>
+    <div class="caja-module space-y-5">
+      <section class="rounded-3xl overflow-hidden border border-slate-200 shadow-xl bg-white">
+        <div class="text-white p-6 md:p-7" style="background: radial-gradient(circle at top left, rgba(59,130,246,0.18), transparent 35%), linear-gradient(135deg, #0f172a, #1e293b 55%, #334155);">
+          <div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div class="max-w-3xl">
+              <p class="text-xs uppercase tracking-widest text-sky-200 mb-3 font-semibold">Caja y turnos</p>
+              <div class="flex flex-wrap items-center gap-3">
+                <h2 class="text-3xl font-bold tracking-tight">${esModoSupervision ? 'Gestionando turno ajeno' : 'Centro de control del turno'}</h2>
+                <span class="inline-flex items-center rounded-full border border-emerald-300/30 bg-emerald-400/15 px-3 py-1 text-xs font-semibold text-emerald-100">
+                  ${esModoSupervision ? 'Supervision activa' : 'Turno en operacion'}
+                </span>
+              </div>
+              <p class="text-sm md:text-base text-slate-200 mt-3 max-w-2xl">
+                Controla ingresos, egresos, arqueo y trazabilidad del turno actual desde una sola vista. La base inicial y el dinero generado quedan separados para evitar confusiones al cerrar.
+              </p>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-6">
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                  <span class="block text-xs uppercase tracking-widest text-slate-300">Cajero</span>
+                  <span class="block text-base font-semibold mt-2 text-white">${usuarioTurnoNombre}</span>
+                </div>
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                  <span class="block text-xs uppercase tracking-widest text-slate-300">Inicio</span>
+                  <span id="turno-opened-at" class="block text-base font-semibold mt-2 text-white">${fechaAperturaLabel}</span>
+                </div>
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                  <span class="block text-xs uppercase tracking-widest text-slate-300">Tiempo abierto</span>
+                  <span id="turno-open-duration" class="block text-base font-semibold mt-2 text-white">${tiempoAbiertoLabel}</span>
+                </div>
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                  <span class="block text-xs uppercase tracking-widest text-slate-300">Movimientos</span>
+                  <span id="turno-movements-count" class="block text-base font-semibold mt-2 text-white">0</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 xl:justify-end">
+            ${isAdmin ? `
+              <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver turnos abiertos</button>
+              <button id="btn-ver-eliminados" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver eliminados</button>
+            ` : ''}
+              <button id="btn-cerrar-turno" class="button ${esModoSupervision ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold py-2.5 px-5 rounded-2xl shadow-lg shadow-black/10">
+                ${esModoSupervision ? 'Forzar cierre de este turno' : 'Preparar corte de caja'}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="card-body p-4 md:p-6 bg-slate-50/60">
-        ${supervisionBannerHtml} 
-        <div id="turno-global-feedback" role="status" aria-live="polite" class="feedback-message mb-4"></div>
 
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-[1.8fr,1fr]">
-          <div class="space-y-4">
-            <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Cajero</span>
-                <span class="block text-base font-semibold text-slate-800 mt-2">${usuarioTurnoNombre}</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Inicio</span>
-                <span id="turno-opened-at" class="block text-base font-semibold text-slate-800 mt-2">${fechaAperturaLabel}</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Tiempo abierto</span>
-                <span id="turno-open-duration" class="block text-base font-semibold text-slate-800 mt-2">${tiempoAbiertoLabel}</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Movimientos</span>
-                <span id="turno-movements-count" class="block text-base font-semibold text-slate-800 mt-2">0</span>
-              </div>
-              <div class="rounded-2xl bg-white p-4 shadow-sm border border-slate-200">
-                <span class="block text-xs uppercase tracking-wide text-slate-400">Modo</span>
-                <span class="block text-base font-semibold text-slate-800 mt-2">${esModoSupervision ? 'Supervision' : 'Operacion normal'}</span>
-              </div>
-            </section>
+        <div class="p-4 md:p-6" style="background: linear-gradient(180deg, rgba(248,250,252,0.96), #ffffff);">
+          ${supervisionBannerHtml}
+          <div id="turno-global-feedback" role="status" aria-live="polite" class="feedback-message mb-4"></div>
 
-            <section class="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
-              <div class="p-4 bg-green-50 rounded-2xl shadow-sm border border-green-100"><span class="block text-sm text-gray-500">Ingresos del turno</span><span id="turno-total-ingresos" class="text-2xl font-bold text-green-600">$0</span></div>
-              <div class="p-4 bg-red-50 rounded-2xl shadow-sm border border-red-100"><span class="block text-sm text-gray-500">Egresos del turno</span><span id="turno-total-egresos" class="text-2xl font-bold text-red-600">$0</span></div>
-              <div class="p-4 bg-blue-50 rounded-2xl shadow-sm border border-blue-100"><span class="block text-sm text-gray-500">Balance del turno</span><span id="turno-balance" class="text-2xl font-bold text-blue-600">$0</span></div>
-            </section>
-
-            <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
-              <div class="p-5 border-b border-slate-200">
-                <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.9fr)]">
+            <div class="space-y-5">
+              <section class="rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-slate-200 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
-                    <h3 class="text-lg font-semibold text-slate-800">Movimientos del turno</h3>
-                    <p id="movements-results" class="text-sm text-slate-500 mt-1">Cargando movimientos...</p>
+                    <p class="text-xs uppercase tracking-widest text-slate-400 mb-2">Resumen financiero</p>
+                    <h3 class="text-xl font-semibold text-slate-900">Pulso actual del turno</h3>
+                    <p class="text-sm text-slate-500 mt-1">Base inicial, ingresos, egresos y balance consolidados sin mezclar conceptos.</p>
                   </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto lg:min-w-[640px]">
-                    <label class="text-sm text-slate-600">
-                      Buscar
-                      <input id="movements-search" type="search" class="form-control mt-1" placeholder="Concepto, cliente, usuario o metodo">
-                    </label>
-                    <label class="text-sm text-slate-600">
-                      Tipo
-                      <select id="movements-type-filter" class="form-control mt-1">
-                        <option value="todos">Todos</option>
-                        <option value="ingreso">Ingresos</option>
-                        <option value="egreso">Egresos</option>
-                        <option value="apertura">Aperturas</option>
-                      </select>
-                    </label>
-                    <label class="text-sm text-slate-600">
-                      Metodo
-                      <select id="movements-method-filter" class="form-control mt-1">
-                        <option value="todos">Todos los metodos</option>
-                      </select>
-                    </label>
+                  <div class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600">
+                    ${esModoSupervision ? 'Modo supervision' : 'Operacion normal'}
                   </div>
                 </div>
-              </div>
 
-              <div class="table-container overflow-x-auto">
-                <table class="tabla-estilizada w-full">
-                  <thead class="bg-slate-50 text-slate-600">
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Tipo</th>
-                      <th>Monto</th>
-                      <th>Concepto</th>
-                      <th>Usuario</th>
-                      <th>Metodo de pago</th>
-                    </tr>
-                  </thead>
-                  <tbody id="turno-movements-body"></tbody>
-                </table>
-              </div>
-
-              <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between p-4 border-t border-slate-200 bg-slate-50">
-                <p class="text-sm text-slate-500">La tabla usa la fecha real del movimiento cuando fue registrada manualmente.</p>
-                <div class="flex items-center gap-2">
-                  <button id="movements-prev-page" class="button button-neutral px-3 py-2 rounded-xl bg-white border border-slate-200">Anterior</button>
-                  <span id="movements-page-info" class="text-sm text-slate-500 min-w-[120px] text-center">Pagina 1 de 1</span>
-                  <button id="movements-next-page" class="button button-neutral px-3 py-2 rounded-xl bg-white border border-slate-200">Siguiente</button>
+                <div class="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
+                  <div class="rounded-3xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm">
+                    <span class="block text-xs uppercase tracking-widest text-slate-400">Apertura</span>
+                    <span id="turno-total-apertura" class="block text-2xl font-bold mt-3 text-slate-900 leading-tight">$0</span>
+                    <span class="block text-xs text-slate-500 mt-2">Base inicial del cajero</span>
+                  </div>
+                  <div class="rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-sm">
+                    <span class="block text-xs uppercase tracking-widest text-emerald-700">Ingresos</span>
+                    <span id="turno-total-ingresos" class="block text-2xl font-bold mt-3 text-emerald-600 leading-tight">$0</span>
+                    <span class="block text-xs text-emerald-700/70 mt-2">Dinero que entro en el turno</span>
+                  </div>
+                  <div class="rounded-3xl border border-rose-200 bg-rose-50/80 p-5 shadow-sm">
+                    <span class="block text-xs uppercase tracking-widest text-rose-700">Egresos</span>
+                    <span id="turno-total-egresos" class="block text-2xl font-bold mt-3 text-rose-600 leading-tight">$0</span>
+                    <span class="block text-xs text-rose-700/70 mt-2">Salidas registradas en el turno</span>
+                  </div>
+                  <div class="rounded-3xl border border-sky-200 bg-sky-50/80 p-5 shadow-sm">
+                    <span class="block text-xs uppercase tracking-widest text-sky-700">Dinero generado</span>
+                    <span id="turno-balance-operativo" class="block text-2xl font-bold mt-3 text-sky-600 leading-tight">$0</span>
+                    <span class="block text-xs text-sky-700/70 mt-2">Ingresos menos egresos</span>
+                  </div>
+                  <div class="rounded-3xl border border-emerald-200 p-5 shadow-sm" style="background: linear-gradient(180deg, #ecfdf5, #d1fae5);">
+                    <span class="block text-xs uppercase tracking-widest text-emerald-800">Balance total</span>
+                    <span id="turno-balance" class="block text-2xl font-bold mt-3 text-emerald-600 leading-tight">$0</span>
+                    <span class="block text-xs text-emerald-800/70 mt-2">Incluye apertura del turno</span>
+                  </div>
                 </div>
-              </div>
-            </section>
+
+                <div class="mx-5 mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
+                  <strong class="text-slate-800">Lectura rapida:</strong> la apertura es la base inicial. El dinero generado muestra solo lo que produjo el turno. El balance total incluye esa base mas el resultado del turno.
+                </div>
+              </section>
+
+              <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-200">
+                  <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                    <div>
+                      <p class="text-xs uppercase tracking-widest text-slate-400 mb-2">Historial del turno</p>
+                      <h3 class="text-xl font-semibold text-slate-900">Movimientos registrados</h3>
+                      <p id="movements-results" class="text-sm text-slate-500 mt-1">Cargando movimientos...</p>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full lg:w-auto lg:min-w-[560px]">
+                      <label class="text-sm text-slate-600">
+                        Buscar
+                        <input id="movements-search" type="search" class="form-control mt-1" placeholder="Concepto, cliente, usuario o metodo">
+                      </label>
+                      <label class="text-sm text-slate-600">
+                        Tipo
+                        <select id="movements-type-filter" class="form-control mt-1">
+                          <option value="todos">Todos</option>
+                          <option value="ingreso">Ingresos</option>
+                          <option value="egreso">Egresos</option>
+                          <option value="apertura">Aperturas</option>
+                        </select>
+                      </label>
+                      <label class="text-sm text-slate-600">
+                        Metodo
+                        <select id="movements-method-filter" class="form-control mt-1">
+                          <option value="todos">Todos los metodos</option>
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="table-container overflow-x-auto">
+                  <table class="tabla-estilizada w-full">
+                    <thead class="bg-slate-50 text-slate-600">
+                      <tr>
+                        <th>Fecha</th>
+                        <th>Tipo</th>
+                        <th>Monto</th>
+                        <th>Concepto</th>
+                        <th>Usuario</th>
+                        <th>Metodo de pago</th>
+                      </tr>
+                    </thead>
+                    <tbody id="turno-movements-body"></tbody>
+                  </table>
+                </div>
+
+                <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between p-4 border-t border-slate-200 bg-slate-50">
+                  <p class="text-sm text-slate-500">La tabla usa la fecha real del movimiento cuando fue registrada manualmente y te sirve como base para el corte.</p>
+                  <div class="flex items-center gap-2">
+                    <button id="movements-prev-page" class="button button-neutral px-3 py-2 rounded-xl bg-white border border-slate-200">Anterior</button>
+                    <span id="movements-page-info" class="text-sm text-slate-500 min-w-[120px] text-center">Pagina 1 de 1</span>
+                    <button id="movements-next-page" class="button button-neutral px-3 py-2 rounded-xl bg-white border border-slate-200">Siguiente</button>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <aside class="space-y-5">
+              <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+                <div class="p-5 border-b border-slate-200" style="background: linear-gradient(180deg, #ffffff, #eef6ff);">
+                  <p class="text-xs uppercase tracking-widest text-slate-400 mb-2">Operacion</p>
+                  <h3 class="text-xl font-semibold text-slate-900">Registrar nuevo movimiento</h3>
+                  <p class="text-sm text-slate-500 mt-1">Carga ingresos, egresos o ajustes con mejor trazabilidad para el corte.</p>
+                </div>
+                <form id="turno-add-form" class="form p-5 bg-white space-y-5">
+                  <div class="grid grid-cols-1 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-1.5">Tipo *</label>
+                      <select name="tipo" class="form-control" required>
+                        <option value="">-- Seleccione --</option>
+                        <option value="ingreso">Ingreso</option>
+                        <option value="egreso">Egreso</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-1.5">Monto *</label>
+                      <input type="number" name="monto" class="form-control" step="0.01" min="0.01" required />
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-1.5">Metodo de pago *</label>
+                      <select name="metodoPagoId" class="form-control" required>
+                        <option value="">Cargando...</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-slate-700 mb-1.5">Concepto / descripcion *</label>
+                      <input type="text" name="concepto" class="form-control" required minlength="3" placeholder="Ej. Compra de insumos, abono, venta adicional">
+                    </div>
+                  </div>
+                  
+                  <div class="space-y-3">
+                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                      <input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" class="mt-1">
+                      <span>
+                        <strong class="block text-slate-800">Registrar fuera del turno/caja</strong>
+                        <small id="fuera-turno-help" class="block text-slate-500 mt-1">Usa esta opcion solo cuando el movimiento no debe afectar el arqueo actual.</small>
+                      </span>
+                    </label>
+                    <label class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                      <input type="checkbox" id="fecha-anterior-check" name="fecha_anterior_check" class="mt-1">
+                      <span>
+                        <strong class="block text-slate-800">Registrar con fecha anterior</strong>
+                        <small class="block text-slate-500 mt-1">La fecha ingresada sera la que se vea en caja, reportes e impresion.</small>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div id="fecha-anterior-container" class="hidden rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <label class="block text-sm font-medium text-amber-900 mb-1.5">Fecha y hora del movimiento *</label>
+                    <input type="datetime-local" id="fecha-movimiento-custom" name="fecha_movimiento_custom" class="form-control">
+                  </div>
+
+                  <button type="submit" class="button button-accent w-full py-3 rounded-2xl text-base font-semibold shadow-sm">+ Guardar movimiento</button>
+                  <div id="turno-add-feedback" class="feedback-message mt-1"></div>
+                </form>
+              </section>
+
+              <section class="rounded-3xl bg-slate-950 text-white shadow-sm overflow-hidden">
+                <div class="p-5 border-b border-white/10">
+                  <p class="text-xs uppercase tracking-widest text-sky-200 mb-2">Checklist rapido</p>
+                  <h3 class="text-xl font-semibold">Buenas practicas del turno</h3>
+                </div>
+                <div class="p-5 text-sm text-slate-300 space-y-4">
+                  <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <strong class="block text-white mb-1">1. Separa bien la base del turno</strong>
+                    <p>La apertura no es dinero generado. Sirve para arrancar caja y debe mantenerse clara para el corte.</p>
+                  </div>
+                  <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <strong class="block text-white mb-1">2. Usa fecha anterior con cuidado</strong>
+                    <p>Si corriges una fecha, revisa el corte antes de cerrar para no arrastrar diferencias al reporte.</p>
+                  </div>
+                  <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <strong class="block text-white mb-1">3. Cierra con datos limpios</strong>
+                    <p>Antes del corte revisa metodo de pago, concepto y movimientos fuera del turno para evitar confusiones.</p>
+                  </div>
+                </div>
+              </section>
+            </aside>
           </div>
-
-          <aside class="space-y-4">
-            <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
-              <div class="p-5 border-b border-slate-200">
-                <h3 class="text-lg font-semibold text-slate-800">Agregar nuevo movimiento</h3>
-                <p class="text-sm text-slate-500 mt-1">Registra ingresos, egresos o ajustes fuera del turno de forma controlada.</p>
-              </div>
-              <form id="turno-add-form" class="form p-5 bg-white">
-                <div class="grid grid-cols-1 gap-4 mb-4">
-                  <div><label>Tipo *</label><select name="tipo" class="form-control" required><option value="">-- Seleccione --</option><option value="ingreso">Ingreso</option><option value="egreso">Egreso</option></select></div>
-                  <div><label>Monto *</label><input type="number" name="monto" class="form-control" step="0.01" min="0.01" required /></div>
-                  <div><label>Metodo de pago *</label><select name="metodoPagoId" class="form-control" required><option value="">Cargando...</option></select></div>
-                </div>
-                <div class="mb-4"><label>Concepto / descripcion *</label><input type="text" name="concepto" class="form-control" required minlength="3" placeholder="Ej. Compra de insumos, abono, venta adicional"></div>
-                
-                <div class="space-y-3 mb-4">
-                  <label class="flex items-start gap-3 text-sm text-slate-600">
-                    <input type="checkbox" id="egreso-fuera-turno" name="egreso_fuera_turno" class="mt-1">
-                    <span>
-                      <strong>Registrar fuera del turno/caja</strong>
-                      <small id="fuera-turno-help" class="block text-slate-400 mt-1">Usa esta opcion para dejar un movimiento fuera del arqueo del turno actual.</small>
-                    </span>
-                  </label>
-                  <label class="flex items-start gap-3 text-sm text-slate-600">
-                    <input type="checkbox" id="fecha-anterior-check" name="fecha_anterior_check" class="mt-1">
-                    <span>
-                      <strong>Registrar con fecha anterior</strong>
-                      <small class="block text-slate-400 mt-1">La fecha ingresada sera la que se vea en caja, reportes e impresion.</small>
-                    </span>
-                  </label>
-                </div>
-
-                <div id="fecha-anterior-container" class="mb-4 hidden">
-                  <label>Fecha y hora del movimiento *</label>
-                  <input type="datetime-local" id="fecha-movimiento-custom" name="fecha_movimiento_custom" class="form-control">
-                </div>
-
-                <button type="submit" class="button button-accent w-full py-3 rounded-2xl text-base font-semibold">+ Agregar movimiento</button>
-                <div id="turno-add-feedback" class="feedback-message mt-3"></div>
-              </form>
-            </section>
-
-            <section class="rounded-3xl bg-slate-900 text-white shadow-sm overflow-hidden">
-              <div class="p-5 border-b border-white/10">
-                <h3 class="text-lg font-semibold">Buenas practicas</h3>
-              </div>
-              <div class="p-5 text-sm text-slate-300 space-y-3">
-                <p>1. Usa "fuera del turno" solo cuando el movimiento no debe afectar el arqueo actual.</p>
-                <p>2. Si corriges una fecha, verifica el corte antes de cerrar.</p>
-                <p>3. Antes del cierre revisa metodo de pago y cliente para dejar el reporte limpio.</p>
-              </div>
-            </section>
-          </aside>
         </div>
-      </div>
+      </section>
     </div>`;
 
     moduleListeners.forEach(({ element, type, handler }) => element?.removeEventListener(type, handler));
@@ -911,8 +975,10 @@ async function renderizarUIAbierta() {
 
     const tBodyEl = currentContainerEl.querySelector('#turno-movements-body');
     const summaryEls = {
+        apertura: currentContainerEl.querySelector('#turno-total-apertura'),
         ingresos: currentContainerEl.querySelector('#turno-total-ingresos'),
         egresos: currentContainerEl.querySelector('#turno-total-egresos'),
+        operativo: currentContainerEl.querySelector('#turno-balance-operativo'),
         balance: currentContainerEl.querySelector('#turno-balance')
     };
     const movementRefs = {
@@ -1054,7 +1120,16 @@ async function renderizarUIAbierta() {
             return;
         }
 
-        const { error } = await currentSupabaseInstance.from('caja').insert(newMovement);
+        const { error } = await currentSupabaseInstance.rpc('registrar_movimiento_caja_atomico', {
+            p_hotel_id: newMovement.hotel_id,
+            p_usuario_id: newMovement.usuario_id,
+            p_turno_id: newMovement.turno_id,
+            p_tipo: newMovement.tipo,
+            p_monto: newMovement.monto,
+            p_concepto: newMovement.concepto,
+            p_metodo_pago_id: newMovement.metodo_pago_id,
+            p_fecha_movimiento: newMovement.fecha_movimiento
+        });
         if (error) {
             showError(feedbackEl, `Error: ${error.message}`);
         } else {
@@ -1084,7 +1159,7 @@ async function mostrarLogEliminados() {
             .from('log_caja_eliminados')
             .select('creado_en, datos_eliminados, eliminado_por_usuario:usuarios(nombre)')
             .order('creado_en', { ascending: false })
-            .limit(100); // Limitamos a los 100 mÃ¡s recientes para no sobrecargar
+            .limit(100); // Limitamos a los 100 más recientes para no sobrecargar
 
         if (error) throw error;
 
@@ -1149,7 +1224,7 @@ async function mostrarLogEliminados() {
 
 
 
-// Reemplaza tu funciÃ³n mostrarTurnosAbiertos con esta versiÃ³n
+// Reemplaza tu función mostrarTurnosAbiertos con esta versión
 // REEMPLAZA TU FUNCIÃ“N ACTUAL CON ESTA VERSIÃ“N MEJORADA
 async function mostrarTurnosAbiertos(event) {
     if (document.getElementById('modal-turnos-abiertos')) {
@@ -1302,7 +1377,7 @@ function renderizarUICerrada() {
   moduleListeners.push({ element: abrirTurnoBtn, type: 'click', handler: abrirTurnoHandler });
 }
 
-// Reemplaza tu funciÃ³n renderizarUI con esta
+// Reemplaza tu función renderizarUI con esta
 async function renderizarUI() {
     if (turnoEnSupervision) {
         await renderizarUIAbierta();
@@ -1318,8 +1393,8 @@ async function renderizarUI() {
 }
 // --- MODAL DE RESUMEN DE CAJA ANTES DE CORTE (CON IMPRESIÃ“N ADAPTABLE) ---
 
-// Reemplaza tu funciÃ³n mostrarResumenCorteDeCaja existente con esta versiÃ³n final.
-// Agrega esta nueva funciÃ³n a tu archivo caja.js
+// Reemplaza tu función mostrarResumenCorteDeCaja existente con esta versión final.
+// Agrega esta nueva función a tu archivo caja.js
 
 /**
  * Procesa una lista de movimientos y devuelve un objeto de reporte estructurado.
@@ -1354,7 +1429,7 @@ function procesarMovimientosParaReporte(movimientos) {
     
     // --- INICIO DE LA LÃ“GICA CORREGIDA ---
     if (mv.tipo === 'ingreso') {
-        // Se mejora la clasificaciÃ³n para incluir mÃ¡s tÃ©rminos
+        // Se mejora la clasificación para incluir más términos
         if (concepto.includes('restaurante') || concepto.includes('cocina')) {
             categoria = reporte.cocina;
         } else if (concepto.includes('tienda') || concepto.includes('producto')) {
@@ -1362,7 +1437,7 @@ function procesarMovimientosParaReporte(movimientos) {
         } else if (concepto.includes('propina')) {
             categoria = reporte.propinas;
         } else if (concepto.includes('habitaci') || concepto.includes('alquiler') || concepto.includes('reserva') || concepto.includes('extensi')) {
-            // Esta categorÃ­a ahora agrupa todo lo relacionado a alojamiento
+            // Esta categoría ahora agrupa todo lo relacionado a alojamiento
             categoria = reporte.habitaciones;
         } else {
             // Fallback para cualquier otro ingreso, se va a habitaciones
@@ -1370,7 +1445,7 @@ function procesarMovimientosParaReporte(movimientos) {
             categoria = reporte.habitaciones;
         }
         
-        categoria.ventas += 1; // O puedes ajustar esta lÃ³gica si es necesario
+        categoria.ventas += 1; // O puedes ajustar esta lógica si es necesario
         categoria.transacciones += 1;
 
     } else if (mv.tipo === 'egreso') {
@@ -1387,8 +1462,44 @@ function procesarMovimientosParaReporte(movimientos) {
   return reporte;
 }
 
+function esMetodoEfectivo(nombreMetodo = '') {
+  return String(nombreMetodo).toLowerCase().includes('efectivo');
+}
+
+function calcularTotalesSistemaCierre(reporte, metodosDePago) {
+  const calcularTotalFila = (fila) => Object.values(fila?.pagos || {}).reduce((acc, val) => acc + val, 0);
+  const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
+  const totalGastos = calcularTotalFila(reporte.gastos);
+  const balanceFinal = (reporte.apertura || 0) + totalIngresos - totalGastos;
+
+  const totalesPorMetodo = {};
+  metodosDePago.forEach((metodo) => {
+    const nombreMetodo = metodo.nombre;
+    const totalIngreso = (reporte.habitaciones.pagos[nombreMetodo] || 0) +
+      (reporte.cocina.pagos[nombreMetodo] || 0) +
+      (reporte.tienda.pagos[nombreMetodo] || 0) +
+      (reporte.propinas.pagos[nombreMetodo] || 0);
+    const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
+    const balanceSinApertura = totalIngreso - totalGasto;
+
+    totalesPorMetodo[nombreMetodo] = {
+      ingreso: totalIngreso,
+      gasto: totalGasto,
+      balance: balanceSinApertura,
+      esperadoArqueo: balanceSinApertura + (esMetodoEfectivo(nombreMetodo) ? (reporte.apertura || 0) : 0)
+    };
+  });
+
+  return {
+    totalIngresos,
+    totalGastos,
+    balanceFinal,
+    totalesPorMetodo
+  };
+}
+
 function renderizarModalArqueo(metodosDePago, onConfirm) {
-  const metodoEfectivo = metodosDePago.find(m => m.nombre.toLowerCase().includes('efectivo'));
+  const metodoEfectivo = metodosDePago.find(m => esMetodoEfectivo(m.nombre));
   const idEfectivo = metodoEfectivo ? metodoEfectivo.id : null;
 
   const inputsHtml = metodosDePago.map(metodo => {
@@ -1579,22 +1690,15 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
     }
 
     const reporte = procesarMovimientosParaReporte(movimientosOrdenados);
-    const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
-    
-    const totalesPorMetodo = {};
-    metodosDePago.forEach(metodo => {
-      const nombreMetodo = metodo.nombre;
-      const totalIngreso = (reporte.habitaciones.pagos[nombreMetodo] || 0) + (reporte.cocina.pagos[nombreMetodo] || 0) + (reporte.tienda.pagos[nombreMetodo] || 0) + (reporte.propinas.pagos[nombreMetodo] || 0);
-      const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
-      totalesPorMetodo[nombreMetodo] = { ingreso: totalIngreso, gasto: totalGasto, balance: totalIngreso - totalGasto };
-    });
-
-    const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
-    const totalGastos = calcularTotalFila(reporte.gastos);
-    const balanceFinal = totalIngresos - totalGastos;
+    const {
+      totalesPorMetodo,
+      totalIngresos,
+      totalGastos,
+      balanceFinal
+    } = calcularTotalesSistemaCierre(reporte, metodosDePago);
 
     const filasComparativas = metodosDePago.map(m => {
-        const sistema = totalesPorMetodo[m.nombre].balance;
+        const sistema = totalesPorMetodo[m.nombre].esperadoArqueo;
         const real = valoresRealesArqueo[m.nombre] || 0;
         const diferencia = real - sistema;
         
@@ -1650,7 +1754,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
             </summary>
             <div class="text-xs mt-3 text-gray-500 group-open:animate-fadeIn">
                 <div class="overflow-x-auto">
-                    <p class="p-2">Ingresos Totales Sistema: <b>${formatCurrency(totalIngresos)}</b> | Gastos Totales Sistema: <b>${formatCurrency(totalGastos)}</b></p>
+                    <p class="p-2">Apertura: <b>${formatCurrency(reporte.apertura)}</b> | Ingresos operativos: <b>${formatCurrency(totalIngresos)}</b> | Gastos: <b>${formatCurrency(totalGastos)}</b> | Balance esperado: <b>${formatCurrency(balanceFinal)}</b></p>
                 </div>
             </div>
           </details>
@@ -1689,7 +1793,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
         metodosDePago.forEach(m => { 
             ingresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.ingreso || 0;
             egresosPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.gasto || 0;
-            balancesPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.balance || 0;
+            balancesPorMetodo[m.nombre] = totalesPorMetodo[m.nombre]?.esperadoArqueo || 0;
         });
         
         const nombreUsuario = turnoParaResumir.usuarios?.nombre || turnoParaResumir.usuarios?.email || 'Usuario';
@@ -1706,6 +1810,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
             balancesPorMetodo,
             nombreUsuario, 
             fechaLocal,
+            reporte.apertura,
             valoresRealesArqueo
         );
     };
@@ -1722,7 +1827,7 @@ async function mostrarResumenCorteDeCaja(valoresRealesArqueo = null) {
 
 
 
-function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo, usuarioNombre, fechaCierre, valoresReales = null) {
+function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo, usuarioNombre, fechaCierre, montoApertura = 0, valoresReales = null) {
   let tamano = (config?.tamano_papel || '').toLowerCase();
   const esTermica = tamano === '58mm' || tamano === '80mm';
   const widthPage = tamano === '58mm' ? '58mm' : (tamano === '80mm' ? '78mm' : '100%');
@@ -1795,10 +1900,12 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
 
   let totalesHtml = `
     <div class="mb-2">
-      <div class="resumen-row"><span>(+) Ingresos Totales:</span> <span>${formatCurrency(ingresos)}</span></div>
-      <div class="resumen-row"><span>(-) Egresos Totales:</span> <span>${formatCurrency(egresos)}</span></div>
+      <div class="resumen-row"><span>Apertura de caja (base inicial):</span> <span>${formatCurrency(montoApertura)}</span></div>
+      <div class="resumen-row"><span>(+) Ingresos del turno:</span> <span>${formatCurrency(ingresos)}</span></div>
+      <div class="resumen-row"><span>(-) Egresos del turno:</span> <span>${formatCurrency(egresos)}</span></div>
+      <div class="resumen-row"><span>(=) Dinero generado en el turno:</span> <span>${formatCurrency(ingresos - egresos)}</span></div>
       <div class="border-top resumen-row bold" style="font-size: 1.1em;">
-        <span>(=) BALANCE SISTEMA:</span> <span>${formatCurrency(balance)}</span>
+        <span>(=) BALANCE TOTAL INCLUYENDO APERTURA:</span> <span>${formatCurrency(balance)}</span>
       </div>
     </div>
   `;
@@ -1810,7 +1917,7 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
 
   let detalleEntregarHtml = `
     <div class="balance-box">
-      <div class="bold text-center border-bottom mb-1">DINERO ESPERADO (SISTEMA)</div>
+      <div class="bold text-center border-bottom mb-1">BALANCE TOTAL INCLUYENDO APERTURA</div>
       ${listaBalances || '<div class="text-center italic">Sin movimientos</div>'}
     </div>
   `;
@@ -1833,7 +1940,7 @@ function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, bala
   setTimeout(() => { w.focus(); w.print(); }, 500);
 }
 
-// --- FUNCIONES AUXILIARES (Email, MÃ©todos de Pago, etc.) ---
+// --- FUNCIONES AUXILIARES (Email, Métodos de Pago, etc.) ---
 
 async function popularMetodosPagoSelect(selectEl) {
   if (!selectEl) return;
@@ -1863,44 +1970,25 @@ function generarHTMLReporteCierre(
     movsPrestamos,
     stockAmenidades, 
     stockLenceria,
-    valoresReales = null // <--- ParÃ¡metro para el arqueo ciego
+    valoresReales = null // <--- Parámetro para el arqueo ciego
 ) {
   
-  // --- 1. CÃLCULO DE TOTALES DEL SISTEMA ---
-  const calcularTotalFila = (fila) => Object.values(fila.pagos).reduce((acc, val) => acc + val, 0);
-  
-  const totalesPorMetodo = {};
-  metodosDePago.forEach(metodo => {
-    const nombreMetodo = metodo.nombre;
-    const totalIngreso = (reporte.habitaciones.pagos[nombreMetodo] || 0) +
-                         (reporte.cocina.pagos[nombreMetodo] || 0) +
-                         (reporte.tienda.pagos[nombreMetodo] || 0) +
-                         (reporte.propinas.pagos[nombreMetodo] || 0);
-    const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
-    
-    // El balance del sistema
-    totalesPorMetodo[nombreMetodo] = { 
-        ingreso: totalIngreso, 
-        gasto: totalGasto, 
-        balance: totalIngreso - totalGasto 
-    };
-  });
-
-  const totalIngresos = Object.values(totalesPorMetodo).reduce((acc, val) => acc + val.ingreso, 0);
-  const totalGastos = Object.values(totalesPorMetodo).reduce((acc, val) => acc + val.gasto, 0);
-  // Balance final incluyendo apertura
-  const balanceFinal = reporte.apertura + totalIngresos - totalGastos;
+  // --- 1. CÁLCULO DE TOTALES DEL SISTEMA ---
+  const {
+    totalesPorMetodo,
+    totalIngresos,
+    totalGastos,
+    balanceFinal
+  } = calcularTotalesSistemaCierre(reporte, metodosDePago);
+  const balanceOperativo = totalIngresos - totalGastos;
+  const saldoEsperadoEnCaja = balanceFinal;
 
 
   let alertaDescuadreHtml = '';
   if (valoresReales) {
       let totalDeclarado = 0;
       let filasDescuadre = metodosDePago.map(m => {
-          let sistema = totalesPorMetodo[m.nombre].balance;
-          
-          if (m.nombre.toLowerCase().includes('efectivo')) {
-              sistema += reporte.apertura;
-          }
+          const sistema = totalesPorMetodo[m.nombre].esperadoArqueo;
 
           const real = valoresReales[m.nombre] || 0;
           totalDeclarado += real;
@@ -1919,7 +2007,7 @@ function generarHTMLReporteCierre(
       }).join('');
 
       // Diferencia total global
-      const diferenciaTotal = totalDeclarado - balanceFinal;
+      const diferenciaTotal = totalDeclarado - saldoEsperadoEnCaja;
 
       if (Math.abs(diferenciaTotal) > 1 || filasDescuadre.trim() !== '') {
             const tituloEstado = diferenciaTotal < 0 ? 'DESCUADRE: FALTANTE DE DINERO' : (diferenciaTotal > 0 ? 'DESCUADRE: SOBRANTE DE DINERO' : 'DETALLE DE DIFERENCIAS');
@@ -1930,7 +2018,7 @@ function generarHTMLReporteCierre(
             <div style="background-color: ${colorFondo}; border: 2px dashed ${colorTexto}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                 <h3 style="color: ${colorTexto}; margin-top: 0; text-align: center;">${tituloEstado}</h3>
                 <p style="text-align:center; font-size:16px;">
-                    El sistema calculo <b>${formatCurrency(balanceFinal)}</b>, pero el cajero declaro tener <b>${formatCurrency(totalDeclarado)}</b>.
+                    El saldo esperado en caja era <b>${formatCurrency(saldoEsperadoEnCaja)}</b>, pero el cajero declaro tener <b>${formatCurrency(totalDeclarado)}</b>.
                 </p>
                 <div style="text-align:center; font-size:20px; font-weight:bold; color:${colorTexto}; margin-bottom:10px;">
                    Diferencia Total: ${diferenciaTotal > 0 ? '+' : ''}${formatCurrency(diferenciaTotal)}
@@ -1952,26 +2040,76 @@ function generarHTMLReporteCierre(
 
   // --- 3. ESTILOS HTML (Tus estilos originales) ---
   const styles = {
-    body: `font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #333; background-color: #f8f9fa; margin: 0; padding: 20px;`,
-    container: `max-width: fit-content; min-width: 800px; margin: 20px auto; padding: 25px; border: 1px solid #dee2e6; border-radius: 8px; background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.05);`,
-    header: `color: #212529; font-size: 26px; text-align: center; margin-bottom: 10px; border-bottom: 2px solid #007bff; padding-bottom: 10px;`,
-    subHeader: `font-size: 16px; color: #6c757d; text-align: center; margin-bottom: 25px;`,
-    headerDetalle: `color: #212529; font-size: 20px; text-align: left; margin-top: 35px; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 8px;`,
-    table: `width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 13px;`,
-    th: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; background-color: #f1f3f5; font-weight: 600;`,
-    td: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: right;`,
-    tdConcepto: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; font-weight: 500;`,
-    tdTotal: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: right; font-weight: bold; background-color: #e9ecef;`,
-    tdTotalConcepto: `border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; font-weight: bold; background-color: #e9ecef;`,
-    footer: `text-align: center; font-size: 12px; color: #adb5bd; margin-top: 30px; padding-top: 15px; border-top: 1px solid #e9ecef;`
+    body: `font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1f2937; background-color: #eef3f8; margin: 0; padding: 24px;`,
+    container: `max-width: 1100px; width: 100%; margin: 0 auto; background-color: #ffffff; border: 1px solid #dbe4ee; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);`,
+    hero: `background-color: #0f172a; padding: 28px 32px 22px; color: #ffffff;`,
+    heroEyebrow: `font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase; color: #93c5fd; margin-bottom: 10px; font-weight: bold;`,
+    heroTitle: `font-size: 30px; line-height: 1.15; margin: 0; font-weight: bold;`,
+    heroSubtitle: `font-size: 14px; color: #cbd5e1; margin: 8px 0 0;`,
+    metaTable: `width: 100%; margin-top: 18px; border-collapse: separate; border-spacing: 0 10px;`,
+    metaLabel: `font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: #93c5fd;`,
+    metaValue: `font-size: 14px; color: #ffffff; font-weight: bold;`,
+    section: `padding: 26px 28px 30px;`,
+    headerDetalle: `color: #0f172a; font-size: 18px; text-align: left; margin: 34px 0 14px; padding: 0 0 10px; border-bottom: 2px solid #e5e7eb;`,
+    table: `width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 13px; border: 1px solid #e5e7eb; overflow: hidden;`,
+    th: `border: 1px solid #e5e7eb; padding: 12px 10px; text-align: left; background-color: #f8fafc; color: #334155; font-weight: 700;`,
+    td: `border: 1px solid #e5e7eb; padding: 11px 10px; text-align: right; background-color: #ffffff;`,
+    tdConcepto: `border: 1px solid #e5e7eb; padding: 11px 10px; text-align: left; font-weight: 500; background-color: #ffffff;`,
+    tdTotal: `border: 1px solid #dbeafe; padding: 11px 10px; text-align: right; font-weight: bold; background-color: #f8fbff;`,
+    tdTotalConcepto: `border: 1px solid #dbeafe; padding: 11px 10px; text-align: left; font-weight: bold; background-color: #f8fbff;`,
+    summaryTable: `width: 100%; border-collapse: separate; border-spacing: 10px; margin: 20px 0 0;`,
+    summaryCell: `background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 18px;`,
+    summaryLabel: `font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; color: #64748b; margin-bottom: 10px; font-weight: bold;`,
+    summaryValue: `font-size: 24px; line-height: 1.1; color: #0f172a; font-weight: bold;`,
+    summaryHint: `font-size: 12px; color: #64748b; margin-top: 6px;`,
+    infoBox: `background:#f8fafc; border:1px solid #dbeafe; color:#1e3a8a; padding:14px 16px; border-radius:12px; margin:22px 0 6px; font-size:13px; line-height:1.6;`,
+    footer: `text-align: center; font-size: 12px; color: #94a3b8; margin-top: 30px; padding: 18px 0 0; border-top: 1px solid #e5e7eb;`
   };
 
   // --- 4. TABLAS DE RESUMEN (Tus tablas originales) ---
   const thMetodos = metodosDePago.map(m => `<th style="${styles.th} text-align:right;">${m.nombre}</th>`).join('');
   const generarCeldasFila = (fila) => metodosDePago.map(m => `<td style="${styles.td}">${formatCurrency(fila.pagos[m.nombre] || 0)}</td>`).join('');
+  const calcularTotalCategoria = (fila) => Object.values(fila?.pagos || {}).reduce((acc, val) => acc + val, 0);
   const tdTotalesIngresos = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].ingreso)}</td>`).join('');
   const tdTotalesGastos = metodosDePago.map(m => `<td style="${styles.tdTotal} color:red;">(${formatCurrency(totalesPorMetodo[m.nombre].gasto)})</td>`).join('');
-  const tdTotalesBalance = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].balance)}</td>`).join('');
+  const tdTotalesBalanceOperativo = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].balance)}</td>`).join('');
+  const tdTotalesEsperadoCaja = metodosDePago.map(m => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[m.nombre].esperadoArqueo)}</td>`).join('');
+
+  const resumenCardsHtml = `
+    <table role="presentation" style="${styles.summaryTable}">
+      <tr>
+        <td style="${styles.summaryCell}; width: 33.33%;">
+          <div style="${styles.summaryLabel}">Apertura</div>
+          <div style="${styles.summaryValue}">${formatCurrency(reporte.apertura)}</div>
+          <div style="${styles.summaryHint}">Base inicial del turno</div>
+        </td>
+        <td style="${styles.summaryCell}; width: 33.33%;">
+          <div style="${styles.summaryLabel}">Ingresos</div>
+          <div style="${styles.summaryValue}; color:#166534;">${formatCurrency(totalIngresos)}</div>
+          <div style="${styles.summaryHint}">Total facturado en el turno</div>
+        </td>
+        <td style="${styles.summaryCell}; width: 33.33%;">
+          <div style="${styles.summaryLabel}">Egresos</div>
+          <div style="${styles.summaryValue}; color:#b91c1c;">${formatCurrency(totalGastos)}</div>
+          <div style="${styles.summaryHint}">Salidas de dinero del turno</div>
+        </td>
+      </tr>
+    </table>
+    <table role="presentation" style="${styles.summaryTable}; margin-top: 0;">
+      <tr>
+        <td style="${styles.summaryCell}; width: 50%;">
+          <div style="${styles.summaryLabel}">Dinero generado</div>
+          <div style="${styles.summaryValue}; color:#2563eb;">${formatCurrency(balanceOperativo)}</div>
+          <div style="${styles.summaryHint}">Ingresos menos egresos</div>
+        </td>
+        <td style="${styles.summaryCell}; width: 50%;">
+          <div style="${styles.summaryLabel}">Total esperado en caja</div>
+          <div style="${styles.summaryValue}; color:#0f766e;">${formatCurrency(saldoEsperadoEnCaja)}</div>
+          <div style="${styles.summaryHint}">Apertura mas dinero generado</div>
+        </td>
+      </tr>
+    </table>
+  `;
   
   const detalleCajaHtml = `
     <h2 style="${styles.headerDetalle}">Detalle de Movimientos de Caja</h2>
@@ -2122,11 +2260,29 @@ function generarHTMLReporteCierre(
   return `
     <body style="${styles.body}">
       <div style="${styles.container}">
-        <h1 style="${styles.header}">Reporte de Ingresos y Gastos</h1>
-        <p style="${styles.subHeader}">
-          <strong>Realizado por:</strong> ${usuarioNombre}<br>
-          <strong>Fecha de Cierre:</strong> ${fechaCierre}
-        </p>
+        <div style="${styles.hero}">
+          <div style="${styles.heroEyebrow}">Gestion de Hotel</div>
+          <h1 style="${styles.heroTitle}">Cierre de Caja</h1>
+          <p style="${styles.heroSubtitle}">Resumen financiero, movimientos y control de entregas del turno.</p>
+          <table role="presentation" style="${styles.metaTable}">
+            <tr>
+              <td style="width:50%; vertical-align:top;">
+                <div style="${styles.metaLabel}">Realizado por</div>
+                <div style="${styles.metaValue}">${usuarioNombre}</div>
+              </td>
+              <td style="width:50%; vertical-align:top; text-align:right;">
+                <div style="${styles.metaLabel}">Fecha de cierre</div>
+                <div style="${styles.metaValue}">${fechaCierre}</div>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="${styles.section}">
+        ${resumenCardsHtml}
+        <div style="${styles.infoBox}">
+          <strong>Como leer este reporte:</strong> la <strong>apertura de caja</strong> es la base inicial del turno. El <strong>dinero generado en el turno</strong> muestra solo ingresos menos egresos. El <strong>balance total incluyendo apertura</strong> incluye la apertura mas el dinero generado en el turno.
+        </div>
         
         ${alertaDescuadreHtml}
         <table style="${styles.table}">
@@ -2141,7 +2297,7 @@ function generarHTMLReporteCierre(
           </thead>
           <tbody>
             <tr>
-               <td style="${styles.tdConcepto}">Apertura de Caja:</td>
+               <td style="${styles.tdConcepto}">Apertura de caja (base inicial):</td>
                <td style="${styles.td} text-align:center;">-</td>
                <td style="${styles.td} text-align:center;">-</td>
                ${metodosDePago.map(() => `<td style="${styles.td}">-</td>`).join('')}
@@ -2152,42 +2308,49 @@ function generarHTMLReporteCierre(
               <td style="${styles.td} text-align:center;">${reporte.habitaciones.ventas}</td>
               <td style="${styles.td} text-align:center;">${reporte.habitaciones.transacciones}</td>
               ${generarCeldasFila(reporte.habitaciones)}
-              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalFila(reporte.habitaciones))}</td>
+              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalCategoria(reporte.habitaciones))}</td>
             </tr>
             <tr>
               <td style="${styles.tdConcepto}">COCINA:</td>
               <td style="${styles.td} text-align:center;">${reporte.cocina.ventas}</td>
               <td style="${styles.td} text-align:center;">${reporte.cocina.transacciones}</td>
               ${generarCeldasFila(reporte.cocina)}
-              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalFila(reporte.cocina))}</td>
+              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalCategoria(reporte.cocina))}</td>
             </tr>
             <tr>
               <td style="${styles.tdConcepto}">TIENDA:</td>
               <td style="${styles.td} text-align:center;">${reporte.tienda.ventas}</td>
               <td style="${styles.td} text-align:center;">${reporte.tienda.transacciones}</td>
               ${generarCeldasFila(reporte.tienda)}
-              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalFila(reporte.tienda))}</td>
+              <td style="${styles.tdTotal}">${formatCurrency(calcularTotalCategoria(reporte.tienda))}</td>
             </tr>
             <tr>
-              <td style="${styles.tdTotalConcepto}">Ingresos Totales:</td>
+              <td style="${styles.tdTotalConcepto}">Ingresos del turno:</td>
               <td style="${styles.tdTotal} text-align:center;">${reporte.habitaciones.ventas + reporte.cocina.ventas + reporte.tienda.ventas}</td>
               <td style="${styles.tdTotal} text-align:center;">${reporte.habitaciones.transacciones + reporte.cocina.transacciones + reporte.tienda.transacciones}</td>
               ${tdTotalesIngresos}
               <td style="${styles.tdTotal}">${formatCurrency(totalIngresos)}</td>
             </tr>
             <tr>
-              <td style="${styles.tdTotalConcepto}">Gastos Totales:</td>
+              <td style="${styles.tdTotalConcepto}">Egresos del turno:</td>
               <td style="${styles.tdTotal} text-align:center;">-</td>
               <td style="${styles.tdTotal} text-align:center;">${reporte.gastos.transacciones}</td>
               ${tdTotalesGastos}
               <td style="${styles.tdTotal} color:red;">(${formatCurrency(totalGastos)})</td>
             </tr>
              <tr>
-              <td style="${styles.tdTotalConcepto}">Balance Final:</td>
+              <td style="${styles.tdTotalConcepto}">Dinero generado en el turno:</td>
               <td style="${styles.tdTotal} text-align:center;">-</td>
               <td style="${styles.tdTotal} text-align:center;">${reporte.habitaciones.transacciones + reporte.cocina.transacciones + reporte.tienda.transacciones + reporte.gastos.transacciones}</td>
-              ${tdTotalesBalance}
-              <td style="${styles.tdTotal} background-color:#007bff; color:white;">${formatCurrency(balanceFinal)}</td>
+              ${tdTotalesBalanceOperativo}
+              <td style="${styles.tdTotal} background-color:#007bff; color:white;">${formatCurrency(balanceOperativo)}</td>
+            </tr>
+             <tr>
+              <td style="${styles.tdTotalConcepto}">Balance total incluyendo apertura:</td>
+              <td style="${styles.tdTotal} text-align:center;">-</td>
+              <td style="${styles.tdTotal} text-align:center;">-</td>
+              ${tdTotalesEsperadoCaja}
+              <td style="${styles.tdTotal} background-color:#0f766e; color:white;">${formatCurrency(saldoEsperadoEnCaja)}</td>
             </tr>
           </tbody>
         </table>
@@ -2200,7 +2363,8 @@ function generarHTMLReporteCierre(
         ${stockAmenidadesHtml}
         ${stockLenceriaHtml}
 
-        <div style="${styles.footer}">Este es un reporte automatico generado por el sistema.</div>
+        <div style="${styles.footer}">Este es un reporte automatico generado por Gestion de Hotel.</div>
+        </div>
       </div>
     </body>`;
 }
@@ -2208,38 +2372,18 @@ function generarHTMLReporteCierre(
 
 
 async function enviarReporteCierreCaja({ asunto, htmlReporte, feedbackEl }) {
-  const { data: config } = await currentSupabaseInstance
-    .from('configuracion_hotel')
-    .select('correo_reportes, correo_remitente')
-    .eq('hotel_id', currentHotelId)
-    .maybeSingle();
-  let toCorreos = (config?.correo_reportes || '').trim();
-  if (!toCorreos) {
-    toCorreos = currentModuleUser.email || "tucorreo@tudominio.com";
-  }
-  if (!toCorreos || !toCorreos.split(',').some(correo => correo.trim().includes('@'))) {
-    return {
-      sent: false,
-      reason: 'invalid_destination'
-    };
-  }
-  toCorreos = toCorreos.split(',').map(c => c.trim()).filter(c => !!c).join(',');
-  const fromCorreo = config?.correo_remitente || "no-reply@gestiondehotel.com";
-  const payload = {
-    to: toCorreos,
-    from: fromCorreo,
-    subject: asunto,
-    html: htmlReporte
-  };
-  const response = await fetch(EMAIL_REPORT_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
+  const { data, error } = await currentSupabaseInstance.functions.invoke('send-cash-close-report', {
+    body: {
+      hotelId: currentHotelId,
+      subject: asunto,
+      html: htmlReporte,
+      fallbackEmail: currentModuleUser?.email || ''
+    }
   });
-  if (!response.ok) {
+  if (error || !data?.sent) {
     return {
       sent: false,
-      reason: 'request_failed'
+      reason: data?.reason || 'request_failed'
     };
   }
   return { sent: true };

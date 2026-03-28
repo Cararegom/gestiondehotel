@@ -3,10 +3,11 @@ import { supabase } from './supabaseClient.js';
 import { getCurrentUser, handleLogout, onAuthStateChange } from './authService.js';
 import { showAppFeedback, showGlobalLoading, hideGlobalLoading } from './uiUtils.js';
 import { fetchTurnoActivo } from './services/turnoService.js';
+import { destroyMonitoring, initMonitoring, logMonitoringEvent } from './services/monitoringService.js';
 import { escapeHtml, installLegacyTextNormalizer } from './security.js';
 import { initInternalSupportChat, destroyInternalSupportChat } from './app-support-chat.js';
 
-// Importa tus mÃ³dulos
+// Importa tus módulos
 import * as Dashboard from './modules/dashboard/dashboard.js';
 import * as Reservas from './modules/reservas/reservas.js';
 import * as Habitaciones from './modules/habitaciones/habitaciones.js';
@@ -27,6 +28,7 @@ import * as Micuenta from './modules/micuenta/micuenta.js';
 import * as Clientes from './modules/clientes/clientes.js';
 import * as faq from './modules/faq/faq.js';
 import * as Bitacora from './modules/bitacora/bitacora.js';
+import * as OpsSaas from './modules/ops-saas/ops-saas.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -39,7 +41,7 @@ let campanitaInicializada = false;
 let currentPathLoaded = null;
 let routerBusy = false;
 
-// InformaciÃ³n del hotel, plan activo, rol del usuario y estado de suscripciÃ³n
+// Información del hotel, plan activo, rol del usuario y estado de suscripción
 let currentActiveHotel = null;
 let currentActivePlanDetails = null;
 let currentUserRole = null;
@@ -65,7 +67,8 @@ const routes = {
   '/descuentos': { module: Descuentos, moduleKey: 'descuentos' },
   '/micuenta': { module: Micuenta, moduleKey: 'micuenta' },
   '/faq': { module: faq, moduleKey: 'faq' },
-  '/bitacora': { module: Bitacora, moduleKey: 'bitacora' }
+  '/bitacora': { module: Bitacora, moduleKey: 'bitacora' },
+  '/ops-saas': { module: OpsSaas, moduleKey: 'ops-saas' }
 };
 
 const navLinksConfig = [
@@ -86,6 +89,7 @@ const navLinksConfig = [
   { path: '#/configuracion', text: 'Configuraci\u00F3n', icon: '\u2699\uFE0F', moduleKey: 'configuracion' },
   { path: '#/integraciones', text: 'Integraciones', icon: '\u{1F517}', moduleKey: 'integraciones' },
   { path: '#/notificaciones', text: 'Ver Notificaciones', icon: '\u{1F4DC}', moduleKey: 'notificaciones_page' },
+  { path: '#/ops-saas', text: 'Consola SaaS', icon: '\u{1F3E2}', moduleKey: 'ops-saas', superadminOnly: true },
   { path: '#/bitacora?scope=soporte-global', text: 'Incidencias SaaS', icon: '\u{1F6DF}\uFE0F', moduleKey: 'bitacora', superadminOnly: true },
   { path: '#/micuenta', text: 'Mi cuenta', icon: '\u{1F6E1}\uFE0F', moduleKey: 'micuenta' },
   { path: '#/faq', text: 'FAQ', icon: '\u2753', moduleKey: 'faq' }
@@ -155,7 +159,7 @@ async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
     console.log(`[PlanManager] Detalles del plan activo '${currentActivePlanDetails.nombre}' cargados:`, currentActivePlanDetails.funcionalidades);
 
   } catch (error) {
-    console.error("Error crÃ­tico cargando detalles del hotel y/o plan:", error.message);
+    console.error("Error crítico cargando detalles del hotel y/o plan:", error.message);
     currentActiveHotel = null;
     currentActivePlanDetails = {
       nombre: "ErrorCargaPlan",
@@ -185,7 +189,7 @@ function renderNavigation(user) {
   }
 
   if (isSubscriptionFueraDeGracia && esAdminNavegacion) {
-    // LÃ³gica para suscripciÃ³n vencida (sin cambios)
+    // Lógica para suscripción vencida (sin cambios)
     navLinksConfig.forEach(linkConfig => {
       if (linkConfig.moduleKey === 'micuenta') {
         const a = buildNavLinkElement(linkConfig);
@@ -196,8 +200,8 @@ function renderNavigation(user) {
     const modulosPermitidos = currentActivePlanDetails.funcionalidades.modulos_permitidos;
 
     // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
-    // Se aÃ±ade la misma lista de mÃ³dulos exentos que en el router.
-    const modulosExentos = ['micuenta', 'faq', 'bitacora'];
+    // Se añade la misma lista de módulos exentos que en el router.
+    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas'];
 
     navLinksConfig.forEach(linkConfig => {
       if (linkConfig.adminOnly && !esAdminNavegacion) {
@@ -206,7 +210,7 @@ function renderNavigation(user) {
       if (linkConfig.superadminOnly && currentUserRole !== 'superadmin') {
         return;
       }
-      // Un enlace se muestra si su 'moduleKey' estÃ¡ en la lista de permitidos O en la lista de exentos.
+      // Un enlace se muestra si su 'moduleKey' está en la lista de permitidos O en la lista de exentos.
       if (modulosPermitidos.includes(linkConfig.moduleKey) || modulosExentos.includes(linkConfig.moduleKey)) {
         const a = buildNavLinkElement(linkConfig);
         if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
@@ -214,14 +218,14 @@ function renderNavigation(user) {
     });
     // â–²â–²â–² FIN DE LA CORRECCIÃ“N â–²â–²â–²
   } else {
-    // LÃ³gica de fallback (sin cambios)
+    // Lógica de fallback (sin cambios)
     navLinksConfig.forEach(linkConfig => {
       if (linkConfig.moduleKey === 'micuenta' || linkConfig.moduleKey === 'dashboard') {
         const a = buildNavLinkElement(linkConfig);
         if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
       }
     });
-    console.warn("RenderNavigation: Detalles del plan no disponibles o incompletos, mostrando navegaciÃ³n esencial.");
+    console.warn("RenderNavigation: Detalles del plan no disponibles o incompletos, mostrando navegación esencial.");
   }
 }
 function updateUserInfo(user) {
@@ -237,7 +241,7 @@ function updateUserInfo(user) {
         <span class="user-role block text-xs text-gray-400">${displayRol}</span>
       </div>
       <button id="logout-button" class="button button-danger w-full text-left p-2 hover:bg-red-700 rounded flex items-center text-sm mt-2">
-        <span class="mr-2 text-lg">ðŸšª</span> Cerrar SesiÃ³n
+        <span class="mr-2 text-lg">ðŸšª</span> Cerrar Sesión
       </button>
     */
     userInfoNav.innerHTML = '';
@@ -328,7 +332,7 @@ function updateUserInfo(user) {
 async function router() {
   // --- FRENO DE SEGURIDAD AÃ‘ADIDO ---
   if (document.getElementById('reset-password-form')) {
-    console.log('[Router] Detenido: El formulario de reseteo de contraseÃ±a estÃ¡ activo.');
+    console.log('[Router] Detenido: El formulario de reseteo de contraseña está activo.');
     hideGlobalLoading();
     return;
   }
@@ -341,8 +345,8 @@ async function router() {
   routerBusy = true;
   try {
     if (!appContainer) {
-      console.error("Router: appContainer no estÃ¡ definido.");
-      if (document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crÃ­tico: Falta #app-container.</p>";
+      console.error("Router: appContainer no está definido.");
+      if (document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Falta #app-container.</p>";
       routerBusy = false;
       return;
     }
@@ -360,15 +364,15 @@ async function router() {
       return;
     }
 
-    console.log(`[Router] Navegando a: ${baseRoute}. MÃ³dulo anterior: ${currentPathLoaded}`);
+    console.log(`[Router] Navegando a: ${baseRoute}. Módulo anterior: ${currentPathLoaded}`);
     showGlobalLoading(`Cargando ${baseRoute}...`);
 
     if (typeof currentModuleUnmount === 'function') {
       try {
-        console.log(`[Router] Desmontando mÃ³dulo para: ${currentPathLoaded}`);
+        console.log(`[Router] Desmontando módulo para: ${currentPathLoaded}`);
         currentModuleUnmount(appContainer);
       } catch (e) {
-        console.error("[Router] Error al desmontar el mÃ³dulo anterior:", currentPathLoaded, e);
+        console.error("[Router] Error al desmontar el módulo anterior:", currentPathLoaded, e);
       }
     }
     currentModuleUnmount = null;
@@ -392,21 +396,21 @@ async function router() {
       hotelIdForModule = perfilUserAppRouter?.hotel_id;
     }
 
-    // En js/main.js, dentro de la funciÃ³n router()
+    // En js/main.js, dentro de la función router()
 
     if (userForModule && currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
 
       // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
-      // Creamos una lista de mÃ³dulos que SIEMPRE deben estar accesibles.
-      const modulosExentos = ['micuenta', 'faq', 'bitacora'];
+      // Creamos una lista de módulos que SIEMPRE deben estar accesibles.
+      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas'];
 
-      // Verificamos si el mÃ³dulo actual estÃ¡ en la lista de exentos.
+      // Verificamos si el módulo actual está en la lista de exentos.
       const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
 
-      // Si el mÃ³dulo NO es exento Y NO estÃ¡ en la lista de permitidos del plan, entonces bloqueamos.
+      // Si el módulo NO es exento Y NO está en la lista de permitidos del plan, entonces bloqueamos.
       if (!esModuloExento && moduleKeyFromRoute && !currentActivePlanDetails.funcionalidades.modulos_permitidos.includes(moduleKeyFromRoute)) {
 
-        console.warn(`[Router] Acceso denegado al mÃ³dulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
+        console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
         appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al M\u00F3dulo</h2><p class="text-gray-700 mb-1">La funcionalidad o m\u00F3dulo '<strong>${escapeHtml(moduleKeyFromRoute)}</strong>' no est\u00E1 incluida en tu plan actual (<strong>${escapeHtml(currentActivePlanDetails.nombre)}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta secci\u00F3n, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
         hideGlobalLoading();
         routerBusy = false;
@@ -436,12 +440,12 @@ async function router() {
       if (isSubscriptionFueraDeGracia) {
         if (esAdminRouter) {
           if (baseRoute !== '/micuenta') {
-            showAppFeedback('Tu suscripciÃ³n ha vencido. Solo puedes acceder a "Mi Cuenta" para renovar tu plan.', 'warning', true, 6000);
+            showAppFeedback('Tu suscripción ha vencido. Solo puedes acceder a "Mi Cuenta" para renovar tu plan.', 'warning', true, 6000);
             window.location.hash = '#/micuenta';
             return;
           }
         } else {
-          document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;padding:20px;background-color:#f3f4f6;"><h2 style="color:#be123c;font-size:1.8rem;margin-bottom:1rem;">SuscripciÃ³n Vencida</h2><p style="font-size:1.1rem;color:#374151;">La suscripciÃ³n del hotel ha expirado.<br>ComunÃ­cate con el administrador para renovar el acceso.</p></div>`;
+          document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;padding:20px;background-color:#f3f4f6;"><h2 style="color:#be123c;font-size:1.8rem;margin-bottom:1rem;">Suscripción Vencida</h2><p style="font-size:1.1rem;color:#374151;">La suscripción del hotel ha expirado.<br>Comunícate con el administrador para renovar el acceso.</p></div>`;
           hideGlobalLoading();
           routerBusy = false;
           return;
@@ -458,17 +462,35 @@ async function router() {
           currentModuleUnmount = null;
         } else {
           if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error: M\u00F3dulo para "${escapeHtml(baseRoute)}" inv\u00E1lido.</p>`;
+          void logMonitoringEvent({
+            source: 'router',
+            level: 'error',
+            eventType: 'invalid_module_definition',
+            message: `La ruta ${baseRoute} no tiene una definicion de modulo valida.`,
+            details: { baseRoute, moduleKeyFromRoute }
+          });
         }
       } else {
         try {
-          console.log(`[Router] Montando mÃ³dulo para: ${baseRoute}`);
-          console.log("DEBUG main.js: Valor de 'supabase' antes de pasarlo al mÃ³dulo:", supabase);
+          console.log(`[Router] Montando módulo para: ${baseRoute}`);
+          console.log("DEBUG main.js: Valor de 'supabase' antes de pasarlo al módulo:", supabase);
           await moduleDefinition.mount(appContainer, supabase, userForModule, hotelIdForModule, currentActivePlanDetails);
           currentModuleUnmount = moduleDefinition.unmount || null;
           currentPathLoaded = baseRoute;
         } catch (error) {
           if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error al cargar m\u00F3dulo: ${escapeHtml(error?.message || 'Error desconocido')}</p>`;
           currentPathLoaded = null;
+          void logMonitoringEvent({
+            source: 'router',
+            level: 'error',
+            eventType: 'module_mount_failed',
+            message: `Fallo montando la ruta ${baseRoute}.`,
+            details: {
+              baseRoute,
+              moduleKeyFromRoute,
+              error: error?.message || 'Error desconocido'
+            }
+          });
         }
       }
     } else {
@@ -503,7 +525,7 @@ function updateActiveNavLink(currentPath) {
 
 // REEMPLAZA TU FUNCIÃ“N initializeApp COMPLETA CON ESTA VERSIÃ“N
 
-// ASEGÃšRATE DE QUE ESTA FUNCIÃ“N ESTÃ ASÃ EN TU main.js
+// ASEGÃšRATE DE QUE ESTA FUNCIÃ“N ESTÁ ASÍ EN TU main.js
 
 async function initializeApp() {
   appContainer = document.getElementById('app-container');
@@ -512,8 +534,8 @@ async function initializeApp() {
   notificacionesCampanitaContainer = document.getElementById('notificaciones-campanita-container');
 
   if (!appContainer || !mainNav) {
-    console.error("initializeApp: Faltan elementos HTML esenciales (app-container o main-nav). La aplicaciÃ³n no puede continuar.");
-    if (document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crÃ­tico: Faltan elementos base de la aplicaciÃ³n. Revise los IDs #app-container y #main-nav en su HTML.</p>";
+    console.error("initializeApp: Faltan elementos HTML esenciales (app-container o main-nav). La aplicación no puede continuar.");
+    if (document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Faltan elementos base de la aplicación. Revise los IDs #app-container y #main-nav en su HTML.</p>";
     return;
   }
 
@@ -523,7 +545,7 @@ async function initializeApp() {
     mainNav.appendChild(dynamicLinksDiv);
   }
 
-  showGlobalLoading("Inicializando aplicaciÃ³n...");
+  showGlobalLoading("Inicializando aplicación...");
 
   onAuthStateChange(async (event, session) => {
     const appUser = session?.user;
@@ -534,7 +556,7 @@ async function initializeApp() {
       const type = urlParams.get('type');
 
       if (type === 'recovery') {
-        console.log('âœ…âœ…âœ… Evento de recuperaciÃ³n de contraseÃ±a detectado por URL. Mostrando formulario.');
+        console.log('âœ…âœ…âœ… Evento de recuperación de contraseña detectado por URL. Mostrando formulario.');
         hideGlobalLoading();
         mostrarFormularioNuevaContrasena();
         return;
@@ -557,7 +579,7 @@ async function initializeApp() {
         if (!hotelIdToLoad) hotelIdToLoad = perfil.hotel_id;
         currentUserRole = perfil.rol || "Usuario";
       } else {
-        console.warn("onAuthStateChange: No se encontrÃ³ perfil de usuario en la tabla 'usuarios'.");
+        console.warn("onAuthStateChange: No se encontró perfil de usuario en la tabla 'usuarios'.");
         currentUserRole = "Usuario";
       }
 
@@ -569,13 +591,33 @@ async function initializeApp() {
           isSubscriptionFueraDeGracia = calculateSubscriptionExpiredStatus(currentActiveHotel);
         } else {
           isSubscriptionFueraDeGracia = false;
-          console.warn("onAuthStateChange: currentActiveHotel no se pudo cargar, usando estado de suscripciÃ³n por defecto.");
+          console.warn("onAuthStateChange: currentActiveHotel no se pudo cargar, usando estado de suscripción por defecto.");
         }
       } else {
-        console.warn("Usuario autenticado pero sin hotel_id asociado. Usando plan/estado de suscripciÃ³n por defecto.");
+        console.warn("Usuario autenticado pero sin hotel_id asociado. Usando plan/estado de suscripción por defecto.");
         currentActiveHotel = null;
         currentActivePlanDetails = { nombre: "UsuarioSinHotel", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['micuenta'] } };
         isSubscriptionFueraDeGracia = false;
+      }
+
+      initMonitoring({
+        supabase,
+        user: appUser,
+        hotel: currentActiveHotel,
+        role: currentUserRole
+      });
+
+      if (perfilError) {
+        void logMonitoringEvent({
+          source: 'auth',
+          level: 'error',
+          eventType: 'profile_load_failed',
+          message: 'No se pudo cargar el perfil operativo del usuario.',
+          details: {
+            error: perfilError.message,
+            code: perfilError.code || null
+          }
+        });
       }
 
       // Precargar turno activo en memoria para evitar que se resetee al recargar
@@ -615,6 +657,7 @@ async function initializeApp() {
         if (notificacionesCampanitaContainer) notificacionesCampanitaContainer.innerHTML = '';
         campanitaInicializada = false;
       }
+      destroyMonitoring();
       destroyInternalSupportChat();
       updateUserInfo(null);
       renderNavigation(null);
@@ -649,13 +692,13 @@ async function initializeApp() {
     });
   }
 
-  // Listener para cerrar el menÃº al hacer clic en un enlace
+  // Listener para cerrar el menú al hacer clic en un enlace
   if (mainNav && sidebar && menuOverlay && hamburgerButton) {
     mainNav.addEventListener('click', (e) => {
       const linkClickeado = e.target.closest('a.nav-link-dynamic');
 
       if (linkClickeado) {
-        console.log('[MenÃº MÃ³vil] Enlace clickeado, cerrando menÃº.');
+        console.log('[Menú Móvil] Enlace clickeado, cerrando menú.');
         sidebar.classList.remove('open');
         menuOverlay.classList.remove('active');
         hamburgerButton.setAttribute('aria-expanded', 'false');
@@ -679,7 +722,7 @@ async function initializeApp() {
 
     if (document.visibilityState === 'visible') {
       if (window.innerWidth <= 900) {
-        console.log('[VisibilityChange] PestaÃ±a volviÃ³ a estar activa. Cerrando menÃº y overlay por seguridad.');
+        console.log('[VisibilityChange] Pestaña volvió a estar activa. Cerrando menú y overlay por seguridad.');
         if (sidebar) sidebar.classList.remove('open');
         if (menuOverlay) menuOverlay.classList.remove('active');
         if (hamburgerButton) hamburgerButton.setAttribute('aria-expanded', 'false');
@@ -700,7 +743,7 @@ function mostrarFormularioNuevaContrasena() {
   const container = document.getElementById('app-container');
   if (!container) {
     console.error("El contenedor #app-container no fue encontrado.");
-    document.body.innerHTML = "Error crÃ­tico: no se pudo mostrar el formulario de recuperaciÃ³n.";
+    document.body.innerHTML = "Error crítico: no se pudo mostrar el formulario de recuperación.";
     return;
   }
 
@@ -722,7 +765,7 @@ function mostrarFormularioNuevaContrasena() {
     <div class="min-h-screen bg-gray-100 flex flex-col justify-center items-center py-12 px-4">
       <div class="w-full max-w-md">
         <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
-          Establece tu nueva contraseÃ±a
+          Establece tu nueva contraseña
         </h2>
       </div>
 
@@ -731,7 +774,7 @@ function mostrarFormularioNuevaContrasena() {
           <form id="reset-password-form" class="space-y-6">
             <div>
               <label for="password" class="block text-sm font-medium text-gray-700">
-                Nueva ContraseÃ±a
+                Nueva Contraseña
               </label>
               <div class="mt-1">
                 <input id="password" name="password" type="password" autocomplete="new-password" required class="form-control w-full">
@@ -740,7 +783,7 @@ function mostrarFormularioNuevaContrasena() {
 
             <div>
               <label for="password-confirm" class="block text-sm font-medium text-gray-700">
-                Confirmar Nueva ContraseÃ±a
+                Confirmar Nueva Contraseña
               </label>
               <div class="mt-1">
                 <input id="password-confirm" name="password-confirm" type="password" autocomplete="new-password" required class="form-control w-full">
@@ -759,7 +802,7 @@ function mostrarFormularioNuevaContrasena() {
     </div>
   `;
 
-  // AÃ±adimos la lÃ³gica para manejar el envÃ­o del formulario.
+  // Añadimos la lógica para manejar el envío del formulario.
   const form = document.getElementById('reset-password-form');
   const feedbackEl = document.getElementById('reset-feedback');
   const submitButton = form.querySelector('button[type="submit"]');
@@ -782,7 +825,7 @@ function mostrarFormularioNuevaContrasena() {
     submitButton.textContent = 'Guardando...';
     feedbackEl.textContent = ''; feedbackEl.className = 'mt-4 text-center text-sm';
 
-    // Usamos supabase.auth.updateUser para establecer la nueva contraseÃ±a.
+    // Usamos supabase.auth.updateUser para establecer la nueva contraseña.
     const { error } = await supabase.auth.updateUser({
       password: newPassword
     });
@@ -806,14 +849,14 @@ document.addEventListener('DOMContentLoaded', () => {
   installLegacyTextNormalizer(document.body);
   if (!document.getElementById('app-container')) {
     console.error("Falta #app-container en DOMContentLoaded.");
-    if (document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crÃ­tico: Falta #app-container.</p>";
+    if (document.body) document.body.innerHTML = "<p style='color:red; text-align:center;'>Error crítico: Falta #app-container.</p>";
     return;
   }
   initializeApp().catch(error => {
-    console.error("Error fatal durante la inicializaciÃ³n:", error);
+    console.error("Error fatal durante la inicialización:", error);
     const appContainerError = document.getElementById('app-container');
     if (appContainerError) {
-      appContainerError.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error crÃ­tico al iniciar.</p>`;
+      appContainerError.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error crítico al iniciar.</p>`;
     }
     hideGlobalLoading();
   });

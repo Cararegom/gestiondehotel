@@ -22,7 +22,7 @@ let turnoActivo = null; // GuardarÃ¡ el estado del turno actual
 let turnoEnSupervision = null;
 
 
-const EMAIL_REPORT_ENDPOINT = "https://hook.us2.make.com/ta2p8lu2ybrevyujf755nmb44ip8u876";
+const EMAIL_REPORT_ENDPOINT = "BACKEND_ONLY_ENDPOINT_REMOVED";
 
 // --- LÃ“GICA DE TURNOS ---
 // js/modules/caja/caja.js

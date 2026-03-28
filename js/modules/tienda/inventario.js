@@ -6,6 +6,7 @@ import { closeModal, formatCurrency, getModalContainerEl, getTabContentEl } from
 let inventarioProductos = [];
 let categoriasCache = [];
 let proveedoresCache = [];
+const PRODUCTO_PLACEHOLDER_IMG = 'https://via.placeholder.com/160x160?text=Sin+Foto';
 
 export async function renderInventario() {
   const cont = getTabContentEl();
@@ -27,7 +28,7 @@ export async function renderInventario() {
     </div>
     <div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 8px #0001;">
       <table style="width:100%;font-size:14px;border-collapse:collapse;">
-        <thead><tr style="background:#f3f4f6;"><th style="padding:12px;">Nombre</th><th style="padding:12px;">Codigo</th><th style="padding:12px;">Categoria</th><th style="padding:12px;">Stock</th><th style="padding:12px;">Precio Venta</th><th style="padding:12px;">Estado</th><th style="padding:12px 18px;text-align:center;">Acciones</th></tr></thead>
+        <thead><tr style="background:#f3f4f6;"><th style="padding:12px;">Foto</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Codigo</th><th style="padding:12px;">Categoria</th><th style="padding:12px;">Stock</th><th style="padding:12px;">Precio Venta</th><th style="padding:12px;">Estado</th><th style="padding:12px 18px;text-align:center;">Acciones</th></tr></thead>
         <tbody id="invProductos"></tbody>
       </table>
     </div>
@@ -79,6 +80,9 @@ function renderTablaInventario(filtro = '') {
     const categoriaNombre = categoriasCache.find((c) => c.id === p.categoria_id)?.nombre || '-';
     return `
       <tr style="opacity:${p.activo ? '1' : '0.6'};">
+        <td style="padding:10px 8px;text-align:center;">
+          <img src="${p.imagen_url || PRODUCTO_PLACEHOLDER_IMG}" alt="${p.nombre}" style="width:48px;height:48px;object-fit:cover;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;">
+        </td>
         <td style="padding:10px 8px;font-weight:600;">${p.nombre}</td>
         <td style="padding:10px 8px;text-align:center;">${p.codigo_barras || '-'}</td>
         <td style="padding:10px 8px;text-align:center;">${categoriaNombre}</td>
@@ -132,6 +136,14 @@ export async function showModalProducto(productoId = null) {
       <button onclick="window.closeModal()" style="position:absolute;right:14px;top:10px;background:none;border:none;font-size:25px;color:#64748b;cursor:pointer;" title="Cerrar">&times;</button>
       <h2 style="margin-bottom:19px;text-align:center;font-size:1.22rem;font-weight:700;color:#1d4ed8;">${esEdicion ? 'Editar' : 'Nuevo'} Producto</h2>
       <form id="formProductoInv" autocomplete="off">
+        <div style="margin-bottom:18px;padding:16px;border:1px solid #dbeafe;border-radius:14px;background:linear-gradient(180deg,#f8fbff 0%,#eff6ff 100%);display:flex;flex-direction:column;align-items:center;gap:10px;">
+          <img id="prodImagenPreview" src="${prod?.imagen_url || PRODUCTO_PLACEHOLDER_IMG}" alt="Vista previa del producto" style="width:128px;height:128px;object-fit:cover;border-radius:16px;background:#fff;border:1px solid #dbeafe;box-shadow:0 8px 24px rgba(29,78,216,0.08);">
+          <div style="width:100%;">
+            <label style="display:block;font-weight:600;color:#334155;margin-bottom:4px;">Foto del producto</label>
+            <input id="prodImagen" type="file" accept="image/png, image/jpeg, image/webp" style="width:100%;padding:8px 11px;border:1.5px solid #cbd5e1;border-radius:8px;background:#fff;">
+            <p style="margin:6px 0 0;color:#64748b;font-size:0.9em;">Puedes subir una imagen del producto para verlo mejor en inventario y en el POS.</p>
+          </div>
+        </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:13px 16px;">
           <div style="grid-column:1/3;"><label>Nombre</label><input id="prodNombre" required value="${prod?.nombre || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;"></div>
           <div style="grid-column:1/3;"><label>Codigo de Barras</label><input id="prodCodigoBarras" value="${prod?.codigo_barras || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;"></div>
@@ -151,10 +163,37 @@ export async function showModalProducto(productoId = null) {
     </div>
   `;
 
+  const imagenInput = document.getElementById('prodImagen');
+  const imagenPreview = document.getElementById('prodImagenPreview');
+  if (imagenInput && imagenPreview) {
+    imagenInput.onchange = () => {
+      const file = imagenInput.files?.[0];
+      imagenPreview.src = file ? URL.createObjectURL(file) : (prod?.imagen_url || PRODUCTO_PLACEHOLDER_IMG);
+    };
+  }
+
   document.getElementById('formProductoInv').onsubmit = async (e) => {
     e.preventDefault();
     await saveProductoInv(productoId);
   };
+}
+
+function sanitizeProductImageName(fileName = 'producto') {
+  return fileName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+async function uploadProductoImagen(file, existingUrl = null) {
+  if (!file) return existingUrl;
+
+  const filePath = `public/${tiendaState.currentHotelId}/producto_${Date.now()}_${sanitizeProductImageName(file.name)}`;
+  const { error: uploadError } = await tiendaState.currentSupabase.storage.from('productos').upload(filePath, file);
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = tiendaState.currentSupabase.storage.from('productos').getPublicUrl(filePath);
+  return urlData?.publicUrl || existingUrl;
 }
 
 async function saveProductoInv(productoId) {
@@ -164,6 +203,10 @@ async function saveProductoInv(productoId) {
   btnSubmit.textContent = 'Guardando...';
 
   try {
+    const productoActual = productoId ? inventarioProductos.find((p) => p.id === productoId) : null;
+    const imagenFile = document.getElementById('prodImagen')?.files?.[0] || null;
+    const imagenUrl = await uploadProductoImagen(imagenFile, productoActual?.imagen_url || null);
+
     const datosProducto = {
       hotel_id: tiendaState.currentHotelId,
       nombre: document.getElementById('prodNombre').value.trim(),
@@ -174,6 +217,7 @@ async function saveProductoInv(productoId) {
       stock_minimo: Number(document.getElementById('prodStockMin').value) || 0,
       stock_maximo: Number(document.getElementById('prodStockMax').value) || 0,
       proveedor_id: document.getElementById('prodProveedor').value || null,
+      imagen_url: imagenUrl,
       actualizado_en: new Date().toISOString(),
     };
 

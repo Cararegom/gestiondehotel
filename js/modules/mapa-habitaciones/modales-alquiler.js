@@ -58,7 +58,7 @@ export function crearOpcionesHoras(tiempos) {
     return ['<option value="">-- Selecciona duraci\u00f3n --</option>', ...opciones].join('');
 }
 
-// ================== MOTOR DE CÃLCULO DE DETALLES ==================
+// ================== MOTOR DE CÁLCULO DE DETALLES ==================
 
 export async function calcularDetallesEstancia(dataForm, room, tiempos, horarios, descuentoAplicado) {
     let inicioAt = new Date();
@@ -413,7 +413,7 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
 
     let descuentoAplicado = null; 
 
-    // ObtenciÃ³n de datos iniciales
+    // Obtención de datos iniciales
     let horarios, tiempos, metodosPagoDisponibles;
     try {
         [horarios, tiempos, metodosPagoDisponibles] = await Promise.all([
@@ -426,7 +426,7 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
         return;
     }
     
-    // --- CORRECCIÃ“N 1: Filtramos los tiempos segÃºn el tipo de habitaciÃ³n (Aire vs Ventilador) ---
+    // --- CORRECCIÃ“N 1: Filtramos los tiempos según el tipo de habitación (Aire vs Ventilador) ---
     const tipoHab = (room.tipo || 'aire').toLowerCase();
     const tiemposFiltrados = tiempos.filter(t => {
         // Asumimos que t.tipo_habitacion puede ser 'aire', 'ventilador' o 'ambas'
@@ -437,7 +437,7 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
     metodosPagoDisponibles.unshift({ id: "mixto", nombre: "Pago Mixto" });
     const opcionesNoches = crearOpcionesNochesConPersonalizada(horarios, 5, null, room);
     
-    // No usamos crearOpcionesHoras aquÃ­ para tener control total del mapeo con ID en el HTML
+    // No usamos crearOpcionesHoras aquí para tener control total del mapeo con ID en el HTML
 
     // HTML del Modal
     const modalContent = document.createElement('div');
@@ -519,13 +519,13 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
     const descuentoWrapper = modalContainer.querySelector('#descuento-wrapper');
     const btnAlquilar = modalContainer.querySelector('#btn-alquilar-hab');
     
-    // FUNCIÃ“N DE CÃLCULO
+    // FUNCIÃ“N DE CÁLCULO
     const recalcularYActualizarTotalAlquiler = async (codigoManual = null) => {
         const formData = Object.fromEntries(new FormData(formEl));
         const clienteId = formData.cliente_id || null;
         const codigo = codigoManual === null ? codigoInputEl.value.trim().toUpperCase() : codigoManual;
         
-        // --- CORRECCIÃ“N 3: LÃ³gica para obtener tarifa por ID ---
+        // --- CORRECCIÃ“N 3: Lógica para obtener tarifa por ID ---
         const horasIdSeleccionado = formData.horas; // Esto ahora es un ID (string)
         let minutosSeleccionados = 0;
         let tarifaEspecifica = null;
@@ -543,7 +543,7 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
         // Si no hay noches y seleccionamos horas, usamos los minutos de la tarifa encontrada
         // Si tarifaEspecifica es null, asumimos 0
         
-        const esDuracionAbierta = false; // Ajusta segÃºn tu lÃ³gica si tienes tarifas "abiertas"
+        const esDuracionAbierta = false; // Ajusta según tu lógica si tienes tarifas "abiertas"
         
         if (esDuracionAbierta) {
             selectNochesEl.value = ''; selectNochesEl.disabled = true;
@@ -572,16 +572,16 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
             }
         }
         
-        // Pasamos los datos a la funciÃ³n auxiliar
+        // Pasamos los datos a la función auxiliar
         // NOTA: Como formData.horas ahora tiene un ID, si calcularDetallesEstancia espera minutos, 
-        // debemos tener cuidado. Sin embargo, lo mÃ¡s seguro es FORZAR el precio correcto abajo.
+        // debemos tener cuidado. Sin embargo, lo más seguro es FORZAR el precio correcto abajo.
         const detalles = await calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado); 
         
-        // --- CORRECCIÃ“N 4: Forzamos el precio correcto si se eligiÃ³ tarifa por ID ---
+        // --- CORRECCIÃ“N 4: Forzamos el precio correcto si se eligió tarifa por ID ---
         // Esto arregla el problema de que calcularDetallesEstancia se confunda con los nombres
         if (tarifaEspecifica && !nochesSeleccionadas && !togglePrecioLibreEl.checked) {
             detalles.precioBase = tarifaEspecifica.precio;
-            // Recalculamos el total basÃ¡ndonos en el precio base correcto
+            // Recalculamos el total basándonos en el precio base correcto
             detalles.precioTotal = detalles.precioBase - (detalles.montoDescontado || 0) + (detalles.montoImpuesto || 0);
             detalles.descripcionEstancia = tarifaEspecifica.nombre; // Aseguramos el nombre correcto
         }
@@ -641,7 +641,7 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
             const formData = Object.fromEntries(new FormData(formEl));
             const detallesFinales = await calcularDetallesEstancia(formData, room, tiempos, horarios, descuentoAplicado);
             
-            // --- CORRECCIÃ“N 5: Aplicar la correcciÃ³n de precio tambiÃ©n al enviar ---
+            // --- CORRECCIÃ“N 5: Aplicar la corrección de precio también al enviar ---
             const horasIdSeleccionado = formData.horas;
             if (horasIdSeleccionado && !formData.noches && !formData.precio_libre_toggle) {
                 const tarifaEspecifica = tiempos.find(t => t.id == horasIdSeleccionado);
@@ -1020,7 +1020,7 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             const nochesExtSubmit = parseInt(formDataExt.noches_extender) || 0;
             const minutosExtSubmit = parseInt(formDataExt.horas_extender) || 0;
 
-            // â–¼â–¼â–¼ LÃ“GICA MODIFICADA: El submit tambiÃ©n considera el precio manual â–¼â–¼â–¼
+            // â–¼â–¼â–¼ LÃ“GICA MODIFICADA: El submit también considera el precio manual â–¼â–¼â–¼
             const esPrecioLibreSubmit = formDataExt.precio_libre_toggle === 'on';
             const valorPrecioLibreSubmit = parseFloat(formDataExt.precio_libre_valor) || 0;
 
@@ -1055,7 +1055,7 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
                 return; 
             }
             
-            // LÃ³gica de pago y actualizaciÃ³n (el resto de la funciÃ³n no necesita cambios significativos)...
+            // Lógica de pago y actualización (el resto de la función no necesita cambios significativos)...
             const turnoId = turnoService.getActiveTurnId();
             if (precioExtraSubmit > 0 && !turnoId) {
                 mostrarInfoModalGlobal("ACCI\u00d3N BLOQUEADA: No se puede registrar el pago de la extensi\u00f3n porque no hay un turno activo.", "Turno Requerido", [], modalContainer);
@@ -1218,13 +1218,13 @@ export async function facturarElectronicaYMostrarResultado(payloadOrReservaId, m
         console.error('Error generando ticket POS:', err);
         return { success: false, error: err.message };
     }
-    // Para simplificar la refactorizaciÃ³n, si existe DIAN
+    // Para simplificar la refactorización, si existe DIAN
 }
 
 // --- FUNCIONES RECUPERADAS ---
 export async function imprimirConsumosHabitacion(supabase, hotelId, datosTicket) {
   try {
-    // 1. Cargamos la configuraciÃ³n del hotel para saber el tamaÃ±o de papel y datos fiscales
+    // 1. Cargamos la configuración del hotel para saber el tamaño de papel y datos fiscales
     const { data: config, error } = await supabase
       .from('configuracion_hotel')
       .select('*')
@@ -1237,7 +1237,7 @@ export async function imprimirConsumosHabitacion(supabase, hotelId, datosTicket)
       return;
     }
 
-    // 2. Llamamos a la funciÃ³n de construcciÃ³n de HTML adaptable (estilo POS)
+    // 2. Llamamos a la función de construcción de HTML adaptable (estilo POS)
     imprimirFacturaPosAdaptable(config, datosTicket);
 
   } catch (err) {
@@ -1247,14 +1247,14 @@ export async function imprimirConsumosHabitacion(supabase, hotelId, datosTicket)
 }
 
 export function imprimirFacturaPosAdaptable(config, datos) {
-  // 1. Detectar configuraciÃ³n de papel
+  // 1. Detectar configuración de papel
   let tamano = (config?.tamano_papel || '80mm').toLowerCase();
   const esTermica = tamano === '58mm' || tamano === '80mm';
   
   // Ajustes de ancho y fuente
   const widthPage = tamano === '58mm' ? '58mm' : (tamano === '80mm' ? '74mm' : '100%');
   const fontSize = tamano === '58mm' ? '10px' : (tamano === '80mm' ? '11px' : '12px');
-  // En impresoras tÃ©rmicas, el width 100% a veces falla, mejor fixed mm. En carta usamos 800px max.
+  // En impresoras térmicas, el width 100% a veces falla, mejor fixed mm. En carta usamos 800px max.
   const containerMaxWidth = esTermica ? '100%' : '800px'; 
 
   // 2. Datos del Encabezado

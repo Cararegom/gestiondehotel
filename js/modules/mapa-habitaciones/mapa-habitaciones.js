@@ -76,6 +76,24 @@ function getReservationArrivalDayDeadline(reserva) {
   );
 }
 
+function shouldBlockRoomByUpcomingReservation(reserva, referenceDate = new Date()) {
+  if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
+    return false;
+  }
+
+  const inicioReserva = new Date(reserva.fecha_inicio);
+  if (Number.isNaN(inicioReserva.getTime())) return false;
+
+  const tiempoFaltante = inicioReserva.getTime() - referenceDate.getTime();
+  const dosHorasMs = 2 * 60 * 60 * 1000;
+  const limiteLlegada = getReservationArrivalDayDeadline(reserva);
+  const reservaPendienteMismoDia = Boolean(limiteLlegada)
+    && tiempoFaltante <= 0
+    && referenceDate.getTime() <= limiteLlegada.getTime();
+
+  return (tiempoFaltante > 0 && tiempoFaltante <= dosHorasMs) || reservaPendienteMismoDia;
+}
+
 function isUpcomingReservation(reserva, referenceDate = new Date()) {
   if (!reserva?.fecha_inicio || !['reservada', 'confirmada'].includes(reserva.estado)) {
     return false;
@@ -104,9 +122,14 @@ function filterReservationsForMap(reservas, referenceDate = new Date()) {
 
 function applyUpcomingReservationLocks(rooms) {
   const ahora = new Date();
-  const dosHorasMs = 2 * 60 * 60 * 1000;
 
   rooms.forEach((room) => {
+    const estadoBase = room.estado_base || room.estado;
+
+    if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(estadoBase)) {
+      room.estado = estadoBase === 'reservada' ? 'libre' : estadoBase;
+    }
+
     room.proximaReservaData = null;
     if (!Array.isArray(room.reservas) || room.reservas.length === 0) return;
 
@@ -117,16 +140,9 @@ function applyUpcomingReservationLocks(rooms) {
     if (reservasFuturas.length === 0) return;
 
     const proxima = reservasFuturas[0];
-    const inicioReserva = new Date(proxima.fecha_inicio);
-    const tiempoFaltante = inicioReserva.getTime() - ahora.getTime();
-    const limiteLlegada = getReservationArrivalDayDeadline(proxima);
-    const reservaPendienteMismoDia = Boolean(limiteLlegada)
-      && tiempoFaltante <= 0
-      && ahora.getTime() <= limiteLlegada.getTime();
-
     room.proximaReservaData = proxima;
 
-    if ((tiempoFaltante <= dosHorasMs && tiempoFaltante > 0) || reservaPendienteMismoDia) {
+    if (shouldBlockRoomByUpcomingReservation(proxima, ahora)) {
       if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(room.estado)) {
         room.estado = 'reservada';
       }
@@ -168,6 +184,7 @@ function normalizeRoomShape(room) {
   return {
     ...room,
     estado: normalizedEstado,
+    estado_base: normalizedEstado,
     reservas: Array.isArray(room.reservas) ? room.reservas : [],
     tipos_habitacion: room.tipos_habitacion || {
       nombre: room.tipo || 'General',

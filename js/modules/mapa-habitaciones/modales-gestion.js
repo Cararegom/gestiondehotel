@@ -46,7 +46,7 @@ function applyHabitacionModalLabels(modalContent, reservaFutura) {
     'btn-seguimiento-articulos': 'Gestionar articulos',
     'btn-servicios-adicionales': 'Servicios adicionales',
     'btn-checkin-reserva': 'Check-in',
-    'btn-mantenimiento': 'Enviar a mantenimiento',
+    'btn-mantenimiento': 'Anotar mantenimiento',
     'btn-info-huesped': 'Ver info huesped',
     'close-modal-acciones': 'Cerrar'
   };
@@ -186,6 +186,19 @@ function getArticulosPendientesCount(reservaActiva) {
   return [...saldoPorArticulo.values()].filter((saldo) => saldo > 0).length;
 }
 
+const PROGRAMMED_TASK_MARKER = '[PROGRAMADO]';
+
+function normalizeMaintenanceTaskType(task) {
+  const markerPresent = String(task?.descripcion || '').includes(PROGRAMMED_TASK_MARKER)
+    || String(task?.titulo || '').includes(PROGRAMMED_TASK_MARKER);
+
+  if (markerPresent) {
+    return 'programado';
+  }
+
+  return task?.tipo === 'programado' ? 'programado' : 'bloqueante';
+}
+
 function formatTiempoRestante(fechaFin) {
   if (!fechaFin) return 'Sin hora';
 
@@ -205,7 +218,8 @@ async function getHabitacionResumenOperativo(room, supabase, hotelId) {
     articulosPendientesCount: 0,
     saldoPendienteBase: 0,
     reservasRecientes: [],
-    tareaMantenimientoActiva: null
+    tareaMantenimientoActiva: null,
+    tareaMantenimientoProgramada: null
   };
 
   resumen.articulosPendientesCount = getArticulosPendientesCount(resumen.reservaActiva);
@@ -221,13 +235,12 @@ async function getHabitacionResumenOperativo(room, supabase, hotelId) {
       .limit(4),
     supabase
       .from('tareas_mantenimiento')
-      .select('id, titulo, estado, creado_en')
+      .select('id, titulo, descripcion, estado, creado_en, tipo')
       .eq('hotel_id', hotelId)
       .eq('habitacion_id', room.id)
       .in('estado', ['pendiente', 'en_progreso'])
       .order('creado_en', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+      .limit(4)
   ]);
 
   if (reservasResult?.error) {
@@ -239,7 +252,9 @@ async function getHabitacionResumenOperativo(room, supabase, hotelId) {
   if (tareaResult?.error) {
     console.warn('No se pudo cargar el estado de mantenimiento de la habitacion:', tareaResult.error);
   } else {
-    resumen.tareaMantenimientoActiva = tareaResult?.data || null;
+    const tareasAbiertas = tareaResult?.data || [];
+    resumen.tareaMantenimientoActiva = tareasAbiertas.find((tarea) => normalizeMaintenanceTaskType(tarea) !== 'programado') || null;
+    resumen.tareaMantenimientoProgramada = tareasAbiertas.find((tarea) => normalizeMaintenanceTaskType(tarea) === 'programado') || null;
   }
 
   return resumen;
@@ -252,6 +267,7 @@ function buildHabitacionSummaryHtml(room, resumen) {
   const reservaActiva = resumen.reservaActiva;
   const proximaReserva = resumen.proximaReserva;
   const tareaMantenimiento = resumen.tareaMantenimientoActiva;
+  const tareaProgramada = resumen.tareaMantenimientoProgramada;
   const actividadReciente = (resumen.reservasRecientes || []).slice(0, 3);
   const saldoBaseLabel = resumen.saldoPendienteBase > 0 ? `$ ${formatCOP(resumen.saldoPendienteBase)}` : 'Al dia';
   const articulosLabel = resumen.articulosPendientesCount > 0
@@ -259,7 +275,12 @@ function buildHabitacionSummaryHtml(room, resumen) {
     : 'Sin pendientes';
   const mantenimientoLabel = tareaMantenimiento
     ? `${tareaMantenimiento.titulo || 'Tarea abierta'}`
-    : (estadoActual === 'mantenimiento' ? 'Habitacion en mantenimiento' : 'Sin tareas abiertas');
+    : (tareaProgramada
+      ? 'Sin bloqueo activo'
+      : (estadoActual === 'mantenimiento' ? 'Habitacion en mantenimiento' : 'Sin tareas abiertas'));
+  const mantenimientoSecundario = tareaProgramada
+    ? `Pendiente: ${tareaProgramada.titulo || 'Trabajo programado'}`
+    : 'Sin pendientes programados';
 
   const actividadHtml = actividadReciente.length > 0
     ? actividadReciente.map((reserva) => `
@@ -294,7 +315,8 @@ function buildHabitacionSummaryHtml(room, resumen) {
         <div class="rounded-xl border border-slate-200 bg-white p-3">
           <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Mantenimiento</p>
           <p class="mt-2 text-sm font-bold text-slate-800">${mantenimientoLabel}</p>
-          <p class="mt-1 text-xs text-slate-500">${tareaMantenimiento?.creado_en ? `Abierta desde ${formatDateTime(tareaMantenimiento.creado_en, 'es-CO', { dateStyle: 'medium', timeStyle: 'short' })}` : 'Sin seguimiento abierto'}</p>
+          <p class="mt-1 text-xs text-slate-500">${tareaMantenimiento?.creado_en ? `Abierta desde ${formatDateTime(tareaMantenimiento.creado_en, 'es-CO', { dateStyle: 'medium', timeStyle: 'short' })}` : mantenimientoSecundario}</p>
+          ${tareaProgramada ? `<p class="mt-1 text-[11px] font-semibold text-violet-600">${mantenimientoSecundario}</p>` : ''}
         </div>
       </div>
       <div class="mt-3 rounded-xl border border-slate-200 bg-slate-100/70 p-3">
@@ -310,25 +332,29 @@ function buildHabitacionSummaryHtml(room, resumen) {
   `;
 }
 
-export async function showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
+export async function showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer, options = {}) {
   const modalContainer = document.getElementById('modal-container');
   if (!modalContainer) return;
+  const rawMode = options?.mode;
+  const mode = rawMode === 'programado' || rawMode === 'bloqueante' ? rawMode : 'selector';
 
   if (typeof window.showModalTarea === 'function' || typeof importarMantenimientoUI === 'function') {
-    const confirmacion = await new Promise((resolve) => {
-      mostrarInfoModalGlobal(
-        `Desea crear una tarea de mantenimiento para la habitacion <strong>${room.nombre}</strong>?<br><br><small>La habitacion se marcara como "mantenimiento" solo si guardas la tarea.</small>`,
-        'Confirmar envio a mantenimiento',
-        [
-          { texto: 'Si, crear tarea', clase: 'button-danger', accion: () => resolve(true) },
-          { texto: 'Cancelar', clase: 'button-neutral', accion: () => resolve(false) }
-        ],
-        modalContainer
-      );
-    });
+    if (mode === 'bloqueante') {
+      const confirmacion = await new Promise((resolve) => {
+        mostrarInfoModalGlobal(
+          `Desea crear una tarea de mantenimiento para la habitacion <strong>${room.nombre}</strong>?<br><br><small>La habitacion se marcara como "mantenimiento" solo si guardas la tarea.</small>`,
+          'Confirmar envio a mantenimiento',
+          [
+            { texto: 'Si, crear tarea', clase: 'button-danger', accion: () => resolve(true) },
+            { texto: 'Cancelar', clase: 'button-neutral', accion: () => resolve(false) }
+          ],
+          modalContainer
+        );
+      });
 
-    if (!confirmacion) {
-      return;
+      if (!confirmacion) {
+        return;
+      }
     }
 
     const fn = window.showModalTarea || importarMantenimientoUI;
@@ -362,7 +388,9 @@ export async function showMantenimientoModal(room, supabase, currentUser, hotelI
         {
           habitacion_id: room.id,
           estado: 'pendiente',
-          titulo: `Mantenimiento Hab. ${room.nombre}`
+          tipo: mode === 'bloqueante' ? 'bloqueante' : 'programado',
+          titulo: `Mantenimiento Hab. ${room.nombre}`,
+          origen_selector: mode === 'selector'
         }
       );
     } catch (e) {
@@ -501,7 +529,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
 
   // Mantenimiento (si no está ya en mantenimiento)
   if (room.estado !== "mantenimiento") {
-    botonesHtml += `<button id="btn-mantenimiento" class="${btnNaranja}"><span style="font-size:1.2em">🛠️</span> Enviar a Mantenimiento</button>`;
+    botonesHtml += `<button id="btn-mantenimiento" class="${btnNaranja}"><span style="font-size:1.2em">🛠️</span> Anotar mantenimiento</button>`;
   }
 
   // Info Huésped (si hay alguien asociado a la habitación)
@@ -1761,7 +1789,7 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
     if (ventaTiendaIds.length > 0) {
       const detTiendaRes = await supabase
         .from('detalle_ventas_tienda')
-        .select('venta_id, cantidad, subtotal, producto:productos_tienda(nombre)')
+        .select('venta_id, cantidad, subtotal, producto:productos_tienda!detalle_ventas_tienda_producto_id_fkey(nombre)')
         .in('venta_id', ventaTiendaIds);
 
       if (detTiendaRes.error) throw detTiendaRes.error;
@@ -1782,7 +1810,7 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
     if (ventaRestIds.length > 0) {
       const itemsRestRes = await supabase
         .from('ventas_restaurante_items')
-        .select('venta_id, cantidad, subtotal, plato:platos(nombre)')
+        .select('venta_id, cantidad, subtotal, plato:platos!ventas_restaurante_items_plato_id_fkey(nombre)')
         .in('venta_id', ventaRestIds);
 
       if (itemsRestRes.error) throw itemsRestRes.error;
@@ -1798,26 +1826,20 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
     const pagos = pagosRes.data || [];
 
     const totalEstancia = asInt(reserva.monto_total);
+    const totalServicios = asInt(servicios.reduce((s, x) => s + asInt(x.precio_cobrado), 0));
+    const totalTienda = asInt(ventasTienda.reduce((s, v) => s + asInt(v.total_venta), 0));
+    const totalRest = asInt(ventasRest.reduce((s, v) => s + asInt(v.monto_total ?? v.total_venta), 0));
+    const totalExtrasPagados = asInt([
+      ...servicios.filter((x) => (x.estado_pago || 'pendiente') === 'pagado').map((x) => asInt(x.precio_cobrado)),
+      ...ventasTienda.filter((v) => (v.estado_pago || 'pendiente') === 'pagado').map((v) => asInt(v.total_venta)),
+      ...ventasRest.filter((v) => (v.estado_pago || 'pendiente') === 'pagado').map((v) => asInt(v.monto_total ?? v.total_venta)),
+    ].reduce((s, monto) => s + monto, 0));
 
-    const totalServiciosPend = asInt(servicios.reduce((s, x) => {
-      const pagado = (x.estado_pago || 'pendiente') === 'pagado';
-      return s + (pagado ? 0 : asInt(x.precio_cobrado));
-    }, 0));
-
-    const totalTiendaPend = asInt(ventasTienda.reduce((s, v) => {
-      const pagado = (v.estado_pago || 'pendiente') === 'pagado';
-      return s + (pagado ? 0 : asInt(v.total_venta));
-    }, 0));
-
-    const totalRestPend = asInt(ventasRest.reduce((s, v) => {
-      const pagado = (v.estado_pago || 'pendiente') === 'pagado';
-      const totalCab = asInt(v.monto_total ?? v.total_venta);
-      return s + (pagado ? 0 : totalCab);
-    }, 0));
-
-    const deudaTotal = asInt(totalEstancia + totalServiciosPend + totalTiendaPend + totalRestPend);
+    const deudaTotal = asInt(totalEstancia + totalServicios + totalTienda + totalRest);
     const totalPagado = asInt(pagos.reduce((s, p) => s + asInt(p.monto), 0));
     const saldo = Math.max(0, asInt(deudaTotal - totalPagado));
+    const pagoAplicadoAHospedaje = Math.max(0, asInt(totalPagado - totalExtrasPagados));
+    const saldoHospedaje = Math.max(0, asInt(totalEstancia - pagoAplicadoAHospedaje));
 
     const mapTiendaEstado = Object.fromEntries(ventasTienda.map(v => [v.id, (v.estado_pago || 'pendiente')]));
     const mapRestEstado = Object.fromEntries(ventasRest.map(v => [v.id, (v.estado_pago || 'pendiente')]));
@@ -1834,7 +1856,9 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
       totalEstancia,
       deudaTotal,
       totalPagado,
-      saldo
+      saldo,
+      pagoAplicadoAHospedaje,
+      saldoHospedaje
     };
   }
 
@@ -1843,12 +1867,18 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
 
     const listaItems = [];
 
+    const estadoHospedaje = cuenta.saldoHospedaje <= 0
+      ? 'PAGADO'
+      : cuenta.pagoAplicadoAHospedaje > 0
+        ? 'ABONADO'
+        : 'PENDIENTE';
+
     listaItems.push({
       tipo: 'Hospedaje',
       detalle: `Estancia Hab. ${room.nombre}`,
       cant: 1,
       subtotal: cuenta.totalEstancia,
-      estado: 'PENDIENTE'
+      estado: estadoHospedaje
     });
 
     (cuenta.servicios || []).forEach(s => {
@@ -1890,7 +1920,9 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
     const rowsHtml = listaItems.map(item => {
       const badge = item.estado === 'PAGADO'
         ? `<span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-bold">PAGADO</span>`
-        : `<span class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-bold">PENDIENTE</span>`;
+        : item.estado === 'ABONADO'
+          ? `<span class="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 font-bold">ABONADO</span>`
+          : `<span class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-bold">PENDIENTE</span>`;
       return `
         <tr class="border-b border-gray-100 hover:bg-gray-50">
           <td class="p-2 text-xs text-gray-500 uppercase tracking-wide">${item.tipo}</td>
@@ -1932,7 +1964,7 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
 
         <div class="bg-gray-50 px-6 py-4 border-t flex-shrink-0">
           <div class="flex justify-end flex-col items-end space-y-1 mb-4 border-b border-gray-200 pb-2">
-            <div class="text-sm text-gray-600">Deuda Total (pendiente):
+            <div class="text-sm text-gray-600">Total de cargos:
               <span class="font-bold text-gray-900">${money(cuenta.deudaTotal)}</span>
             </div>
             <div class="text-sm text-green-600">Pagos aplicados:

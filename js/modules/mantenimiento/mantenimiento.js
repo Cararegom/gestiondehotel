@@ -1,31 +1,33 @@
-// js/modules/mantenimiento/mantenimiento.js
-
 import { showLoading, showError } from '../../uiUtils.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
-import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
-// ======================= GESTIÓN DEL MÓDULO ========================
-
-// --- INICIO DE LA CORRECCIÓN DE SUSCRIPCIÓN ---
-// Variables para gestionar la suscripción de Realtime y la instancia de Supabase.
-// Esto es crucial para evitar errores de "canal duplicado".
 let mantenimientoSubscription = null;
 let supabaseInstance = null;
-// --- FIN DE LA CORRECCIÓN DE SUSCRIPCIÓN ---
 
+const TASK_TYPES = {
+  bloqueante: 'bloqueante',
+  programado: 'programado'
+};
 
-/**
- * Función principal que se ejecuta cuando el enrutador carga este módulo.
- * Debe estar exportada y llamarse 'mount'.
- */
+const OPEN_TASK_STATES = ['pendiente', 'en_progreso'];
+const CLOSED_TASK_STATES = ['completada', 'cancelada'];
+const PROGRAMMED_TASK_MARKER = '[PROGRAMADO]';
+
 export async function mount(container, supabase, currentUser, hotelId) {
-  // Guardamos la instancia de Supabase para poder usarla en unmount y limpiar la suscripción.
   supabaseInstance = supabase;
 
-  // Renderizamos el HTML base del módulo.
   container.innerHTML = `
-    <h2 class="text-2xl font-bold mb-6 flex items-center gap-2">🛠️ <span>Mantenimiento</span></h2>
-    <div class="mb-4 flex flex-row gap-2 flex-wrap items-center">
+    <h2 class="mb-6 flex items-center gap-2 text-2xl font-bold">
+      <span>🛠️</span>
+      <span>Mantenimiento</span>
+    </h2>
+
+    <div class="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+      <p class="font-semibold text-slate-800">Organiza mantenimientos bloqueantes y pendientes sin sacar la habitacion de servicio.</p>
+      <p class="mt-1">Las tareas <strong>programadas</strong> sirven para anotar trabajos por hacer sin cambiar el estado de la habitacion. Las tareas <strong>bloqueantes</strong> si pasan la habitacion a mantenimiento.</p>
+    </div>
+
+    <div class="mb-4 flex flex-wrap items-center gap-2">
       <select id="filtro-estado" class="form-control w-auto rounded-lg">
         <option value="">Todos los estados</option>
         <option value="pendiente">Pendiente</option>
@@ -33,130 +35,345 @@ export async function mount(container, supabase, currentUser, hotelId) {
         <option value="completada">Completada</option>
         <option value="cancelada">Cancelada</option>
       </select>
+
+      <select id="filtro-tipo" class="form-control w-auto rounded-lg">
+        <option value="">Todos los tipos</option>
+        <option value="${TASK_TYPES.bloqueante}">Bloquea habitacion</option>
+        <option value="${TASK_TYPES.programado}">Pendiente programado</option>
+      </select>
+
+      <select id="filtro-habitacion" class="form-control min-w-[220px] rounded-lg">
+        <option value="">Todas las habitaciones</option>
+      </select>
+
       <button id="btn-filtrar" class="button button-primary">Filtrar</button>
+      <button id="btn-imprimir-pendientes" class="button button-secondary">Imprimir pendientes</button>
+      <button id="btn-imprimir-habitacion" class="button button-secondary">Imprimir habitacion</button>
       <button id="btn-nueva-tarea" class="button button-success ml-auto">+ Nueva tarea</button>
     </div>
+
+    <div id="mant-resumen" class="mb-4"></div>
     <div id="mant-list" class="mt-4"></div>
     <div id="mant-modal"></div>
   `;
 
-  // Asignamos los eventos a los botones principales.
-  container.querySelector('#btn-filtrar').onclick = () => renderTareas(container, supabase, hotelId, currentUser);
-  container.querySelector('#btn-nueva-tarea').onclick = () => showModalTarea(container, supabase, hotelId, currentUser, null);
+  container.querySelector('#btn-filtrar')?.addEventListener('click', () => {
+    renderTareas(container, supabase, hotelId, currentUser);
+  });
 
-  // Carga inicial de las tareas.
+  container.querySelector('#btn-nueva-tarea')?.addEventListener('click', () => {
+    showModalTarea(container, supabase, hotelId, currentUser, null);
+  });
+
+  container.querySelector('#btn-imprimir-pendientes')?.addEventListener('click', () => {
+    imprimirPendientesDesdeVista(container, false);
+  });
+
+  container.querySelector('#btn-imprimir-habitacion')?.addEventListener('click', () => {
+    imprimirPendientesDesdeVista(container, true);
+  });
+
   await renderTareas(container, supabase, hotelId, currentUser);
 
-  // --- INICIO DE LA CORRECCIÓN DE SUSCRIPCIÓN ---
-  // Nos aseguramos de que no haya suscripciones previas activas antes de crear una nueva.
   if (mantenimientoSubscription) {
     supabase.removeChannel(mantenimientoSubscription);
     mantenimientoSubscription = null;
   }
 
-  // Creamos la suscripción a la tabla de tareas UNA SOLA VEZ al montar el módulo.
   mantenimientoSubscription = supabase.channel('public:tareas_mantenimiento')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas_mantenimiento' }, (payload) => {
-        console.log('Cambio detectado en tareas_mantenimiento, recargando lista...', payload);
-        renderTareas(container, supabase, hotelId, currentUser);
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'tareas_mantenimiento' }, () => {
+      renderTareas(container, supabase, hotelId, currentUser);
     })
-    .subscribe(status => {
-        if (status === 'SUBSCRIBED') {
-            console.log('Conectado al canal de tareas de mantenimiento!');
-        }
-        if (status === 'CHANNEL_ERROR') {
-            console.error('Error en la suscripción al canal de mantenimiento:', status);
-        }
-    });
-  // --- FIN DE LA CORRECCIÓN DE SUSCRIPCIÓN ---
+    .subscribe();
 }
 
-/**
- * Función que se ejecuta cuando el enrutador abandona este módulo.
- * Debe estar exportada y llamarse 'unmount'.
- */
 export function unmount() {
-  console.log("Desmontando módulo de mantenimiento y limpiando suscripción...");
-  // --- INICIO DE LA CORRECCIÓN DE SUSCRIPCIÓN ---
-  // Es VITAL eliminar la suscripción al salir para evitar errores.
   if (mantenimientoSubscription && supabaseInstance) {
-      supabaseInstance.removeChannel(mantenimientoSubscription)
-        .catch(error => console.error("Error al remover el canal de mantenimiento:", error));
-      mantenimientoSubscription = null;
+    supabaseInstance.removeChannel(mantenimientoSubscription).catch((error) => {
+      console.error('Error al remover el canal de mantenimiento:', error);
+    });
   }
-  supabaseInstance = null; // Limpiamos la referencia.
-  // --- FIN DE LA CORRECCIÓN DE SUSCRIPCIÓN ---
+
+  mantenimientoSubscription = null;
+  supabaseInstance = null;
 }
 
+function normalizeTaskType(tipo) {
+  return tipo === TASK_TYPES.programado ? TASK_TYPES.programado : TASK_TYPES.bloqueante;
+}
 
-// ======================= RENDERIZADO Y LÓGICA ========================
+function hasProgrammedTaskMarker(value) {
+  return String(value ?? '').includes(PROGRAMMED_TASK_MARKER);
+}
 
-// --- RENDERIZAR LA LISTA DE TAREAS ---
+function stripProgrammedTaskMarker(value) {
+  return String(value ?? '')
+    .replace(PROGRAMMED_TASK_MARKER, '')
+    .replace(/^\s*\n?/, '')
+    .trim();
+}
+
+function addProgrammedTaskMarker(value) {
+  const cleanValue = stripProgrammedTaskMarker(value);
+  return cleanValue ? `${PROGRAMMED_TASK_MARKER}\n${cleanValue}` : PROGRAMMED_TASK_MARKER;
+}
+
+function normalizeTaskRecord(task) {
+  if (!task) return task;
+
+  const markerPresent = hasProgrammedTaskMarker(task.descripcion) || hasProgrammedTaskMarker(task.titulo);
+
+  return {
+    ...task,
+    tipo: markerPresent ? TASK_TYPES.programado : normalizeTaskType(task.tipo),
+    titulo: stripProgrammedTaskMarker(task.titulo),
+    descripcion: stripProgrammedTaskMarker(task.descripcion)
+  };
+}
+
+function buildProgrammedCompatibilityPayload(payload) {
+  return {
+    ...payload,
+    tipo: null,
+    descripcion: addProgrammedTaskMarker(payload.descripcion)
+  };
+}
+
+function shouldRetryProgrammedCompatibility(error, payload) {
+  if (payload?.tipo !== TASK_TYPES.programado) return false;
+
+  const details = [error?.message, error?.details, error?.hint, error?.code]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return !details || /tipo|programado|enum|check|constraint|invalid|schema|column|pgrst/.test(details);
+}
+
+function isBlockingTaskType(tipo) {
+  return normalizeTaskType(tipo) === TASK_TYPES.bloqueante;
+}
+
+function isOpenTaskState(estado) {
+  return OPEN_TASK_STATES.includes(estado);
+}
+
+function isClosedTaskState(estado) {
+  return CLOSED_TASK_STATES.includes(estado);
+}
+
+function renderPrioridad(prioridad, colored = false) {
+  const map = {
+    0: { text: 'Baja', classes: 'bg-green-100 text-green-800' },
+    1: { text: 'Media', classes: 'bg-yellow-100 text-yellow-800' },
+    2: { text: 'Alta', classes: 'bg-orange-100 text-orange-800' },
+    3: { text: 'Urgente', classes: 'bg-red-100 text-red-800' }
+  };
+
+  const item = map[Number(prioridad)] || { text: '-', classes: '' };
+  if (!colored) return item.text;
+  return `<span class="rounded-full px-2 py-1 text-xs font-semibold ${item.classes}">${item.text}</span>`;
+}
+
+function renderEstado(estado, colored = false) {
+  const map = {
+    pendiente: { text: 'Pendiente', classes: 'bg-orange-100 text-orange-700' },
+    en_progreso: { text: 'En progreso', classes: 'bg-blue-100 text-blue-700' },
+    completada: { text: 'Completada', classes: 'bg-green-100 text-green-700' },
+    cancelada: { text: 'Cancelada', classes: 'bg-slate-200 text-slate-600' }
+  };
+
+  const item = map[estado] || { text: estado || '-', classes: 'bg-slate-100 text-slate-700' };
+  if (!colored) return item.text;
+  return `<span class="rounded-full px-2 py-1 text-xs font-semibold ${item.classes}">${item.text}</span>`;
+}
+
+function renderTipo(tipo, colored = false) {
+  const normalized = normalizeTaskType(tipo);
+  const item = normalized === TASK_TYPES.programado
+    ? { text: 'Pendiente programado', classes: 'bg-violet-100 text-violet-700' }
+    : { text: 'Bloquea habitacion', classes: 'bg-red-100 text-red-700' };
+
+  if (!colored) return item.text;
+  return `<span class="rounded-full px-2 py-1 text-xs font-semibold ${item.classes}">${item.text}</span>`;
+}
+
+function getTaskSortValue(task) {
+  const fechaProgramada = task?.fecha_programada ? new Date(task.fecha_programada).getTime() : Number.MAX_SAFE_INTEGER;
+  const creadoEn = task?.creado_en ? new Date(task.creado_en).getTime() : 0;
+  const openWeight = isOpenTaskState(task?.estado) ? 0 : 1;
+  const typeWeight = isBlockingTaskType(task?.tipo) ? 0 : 1;
+  return [openWeight, typeWeight, fechaProgramada, -creadoEn];
+}
+
+function sortTasks(tasks) {
+  return [...(tasks || [])].sort((a, b) => {
+    const aSort = getTaskSortValue(a);
+    const bSort = getTaskSortValue(b);
+
+    for (let index = 0; index < aSort.length; index += 1) {
+      if (aSort[index] < bSort[index]) return -1;
+      if (aSort[index] > bSort[index]) return 1;
+    }
+
+    return 0;
+  });
+}
+
+function renderResumen(container, tareas) {
+  const resumen = container.querySelector('#mant-resumen');
+  if (!resumen) return;
+
+  const openTasks = (tareas || []).filter((task) => isOpenTaskState(task.estado));
+  const bloqueantes = openTasks.filter((task) => isBlockingTaskType(task.tipo));
+  const programadas = openTasks.filter((task) => !isBlockingTaskType(task.tipo));
+  const completadas = (tareas || []).filter((task) => task.estado === 'completada');
+
+  resumen.innerHTML = `
+    <div class="grid gap-3 sm:grid-cols-3">
+      <div class="rounded-2xl border border-red-200 bg-red-50 p-4">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-red-600">Bloqueantes abiertas</p>
+        <p class="mt-2 text-3xl font-bold text-red-700">${bloqueantes.length}</p>
+        <p class="mt-1 text-xs text-red-600">Estas si sacan habitaciones de servicio.</p>
+      </div>
+      <div class="rounded-2xl border border-violet-200 bg-violet-50 p-4">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-violet-600">Pendientes programados</p>
+        <p class="mt-2 text-3xl font-bold text-violet-700">${programadas.length}</p>
+        <p class="mt-1 text-xs text-violet-600">La habitacion puede seguir alquilandose.</p>
+      </div>
+      <div class="rounded-2xl border border-green-200 bg-green-50 p-4">
+        <p class="text-xs font-semibold uppercase tracking-[0.18em] text-green-600">Completadas</p>
+        <p class="mt-2 text-3xl font-bold text-green-700">${completadas.length}</p>
+        <p class="mt-1 text-xs text-green-600">Historial resuelto con seguimiento.</p>
+      </div>
+    </div>
+  `;
+}
+
+function updateHabitacionFilterOptions(container, habitaciones) {
+  const select = container.querySelector('#filtro-habitacion');
+  if (!select) return;
+
+  const currentValue = select.value || '';
+  const optionsHtml = (habitaciones || [])
+    .map((habitacion) => `<option value="${habitacion.id}">${habitacion.nombre}</option>`)
+    .join('');
+
+  select.innerHTML = `<option value="">Todas las habitaciones</option>${optionsHtml}`;
+  select.value = currentValue;
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function renderTareas(container, supabase, hotelId, currentUser) {
   const list = container.querySelector('#mant-list');
   if (!list) return;
 
   showLoading(list);
-  const estadoFiltro = container.querySelector('#filtro-estado')?.value || "";
 
-  // Optimizamos obteniendo mapas de habitaciones y usuarios
-  const { data: habitacionesData } = await supabase.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId);
-  const habMap = new Map((habitacionesData || []).map(h => [h.id, h.nombre]));
+  const estadoFiltro = container.querySelector('#filtro-estado')?.value || '';
+  const tipoFiltro = container.querySelector('#filtro-tipo')?.value || '';
+  const habitacionFiltro = container.querySelector('#filtro-habitacion')?.value || '';
 
-  const { data: usuariosData } = await supabase.from('usuarios').select('id, nombre, correo').eq('hotel_id', hotelId);
-  const userMap = new Map((usuariosData || []).map(u => [u.id, u.nombre || u.correo || u.id]));
+  const [habitacionesResult, usuariosResult] = await Promise.all([
+    supabase.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).order('nombre'),
+    supabase.from('usuarios').select('id, nombre, correo').eq('hotel_id', hotelId).order('nombre')
+  ]);
+
+  const habitaciones = habitacionesResult.data || [];
+  const usuarios = usuariosResult.data || [];
+  const habMap = new Map(habitaciones.map((habitacion) => [habitacion.id, habitacion.nombre]));
+  const userMap = new Map(usuarios.map((usuario) => [usuario.id, usuario.nombre || usuario.correo || usuario.id]));
+
+  updateHabitacionFilterOptions(container, habitaciones);
 
   let query = supabase
     .from('tareas_mantenimiento')
     .select('id, habitacion_id, titulo, descripcion, prioridad, estado, tipo, fecha_programada, fecha_completada, asignada_a, creado_en')
-    .eq('hotel_id', hotelId)
-    .order('creado_en', { ascending: false });
+    .eq('hotel_id', hotelId);
 
   if (estadoFiltro) {
     query = query.eq('estado', estadoFiltro);
   }
 
-  const { data: tareas, error } = await query;
+  if (habitacionFiltro) {
+    query = query.eq('habitacion_id', habitacionFiltro);
+  }
+
+  const { data: tareasRaw, error } = await query.order('creado_en', { ascending: false });
 
   if (error) {
-    showError(list, "Error cargando tareas: " + error.message);
+    showError(list, `Error cargando tareas: ${error.message}`);
     return;
   }
 
-  if (!tareas || tareas.length === 0) {
-    list.innerHTML = `<div class="p-4 text-center text-gray-500 bg-gray-50 rounded-lg">No hay tareas de mantenimiento que coincidan con los filtros.</div>`;
+  let tareas = (tareasRaw || []).map((task) => normalizeTaskRecord(task));
+  if (tipoFiltro) {
+    tareas = tareas.filter((task) => normalizeTaskType(task.tipo) === tipoFiltro);
+  }
+
+  const sortedTasks = sortTasks(tareas || []);
+  container.__mantCache = {
+    tareas: sortedTasks,
+    habitaciones,
+    habMap,
+    userMap
+  };
+
+  renderResumen(container, sortedTasks);
+
+  if (sortedTasks.length === 0) {
+    list.innerHTML = `
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center text-slate-500">
+        No hay tareas de mantenimiento que coincidan con los filtros.
+      </div>
+    `;
     return;
   }
 
   list.innerHTML = `
-    <div class="overflow-auto rounded-xl shadow-md bg-white">
+    <div class="overflow-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
       <table class="min-w-full table-auto border-collapse text-sm md:text-base">
-        <thead class="bg-gray-100 border-b">
+        <thead class="border-b bg-slate-100">
           <tr>
-            <th class="py-3 px-3 text-left">Encargado</th>
-            <th class="py-3 px-3 text-left">Título</th>
-            <th class="py-3 px-3 text-left">Habitación</th>
-            <th class="py-3 px-3 text-center">Prioridad</th>
-            <th class="py-3 px-3 text-center">Estado</th>
-            <th class="py-3 px-3 text-left">Fecha Reporte</th>
-            <th class="py-3 px-3 text-center">Acciones</th>
+            <th class="px-3 py-3 text-left">Encargado</th>
+            <th class="px-3 py-3 text-left">Tipo</th>
+            <th class="px-3 py-3 text-left">Titulo</th>
+            <th class="px-3 py-3 text-left">Habitacion</th>
+            <th class="px-3 py-3 text-center">Prioridad</th>
+            <th class="px-3 py-3 text-center">Estado</th>
+            <th class="px-3 py-3 text-left">Programada</th>
+            <th class="px-3 py-3 text-left">Reporte</th>
+            <th class="px-3 py-3 text-center">Acciones</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-200">
-          ${tareas.map(t => `
-            <tr class="hover:bg-blue-50 transition">
-              <td class="py-2 px-3 font-semibold">${userMap.get(t.asignada_a) || 'No asignado'}</td>
-              <td class="py-2 px-3">${t.titulo || '-'}</td>
-              <td class="py-2 px-3">${t.habitacion_id ? (habMap.get(t.habitacion_id) || 'N/A') : 'General'}</td>
-              <td class="py-2 px-3 text-center">${renderPrioridad(t.prioridad, true)}</td>
-              <td class="py-2 px-3 text-center">${renderEstado(t.estado, true)}</td>
-              <td class="py-2 px-3">${t.creado_en ? new Date(t.creado_en).toLocaleString() : ''}</td>
-              <td class="py-2 px-3 text-center">
-                <select class="accion-select border rounded-lg bg-gray-50 px-2 py-1 cursor-pointer" data-id="${t.id}">
-                  <option value="">Acción…</option>
-                  <option value="editar">✏️ Editar</option>
-                  <option value="estado">🔄 Cambiar estado</option>
-                  <option value="eliminar">🗑️ Eliminar</option>
+        <tbody class="divide-y divide-slate-200">
+          ${sortedTasks.map((task) => `
+            <tr class="transition hover:bg-blue-50">
+              <td class="px-3 py-2 font-semibold">${userMap.get(task.asignada_a) || 'No asignado'}</td>
+              <td class="px-3 py-2">${renderTipo(task.tipo, true)}</td>
+              <td class="px-3 py-2">
+                <p class="font-medium text-slate-800">${task.titulo || '-'}</p>
+                <p class="mt-1 text-xs text-slate-500">${task.descripcion ? escapeHtml(task.descripcion).slice(0, 90) : 'Sin descripcion'}</p>
+              </td>
+              <td class="px-3 py-2">${task.habitacion_id ? (habMap.get(task.habitacion_id) || 'N/A') : 'General'}</td>
+              <td class="px-3 py-2 text-center">${renderPrioridad(task.prioridad, true)}</td>
+              <td class="px-3 py-2 text-center">${renderEstado(task.estado, true)}</td>
+              <td class="px-3 py-2">${task.fecha_programada ? new Date(task.fecha_programada).toLocaleDateString() : 'Sin fecha'}</td>
+              <td class="px-3 py-2">${task.creado_en ? new Date(task.creado_en).toLocaleString() : ''}</td>
+              <td class="px-3 py-2 text-center">
+                <select class="accion-select rounded-lg border bg-slate-50 px-2 py-1" data-id="${task.id}">
+                  <option value="">Accion...</option>
+                  <option value="editar">Editar</option>
+                  <option value="estado">Cambiar estado</option>
+                  <option value="eliminar">Eliminar</option>
                 </select>
               </td>
             </tr>
@@ -166,329 +383,550 @@ async function renderTareas(container, supabase, hotelId, currentUser) {
     </div>
   `;
 
-  list.querySelectorAll('.accion-select').forEach(select => {
-    select.onchange = async function() {
+  list.querySelectorAll('.accion-select').forEach((select) => {
+    select.addEventListener('change', async function handleActionChange() {
       const tareaId = this.dataset.id;
-      const tarea = tareas.find(t => t.id == tareaId);
+      const tarea = sortedTasks.find((item) => String(item.id) === String(tareaId));
       if (!tarea) return;
 
-      if (this.value === "editar") {
+      if (this.value === 'editar') {
         await showModalTarea(container, supabase, hotelId, currentUser, tarea);
-      } else if (this.value === "estado") {
+      } else if (this.value === 'estado') {
         await cambiarEstadoTarea(container, supabase, hotelId, tarea, currentUser);
-      } else if (this.value === "eliminar") {
+      } else if (this.value === 'eliminar') {
         await eliminarTarea(container, supabase, hotelId, tarea, currentUser);
       }
-      this.value = "";
-    };
+
+      this.value = '';
+    });
   });
 }
 
-/**
- * Muestra el modal para crear o editar una tarea.
- * Se exporta para poder ser llamada desde otros módulos como mapa-habitaciones.js.
- */
-// js/modules/mantenimiento/mantenimiento.js
+function getTaskTypeHelpHtml(tipo) {
+  const normalized = normalizeTaskType(tipo);
+  if (normalized === TASK_TYPES.programado) {
+    return 'Dejar funcionando: la habitacion sigue operativa y la tarea queda anotada para hacerla despues.';
+  }
 
-// ... (asegúrate de que tus importaciones y otras funciones estén aquí) ...
+  return 'Cerrar habitacion: al guardar la tarea como pendiente o en progreso, la habitacion pasa a mantenimiento.';
+}
 
-/**
- * Muestra el modal para crear o editar una tarea.
- * AHORA TAMBIÉN GESTIONA EL CAMBIO DE ESTADO DE LA HABITACIÓN Y RESERVAS.
- * Se exporta para poder ser llamada desde otros módulos.
- */
 export async function showModalTarea(container, supabase, hotelId, currentUser, tarea = null) {
-  // Lógica flexible para encontrar el contenedor del modal
   let modalTargetContainer = container.querySelector('#mant-modal');
   if (!modalTargetContainer) {
     modalTargetContainer = container;
   }
-  
-  const { data: habitaciones } = await supabase.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).order('nombre');
-  const { data: usuarios } = await supabase.from('usuarios').select('id, nombre, correo').eq('hotel_id', hotelId).order('nombre');
 
-  // El HTML del modal no necesita cambios.
+  const normalizedTask = tarea ? normalizeTaskRecord(tarea) : null;
+
+  const [habitacionesResult, usuariosResult] = await Promise.all([
+    supabase.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).order('nombre'),
+    supabase.from('usuarios').select('id, nombre, correo').eq('hotel_id', hotelId).order('nombre')
+  ]);
+
+  const habitaciones = habitacionesResult.data || [];
+  const usuarios = usuariosResult.data || [];
+  const taskType = normalizeTaskType(normalizedTask?.tipo);
+  const isEditing = Boolean(normalizedTask?.id);
+  const openedFromSelector = Boolean(normalizedTask?.origen_selector) && !isEditing;
+  const titleText = isEditing
+    ? 'Editar tarea'
+    : (openedFromSelector
+      ? 'Anotar mantenimiento'
+      : (taskType === TASK_TYPES.programado ? 'Nuevo pendiente de mantenimiento' : 'Nueva tarea de mantenimiento'));
+  const taskTypeHelp = openedFromSelector
+    ? 'Elige si deseas cerrar la habitacion para mantenimiento o dejarla funcionando mientras dejas anotado el trabajo pendiente.'
+    : getTaskTypeHelpHtml(taskType);
+
   modalTargetContainer.innerHTML = `
-    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative animate-fadeIn">
-        <button id="close-modal-mant" class="absolute top-3 right-4 text-gray-400 hover:text-red-600 text-3xl transition">&times;</button>
-        <h3 class="text-2xl font-bold text-gray-800 mb-5">${tarea && tarea.id ? "Editar Tarea" : "Nueva Tarea de Mantenimiento"}</h3>
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+        <button id="close-modal-mant" class="absolute right-4 top-3 text-3xl text-slate-400 transition hover:text-red-600">&times;</button>
+        <h3 class="mb-5 text-2xl font-bold text-slate-800">${titleText}</h3>
         <form id="mant-form">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+            <p id="mant-task-type-help">${taskTypeHelp}</p>
+          </div>
+
+          <div class="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label class="block text-sm font-semibold mb-1">Encargado <span class="text-red-500">*</span></label>
+              <label class="mb-1 block text-sm font-semibold">Encargado <span class="text-red-500">*</span></label>
               <select required name="asignada_a" class="form-control w-full rounded-lg border-gray-300 p-2">
                 <option value="">Seleccione un usuario</option>
-                ${(usuarios || []).map(u => `<option value="${u.id}" ${tarea?.asignada_a === u.id ? "selected" : ""}>${u.nombre || u.correo}</option>`).join('')}
+                ${(usuarios || []).map((usuario) => `
+                  <option value="${usuario.id}" ${String(normalizedTask?.asignada_a || '') === String(usuario.id) ? 'selected' : ''}>
+                    ${escapeHtml(usuario.nombre || usuario.correo)}
+                  </option>
+                `).join('')}
               </select>
             </div>
+
             <div>
-              <label class="block text-sm font-semibold mb-1">Habitación (Opcional)</label>
+              <label class="mb-1 block text-sm font-semibold">Habitacion (opcional)</label>
               <select name="habitacion_id" class="form-control w-full rounded-lg border-gray-300 p-2">
                 <option value="">General / Sin asignar</option>
-                ${(habitaciones || []).map(h => `<option value="${h.id}" ${tarea?.habitacion_id === h.id ? "selected" : ""}>${h.nombre}</option>`).join('')}
+                ${(habitaciones || []).map((habitacion) => `
+                  <option value="${habitacion.id}" ${String(normalizedTask?.habitacion_id || '') === String(habitacion.id) ? 'selected' : ''}>
+                    ${escapeHtml(habitacion.nombre)}
+                  </option>
+                `).join('')}
               </select>
             </div>
+
             <div>
-              <label class="block text-sm font-semibold mb-1">Prioridad</label>
-              <select name="prioridad" class="form-control w-full rounded-lg border-gray-300 p-2">
-                <option value="0" ${tarea?.prioridad == 0 ? "selected" : ""}>Baja</option>
-                <option value="1" ${tarea?.prioridad == 1 ? "selected" : ""}>Media</option>
-                <option value="2" ${!tarea || tarea?.prioridad == 2 ? "selected" : ""}>Alta</option>
-                <option value="3" ${tarea?.prioridad == 3 ? "selected" : ""}>Urgente</option>
+              <label class="mb-1 block text-sm font-semibold">Tipo de tarea</label>
+              <select name="tipo" id="mant-tipo-tarea" class="form-control w-full rounded-lg border-gray-300 p-2">
+                <option value="${TASK_TYPES.bloqueante}" ${taskType === TASK_TYPES.bloqueante ? 'selected' : ''}>Cerrar habitacion y enviar a mantenimiento</option>
+                <option value="${TASK_TYPES.programado}" ${taskType === TASK_TYPES.programado ? 'selected' : ''}>Dejar funcionando y anotar pendiente</option>
               </select>
             </div>
+
             <div>
-              <label class="block text-sm font-semibold mb-1">Estado</label>
+              <label class="mb-1 block text-sm font-semibold">Estado</label>
               <select name="estado" class="form-control w-full rounded-lg border-gray-300 p-2">
-                <option value="pendiente" ${!tarea || tarea?.estado === "pendiente" ? "selected" : ""}>Pendiente</option>
-                <option value="en_progreso" ${tarea?.estado === "en_progreso" ? "selected" : ""}>En progreso</option>
-                <option value="completada" ${tarea?.estado === "completada" ? "selected" : ""}>Completada</option>
-                <option value="cancelada" ${tarea?.estado === "cancelada" ? "selected" : ""}>Cancelada</option>
+                <option value="pendiente" ${!normalizedTask || normalizedTask?.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+                <option value="en_progreso" ${normalizedTask?.estado === 'en_progreso' ? 'selected' : ''}>En progreso</option>
+                <option value="completada" ${normalizedTask?.estado === 'completada' ? 'selected' : ''}>Completada</option>
+                <option value="cancelada" ${normalizedTask?.estado === 'cancelada' ? 'selected' : ''}>Cancelada</option>
               </select>
             </div>
+
+            <div>
+              <label class="mb-1 block text-sm font-semibold">Prioridad</label>
+              <select name="prioridad" class="form-control w-full rounded-lg border-gray-300 p-2">
+                <option value="0" ${Number(normalizedTask?.prioridad) === 0 ? 'selected' : ''}>Baja</option>
+                <option value="1" ${Number(normalizedTask?.prioridad) === 1 ? 'selected' : ''}>Media</option>
+                <option value="2" ${normalizedTask?.prioridad == null || Number(normalizedTask?.prioridad) === 2 ? 'selected' : ''}>Alta</option>
+                <option value="3" ${Number(normalizedTask?.prioridad) === 3 ? 'selected' : ''}>Urgente</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="mb-1 block text-sm font-semibold">Fecha programada</label>
+              <input name="fecha_programada" type="date" class="form-control w-full rounded-lg border-gray-300 p-2" value="${normalizedTask?.fecha_programada?.split('T')[0] || ''}">
+            </div>
+
             <div class="md:col-span-2">
-              <label class="block text-sm font-semibold mb-1">Título <span class="text-red-500">*</span></label>
-              <input type="text" name="titulo" class="form-control w-full rounded-lg border-gray-300 p-2" value="${tarea?.titulo ?? ''}" required>
+              <label class="mb-1 block text-sm font-semibold">Titulo <span class="text-red-500">*</span></label>
+              <input type="text" name="titulo" class="form-control w-full rounded-lg border-gray-300 p-2" value="${escapeHtml(normalizedTask?.titulo || '')}" required>
             </div>
           </div>
-          <div class="mb-4">
-            <label class="block text-sm font-semibold mb-1">Descripción</label>
-            <textarea name="descripcion" class="form-control w-full rounded-lg border-gray-300 p-2 min-h-[80px]">${tarea?.descripcion ?? ''}</textarea>
+
+          <div class="mb-5">
+            <label class="mb-1 block text-sm font-semibold">Descripcion</label>
+            <textarea name="descripcion" class="form-control min-h-[90px] w-full rounded-lg border-gray-300 p-2">${escapeHtml(normalizedTask?.descripcion || '')}</textarea>
           </div>
-          <div class="mb-6">
-            <label class="block text-sm font-semibold mb-1">Fecha Programada</label>
-            <input name="fecha_programada" type="date" class="form-control w-full rounded-lg border-gray-300 p-2" value="${tarea?.fecha_programada?.split('T')[0] ?? ''}">
-          </div>
-          <button type="submit" class="button bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg w-full shadow-lg transition text-lg">${tarea && tarea.id ? "Actualizar Tarea" : "Crear Tarea"}</button>
+
+          <button type="submit" class="w-full rounded-lg bg-blue-600 py-3 text-lg font-bold text-white shadow-lg transition hover:bg-blue-700">
+            ${isEditing ? 'Actualizar tarea' : 'Crear tarea'}
+          </button>
         </form>
       </div>
     </div>
   `;
-  
+
   const closeModal = () => {
     modalTargetContainer.innerHTML = '';
   };
-  
-  modalTargetContainer.querySelector('#close-modal-mant').onclick = closeModal;
 
-// En: js/modules/mantenimiento/mantenimiento.js
-// Reemplaza la función onsubmit dentro de showModalTarea con esta versión final.
+  modalTargetContainer.querySelector('#close-modal-mant')?.addEventListener('click', closeModal);
 
-modalTargetContainer.querySelector('#mant-form').onsubmit = async (e) => {
-    e.preventDefault();
-    const formData = Object.fromEntries(new FormData(e.target));
-    
+  const typeSelect = modalTargetContainer.querySelector('#mant-tipo-tarea');
+  const typeHelp = modalTargetContainer.querySelector('#mant-task-type-help');
+  typeSelect?.addEventListener('change', () => {
+    if (typeHelp) {
+      typeHelp.textContent = getTaskTypeHelpHtml(typeSelect.value);
+    }
+  });
+
+  modalTargetContainer.querySelector('#mant-form')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const formData = Object.fromEntries(new FormData(event.currentTarget));
+    const previousTask = normalizedTask?.id
+      ? {
+          ...normalizedTask,
+          tipo: normalizeTaskType(normalizedTask.tipo)
+        }
+      : null;
+
     const dataToSave = {
-        ...formData,
-        prioridad: Number(formData.prioridad),
-        asignada_a: formData.asignada_a || null,
-        habitacion_id: formData.habitacion_id || null,
-        fecha_programada: formData.fecha_programada || null
+      ...formData,
+      prioridad: Number(formData.prioridad),
+      asignada_a: formData.asignada_a || null,
+      habitacion_id: formData.habitacion_id || null,
+      fecha_programada: formData.fecha_programada || null,
+      tipo: normalizeTaskType(formData.tipo),
+      fecha_completada: formData.estado === 'completada' ? new Date().toISOString() : null
     };
 
-    if (!dataToSave.asignada_a || !dataToSave.titulo.trim()) {
-      alert("Los campos 'Encargado' y 'Título' son obligatorios.");
+    if (!dataToSave.asignada_a || !String(dataToSave.titulo || '').trim()) {
+      alert("Los campos 'Encargado' y 'Titulo' son obligatorios.");
       return;
     }
 
     try {
-        let tareaResult;
+      const persistTask = async (payload) => {
+        if (normalizedTask?.id) {
+          const { data, error } = await supabase
+            .from('tareas_mantenimiento')
+            .update(payload)
+            .eq('id', normalizedTask.id)
+            .select()
+            .single();
 
-        // Lógica para guardar la tarea (sin cambios)
-        if (!tarea?.id && dataToSave.habitacion_id) {
-            const { data: reservaActiva } = await supabase.from('reservas').select('id').eq('habitacion_id', dataToSave.habitacion_id).in('estado', ['activa', 'ocupada', 'tiempo agotado']).maybeSingle();
-            if (reservaActiva) {
-                await supabase.from('reservas').update({ estado: 'cancelada_mantenimiento' }).eq('id', reservaActiva.id);
-                await supabase.from('cronometros').update({ activo: false }).eq('reserva_id', reservaActiva.id);
-            }
-        }
-        if (tarea && tarea.id) {
-            const { data, error } = await supabase.from('tareas_mantenimiento').update(dataToSave).eq('id', tarea.id).select().single();
-            if(error) throw error;
-            tareaResult = data;
-        } else {
-            const { data, error } = await supabase.from('tareas_mantenimiento').insert([{ ...dataToSave, hotel_id: hotelId, creada_por: currentUser?.id }]).select().single();
-            if(error) throw error;
-            tareaResult = data;
-        }
-        
-        // Lógica para crear la notificación
-        if (tareaResult && dataToSave.habitacion_id && dataToSave.estado !== 'completada' && dataToSave.estado !== 'cancelada') {
-            const habitacionNombre = habitaciones.find(h => h.id === dataToSave.habitacion_id)?.nombre || 'Desconocida';
-            const mensajeNotificacion = `La habitación ${habitacionNombre} ha sido enviada a mantenimiento. Tarea: "${dataToSave.titulo}"`;
-
-            // ================== INICIO DE LA CORRECCIÓN FINAL ==================
-            
-           // EN: js/modules/mantenimiento/mantenimiento.js (dentro de la función showModalTarea)
-// ...
-        // ================== INICIO DE LA CORRECCIÓN FINAL ==================
-            
-            // Corregimos la llamada para que notifique a RECEPCIÓN, que es quien necesita saberlo.
-            await crearNotificacion(supabase, {
-                hotelId: hotelId,
-                rolDestino: 'recepcionista', // ¡CORREGIDO! Notificar a recepción.
-                tipo: 'mantenimiento',
-                mensaje: mensajeNotificacion,
-                entidadTipo: 'tareas_mantenimiento',
-                entidadId: tareaResult.id,
-                generadaPorUsuarioId: currentUser.id // ¡CORREGIDO! Usamos el mismo parámetro que en limpieza.js.
-            });
-            
-        // =================== FIN DE LA CORRECCIÓN FINAL ====================
-// ...
-            
-            // =================== FIN DE LA CORRECCIÓN FINAL ====================
-             
-            console.log("Notificación de mantenimiento creada.");
-        }
-        
-        // Lógica para actualizar el estado de la habitación (sin cambios)
-        if (dataToSave.habitacion_id) {
-            const esTerminada = dataToSave.estado === "completada" || dataToSave.estado === "cancelada";
-            let nuevoEstadoHab = esTerminada ? 'limpieza' : 'mantenimiento';
-            if (esTerminada) {
-                 const { count: otrasTareasCount } = await supabase.from('tareas_mantenimiento').select('id', { count: 'exact', head: true }).eq('habitacion_id', dataToSave.habitacion_id).not('id', 'eq', tareaResult.id).in('estado', ['pendiente', 'en_progreso']);
-                if (otrasTareasCount > 0) {
-                    nuevoEstadoHab = 'mantenimiento';
-                }
-            }
-            await supabase.from('habitaciones').update({ estado: nuevoEstadoHab }).eq('id', dataToSave.habitacion_id);
+          if (error) throw error;
+          return data;
         }
 
-        closeModal();
-        const mantListContainer = document.querySelector('#mant-list');
-        if (mantListContainer) {
-            await renderTareas(container, supabase, hotelId, currentUser);
+        const { data, error } = await supabase
+          .from('tareas_mantenimiento')
+          .insert([{ ...payload, hotel_id: hotelId, creada_por: currentUser?.id }])
+          .select()
+          .single();
+
+        if (error) throw error;
+        return data;
+      };
+
+      let tareaResult;
+
+      try {
+        tareaResult = await persistTask(dataToSave);
+      } catch (error) {
+        if (!shouldRetryProgrammedCompatibility(error, dataToSave)) {
+          throw error;
         }
-        
+
+        console.warn('Reintentando tarea programada con compatibilidad legacy.', error);
+        tareaResult = await persistTask(buildProgrammedCompatibilityPayload(dataToSave));
+      }
+
+      tareaResult = normalizeTaskRecord(tareaResult);
+
+      await syncTaskOperationalImpact({
+        supabase,
+        task: tareaResult,
+        previousTask
+      });
+
+      await notifyTaskChange({
+        supabase,
+        hotelId,
+        currentUser,
+        habitaciones,
+        task: tareaResult,
+        isEdit: Boolean(normalizedTask?.id)
+      });
+
+      closeModal();
+
+      if (document.querySelector('#mant-list')) {
+        await renderTareas(container, supabase, hotelId, currentUser);
+      }
     } catch (error) {
-        console.error("Error al guardar la tarea:", error);
-        alert(`No se pudo guardar la tarea. Error: ${error.message}`);
+      const debugInfo = {
+        message: error?.message || 'Error desconocido',
+        details: error?.details || '',
+        hint: error?.hint || '',
+        code: error?.code || '',
+        hotelId,
+        currentUserId: currentUser?.id || null
+      };
+      console.error('Error al guardar la tarea:', debugInfo);
+      const extraMessage = [debugInfo.details, debugInfo.hint].filter(Boolean).join(' | ');
+      alert(`No se pudo guardar la tarea. ${debugInfo.message}${extraMessage ? `\n${extraMessage}` : ''}`);
     }
-};
+  });
 }
 
-// ======================= FUNCIONES DE ACCIÓN Y HELPERS ========================
+async function notifyTaskChange({ supabase, hotelId, currentUser, habitaciones, task, isEdit }) {
+  if (!task?.habitacion_id || isClosedTaskState(task.estado)) return;
+
+  const habitacionNombre = habitaciones.find((habitacion) => habitacion.id === task.habitacion_id)?.nombre || 'Desconocida';
+  const typeLabel = isBlockingTaskType(task.tipo)
+    ? `La habitacion ${habitacionNombre} fue enviada a mantenimiento.`
+    : `La habitacion ${habitacionNombre} tiene un pendiente de mantenimiento programado.`;
+
+  const actionLabel = isEdit ? 'Actualizacion' : 'Nueva tarea';
+  const message = `${actionLabel}: ${typeLabel} Tarea: "${task.titulo}".`;
+
+  try {
+    await crearNotificacion(supabase, {
+      hotelId,
+      rolDestino: 'recepcionista',
+      tipo: 'mantenimiento',
+      mensaje: message,
+      entidadTipo: 'tareas_mantenimiento',
+      entidadId: task.id,
+      generadaPorUsuarioId: currentUser?.id || null
+    });
+  } catch (error) {
+    console.error('Error creando notificacion de mantenimiento:', error);
+  }
+}
+
+async function cancelActiveReservationForMaintenance(supabase, habitacionId) {
+  const { data: reservaActiva } = await supabase
+    .from('reservas')
+    .select('id')
+    .eq('habitacion_id', habitacionId)
+    .in('estado', ['activa', 'ocupada', 'tiempo agotado'])
+    .maybeSingle();
+
+  if (!reservaActiva) return;
+
+  await supabase.from('reservas').update({ estado: 'cancelada_mantenimiento' }).eq('id', reservaActiva.id);
+  await supabase.from('cronometros').update({ activo: false }).eq('reserva_id', reservaActiva.id);
+}
+
+async function syncBlockingStateForRoom(supabase, habitacionId) {
+  if (!habitacionId) return;
+
+  const { data, error } = await supabase
+    .from('tareas_mantenimiento')
+    .select('id, tipo, descripcion, titulo')
+    .eq('habitacion_id', habitacionId)
+    .in('estado', OPEN_TASK_STATES);
+
+  if (error) throw error;
+
+  const blockingTasks = (data || [])
+    .map((task) => normalizeTaskRecord(task))
+    .filter((task) => isBlockingTaskType(task.tipo));
+
+  if (blockingTasks.length > 0) {
+    await supabase.from('habitaciones').update({ estado: 'mantenimiento' }).eq('id', habitacionId);
+    return;
+  }
+
+  const { data: habitacion } = await supabase
+    .from('habitaciones')
+    .select('estado')
+    .eq('id', habitacionId)
+    .maybeSingle();
+
+  if (habitacion?.estado === 'mantenimiento') {
+    await supabase.from('habitaciones').update({ estado: 'limpieza' }).eq('id', habitacionId);
+  }
+}
+
+async function syncTaskOperationalImpact({ supabase, task, previousTask = null }) {
+  const currentTask = {
+    ...task,
+    tipo: normalizeTaskType(task?.tipo)
+  };
+
+  const previousNormalizedTask = previousTask
+    ? { ...previousTask, tipo: normalizeTaskType(previousTask.tipo) }
+    : null;
+
+  const currentBlockingOpen = Boolean(
+    currentTask?.habitacion_id &&
+    isBlockingTaskType(currentTask.tipo) &&
+    isOpenTaskState(currentTask.estado)
+  );
+
+  const previousBlockingOpenSameRoom = Boolean(
+    previousNormalizedTask?.habitacion_id &&
+    previousNormalizedTask.habitacion_id === currentTask?.habitacion_id &&
+    isBlockingTaskType(previousNormalizedTask.tipo) &&
+    isOpenTaskState(previousNormalizedTask.estado)
+  );
+
+  if (currentBlockingOpen && !previousBlockingOpenSameRoom) {
+    await cancelActiveReservationForMaintenance(supabase, currentTask.habitacion_id);
+  }
+
+  const roomIds = new Set(
+    [currentTask?.habitacion_id, previousNormalizedTask?.habitacion_id].filter(Boolean)
+  );
+
+  for (const roomId of roomIds) {
+    await syncBlockingStateForRoom(supabase, roomId);
+  }
+}
 
 async function cambiarEstadoTarea(container, supabase, hotelId, tarea, currentUser) {
   const nuevoEstado = await mostrarPromptSelectEstado(tarea.estado);
   if (!nuevoEstado || nuevoEstado === tarea.estado) return;
 
-  const update = { estado: nuevoEstado };
-  if (nuevoEstado === "completada") {
-    update.fecha_completada = new Date().toISOString();
-  }
+  const updatedTask = {
+    ...tarea,
+    estado: nuevoEstado,
+    fecha_completada: nuevoEstado === 'completada' ? new Date().toISOString() : null,
+    tipo: normalizeTaskType(tarea.tipo)
+  };
 
-  const { error: updateError } = await supabase.from('tareas_mantenimiento').update(update).eq('id', tarea.id);
+  const { error } = await supabase
+    .from('tareas_mantenimiento')
+    .update({
+      estado: updatedTask.estado,
+      fecha_completada: updatedTask.fecha_completada
+    })
+    .eq('id', tarea.id);
 
-  if (updateError) {
-      alert("Error al actualizar la tarea: " + updateError.message);
-      return;
+  if (error) {
+    alert(`Error al actualizar la tarea: ${error.message}`);
+    return;
   }
 
   try {
+    await syncTaskOperationalImpact({
+      supabase,
+      task: updatedTask,
+      previousTask: tarea
+    });
+
     let habitacionInfo = '';
     if (tarea.habitacion_id) {
-        const { data: hab } = await supabase.from('habitaciones').select('nombre').eq('id', tarea.habitacion_id).single();
-        if(hab) habitacionInfo = `(Hab. ${hab.nombre})`;
+      const { data: habitacion } = await supabase.from('habitaciones').select('nombre').eq('id', tarea.habitacion_id).maybeSingle();
+      if (habitacion?.nombre) {
+        habitacionInfo = ` (Hab. ${habitacion.nombre})`;
+      }
     }
 
-    const mensajeNotificacion = `Tarea "${tarea.titulo}" ${habitacionInfo} cambió a: ${nuevoEstado.replace('_', ' ')}.`;
-
-    // --- INICIO DE LA CORRECIÓN ---
-    // Usamos el tipo que ya confirmamos que existe en tu base de datos.
     await crearNotificacion(supabase, {
-        hotelId: hotelId,
-        rolDestino: 'recepcionista',
-        tipo: 'cambio_estado_mantenimiento', // ¡ESTE ES EL VALOR CORRECTO!
-        mensaje: mensajeNotificacion,
-        entidadTipo: 'tareas_mantenimiento',
-        entidadId: tarea.id,
-        generadaPorUsuarioId: currentUser.id
+      hotelId,
+      rolDestino: 'recepcionista',
+      tipo: 'cambio_estado_mantenimiento',
+      mensaje: `Tarea "${tarea.titulo}"${habitacionInfo} cambio a: ${nuevoEstado.replace('_', ' ')}.`,
+      entidadTipo: 'tareas_mantenimiento',
+      entidadId: tarea.id,
+      generadaPorUsuarioId: currentUser?.id || null
     });
-    // --- FIN DE LA CORRECIÓN ---
-
-  } catch (notifError) {
-      console.error("Error al crear la notificación de cambio de estado:", notifError);
-  }
-
-  if (tarea.habitacion_id) {
-    const esTerminada = nuevoEstado === "completada" || nuevoEstado === "cancelada";
-    const { count: otrasTareasCount } = await supabase
-      .from('tareas_mantenimiento')
-      .select('id', { count: 'exact', head: true })
-      .eq('habitacion_id', tarea.habitacion_id)
-      .not('id', 'eq', tarea.id)
-      .in('estado', ['pendiente', 'en_progreso']);
-
-    if (esTerminada && (otrasTareasCount === 0)) {
-        await supabase.from('habitaciones').update({ estado: 'limpieza' }).eq('id', tarea.habitacion_id);
-    }
+  } catch (notificationError) {
+    console.error('Error al procesar el cambio de estado de la tarea:', notificationError);
   }
 
   await renderTareas(container, supabase, hotelId, currentUser);
 }
 
 async function eliminarTarea(container, supabase, hotelId, tarea, currentUser) {
-  const confirmado = await mostrarConfirmacion(`¿Seguro que deseas eliminar la tarea "${tarea.titulo}"?`);
-  if (!confirmado) return;
+  const confirmed = await mostrarConfirmacion(`Seguro que deseas eliminar la tarea "${tarea.titulo}"?`);
+  if (!confirmed) return;
 
-  await supabase.from('tareas_mantenimiento').delete().eq('id', tarea.id);
-  
-  if (tarea.habitacion_id) {
-    const { data: otrasTareas } = await supabase
-      .from('tareas_mantenimiento')
-      .select('id', { count: 'exact' })
-      .eq('habitacion_id', tarea.habitacion_id)
-      .in('estado', ['pendiente', 'en_progreso']);
-
-    if (!otrasTareas || otrasTareas.length === 0) {
-      await supabase.from('habitaciones').update({ estado: 'limpieza' }).eq('id', tarea.habitacion_id);
-    }
+  const { error } = await supabase.from('tareas_mantenimiento').delete().eq('id', tarea.id);
+  if (error) {
+    alert(`No se pudo eliminar la tarea. Error: ${error.message}`);
+    return;
   }
-  
+
+  try {
+    await syncBlockingStateForRoom(supabase, tarea.habitacion_id);
+  } catch (syncError) {
+    console.error('Error ajustando el estado de la habitacion despues de eliminar la tarea:', syncError);
+  }
+
   await renderTareas(container, supabase, hotelId, currentUser);
 }
 
-// --- Helpers Visuales ---
-function renderPrioridad(p, color = false) {
-  const prioridades = {
-    0: { txt: "Baja", cls: "bg-green-100 text-green-800" },
-    1: { txt: "Media", cls: "bg-yellow-100 text-yellow-800" },
-    2: { txt: "Alta", cls: "bg-orange-100 text-orange-800" },
-    3: { txt: "Urgente", cls: "bg-red-100 text-red-800" },
-  };
-  const item = prioridades[p] || { txt: "-", cls: "" };
-  if (color) return `<span class="px-2 py-1 rounded-full font-semibold text-xs ${item.cls}">${item.txt}</span>`;
-  return item.txt;
+function getVisibleTaskCache(container) {
+  return container.__mantCache || { tareas: [], habMap: new Map(), userMap: new Map(), habitaciones: [] };
 }
 
-function renderEstado(e, color = false) {
-  const map = {
-    pendiente: { txt: "Pendiente", cls: "bg-orange-100 text-orange-700" },
-    en_progreso: { txt: "En Progreso", cls: "bg-blue-100 text-blue-700" },
-    completada: { txt: "Completada", cls: "bg-green-100 text-green-700" },
-    cancelada: { txt: "Cancelada", cls: "bg-gray-200 text-gray-600" },
-  };
-  const item = map[e] || { txt: e, cls: "" };
-  if (color) return `<span class="px-2 py-1 rounded-full font-semibold text-xs ${item.cls}">${item.txt}</span>`;
-  return item.txt;
+function imprimirPendientesDesdeVista(container, selectedRoomOnly) {
+  const { tareas, habMap, userMap } = getVisibleTaskCache(container);
+  const roomSelect = container.querySelector('#filtro-habitacion');
+  const roomId = roomSelect?.value || '';
+
+  if (selectedRoomOnly && !roomId) {
+    alert('Selecciona una habitacion antes de imprimir su lista.');
+    return;
+  }
+
+  let pendingTasks = (tareas || []).filter((task) => isOpenTaskState(task.estado));
+  if (selectedRoomOnly) {
+    pendingTasks = pendingTasks.filter((task) => String(task.habitacion_id || '') === roomId);
+  }
+
+  if (pendingTasks.length === 0) {
+    alert('No hay pendientes por imprimir con los filtros actuales.');
+    return;
+  }
+
+  const roomName = selectedRoomOnly ? (habMap.get(roomId) || 'Habitacion seleccionada') : null;
+  imprimirTareasPendientes(pendingTasks, habMap, userMap, roomName);
 }
 
-// --- Helpers de UI (Modales de confirmación) ---
+function imprimirTareasPendientes(tareas, habMap, userMap, roomName = null) {
+  const title = roomName
+    ? `Pendientes de mantenimiento - ${roomName}`
+    : 'Pendientes de mantenimiento por hacer';
+
+  const rowsHtml = tareas.map((task) => `
+    <tr>
+      <td>${escapeHtml(task.titulo || '-')}</td>
+      <td>${escapeHtml(task.habitacion_id ? (habMap.get(task.habitacion_id) || 'N/A') : 'General')}</td>
+      <td>${escapeHtml(renderTipo(task.tipo, false))}</td>
+      <td>${escapeHtml(renderPrioridad(task.prioridad, false))}</td>
+      <td>${escapeHtml(renderEstado(task.estado, false))}</td>
+      <td>${escapeHtml(userMap.get(task.asignada_a) || 'No asignado')}</td>
+      <td>${escapeHtml(task.fecha_programada ? new Date(task.fecha_programada).toLocaleDateString() : 'Sin fecha')}</td>
+      <td>${escapeHtml(task.descripcion || '-')}</td>
+    </tr>
+  `).join('');
+
+  const printWindow = window.open('', '_blank', 'width=1100,height=780');
+  if (!printWindow) {
+    alert('Tu navegador bloqueo la ventana de impresion.');
+    return;
+  }
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>${escapeHtml(title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #0f172a; margin: 24px; }
+          h1 { margin: 0 0 6px; font-size: 24px; }
+          p { margin: 0 0 18px; color: #475569; }
+          table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+          th, td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; vertical-align: top; font-size: 13px; }
+          th { background: #e2e8f0; }
+          tr:nth-child(even) td { background: #f8fafc; }
+          .meta { margin-top: 14px; font-size: 12px; color: #64748b; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(title)}</h1>
+        <p>${roomName ? 'Lista de trabajos pendientes para la habitacion seleccionada.' : 'Lista consolidada de trabajos pendientes y en progreso.'}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Titulo</th>
+              <th>Habitacion</th>
+              <th>Tipo</th>
+              <th>Prioridad</th>
+              <th>Estado</th>
+              <th>Encargado</th>
+              <th>Fecha programada</th>
+              <th>Descripcion</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <div class="meta">Generado el ${new Date().toLocaleString('es-CO')}</div>
+        <script>window.onload = function(){ window.print(); window.focus(); };</script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+}
+
 function mostrarPromptSelectEstado(estadoActual) {
-  return new Promise(resolve => {
-    const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center z-50 p-4";
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4';
     modal.innerHTML = `
-      <div class="bg-white rounded-lg shadow-lg w-full max-w-xs p-6 relative animate-fadeIn">
-        <h3 class="text-lg font-bold mb-4">Cambiar Estado de la Tarea</h3>
+      <div class="w-full max-w-xs rounded-lg bg-white p-6 shadow-lg">
+        <h3 class="mb-4 text-lg font-bold">Cambiar estado de la tarea</h3>
         <select id="select-estado-tarea" class="form-control mb-5 w-full">
-          <option value="pendiente" ${estadoActual === "pendiente" ? "selected" : ""}>Pendiente</option>
-          <option value="en_progreso" ${estadoActual === "en_progreso" ? "selected" : ""}>En Progreso</option>
-          <option value="completada" ${estadoActual === "completada" ? "selected" : ""}>Completada</option>
-          <option value="cancelada" ${estadoActual === "cancelada" ? "selected" : ""}>Cancelada</option>
+          <option value="pendiente" ${estadoActual === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+          <option value="en_progreso" ${estadoActual === 'en_progreso' ? 'selected' : ''}>En progreso</option>
+          <option value="completada" ${estadoActual === 'completada' ? 'selected' : ''}>Completada</option>
+          <option value="cancelada" ${estadoActual === 'cancelada' ? 'selected' : ''}>Cancelada</option>
         </select>
         <div class="flex gap-3">
           <button id="btn-confirmar-estado" class="button button-success w-full">Aceptar</button>
@@ -496,6 +934,7 @@ function mostrarPromptSelectEstado(estadoActual) {
         </div>
       </div>
     `;
+
     document.body.appendChild(modal);
 
     const cleanup = (value) => {
@@ -503,28 +942,28 @@ function mostrarPromptSelectEstado(estadoActual) {
       resolve(value);
     };
 
-    modal.querySelector("#btn-confirmar-estado").onclick = () => cleanup(modal.querySelector("#select-estado-tarea").value);
-    modal.querySelector("#btn-cancelar-estado").onclick = () => cleanup(null);
+    modal.querySelector('#btn-confirmar-estado')?.addEventListener('click', () => {
+      cleanup(modal.querySelector('#select-estado-tarea')?.value || null);
+    });
+
+    modal.querySelector('#btn-cancelar-estado')?.addEventListener('click', () => cleanup(null));
   });
 }
 
-function mostrarConfirmacion(mensaje) {
-  return new Promise(resolve => {
-    const modal = document.createElement("div");
-    modal.className = "fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4";
+function mostrarConfirmacion(message) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4';
     modal.innerHTML = `
-      <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center animate-fadeIn">
-        <h3 class="text-lg font-semibold text-gray-800 mb-5">${mensaje}</h3>
+      <div class="w-full max-w-sm rounded-xl bg-white p-6 text-center shadow-2xl">
+        <h3 class="mb-5 text-lg font-semibold text-slate-800">${escapeHtml(message)}</h3>
         <div class="flex justify-center gap-4">
           <button id="btn-confirmar-accion" class="button button-danger flex-1">Confirmar</button>
           <button id="btn-cancelar-accion" class="button button-secondary flex-1">Cancelar</button>
         </div>
       </div>
-      <style>
-        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
-        .animate-fadeIn { animation: fadeIn 0.2s ease-out; }
-      </style>
     `;
+
     document.body.appendChild(modal);
 
     const cleanup = (result) => {
@@ -532,7 +971,7 @@ function mostrarConfirmacion(mensaje) {
       resolve(result);
     };
 
-    modal.querySelector("#btn-confirmar-accion").onclick = () => cleanup(true);
-    modal.querySelector("#btn-cancelar-accion").onclick = () => cleanup(false);
+    modal.querySelector('#btn-confirmar-accion')?.addEventListener('click', () => cleanup(true));
+    modal.querySelector('#btn-cancelar-accion')?.addEventListener('click', () => cleanup(false));
   });
 }

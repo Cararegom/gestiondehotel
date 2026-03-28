@@ -1,0 +1,23 @@
+[
+  {
+    "type_name": "amenidad_update",
+    "ordinal_position": 1,
+    "column_name": "item_id",
+    "data_type": "uuid",
+    "is_not_null": false
+  },
+  {
+    "type_name": "amenidad_update",
+    "ordinal_position": 2,
+    "column_name": "default_qty",
+    "data_type": "integer",
+    "is_not_null": false
+  },
+  {
+    "type_name": "amenidad_update",
+    "ordinal_position": 3,
+    "column_name": "min_alert_qty",
+    "data_type": "integer",
+    "is_not_null": false
+  }
+]

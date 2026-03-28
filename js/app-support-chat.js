@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 const SUPABASE_FUNCTIONS_BASE = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1';
 const CHATKIT_SESSION_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/chatkit-session`;
 const CHATKIT_SCRIPT_SRC = 'https://cdn.platform.openai.com/deployments/chatkit/chatkit.js';
+const CHATKIT_DOMAIN_KEY = 'domain_pk_69c15fef533c819795015e543f83ff950af2fea964c34d54';
 
 const INCIDENT_REPORT_FIELDS = [
   { key: 'modulo', labels: ['Modulo', 'Módulo'] },
@@ -498,12 +499,18 @@ async function initializeSupportWidget({ silent = false } = {}) {
 
   try {
     await waitForChatKitElement();
+    const apiOptions = {
+      async getClientSecret(currentClientSecret) {
+        return ensureClientSecret(currentClientSecret);
+      }
+    };
+
+    if (['gestiondehotel.com', 'www.gestiondehotel.com'].includes(window.location.hostname)) {
+      apiOptions.domainKey = CHATKIT_DOMAIN_KEY;
+    }
+
     await chatElement.setOptions({
-      api: {
-        async getClientSecret(currentClientSecret) {
-          return ensureClientSecret(currentClientSecret);
-        }
-      },
+      api: apiOptions,
       frameTitle: 'Soporte interno',
       header: {
         title: {

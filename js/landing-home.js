@@ -1,6 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   const SUPABASE_FUNCTIONS_BASE = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1';
   const CHATKIT_SESSION_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/chatkit-session`;
+  const CHATKIT_DOMAIN_KEY = 'domain_pk_69c15fef533c819795015e543f83ff950af2fea964c34d54';
   const LANDING_CHAT_VISITOR_KEY = 'gestionhotel.sales_chat_visitor_id';
 
   const testimonials = [
@@ -368,12 +369,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       await waitForChatKitElement();
+      const apiOptions = {
+        async getClientSecret(currentClientSecret) {
+          return ensureClientSecret(currentClientSecret);
+        }
+      };
+
+      if (['gestiondehotel.com', 'www.gestiondehotel.com'].includes(window.location.hostname)) {
+        apiOptions.domainKey = CHATKIT_DOMAIN_KEY;
+      }
+
       await chatElement.setOptions({
-        api: {
-          async getClientSecret(currentClientSecret) {
-            return ensureClientSecret(currentClientSecret);
-          }
-        },
+        api: apiOptions,
         frameTitle: 'Chat con Laura',
         header: {
           title: {

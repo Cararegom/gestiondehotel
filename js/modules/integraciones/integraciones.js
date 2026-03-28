@@ -310,8 +310,13 @@ async function guardarConfiguracionAlegra(formEl, feedbackEl, buttonEl) {
     payload.facturador_api_key = null;
   }
   try {
-    const { error } = await supabaseInstance.from('integraciones_hotel')
-      .upsert(payload, { onConflict: 'hotel_id, facturador_nombre' });
+    const { error } = await supabaseInstance.functions.invoke('alegra-save-config', {
+      body: {
+        hotelId: currentHotelId,
+        usuario: alegraUsuario,
+        apiKey: payload.facturador_api_key
+      }
+    });
     if (error) throw error;
     showFeedback(feedbackEl, 'Configuración de Alegra guardada correctamente.', false);
     if (payload.facturador_api_key) {
