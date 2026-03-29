@@ -699,7 +699,7 @@ openai-chatkit#internal-support-chat {
 @media (max-width: 640px) {
   .internal-support-chat-launcher {
     right: 12px;
-    bottom: 12px;
+    bottom: 16px;
     width: 62px;
     height: 62px;
     min-width: 62px;
@@ -710,9 +710,17 @@ openai-chatkit#internal-support-chat {
     gap: 0;
   }
 
-  .internal-support-chat-launcher__badge,
   .internal-support-chat-launcher__copy {
     display: none;
+  }
+
+  .internal-support-chat-launcher__badge {
+    top: -12px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.2rem 0.48rem;
+    font-size: 0.56rem;
+    white-space: nowrap;
   }
 
   .internal-support-chat-launcher__icon {

@@ -27,6 +27,7 @@ const supportChatState = {
   mounted: false,
   initialized: false,
   initializing: false,
+  initPromise: null,
   scriptPromise: null,
   observer: null,
   currentUserKey: null,
@@ -107,7 +108,7 @@ function buildSupportChatShell() {
   root.id = 'internal-support-chat-root';
   root.innerHTML = `
     <button id="internal-support-chat-launcher" class="internal-support-chat-launcher" type="button" aria-expanded="false" aria-controls="internal-support-chat-panel">
-      <span class="internal-support-chat-launcher__badge">Soporte en linea</span>
+      <span class="internal-support-chat-launcher__badge">Soporte tecnico</span>
       <span class="internal-support-chat-launcher__copy">
         <strong>¿Necesitas ayuda?</strong>
         <small>Habla con soporte</small>
@@ -471,11 +472,22 @@ async function ensureClientSecret(currentClientSecret = null) {
 function openSupportChat() {
   const panel = supportChatState.elements?.panel;
   const launcher = supportChatState.elements?.launcher;
+  const status = supportChatState.elements?.status;
+  const fallback = supportChatState.elements?.fallback;
   if (!panel || !launcher) return;
 
   panel.hidden = false;
   launcher.setAttribute('aria-expanded', 'true');
   document.body.classList.add('internal-support-chat-open');
+
+  if (!supportChatState.initialized) {
+    if (fallback) fallback.hidden = true;
+    if (status) {
+      status.hidden = false;
+      status.dataset.state = 'loading';
+      status.textContent = 'Conectando con soporte...';
+    }
+  }
 }
 
 function closeSupportChat() {
@@ -493,7 +505,19 @@ async function initializeSupportWidget({ silent = false } = {}) {
   const status = supportChatState.elements?.status;
   const fallback = supportChatState.elements?.fallback;
 
-  if (!chatElement || supportChatState.initialized || supportChatState.initializing) return;
+  if (!chatElement) return;
+  if (supportChatState.initialized) return;
+  if (supportChatState.initializing && supportChatState.initPromise) {
+    if (!silent) {
+      if (fallback) fallback.hidden = true;
+      if (status) {
+        status.hidden = false;
+        status.dataset.state = 'loading';
+        status.textContent = 'Conectando con soporte...';
+      }
+    }
+    return supportChatState.initPromise;
+  }
 
   supportChatState.initializing = true;
   if (fallback) fallback.hidden = true;
@@ -503,6 +527,7 @@ async function initializeSupportWidget({ silent = false } = {}) {
     status.textContent = 'Conectando con soporte...';
   }
 
+  supportChatState.initPromise = (async () => {
   try {
     await waitForChatKitElement();
     const apiOptions = {
@@ -557,13 +582,16 @@ async function initializeSupportWidget({ silent = false } = {}) {
     startCustomizationObserver(chatElement);
   } catch (error) {
     console.error('Error inicializando el chat interno de soporte:', error);
-    if (!silent) {
-      if (status) status.hidden = true;
-      if (fallback) fallback.hidden = false;
-    }
+    const panelVisible = Boolean(supportChatState.elements?.panel && !supportChatState.elements.panel.hidden);
+    if (status) status.hidden = true;
+    if (fallback && (!silent || panelVisible)) fallback.hidden = false;
   } finally {
     supportChatState.initializing = false;
+    supportChatState.initPromise = null;
   }
+  })();
+
+  return supportChatState.initPromise;
 }
 
 function attachShellEvents() {
@@ -596,6 +624,7 @@ function resetSupportSessionForUser(userKey) {
   supportChatState.currentUserKey = userKey;
   supportChatState.cachedClientSecret = null;
   supportChatState.clientSecretPromise = null;
+  supportChatState.initPromise = null;
   supportChatState.initialized = false;
   supportChatState.savedIncidentFingerprints.clear();
   supportChatState.pendingIncidentFingerprints.clear();
@@ -657,6 +686,7 @@ export function destroyInternalSupportChat() {
 
   supportChatState.cachedClientSecret = null;
   supportChatState.clientSecretPromise = null;
+  supportChatState.initPromise = null;
   supportChatState.initialized = false;
   supportChatState.initializing = false;
   supportChatState.currentUserKey = null;
