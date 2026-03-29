@@ -112,7 +112,13 @@ function buildSupportChatShell() {
         <strong>¿Necesitas ayuda?</strong>
         <small>Habla con soporte</small>
       </span>
-      <span class="internal-support-chat-launcher__icon" aria-hidden="true">?</span>
+      <span class="internal-support-chat-launcher__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 10h8" />
+          <path d="M8 14h5" />
+          <path d="M6.5 5.5h11A2.5 2.5 0 0 1 20 8v7a2.5 2.5 0 0 1-2.5 2.5H11l-4.2 3.1c-.66.49-1.6.02-1.6-.8v-2.3A2.5 2.5 0 0 1 3 15V8a2.5 2.5 0 0 1 2.5-2.5Z" />
+        </svg>
+      </span>
     </button>
 
     <section id="internal-support-chat-panel" class="internal-support-chat-panel" aria-label="Habla con soporte" hidden>

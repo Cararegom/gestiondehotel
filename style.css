@@ -564,6 +564,11 @@ html, body {
   margin-left: auto;
 }
 
+.internal-support-chat-launcher__icon svg {
+  width: 24px;
+  height: 24px;
+}
+
 .internal-support-chat-panel {
   position: fixed;
   right: 18px;
@@ -695,15 +700,40 @@ openai-chatkit#internal-support-chat {
   .internal-support-chat-launcher {
     right: 12px;
     bottom: 12px;
-    width: calc(100vw - 24px);
-    min-width: 0;
+    width: 62px;
+    height: 62px;
+    min-width: 62px;
+    max-width: 62px;
+    padding: 0;
+    border-radius: 999px;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .internal-support-chat-launcher__badge,
+  .internal-support-chat-launcher__copy {
+    display: none;
+  }
+
+  .internal-support-chat-launcher__icon {
+    width: 62px;
+    height: 62px;
+    margin-left: 0;
+    border-radius: 999px;
+    background: transparent;
+    font-size: 1.45rem;
+  }
+
+  .internal-support-chat-launcher__icon svg {
+    width: 28px;
+    height: 28px;
   }
 
   .internal-support-chat-panel {
     right: 12px;
     left: 12px;
     width: auto;
-    bottom: 92px;
+    bottom: 84px;
     height: calc(100vh - 116px);
   }
   .app-pwa-banner {
