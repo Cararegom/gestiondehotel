@@ -1,6 +1,23 @@
 import { formatCurrency, formatDateTime } from '../../uiUtils.js';
 import { applyPricingRule } from './reservas-operacion.js';
 
+function calculateNearestCheckoutDate(fechaEntrada, checkoutHoraConfig, cantidadNoches = 1) {
+  const fechaSalida = new Date(fechaEntrada);
+  const [hh, mm] = (checkoutHoraConfig || '12:00').split(':').map(Number);
+  fechaSalida.setHours(hh || 0, mm || 0, 0, 0);
+
+  if (fechaEntrada.getTime() >= fechaSalida.getTime()) {
+    fechaSalida.setDate(fechaSalida.getDate() + 1);
+  }
+
+  const nochesExtra = Math.max(0, (Number(cantidadNoches) || 1) - 1);
+  if (nochesExtra > 0) {
+    fechaSalida.setDate(fechaSalida.getDate() + nochesExtra);
+  }
+
+  return fechaSalida;
+}
+
 export function calculateFechasEstancia(
   fechaEntradaStr,
   tipoCalculo,
@@ -24,10 +41,7 @@ export function calculateFechasEstancia(
       return { errorFechas: 'La cantidad de noches debe ser al menos 1.' };
     }
 
-    fechaSalida = new Date(fechaEntrada);
-    fechaSalida.setDate(fechaSalida.getDate() + cantidadDuracionOriginal);
-    const [hh, mm] = (checkoutHoraConfig || '12:00').split(':').map(Number);
-    fechaSalida.setHours(hh, mm, 0, 0);
+    fechaSalida = calculateNearestCheckoutDate(fechaEntrada, checkoutHoraConfig, cantidadDuracionOriginal);
   } else {
     if (!tiempoEstanciaId) {
       return { errorFechas: 'No se selecciono un tiempo de estancia.' };

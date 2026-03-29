@@ -98,9 +98,18 @@ export async function calcularDetallesEstancia(dataForm, room, tiempos, horarios
 
     const calcularFinPorNoches = (inicio, noches, checkoutStr) => {
         const fechaSalida = new Date(inicio);
-        fechaSalida.setDate(fechaSalida.getDate() + noches);
         const [h, m] = (checkoutStr || '12:00').split(':').map(Number);
         fechaSalida.setHours(h || 0, m || 0, 0, 0);
+
+        if (inicio.getTime() >= fechaSalida.getTime()) {
+            fechaSalida.setDate(fechaSalida.getDate() + 1);
+        }
+
+        const nochesExtra = Math.max(0, (Number(noches) || 1) - 1);
+        if (nochesExtra > 0) {
+            fechaSalida.setDate(fechaSalida.getDate() + nochesExtra);
+        }
+
         return fechaSalida;
     };
 

@@ -1,5 +1,15 @@
 import { imprimirFacturaPosAdaptable } from './modales-alquiler.js';
-import { formatCOP, waitForButtonAndBind, formatDateTime, getAmenityIcon, cerrarModalContainer, mostrarInfoModalGlobal } from './helpers.js';
+import {
+  formatCOP,
+  waitForButtonAndBind,
+  formatDateTime,
+  getAmenityIcon,
+  cerrarModalContainer,
+  cerrarModalGlobal,
+  mostrarInfoModalGlobal,
+  marcarModalMapaHotelAbierto,
+  sincronizarEstadoModalMapaHotel
+} from './helpers.js';
 import { calcularSaldoReserva, obtenerReservaActivaIdDeHabitacion, puedeHacerCheckIn } from './datos.js';
 import { showAlquilarModal, showExtenderTiempoModal } from './modales-alquiler.js';
 import { buscarDescuentoParaServicios } from './descuentos-helper.js';
@@ -429,6 +439,7 @@ function buildHabitacionSummaryHtml(room, resumen) {
 export async function showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer, options = {}) {
   const modalContainer = document.getElementById('modal-container');
   if (!modalContainer) return;
+  marcarModalMapaHotelAbierto();
   const rawMode = options?.mode;
   const mode = rawMode === 'programado' || rawMode === 'bloqueante' ? rawMode : 'selector';
 
@@ -543,7 +554,9 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   const modalContainer = document.getElementById('modal-container');
   modalContainer.style.display = "flex";
   modalContainer.innerHTML = "";
+  marcarModalMapaHotelAbierto();
   const roomSummary = await getHabitacionResumenOperativo(room, supabase, hotelId);
+  const closeRoomOptionsModal = () => cerrarModalGlobal(modalContainer);
 
   // 1. Declarar variables iniciales
   let reservaFutura = null;
@@ -638,6 +651,9 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   const modalContent = document.createElement('div');
   modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 m-auto relative animate-fade-in-up";
   modalContent.innerHTML = `
+        <button id="close-modal-quick" class="absolute right-4 top-4 rounded-full border border-slate-200 bg-white px-3 py-1 text-lg font-bold text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700" aria-label="Cerrar">
+            ×
+        </button>
         <h3 class="text-xl font-bold mb-5 text-blue-700 text-center">${room.nombre} (${room.estado ? room.estado.toUpperCase() : 'N/A'})</h3>
         ${buildHabitacionSummaryHtml(room, roomSummary)}
         <div class="flex flex-col gap-2.5">
@@ -651,8 +667,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   // Cierre al hacer click fuera del modal
   modalContainer.onclick = (e) => {
     if (e.target === modalContainer) {
-      modalContainer.style.display = "none";
-      modalContainer.innerHTML = '';
+      closeRoomOptionsModal();
     }
   };
 
@@ -672,8 +687,10 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
 
   // --- ACCIÓN: CERRAR ---
   setupButtonListener('close-modal-acciones', () => {
-    modalContainer.style.display = 'none';
-    modalContainer.innerHTML = '';
+    closeRoomOptionsModal();
+  });
+  setupButtonListener('close-modal-quick', () => {
+    closeRoomOptionsModal();
   });
 
   // --- ACCIÓN: ALQUILAR ---
@@ -706,6 +723,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   setupButtonListener('btn-mantenimiento', () => {
     modalContainer.style.display = 'none';
     modalContainer.innerHTML = '';
+    sincronizarEstadoModalMapaHotel();
     showMantenimientoModal(room, supabase, currentUser, hotelId, mainAppContainer);
   });
 
@@ -713,7 +731,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   setupButtonListener('btn-enviar-limpieza', async (btn) => {
     btn.disabled = true; btn.textContent = "Enviando...";
     await supabase.from('habitaciones').update({ estado: 'limpieza' }).eq('id', room.id);
-    modalContainer.style.display = "none"; modalContainer.innerHTML = '';
+    closeRoomOptionsModal();
     document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
   });
 
@@ -775,7 +793,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
         activo: true
       }]);
 
-      modalContainer.style.display = "none"; modalContainer.innerHTML = '';
+      closeRoomOptionsModal();
       document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
       mostrarInfoModalGlobal("Check-in realizado con éxito.", "Bienvenido");
     });
@@ -865,8 +883,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
         return;
       }
 
-      modalContainer.style.display = 'none';
-      modalContainer.innerHTML = '';
+      closeRoomOptionsModal();
 
       document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
       mostrarInfoModalGlobal("Habitación cambiada correctamente.", "Éxito");

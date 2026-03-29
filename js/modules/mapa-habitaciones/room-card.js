@@ -46,6 +46,10 @@ function getRoomTypeLabel(room) {
 }
 
 function getActiveReservation(room) {
+    if (room?.reservaActivaData) {
+        return room.reservaActivaData;
+    }
+
     return Array.isArray(room?.reservas)
         ? room.reservas.find((reserva) => ['ocupada', 'activa', 'tiempo agotado'].includes(reserva.estado))
         : null;

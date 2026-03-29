@@ -120,17 +120,48 @@ function filterReservationsForMap(reservas, referenceDate = new Date()) {
   });
 }
 
+function getActiveReservationForRoom(room) {
+  return Array.isArray(room?.reservas)
+    ? room.reservas.find((reserva) => ['activa', 'ocupada', 'tiempo agotado'].includes(reserva?.estado))
+    : null;
+}
+
+function getOperationalRoomStateFromReservation(reservaActiva, referenceDate = new Date()) {
+  if (!reservaActiva) return null;
+
+  if (reservaActiva.estado === 'tiempo agotado') {
+    return 'tiempo agotado';
+  }
+
+  if (reservaActiva.tipo_duracion !== 'abierta' && reservaActiva.fecha_fin) {
+    const fechaFin = new Date(reservaActiva.fecha_fin);
+    if (!Number.isNaN(fechaFin.getTime()) && fechaFin.getTime() <= referenceDate.getTime()) {
+      return 'tiempo agotado';
+    }
+  }
+
+  return 'ocupada';
+}
+
 function applyUpcomingReservationLocks(rooms) {
   const ahora = new Date();
 
   rooms.forEach((room) => {
     const estadoBase = room.estado_base || room.estado;
+    const reservaActiva = getActiveReservationForRoom(room);
+    const estadoOperativo = getOperationalRoomStateFromReservation(reservaActiva, ahora);
 
-    if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(estadoBase)) {
+    room.reservaActivaData = reservaActiva;
+    room.proximaReservaData = null;
+    room.needsOperationalResync = false;
+
+    if (estadoOperativo) {
+      room.estado = estadoOperativo;
+      room.needsOperationalResync = estadoBase !== estadoOperativo;
+    } else if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(estadoBase)) {
       room.estado = estadoBase === 'reservada' ? 'libre' : estadoBase;
     }
 
-    room.proximaReservaData = null;
     if (!Array.isArray(room.reservas) || room.reservas.length === 0) return;
 
     const reservasFuturas = room.reservas
@@ -142,11 +173,41 @@ function applyUpcomingReservationLocks(rooms) {
     const proxima = reservasFuturas[0];
     room.proximaReservaData = proxima;
 
-    if (shouldBlockRoomByUpcomingReservation(proxima, ahora)) {
+    if (!estadoOperativo && shouldBlockRoomByUpcomingReservation(proxima, ahora)) {
       if (!['ocupada', 'tiempo agotado', 'limpieza', 'mantenimiento'].includes(room.estado)) {
         room.estado = 'reservada';
       }
     }
+  });
+}
+
+async function syncOperationalRoomStates(rooms, supabase, hotelId) {
+  const corrections = (Array.isArray(rooms) ? rooms : []).filter((room) => (
+    room?.needsOperationalResync
+    && room?.id
+    && room?.estado
+    && room.estado !== room.estado_base
+  ));
+
+  if (corrections.length === 0 || !supabase || !hotelId) return;
+
+  const results = await Promise.all(corrections.map((room) => (
+    supabase
+      .from('habitaciones')
+      .update({ estado: room.estado })
+      .eq('hotel_id', hotelId)
+      .eq('id', room.id)
+  )));
+
+  results.forEach((result, index) => {
+    const room = corrections[index];
+    if (result.error) {
+      console.warn(`[MapaHotel] No se pudo reconciliar el estado de la habitacion ${room?.nombre || room?.id}:`, result.error);
+      return;
+    }
+
+    room.estado_base = room.estado;
+    room.needsOperationalResync = false;
   });
 }
 
@@ -399,6 +460,7 @@ export async function renderRooms(gridEl, supabase, currentUser, hotelId) {
 
   currentRooms = Array.isArray(habitaciones) ? habitaciones : [];
   applyUpcomingReservationLocks(currentRooms);
+  await syncOperationalRoomStates(currentRooms, supabase, hotelId);
   sortRooms(currentRooms);
   renderMapaKpis(currentRooms, kpiContainer);
 

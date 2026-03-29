@@ -22,12 +22,32 @@ export function playPopSound() {
   audio.play().catch((error) => console.warn('No se pudo reproducir el sonido:', error));
 }
 
+export function sincronizarEstadoModalMapaHotel() {
+  const modales = [
+    document.getElementById('modal-container'),
+    document.getElementById('modal-container-secondary')
+  ];
+  const algunModalVisible = modales.some((modal) => {
+    if (!modal) return false;
+    const visible = modal.style.display && modal.style.display !== 'none';
+    const conContenido = typeof modal.innerHTML === 'string' && modal.innerHTML.trim().length > 0;
+    return visible && conContenido;
+  });
+
+  document.body.classList.toggle('mapa-hotel-modal-open', algunModalVisible);
+}
+
+export function marcarModalMapaHotelAbierto() {
+  document.body.classList.add('mapa-hotel-modal-open');
+}
+
 export function cerrarModalContainer() {
   const modalContainer = document.getElementById('modal-container');
   if (modalContainer) {
     modalContainer.style.display = 'none';
     modalContainer.innerHTML = '';
   }
+  sincronizarEstadoModalMapaHotel();
 }
 
 export function waitForButtonAndBind(buttonId, callbacks, timeout = 2000, context = document) {
@@ -50,6 +70,7 @@ export function cerrarModalGlobal(modalElement) {
     modalElement.style.display = 'none';
     modalElement.innerHTML = '';
   }
+  sincronizarEstadoModalMapaHotel();
 }
 
 export function formatHorasMin(minutes) {

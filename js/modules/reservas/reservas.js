@@ -1077,9 +1077,15 @@ function calculateFechasEstanciaLegacy(fechaEntradaStr, tipoCalculo, cantidadNoc
         cantidadDuracionOriginal = parseInt(cantidadNochesStr) || 1;
         if (cantidadDuracionOriginal < 1) return { errorFechas: "Cantidad de noches debe ser al menos 1." };
         fechaSalida = new Date(fechaEntrada);
-        fechaSalida.setDate(fechaSalida.getDate() + cantidadDuracionOriginal);
         const [hh, mm] = (checkoutHoraConfig || "12:00").split(':').map(Number);
-        fechaSalida.setHours(hh, mm, 0, 0);
+        fechaSalida.setHours(hh || 0, mm || 0, 0, 0);
+        if (fechaEntrada.getTime() >= fechaSalida.getTime()) {
+            fechaSalida.setDate(fechaSalida.getDate() + 1);
+        }
+        const nochesExtra = Math.max(0, cantidadDuracionOriginal - 1);
+        if (nochesExtra > 0) {
+            fechaSalida.setDate(fechaSalida.getDate() + nochesExtra);
+        }
     } else {
         if (!tiempoEstanciaId) return { errorFechas: "No se seleccionÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ un tiempo de estancia." };
         const tiempo = state.tiemposEstanciaDisponibles.find(ts => ts.id === tiempoEstanciaId);

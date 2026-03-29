@@ -724,6 +724,15 @@ openai-chatkit#internal-support-chat {
   }
 }
 
+@media (max-width: 900px) {
+  body.mapa-hotel-modal-open .internal-support-chat-launcher,
+  body.mapa-hotel-modal-open .internal-support-chat-panel {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(24px);
+  }
+}
+
 @media (max-width: 600px) {
   #sidebar {
     width: 280px;
