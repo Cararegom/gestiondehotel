@@ -131,11 +131,13 @@ function buildSupportChatShell() {
         </div>
         <button id="internal-support-chat-close" type="button" class="internal-support-chat-panel__close" aria-label="Cerrar chat">×</button>
       </header>
-      <div id="internal-support-chat-status" class="internal-support-chat-status">Conectando con soporte...</div>
-      <div id="internal-support-chat-fallback" class="internal-support-chat-fallback" hidden>
-        <span>Si el chat no carga, escribe a <a href="mailto:support@gestiondehotel.com">support@gestiondehotel.com</a>.</span>
+      <div class="internal-support-chat-panel__body">
+        <div id="internal-support-chat-status" class="internal-support-chat-status">Conectando con soporte...</div>
+        <div id="internal-support-chat-fallback" class="internal-support-chat-fallback" hidden>
+          <span>Si el chat no carga, escribe a <a href="mailto:support@gestiondehotel.com">support@gestiondehotel.com</a>.</span>
+        </div>
+        <openai-chatkit id="internal-support-chat"></openai-chatkit>
       </div>
-      <openai-chatkit id="internal-support-chat"></openai-chatkit>
     </section>
   `;
 
@@ -420,18 +422,18 @@ function chatElementLooksRendered(chatElement) {
 
   const shadowRoot = chatElement.shadowRoot;
   if (shadowRoot) {
-    if (shadowRoot.querySelector('textarea, input, button, [role="textbox"], [contenteditable="true"], iframe')) {
+    if (shadowRoot.querySelector('textarea, input[placeholder], [role="textbox"], [contenteditable="true"]')) {
       return true;
     }
 
-    const shadowText = normalizeSupportText(shadowRoot.textContent || '');
-    if (shadowText.length > 20) {
+    const promptButtons = [...shadowRoot.querySelectorAll('button')]
+      .filter((button) => normalizeSupportText(button.textContent || '').length >= 4);
+    if (promptButtons.length >= 2) {
       return true;
     }
   }
 
-  const lightDomText = normalizeSupportText(chatElement.textContent || '');
-  return Boolean(chatElement.querySelector('*') || lightDomText.length > 20);
+  return false;
 }
 
 async function waitForSupportChatRender(chatElement, timeoutMs = 4500) {
