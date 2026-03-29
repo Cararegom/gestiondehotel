@@ -140,6 +140,10 @@ function buildSupportChatShell() {
   `;
 
   document.body.appendChild(root);
+  const launcherTitle = root.querySelector('.internal-support-chat-launcher__copy strong');
+  if (launcherTitle) launcherTitle.textContent = 'Necesitas ayuda?';
+  const panelCloseButton = root.querySelector('#internal-support-chat-close');
+  if (panelCloseButton) panelCloseButton.innerHTML = '&times;';
 
   return {
     root,
@@ -150,6 +154,32 @@ function buildSupportChatShell() {
     fallback: root.querySelector('#internal-support-chat-fallback'),
     chatElement: root.querySelector('#internal-support-chat')
   };
+}
+
+function resetSupportCustomizationObserver() {
+  if (supportChatState.observer) {
+    supportChatState.observer.disconnect();
+    supportChatState.observer = null;
+  }
+
+  supportChatState.observedRoots.clear();
+}
+
+function replaceSupportChatElement() {
+  const currentChatElement = supportChatState.elements?.chatElement;
+  if (!currentChatElement?.parentNode) {
+    return currentChatElement;
+  }
+
+  resetSupportCustomizationObserver();
+
+  const nextChatElement = document.createElement('openai-chatkit');
+  nextChatElement.id = 'internal-support-chat';
+  currentChatElement.replaceWith(nextChatElement);
+  supportChatState.elements.chatElement = nextChatElement;
+  supportChatState.initialized = false;
+
+  return nextChatElement;
 }
 
 function normalizeSupportText(value) {
@@ -385,6 +415,39 @@ function patchChatKitCopyInRoot(root) {
   }
 }
 
+function chatElementLooksRendered(chatElement) {
+  if (!chatElement) return false;
+
+  const shadowRoot = chatElement.shadowRoot;
+  if (shadowRoot) {
+    if (shadowRoot.querySelector('textarea, input, button, [role="textbox"], [contenteditable="true"], iframe')) {
+      return true;
+    }
+
+    const shadowText = normalizeSupportText(shadowRoot.textContent || '');
+    if (shadowText.length > 20) {
+      return true;
+    }
+  }
+
+  const lightDomText = normalizeSupportText(chatElement.textContent || '');
+  return Boolean(chatElement.querySelector('*') || lightDomText.length > 20);
+}
+
+async function waitForSupportChatRender(chatElement, timeoutMs = 4500) {
+  const startedAt = Date.now();
+
+  while ((Date.now() - startedAt) < timeoutMs) {
+    if (chatElementLooksRendered(chatElement)) {
+      return true;
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, 140));
+  }
+
+  return chatElementLooksRendered(chatElement);
+}
+
 function bindSupportObserverTargets(root) {
   if (!root || !supportChatState.observer || supportChatState.observedRoots.has(root)) return;
 
@@ -467,6 +530,57 @@ async function ensureClientSecret(currentClientSecret = null) {
   }
 
   return supportChatState.clientSecretPromise;
+}
+
+function buildSupportChatOptions() {
+  const apiOptions = {
+    async getClientSecret(currentClientSecret) {
+      return ensureClientSecret(currentClientSecret);
+    }
+  };
+
+  if (['gestiondehotel.com', 'www.gestiondehotel.com'].includes(window.location.hostname)) {
+    apiOptions.domainKey = CHATKIT_DOMAIN_KEY;
+  }
+
+  return {
+    api: apiOptions,
+    frameTitle: 'Soporte interno',
+    header: {
+      title: {
+        text: 'Valeria'
+      }
+    },
+    startScreen: {
+      greeting: 'En que te ayudo dentro del sistema?',
+      prompts: [
+        {
+          label: 'Crear usuario',
+          prompt: 'Como creo un usuario para mi recepcionista y donde asigno el rol correcto.'
+        },
+        {
+          label: 'Check-in reserva',
+          prompt: 'Explicame paso a paso como hacer check-in de una reserva desde el sistema.'
+        },
+        {
+          label: 'Liberar habitacion',
+          prompt: 'Como libero una habitacion y que debo revisar antes del check-out.'
+        },
+        {
+          label: 'Reportar una falla',
+          prompt: 'Quiero reportar una falla en el sistema y necesito que me ayudes a estructurar el caso.'
+        }
+      ]
+    },
+    composer: {
+      placeholder: 'Escribe tu mensaje a Valeria'
+    }
+  };
+}
+
+async function configureSupportChatElement(chatElement) {
+  await waitForChatKitElement();
+  await chatElement.setOptions(buildSupportChatOptions());
 }
 
 function openSupportChat() {
@@ -594,6 +708,73 @@ async function initializeSupportWidget({ silent = false } = {}) {
   return supportChatState.initPromise;
 }
 
+async function initializeSupportWidgetSafe({ silent = false } = {}) {
+  const status = supportChatState.elements?.status;
+  const fallback = supportChatState.elements?.fallback;
+
+  if (supportChatState.initialized) return;
+  if (supportChatState.initializing && supportChatState.initPromise) {
+    if (!silent) {
+      if (fallback) fallback.hidden = true;
+      if (status) {
+        status.hidden = false;
+        status.dataset.state = 'loading';
+        status.textContent = 'Conectando con soporte...';
+      }
+    }
+    return supportChatState.initPromise;
+  }
+
+  supportChatState.initializing = true;
+  if (fallback) fallback.hidden = true;
+  if (status) {
+    status.hidden = false;
+    status.dataset.state = 'loading';
+    status.textContent = 'Conectando con soporte...';
+  }
+
+  supportChatState.initPromise = (async () => {
+    try {
+      let targetChatElement = supportChatState.elements?.chatElement;
+      if (!targetChatElement) return;
+
+      await configureSupportChatElement(targetChatElement);
+
+      let rendered = await waitForSupportChatRender(targetChatElement);
+      if (!rendered) {
+        targetChatElement = replaceSupportChatElement();
+        await configureSupportChatElement(targetChatElement);
+        rendered = await waitForSupportChatRender(targetChatElement, 5200);
+      }
+
+      if (!rendered) {
+        throw new Error('El chat de soporte no termino de renderizarse.');
+      }
+
+      supportChatState.initialized = true;
+      bindSupportObserverTargets(targetChatElement);
+      patchChatKitCopyInRoot(targetChatElement);
+      scheduleIncidentScan(targetChatElement);
+      startCustomizationObserver(targetChatElement);
+      if (status) status.hidden = true;
+    } catch (error) {
+      console.error('Error inicializando el chat interno de soporte:', error);
+      const panelVisible = Boolean(supportChatState.elements?.panel && !supportChatState.elements.panel.hidden);
+      if (status) {
+        status.hidden = false;
+        status.dataset.state = 'error';
+        status.textContent = 'No pudimos abrir el chat en este momento.';
+      }
+      if (fallback && (!silent || panelVisible)) fallback.hidden = false;
+    } finally {
+      supportChatState.initializing = false;
+      supportChatState.initPromise = null;
+    }
+  })();
+
+  return supportChatState.initPromise;
+}
+
 function attachShellEvents() {
   const { launcher, closeButton, panel } = supportChatState.elements;
   if (!launcher || launcher.dataset.bound === 'true') return;
@@ -603,7 +784,7 @@ function attachShellEvents() {
     const shouldOpen = panel?.hidden ?? true;
     if (shouldOpen) {
       openSupportChat();
-      await initializeSupportWidget();
+      await initializeSupportWidgetSafe();
       return;
     }
 
@@ -650,11 +831,11 @@ export async function initInternalSupportChat(user, hotel) {
   resetSupportSessionForUser(getSupportChatUserKey(user, hotel));
 
   const warmUpChat = () => {
+    ensureChatKitScript().catch((error) => {
+      console.warn('No se pudo precargar ChatKit:', error);
+    });
     ensureClientSecret().catch((error) => {
       console.warn('No se pudo precalentar la sesion de soporte:', error);
-    });
-    initializeSupportWidget({ silent: true }).catch((error) => {
-      console.warn('No se pudo precargar el widget de soporte:', error);
     });
   };
 
@@ -671,7 +852,7 @@ export async function openInternalSupportChat() {
   }
 
   openSupportChat();
-  await initializeSupportWidget();
+  await initializeSupportWidgetSafe();
   return true;
 }
 

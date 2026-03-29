@@ -690,10 +690,12 @@ html, body {
 
 openai-chatkit#internal-support-chat {
   display: block;
+  position: relative;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 320px;
   width: 100%;
-  height: auto;
+  height: 100%;
+  background: #fff;
 }
 
 @media (max-width: 640px) {
@@ -743,6 +745,10 @@ openai-chatkit#internal-support-chat {
     width: auto;
     bottom: 84px;
     height: calc(100vh - 116px);
+  }
+
+  openai-chatkit#internal-support-chat {
+    min-height: 280px;
   }
   .app-pwa-banner {
     flex-direction: column;
