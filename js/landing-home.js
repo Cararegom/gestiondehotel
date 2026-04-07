@@ -548,26 +548,59 @@ document.addEventListener('DOMContentLoaded', () => {
     return nextChatElement;
   }
 
-  function chatElementLooksRendered(targetChatElement) {
-    if (!targetChatElement) return false;
+  function shadowRootLooksMounted(root) {
+    if (!root) return false;
 
-    const shadowRoot = targetChatElement.shadowRoot;
-    if (shadowRoot) {
-      if (shadowRoot.querySelector('textarea, input[placeholder], [role="textbox"], [contenteditable="true"]')) {
-        return true;
-      }
+    if (root.querySelector('textarea, input[placeholder], [role="textbox"], [contenteditable="true"]')) {
+      return true;
+    }
 
-      const promptButtons = [...shadowRoot.querySelectorAll('button')]
-        .filter((button) => String(button.textContent || '').trim().length >= 4);
-      if (promptButtons.length >= 2) {
-        return true;
-      }
+    if (root.querySelector('iframe, form, main, section, article, [data-state], [data-testid], [class*="composer"], [class*="prompt"]')) {
+      return true;
+    }
+
+    const promptButtons = [...root.querySelectorAll('button')]
+      .filter((button) => String(button.textContent || '').trim().length >= 2);
+    if (promptButtons.length >= 1) {
+      return true;
+    }
+
+    const directChildren = [...root.children];
+    if (directChildren.length >= 2) {
+      return true;
     }
 
     return false;
   }
 
-  async function waitForSalesChatRender(targetChatElement, timeoutMs = 4200) {
+  function chatElementLooksRendered(targetChatElement) {
+    if (!targetChatElement) return false;
+
+    const shadowRoot = targetChatElement.shadowRoot;
+    if (shadowRootLooksMounted(shadowRoot)) {
+      return true;
+    }
+
+    if (shadowRoot) {
+      const nestedShadowHosts = [...shadowRoot.querySelectorAll('*')]
+        .filter((element) => element.shadowRoot);
+
+      if (nestedShadowHosts.some((element) => shadowRootLooksMounted(element.shadowRoot))) {
+        return true;
+      }
+    }
+
+    const bounds = typeof targetChatElement.getBoundingClientRect === 'function'
+      ? targetChatElement.getBoundingClientRect()
+      : null;
+    if (bounds && bounds.height >= 220 && (shadowRoot?.children?.length || targetChatElement.children.length)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  async function waitForSalesChatRender(targetChatElement, timeoutMs = 7000) {
     const startedAt = Date.now();
 
     while ((Date.now() - startedAt) < timeoutMs) {
@@ -650,7 +683,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!rendered) {
           targetChatElement = replaceSalesChatElement();
           await configureSalesChatElement(targetChatElement);
-          rendered = await waitForSalesChatRender(targetChatElement, 5200);
+          rendered = await waitForSalesChatRender(targetChatElement, 8500);
         }
 
         if (!rendered) {
@@ -696,31 +729,20 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function warmUpChatWidgetOnIntent() {
-    initializeSalesChat({ silent: true }).catch((error) => {
-      console.warn('No se pudo precargar el widget de Laura:', error);
-    });
-  }
-
   function bindSalesChatIntentWarmup() {
     if (!launcher || salesChatState.widgetWarmIntentBound) return;
     salesChatState.widgetWarmIntentBound = true;
 
     const onceWarm = () => {
       warmUpChatSession();
-      warmUpChatWidgetOnIntent();
     };
 
     launcher.addEventListener('pointerenter', onceWarm, { once: true });
     launcher.addEventListener('focus', onceWarm, { once: true });
-    launcher.addEventListener('touchstart', onceWarm, { once: true, passive: true });
   }
 
   function warmUpChatInBackground() {
     warmUpChatSession();
-    window.setTimeout(() => {
-      warmUpChatWidgetOnIntent();
-    }, 120);
   }
 
   launcher?.addEventListener('click', async () => {
