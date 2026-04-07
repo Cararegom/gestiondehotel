@@ -405,6 +405,57 @@ document.addEventListener('DOMContentLoaded', () => {
     return clientSecretPromise;
   }
 
+  function buildSalesChatOptions() {
+    const apiOptions = {
+      async getClientSecret(currentClientSecret) {
+        return ensureClientSecret(currentClientSecret);
+      }
+    };
+
+    if (['gestiondehotel.com', 'www.gestiondehotel.com'].includes(window.location.hostname)) {
+      apiOptions.domainKey = CHATKIT_DOMAIN_KEY;
+    }
+
+    return {
+      api: apiOptions,
+      frameTitle: 'Chat con Laura',
+      header: {
+        title: {
+          text: 'Laura'
+        }
+      },
+      startScreen: {
+        greeting: '¿Qué quieres resolver hoy?',
+        prompts: [
+          {
+            label: 'Prueba gratis',
+            prompt: 'Explicame como funciona la prueba gratis y que pasa despues del primer mes.'
+          },
+          {
+            label: 'Qué plan me conviene',
+            prompt: 'Quiero saber que plan me conviene segun la cantidad de habitaciones y lo que necesito operar.'
+          },
+          {
+            label: 'Cuánto pago después',
+            prompt: 'Quiero entender cuanto pagaria despues del mes gratis y como funciona la promocion de los 3 meses al 50%.'
+          },
+          {
+            label: 'Pagos internacionales',
+            prompt: 'Quiero saber si puedo contratar desde mi pais y como se veria el cobro internacional.'
+          }
+        ]
+      },
+      composer: {
+        placeholder: 'Escribe tu mensaje a Laura'
+      }
+    };
+  }
+
+  async function configureSalesChatElement(targetChatElement) {
+    await waitForChatKitElement();
+    await targetChatElement.setOptions(buildSalesChatOptions());
+  }
+
   function patchChatKitCopyInRoot(root) {
     if (!root?.querySelectorAll) return;
 
@@ -572,11 +623,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function initializeSalesChat({ silent = false } = {}) {
     if (!chatElement) return;
-    if (salesChatState.initialized) {
-      status.hidden = true;
-      fallback.hidden = true;
-      return;
-    }
+    if (salesChatState.initialized) return;
     if (salesChatState.initPromise) {
       if (!silent) {
         fallback.hidden = true;
@@ -596,88 +643,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     salesChatState.initPromise = (async () => {
       try {
-        await waitForChatKitElement();
-        const apiOptions = {
-          async getClientSecret(currentClientSecret) {
-            return ensureClientSecret(currentClientSecret);
-          }
-        };
+        let targetChatElement = chatElement;
+        await configureSalesChatElement(targetChatElement);
 
-        if (['gestiondehotel.com', 'www.gestiondehotel.com'].includes(window.location.hostname)) {
-          apiOptions.domainKey = CHATKIT_DOMAIN_KEY;
-        }
-
-        await chatElement.setOptions({
-          api: apiOptions,
-          frameTitle: 'Chat con Laura',
-          header: {
-            title: {
-              text: 'Laura'
-            }
-          },
-          startScreen: {
-            greeting: '¿Qué quieres resolver hoy?',
-            prompts: [
-              {
-                label: 'Prueba gratis',
-                prompt: 'Explicame como funciona la prueba gratis y que pasa despues del primer mes.'
-              },
-              {
-                label: 'Qué plan me conviene',
-                prompt: 'Quiero saber que plan me conviene segun la cantidad de habitaciones y lo que necesito operar.'
-              },
-              {
-                label: 'Cuánto pago después',
-                prompt: 'Quiero entender cuanto pagaria despues del mes gratis y como funciona la promocion de los 3 meses al 50%.'
-              },
-              {
-                label: 'Pagos internacionales',
-                prompt: 'Quiero saber si puedo contratar desde mi pais y como se veria el cobro internacional.'
-              }
-            ]
-          },
-          composer: {
-            placeholder: 'Escribe tu mensaje a Laura'
-          }
-        });
-
-        let rendered = await waitForSalesChatRender(chatElement);
+        let rendered = await waitForSalesChatRender(targetChatElement);
         if (!rendered) {
-          const nextChatElement = replaceSalesChatElement();
-          await nextChatElement.setOptions({
-            api: apiOptions,
-            frameTitle: 'Chat con Laura',
-            header: {
-              title: {
-                text: 'Laura'
-              }
-            },
-            startScreen: {
-              greeting: '¿Qué quieres resolver hoy?',
-              prompts: [
-                {
-                  label: 'Prueba gratis',
-                  prompt: 'Explicame como funciona la prueba gratis y que pasa despues del primer mes.'
-                },
-                {
-                  label: 'Qué plan me conviene',
-                  prompt: 'Quiero saber que plan me conviene segun la cantidad de habitaciones y lo que necesito operar.'
-                },
-                {
-                  label: 'Cuánto pago después',
-                  prompt: 'Quiero entender cuanto pagaria despues del mes gratis y como funciona la promocion de los 3 meses al 50%.'
-                },
-                {
-                  label: 'Pagos internacionales',
-                  prompt: 'Quiero saber si puedo contratar desde mi pais y como se veria el cobro internacional.'
-                }
-              ]
-            },
-            composer: {
-              placeholder: 'Escribe tu mensaje a Laura'
-            }
-          });
-          rendered = await waitForSalesChatRender(nextChatElement, 5200);
+          targetChatElement = replaceSalesChatElement();
+          await configureSalesChatElement(targetChatElement);
+          rendered = await waitForSalesChatRender(targetChatElement, 5200);
         }
 
         if (!rendered) {
@@ -685,6 +658,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         salesChatState.initialized = true;
+        bindSalesObserverTargets(targetChatElement);
+        patchChatKitCopyInRoot(targetChatElement);
         startChatKitCustomization();
         trackLandingEvent('sales_chat_ready', {
           source: 'chatkit',
@@ -696,8 +671,12 @@ document.addEventListener('DOMContentLoaded', () => {
         trackLandingEvent('sales_chat_failed', {
           message: error.message || 'Error desconocido'
         }, { keepalive: true });
-        if (!silent) {
-          status.hidden = true;
+        const panelVisible = Boolean(panel && !panel.hidden);
+        if (status) {
+          status.hidden = false;
+          status.textContent = 'No pudimos abrir el chat en este momento.';
+        }
+        if (fallback && (!silent || panelVisible)) {
           fallback.hidden = false;
         }
       } finally {
