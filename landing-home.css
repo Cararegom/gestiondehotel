@@ -665,8 +665,9 @@ openai-chatkit#landing-sales-chat {
   display: block;
   width: 100%;
   flex: 1 1 auto;
-  min-height: 0;
-  height: auto;
+  min-height: 320px;
+  height: 100%;
+  background: #fff;
 }
 
 iframe {
@@ -737,6 +738,10 @@ iframe {
     width: auto;
     height: calc(100vh - 120px);
     max-height: 720px;
+  }
+
+  openai-chatkit#landing-sales-chat {
+    min-height: 280px;
   }
 }
 

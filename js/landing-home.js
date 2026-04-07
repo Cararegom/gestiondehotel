@@ -198,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const closeButton = document.getElementById('sales-chat-close');
   const status = document.getElementById('sales-chat-status');
   const fallback = document.getElementById('sales-chat-fallback');
-  const chatElement = document.getElementById('landing-sales-chat');
+  let chatElement = document.getElementById('landing-sales-chat');
 
   const salesChatState = {
     initialized: false,
@@ -206,7 +206,8 @@ document.addEventListener('DOMContentLoaded', () => {
     customizationObserver: null,
     initPromise: null,
     sessionWarmed: false,
-    widgetWarmIntentBound: false
+    widgetWarmIntentBound: false,
+    observedRoots: new Set()
   };
   let cachedClientSecret = null;
   let clientSecretPromise = null;
@@ -473,33 +474,96 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function startChatKitCustomization() {
-    if (!chatElement || salesChatState.customizationObserver) return;
+  function resetSalesChatCustomizationObserver() {
+    if (salesChatState.customizationObserver) {
+      salesChatState.customizationObserver.disconnect();
+      salesChatState.customizationObserver = null;
+    }
 
-    const runPatch = () => patchChatKitCopyInRoot(chatElement);
-    runPatch();
+    salesChatState.observedRoots.clear();
+  }
 
-    salesChatState.customizationObserver = new MutationObserver(() => {
-      runPatch();
-    });
+  function replaceSalesChatElement() {
+    if (!chatElement?.parentNode) return chatElement;
 
-    salesChatState.customizationObserver.observe(chatElement, {
+    resetSalesChatCustomizationObserver();
+
+    const nextChatElement = document.createElement('openai-chatkit');
+    nextChatElement.id = 'landing-sales-chat';
+    chatElement.replaceWith(nextChatElement);
+    chatElement = nextChatElement;
+    salesChatState.initialized = false;
+
+    return nextChatElement;
+  }
+
+  function chatElementLooksRendered(targetChatElement) {
+    if (!targetChatElement) return false;
+
+    const shadowRoot = targetChatElement.shadowRoot;
+    if (shadowRoot) {
+      if (shadowRoot.querySelector('textarea, input[placeholder], [role="textbox"], [contenteditable="true"]')) {
+        return true;
+      }
+
+      const promptButtons = [...shadowRoot.querySelectorAll('button')]
+        .filter((button) => String(button.textContent || '').trim().length >= 4);
+      if (promptButtons.length >= 2) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async function waitForSalesChatRender(targetChatElement, timeoutMs = 4200) {
+    const startedAt = Date.now();
+
+    while ((Date.now() - startedAt) < timeoutMs) {
+      if (chatElementLooksRendered(targetChatElement)) {
+        return true;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, 140));
+    }
+
+    return chatElementLooksRendered(targetChatElement);
+  }
+
+  function bindSalesObserverTargets(root) {
+    if (!root || !salesChatState.customizationObserver || salesChatState.observedRoots.has(root)) return;
+
+    salesChatState.customizationObserver.observe(root, {
       childList: true,
       subtree: true,
       characterData: true,
       attributes: true,
       attributeFilter: ['placeholder', 'aria-label', 'title']
     });
+    salesChatState.observedRoots.add(root);
 
-    if (chatElement.shadowRoot) {
-      salesChatState.customizationObserver.observe(chatElement.shadowRoot, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-        attributes: true,
-        attributeFilter: ['placeholder', 'aria-label', 'title']
-      });
-    }
+    if (typeof root.querySelectorAll !== 'function') return;
+    root.querySelectorAll('*').forEach((element) => {
+      if (element.shadowRoot) {
+        bindSalesObserverTargets(element.shadowRoot);
+      }
+    });
+  }
+
+  function startChatKitCustomization() {
+    if (!chatElement || salesChatState.customizationObserver) return;
+
+    const runPatch = () => {
+      bindSalesObserverTargets(chatElement);
+      patchChatKitCopyInRoot(chatElement);
+    };
+    runPatch();
+
+    salesChatState.customizationObserver = new MutationObserver(() => {
+      runPatch();
+    });
+
+    bindSalesObserverTargets(chatElement);
 
     window.setTimeout(runPatch, 400);
     window.setTimeout(runPatch, 1200);
@@ -576,6 +640,49 @@ document.addEventListener('DOMContentLoaded', () => {
             placeholder: 'Escribe tu mensaje a Laura'
           }
         });
+
+        let rendered = await waitForSalesChatRender(chatElement);
+        if (!rendered) {
+          const nextChatElement = replaceSalesChatElement();
+          await nextChatElement.setOptions({
+            api: apiOptions,
+            frameTitle: 'Chat con Laura',
+            header: {
+              title: {
+                text: 'Laura'
+              }
+            },
+            startScreen: {
+              greeting: '¿Qué quieres resolver hoy?',
+              prompts: [
+                {
+                  label: 'Prueba gratis',
+                  prompt: 'Explicame como funciona la prueba gratis y que pasa despues del primer mes.'
+                },
+                {
+                  label: 'Qué plan me conviene',
+                  prompt: 'Quiero saber que plan me conviene segun la cantidad de habitaciones y lo que necesito operar.'
+                },
+                {
+                  label: 'Cuánto pago después',
+                  prompt: 'Quiero entender cuanto pagaria despues del mes gratis y como funciona la promocion de los 3 meses al 50%.'
+                },
+                {
+                  label: 'Pagos internacionales',
+                  prompt: 'Quiero saber si puedo contratar desde mi pais y como se veria el cobro internacional.'
+                }
+              ]
+            },
+            composer: {
+              placeholder: 'Escribe tu mensaje a Laura'
+            }
+          });
+          rendered = await waitForSalesChatRender(nextChatElement, 5200);
+        }
+
+        if (!rendered) {
+          throw new Error('El chat comercial no termino de renderizarse.');
+        }
 
         salesChatState.initialized = true;
         startChatKitCustomization();
