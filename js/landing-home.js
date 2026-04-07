@@ -199,7 +199,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const closeButton = document.getElementById('sales-chat-close');
   const status = document.getElementById('sales-chat-status');
   const fallback = document.getElementById('sales-chat-fallback');
-  let chatElement = document.getElementById('landing-sales-chat');
+  const chatMount = document.getElementById('landing-sales-chat-mount');
+  let chatElement = null;
 
   const salesChatState = {
     initialized: false,
@@ -587,17 +588,26 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function replaceSalesChatElement() {
-    if (!chatElement?.parentNode) return chatElement;
+    if (!chatMount) return chatElement;
 
     resetSalesChatCustomizationObserver();
 
     const nextChatElement = document.createElement('openai-chatkit');
     nextChatElement.id = 'landing-sales-chat';
-    chatElement.replaceWith(nextChatElement);
+    if (chatElement?.parentNode) {
+      chatElement.replaceWith(nextChatElement);
+    } else {
+      chatMount.replaceChildren(nextChatElement);
+    }
     chatElement = nextChatElement;
     salesChatState.initialized = false;
 
     return nextChatElement;
+  }
+
+  function ensureSalesChatElement() {
+    if (chatElement?.isConnected) return chatElement;
+    return replaceSalesChatElement();
   }
 
   function shadowRootLooksMounted(root) {
@@ -707,7 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function initializeSalesChat({ silent = false } = {}) {
-    if (!chatElement) return;
+    if (!chatMount) return;
     if (salesChatState.initialized) return;
     if (salesChatState.initPromise) {
       if (!silent) {
@@ -728,7 +738,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     salesChatState.initPromise = (async () => {
       try {
-        let targetChatElement = chatElement;
+        let targetChatElement = ensureSalesChatElement();
         await configureSalesChatElement(targetChatElement);
 
         let rendered = await waitForSalesChatRender(targetChatElement);
