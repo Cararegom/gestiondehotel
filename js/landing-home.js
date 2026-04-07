@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const SUPABASE_FUNCTIONS_BASE = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1';
   const CHATKIT_SESSION_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/chatkit-session`;
   const LANDING_TRACK_EVENT_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/landing-track-event`;
+  const CHATKIT_SCRIPT_SRC = 'https://cdn.platform.openai.com/deployments/chatkit/chatkit.js';
   const CHATKIT_DOMAIN_KEY = 'domain_pk_69c15fef533c819795015e543f83ff950af2fea964c34d54';
   const LANDING_CHAT_VISITOR_KEY = 'gestionhotel.sales_chat_visitor_id';
   const LANDING_SESSION_KEY = 'gestionhotel.landing_session_id';
@@ -205,12 +206,48 @@ document.addEventListener('DOMContentLoaded', () => {
     initializing: false,
     customizationObserver: null,
     initPromise: null,
+    scriptPromise: null,
     sessionWarmed: false,
     widgetWarmIntentBound: false,
     observedRoots: new Set()
   };
   let cachedClientSecret = null;
+  let cachedClientSecretAt = 0;
   let clientSecretPromise = null;
+
+  function ensureChatKitScript() {
+    if (window.customElements?.get('openai-chatkit')) {
+      return Promise.resolve();
+    }
+
+    if (salesChatState.scriptPromise) {
+      return salesChatState.scriptPromise;
+    }
+
+    salesChatState.scriptPromise = new Promise((resolve, reject) => {
+      const existingScript = document.querySelector(`script[src="${CHATKIT_SCRIPT_SRC}"]`);
+      if (existingScript) {
+        existingScript.addEventListener('load', () => resolve(), { once: true });
+        existingScript.addEventListener('error', () => reject(new Error('No se pudo cargar ChatKit.')), { once: true });
+
+        if (window.customElements?.get('openai-chatkit')) {
+          resolve();
+        }
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = CHATKIT_SCRIPT_SRC;
+      script.async = true;
+      script.defer = true;
+      script.crossOrigin = 'anonymous';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('No se pudo cargar ChatKit.'));
+      document.head.appendChild(script);
+    });
+
+    return salesChatState.scriptPromise;
+  }
 
   function ensureStorageValue(storage, key, prefix) {
     const storedValue = storage.getItem(key);
@@ -350,6 +387,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function waitForChatKitElement(timeoutMs = 15000) {
+    await ensureChatKitScript();
+
     if (window.customElements?.get('openai-chatkit')) return;
 
     await Promise.race([
@@ -383,19 +422,32 @@ document.addEventListener('DOMContentLoaded', () => {
     return payload.client_secret;
   }
 
+  function invalidateSalesClientSecret() {
+    cachedClientSecret = null;
+    cachedClientSecretAt = 0;
+    clientSecretPromise = null;
+    salesChatState.sessionWarmed = false;
+  }
+
   async function ensureClientSecret(currentClientSecret = null) {
     if (currentClientSecret) {
       cachedClientSecret = currentClientSecret;
+      cachedClientSecretAt = Date.now();
       return currentClientSecret;
     }
 
-    if (cachedClientSecret) {
+    if (cachedClientSecret && (Date.now() - cachedClientSecretAt) < 60000) {
       return cachedClientSecret;
+    }
+
+    if (cachedClientSecret) {
+      invalidateSalesClientSecret();
     }
 
     if (!clientSecretPromise) {
       clientSecretPromise = fetchClientSecret().then((clientSecret) => {
         cachedClientSecret = clientSecret;
+        cachedClientSecretAt = Date.now();
         return clientSecret;
       }).finally(() => {
         clientSecretPromise = null;
@@ -681,6 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let rendered = await waitForSalesChatRender(targetChatElement);
         if (!rendered) {
+          invalidateSalesClientSecret();
           targetChatElement = replaceSalesChatElement();
           await configureSalesChatElement(targetChatElement);
           rendered = await waitForSalesChatRender(targetChatElement, 8500);
@@ -701,6 +754,7 @@ document.addEventListener('DOMContentLoaded', () => {
         status.hidden = true;
       } catch (error) {
         console.error('Error inicializando el chat comercial:', error);
+        invalidateSalesClientSecret();
         trackLandingEvent('sales_chat_failed', {
           message: error.message || 'Error desconocido'
         }, { keepalive: true });
@@ -722,9 +776,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function warmUpChatSession() {
-    if (salesChatState.sessionWarmed) return;
-    salesChatState.sessionWarmed = true;
-    ensureClientSecret().catch((error) => {
+    if (salesChatState.sessionWarmed && cachedClientSecret && (Date.now() - cachedClientSecretAt) < 60000) return;
+    ensureClientSecret().then(() => {
+      salesChatState.sessionWarmed = true;
+    }).catch((error) => {
+      salesChatState.sessionWarmed = false;
       console.warn('No se pudo precalentar la sesión de Laura:', error);
     });
   }
@@ -739,10 +795,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     launcher.addEventListener('pointerenter', onceWarm, { once: true });
     launcher.addEventListener('focus', onceWarm, { once: true });
+    launcher.addEventListener('touchstart', onceWarm, { once: true, passive: true });
   }
 
   function warmUpChatInBackground() {
-    warmUpChatSession();
+    ensureChatKitScript().catch((error) => {
+      console.warn('No se pudo precargar ChatKit para Laura:', error);
+    });
   }
 
   launcher?.addEventListener('click', async () => {
