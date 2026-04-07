@@ -102,11 +102,16 @@ export async function abrirCheckoutSuscripcion({
     return;
   }
 
+  const resolvedPlanId = plan?.id != null ? String(plan.id) : '';
+  if (!hotelId || !resolvedPlanId || !paymentType) {
+    throw new Error('No pudimos identificar el plan para procesar la renovacion.');
+  }
+
   try {
     const { data, error } = await supabase.functions.invoke('billing-create-checkout', {
       body: {
         hotelId,
-        planId: plan.id,
+        planId: resolvedPlanId,
         paymentType,
         billingPeriod,
         currency,

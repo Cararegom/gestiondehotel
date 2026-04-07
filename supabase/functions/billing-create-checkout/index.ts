@@ -48,7 +48,19 @@ function jsonResponse(body: Record<string, unknown>, status = 200, origin: strin
 }
 
 function sanitizeString(value: unknown, maxLength = 140) {
-  return typeof value === 'string' ? value.trim().slice(0, maxLength) : '';
+  if (typeof value === 'string') {
+    return value.trim().slice(0, maxLength);
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value).trim().slice(0, maxLength);
+  }
+
+  if (typeof value === 'bigint') {
+    return value.toString().trim().slice(0, maxLength);
+  }
+
+  return '';
 }
 
 function normalizePeriod(value: unknown) {
@@ -62,6 +74,30 @@ function normalizeCurrency(value: unknown) {
 function normalizePaymentType(value: unknown) {
   const type = sanitizeString(value, 40);
   return ['renew', 'upgrade', 'renew-downgrade'].includes(type) ? type : '';
+}
+
+function paymentTypeToReferenceCode(paymentType: string) {
+  if (paymentType === 'renew-downgrade') return 'rd';
+  if (paymentType === 'upgrade') return 'u';
+  return 'r';
+}
+
+function billingPeriodToReferenceCode(period: string) {
+  return period === 'anual' ? 'a' : 'm';
+}
+
+function buildCheckoutReference({
+  paymentType,
+  billingPeriod,
+  hotelId,
+  planId
+}: {
+  paymentType: string;
+  billingPeriod: string;
+  hotelId: string;
+  planId: string;
+}) {
+  return `gh2-${paymentTypeToReferenceCode(paymentType)}-${billingPeriodToReferenceCode(billingPeriod)}-${hotelId}-${planId}-${Date.now()}`;
 }
 
 function getPositiveSubscriptionPayments(pagos: Array<Record<string, unknown>> = []) {
@@ -162,14 +198,18 @@ function buildSupabaseAdmin() {
 async function createMercadoPagoCheckout({
   amountUSD,
   planName,
+  planId,
   paymentType,
+  billingPeriod,
   hotelId,
   userEmail,
   currentUrl
 }: {
   amountUSD: number;
   planName: string;
+  planId: string;
   paymentType: string;
+  billingPeriod: string;
   hotelId: string;
   userEmail: string;
   currentUrl: string;
@@ -179,7 +219,12 @@ async function createMercadoPagoCheckout({
   }
 
   const unitPrice = Number.parseFloat(amountUSD.toFixed(2));
-  const externalReference = `mp-${paymentType}-${hotelId}-${Date.now()}`;
+  const externalReference = buildCheckoutReference({
+    paymentType,
+    billingPeriod,
+    hotelId,
+    planId
+  });
 
   const response = await fetch('https://api.mercadopago.com/checkout/preferences', {
     method: 'POST',
@@ -200,6 +245,12 @@ async function createMercadoPagoCheckout({
         email: userEmail
       },
       external_reference: externalReference,
+      metadata: {
+        hotel_id: hotelId,
+        plan_id: planId,
+        payment_type: paymentType,
+        billing_period: billingPeriod
+      },
       notification_url: MERCADOPAGO_WEBHOOK_URL,
       back_urls: {
         success: currentUrl,
@@ -226,12 +277,14 @@ function createWompiCheckout({
   amountCOP,
   planId,
   paymentType,
+  billingPeriod,
   hotelId,
   userEmail
 }: {
   amountCOP: number;
   planId: string;
   paymentType: string;
+  billingPeriod: string;
   hotelId: string;
   userEmail: string;
 }) {
@@ -239,7 +292,12 @@ function createWompiCheckout({
     throw new Error('WOMPI_PUBLIC_KEY is not configured.');
   }
 
-  const reference = `${paymentType}-${hotelId}-${planId}-${Date.now()}`;
+  const reference = buildCheckoutReference({
+    paymentType,
+    billingPeriod,
+    hotelId,
+    planId
+  });
   const amountInCents = Math.round(amountCOP * 100);
   const checkoutUrl =
     `https://checkout.wompi.co/p/?public-key=${encodeURIComponent(WOMPI_PUBLIC_KEY)}` +
@@ -291,7 +349,7 @@ Deno.serve(async (req) => {
           .from('hoteles')
           .select('id, nombre, plan, plan_id, estado_suscripcion, trial_inicio, trial_fin, suscripcion_fin, creado_en')
           .eq('id', hotelId)
-          .single(),
+          .maybeSingle(),
         supabaseAdmin.from('planes').select('*'),
         supabaseAdmin.from('pagos').select('monto, plan').eq('hotel_id', hotelId)
       ]);
@@ -319,15 +377,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'No se pudieron cargar los pagos del hotel.' }, 500, origin);
     }
 
-    const selectedPlan = plans.find((plan) => String(plan.id) === planId);
-    if (!selectedPlan) {
-      return jsonResponse({ error: 'Selected plan not found.' }, 404, origin);
-    }
-
     const currentPlan = plans.find((plan) =>
       String(plan.id) === String(hotel.plan_id ?? '') ||
       String(plan.nombre ?? '').trim().toLowerCase() === String(hotel.plan ?? '').trim().toLowerCase()
-    ) ?? selectedPlan;
+    );
+
+    const selectedPlan = plans.find((plan) => String(plan.id) === planId) ?? (
+      paymentType === 'renew' ? currentPlan : null
+    );
+
+    if (!selectedPlan) {
+      return jsonResponse({ error: 'Selected plan not found.' }, 404, origin);
+    }
 
     const promoStatus = getPromoBienvenidaStatus(hotel, Array.isArray(pagos) ? pagos : []);
 
@@ -387,14 +448,19 @@ Deno.serve(async (req) => {
     }
 
     if ((currency === 'USD' && finalUSD <= 0) || (currency === 'COP' && finalCOP <= 0)) {
-      return jsonResponse({ error: 'El monto calculado no es valido para iniciar el pago.' }, 400, origin);
+      const detail = paymentType === 'renew'
+        ? 'El plan actual no tiene un valor de renovacion valido. Verifica el plan del hotel o elige un plan pago.'
+        : 'El monto calculado no es valido para iniciar el pago.';
+      return jsonResponse({ error: detail }, 400, origin);
     }
 
     const checkout = currency === 'USD'
       ? await createMercadoPagoCheckout({
           amountUSD: finalUSD,
           planName: String(selectedPlan.nombre ?? 'Plan'),
+          planId,
           paymentType,
+          billingPeriod,
           hotelId,
           userEmail,
           currentUrl
@@ -403,6 +469,7 @@ Deno.serve(async (req) => {
           amountCOP: finalCOP,
           planId,
           paymentType,
+          billingPeriod,
           hotelId,
           userEmail
         });

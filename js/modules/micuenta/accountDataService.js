@@ -6,6 +6,26 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function resolveEffectiveHotelPlan(hotel) {
+  const pendingStart = hotel?.plan_pendiente_desde ? new Date(hotel.plan_pendiente_desde) : null;
+  const pendingDue = Boolean(
+    hotel?.plan_pendiente &&
+    pendingStart &&
+    !Number.isNaN(pendingStart.getTime()) &&
+    pendingStart <= new Date()
+  );
+
+  if (!pendingDue) {
+    return hotel;
+  }
+
+  return {
+    ...hotel,
+    plan: hotel.plan_pendiente,
+    plan_id: hotel.plan_pendiente_id ?? hotel.plan_id
+  };
+}
+
 function buildReferidosAnalytics(referidos = []) {
   const total = referidos.length;
   const activos = referidos.filter((item) => item.estado === 'activo').length;
@@ -81,16 +101,20 @@ export async function loadMiCuentaData(supabase, user, hotelId) {
   if (cambiosPlanResult.error) throw cambiosPlanResult.error;
 
   const userProfile = userProfileResult.data;
-  const hotel = hotelResult.data;
+  const hotel = resolveEffectiveHotelPlan(hotelResult.data);
   const plans = safeArray(plansResult.data);
   const pagos = safeArray(pagosResult.data);
   const cambiosPlan = safeArray(cambiosPlanResult.data);
   const referidos = safeArray(referidosResult.data);
   const referidosAnalytics = buildReferidosAnalytics(referidos);
 
-  const planActivo = plans.find((plan) =>
-    plan?.nombre?.toLowerCase() === hotel?.plan?.toLowerCase() || plan?.id === hotel?.plan_id
-  );
+  const hotelPlanNombre = String(hotel?.plan ?? '').trim().toLowerCase();
+  const hotelPlanId = hotel?.plan_id != null ? String(hotel.plan_id) : '';
+  const planActivo = plans.find((plan) => {
+    const planNombre = String(plan?.nombre ?? '').trim().toLowerCase();
+    const planId = plan?.id != null ? String(plan.id) : '';
+    return planNombre === hotelPlanNombre || (hotelPlanId && planId === hotelPlanId);
+  });
 
   const promoBienvenida = getPromoBienvenidaStatus(hotel, pagos);
   const { fechaFin, diasRestantes, enGracia } = calcularEstadoDeVencimiento(hotel);

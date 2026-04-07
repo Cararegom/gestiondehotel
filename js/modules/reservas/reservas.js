@@ -1328,6 +1328,7 @@ async function validateAndCalculateBookingLegacy(formData) {
         telefono: formData.telefono.trim() || null,
         cantidad_huespedes: parseInt(formData.cantidad_huespedes),
         habitacion_id: formData.habitacion_id,
+        habitacion_nombre: formData.habitacion_info_dom?.nombre || null,
         fecha_inicio: fechaEntrada.toISOString(),
         fecha_fin: fechaSalida.toISOString(),
         estado: state.isEditMode ? undefined : 'reservada',
@@ -1891,12 +1892,19 @@ async function createBooking(payload) {
             console.error("Error al registrar pagos_reserva", errPagosReserva);
         } else if (turnoId && pagosData && pagosData.length > 0) {
             // Registrar en Caja
+            const { data: habitacionConceptoData } = await state.supabase
+                .from('habitaciones')
+                .select('nombre')
+                .eq('id', datosReserva.habitacion_id)
+                .maybeSingle();
+
+            const habitacionNombreConcepto = habitacionConceptoData?.nombre || datosReserva.habitacion_nombre || datosReserva.habitacion_id || 'N/A';
             const movimientosCaja = pagosData.map(pagoRegistrado => {
                 return {
                     hotel_id: state.hotelId,
                     tipo: 'ingreso',
                     monto: pagoRegistrado.monto,
-                    concepto: `Alquiler Habitacion (${datosPago.tipo_pago === 'completo' ? 'Pago Completo' : 'Abono'}) - Cliente: ${datosReserva.cliente_nombre}`,
+                    concepto: `RESERVA ${habitacionNombreConcepto} (${datosPago.tipo_pago === 'completo' ? 'Pago completo' : 'Abono'}) - Cliente: ${datosReserva.cliente_nombre}`,
                     fecha_movimiento: new Date().toISOString(),
                     metodo_pago_id: pagoRegistrado.metodo_pago_id,
                     usuario_id: state.currentUser.id,

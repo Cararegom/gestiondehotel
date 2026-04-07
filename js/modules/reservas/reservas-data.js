@@ -45,6 +45,7 @@ export async function cargarHabitaciones({
     optionsHtml += `
       <option
         value="${room.id}"
+        data-nombre="${room.nombre || ''}"
         data-precio="${room.precio || 0}"
         data-precio-1="${room.precio_1_persona || 0}"
         data-precio-2="${room.precio_2_personas || 0}"

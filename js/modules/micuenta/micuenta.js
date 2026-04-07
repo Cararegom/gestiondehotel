@@ -41,6 +41,56 @@ function showSnackbar(container, message, type = 'success') {
   snackbarTimeout = setTimeout(() => { snackbar.style.opacity = '0'; }, 3300);
 }
 
+function parseDateSafe(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getBillingCycleSnapshot(hotel, diasRestantes) {
+  const fechaFinCiclo = parseDateSafe(hotel?.suscripcion_fin || hotel?.trial_fin);
+  if (!fechaFinCiclo) {
+    return {
+      fechaInicioCiclo: new Date(),
+      fechaFinCiclo: null,
+      diasCicloSeguro: 30,
+      diasRestantesSeguro: Math.max(0, Number(diasRestantes || 0))
+    };
+  }
+
+  let fechaInicioCiclo = parseDateSafe(hotel?.suscripcion_inicio || hotel?.trial_inicio || hotel?.creado_en);
+  const rangoDiasActual = fechaInicioCiclo
+    ? Math.ceil((fechaFinCiclo.getTime() - fechaInicioCiclo.getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
+
+  if (!fechaInicioCiclo || rangoDiasActual <= 0 || rangoDiasActual > 45) {
+    fechaInicioCiclo = new Date(fechaFinCiclo);
+    fechaInicioCiclo.setDate(fechaInicioCiclo.getDate() - 30);
+  }
+
+  const diasCicloTotal = Math.ceil((fechaFinCiclo.getTime() - fechaInicioCiclo.getTime()) / (1000 * 60 * 60 * 24));
+  return {
+    fechaInicioCiclo,
+    fechaFinCiclo,
+    diasCicloSeguro: Math.max(1, Number.isFinite(diasCicloTotal) ? diasCicloTotal : 30),
+    diasRestantesSeguro: Math.max(0, Number(diasRestantes || 0))
+  };
+}
+
+function buildPlanPendienteNotice(hotel) {
+  const pendingPlan = String(hotel?.plan_pendiente || '').trim();
+  const pendingStart = parseDateSafe(hotel?.plan_pendiente_desde);
+  if (!pendingPlan || !pendingStart || pendingStart <= new Date()) {
+    return '';
+  }
+
+  return `
+    <div class="mt-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+      <b>Cambio programado:</b> tu plan pasara a <b>${pendingPlan}</b> al finalizar el ciclo actual, el ${pendingStart.toLocaleDateString('es-CO')}.
+    </div>
+  `;
+}
+
 // =======================================================================
 // ========================== FUNCIÓN PRINCIPAL (MOUNT) ====================
 // =======================================================================
@@ -148,6 +198,7 @@ export async function mount(container, supabase, user, hotelId) {
             <b>Promo solo para cuentas nuevas:</b> el primer mes ya fue gratis. Tus siguientes ${promoBienvenida.mesesRestantes} mensualidades elegibles pueden salir al ${promoBienvenida.porcentaje}% del valor normal.
           </div>
         ` : ''}
+        ${buildPlanPendienteNotice(hotel)}
         <div class="flex flex-wrap gap-4 mt-6">
           <button class="flex-1 min-w-[180px] group transition bg-gradient-to-br from-blue-600 to-indigo-500 text-white rounded-xl px-5 py-4 shadow-lg hover:shadow-xl hover:scale-[1.04] flex flex-col items-center justify-center font-semibold text-lg" id="btnCambiarCorreo">
             <span class="text-3xl mb-1 transition group-hover:scale-125"><i class="bi bi-envelope-at-fill"></i></span>
@@ -315,10 +366,10 @@ export async function mount(container, supabase, user, hotelId) {
     const modal = container.querySelector('#modalUpgrade');
     
     if (tipo === 'upgrade') {
-        const fechaInicioCiclo = new Date(hotel.suscripcion_inicio || hotel.trial_inicio);
-        const diasCicloTotal = Math.ceil((new Date(hotel.suscripcion_fin || hotel.trial_fin) - fechaInicioCiclo) / (1000 * 60 * 60 * 24));
-        const diasCicloSeguro = Math.max(1, diasCicloTotal);
-        const diasRestantesSeguro = Math.max(0, diasRestantes);
+        const {
+          diasCicloSeguro,
+          diasRestantesSeguro
+        } = getBillingCycleSnapshot(hotel, diasRestantes);
 
         const costoDiarioActualCOP = (planActivo.precio_mensual || 0) / diasCicloSeguro;
         const costoDiarioNuevoCOP = planSeleccionado.precio_mensual / diasCicloSeguro;

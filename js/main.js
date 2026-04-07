@@ -104,6 +104,26 @@ function isWhitelistedSuperadminAccount(user, perfil = null) {
   return perfil?.rol === 'superadmin' || SUPERADMIN_EMAILS.has(email);
 }
 
+function resolveEffectiveHotelPlan(hotel) {
+  const pendingStart = hotel?.plan_pendiente_desde ? new Date(hotel.plan_pendiente_desde) : null;
+  const pendingDue = Boolean(
+    hotel?.plan_pendiente &&
+    pendingStart &&
+    !Number.isNaN(pendingStart.getTime()) &&
+    pendingStart <= new Date()
+  );
+
+  if (!pendingDue) {
+    return hotel;
+  }
+
+  return {
+    ...hotel,
+    plan: hotel.plan_pendiente,
+    plan_id: hotel.plan_pendiente_id ?? hotel.plan_id
+  };
+}
+
 function buildSuperadminPlanDetails() {
   return {
     nombre: 'Superadmin SaaS',
@@ -170,13 +190,13 @@ async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
   try {
     const { data: hotelData, error: hotelError } = await supabaseInstance
       .from('hoteles')
-      .select('id, nombre, plan, estado_suscripcion, suscripcion_fin, trial_fin, gracia_hasta, gracia_motivo, creado_por')
+      .select('id, nombre, plan, plan_id, plan_pendiente, plan_pendiente_id, plan_pendiente_desde, estado_suscripcion, suscripcion_fin, trial_fin, gracia_hasta, gracia_motivo, creado_por')
       .eq('id', hotelId)
       .single();
 
     if (hotelError) throw hotelError;
     if (!hotelData) throw new Error(`Hotel con ID ${hotelId} no encontrado.`);
-    currentActiveHotel = hotelData;
+    currentActiveHotel = resolveEffectiveHotelPlan(hotelData);
 
     if (!currentActiveHotel.plan) {
       console.warn(`Hotel ${currentActiveHotel.id} no tiene un plan ('hoteles.plan') asignado. Usando plan por defecto restringido.`);

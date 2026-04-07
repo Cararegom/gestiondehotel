@@ -42,6 +42,59 @@ export function crearOpcionesNochesConPersonalizada(horarios, maxNoches = 5, fec
 
 }
 
+function getExtensionReferenceDate(fechaFinActual) {
+    const fechaFin = fechaFinActual ? new Date(fechaFinActual) : null;
+    if (fechaFin && !Number.isNaN(fechaFin.getTime())) {
+        return fechaFin;
+    }
+
+    return new Date();
+}
+
+function calcularNuevaFechaFinExtension({ fechaFinActual, noches = 0, minutos = 0, checkoutStr = '12:00' }) {
+    const referencia = getExtensionReferenceDate(fechaFinActual);
+
+    if (Number(noches) > 0) {
+        const fechaSalida = new Date(referencia);
+        const [h, m] = (checkoutStr || '12:00').split(':').map(Number);
+        fechaSalida.setHours(h || 0, m || 0, 0, 0);
+
+        if (referencia.getTime() >= fechaSalida.getTime()) {
+            fechaSalida.setDate(fechaSalida.getDate() + 1);
+        }
+
+        const nochesExtra = Math.max(0, (Number(noches) || 1) - 1);
+        if (nochesExtra > 0) {
+            fechaSalida.setDate(fechaSalida.getDate() + nochesExtra);
+        }
+
+        return fechaSalida;
+    }
+
+    if (Number(minutos) > 0) {
+        return new Date(referencia.getTime() + Number(minutos) * 60 * 1000);
+    }
+
+    return new Date(fechaFinActual || referencia);
+}
+
+function calcularPrecioExtensionNoches(room, cantidadHuespedes, noches) {
+    const nochesCantidad = Math.max(1, Number(noches) || 1);
+    const huespedes = Math.max(1, Number(cantidadHuespedes) || 1);
+    const precioRespaldo = Number(room?.precio) || 0;
+    const precioPorNocheBase = huespedes === 1
+        ? (Number(room?.precio_1_persona) || precioRespaldo || Number(room?.precio_2_personas) || 0)
+        : (Number(room?.precio_2_personas) || precioRespaldo);
+    const adicionalPorPersona = Number(room?.precio_huesped_adicional) || 0;
+
+    let total = precioPorNocheBase * nochesCantidad;
+    if (huespedes > 2) {
+        total += ((huespedes - 2) * adicionalPorPersona) * nochesCantidad;
+    }
+
+    return total;
+}
+
 export function crearOpcionesHoras(tiempos) {
     if (!Array.isArray(tiempos) || tiempos.length === 0) {
         return '<option value="">-- Sin tarifas disponibles --</option>';
@@ -860,7 +913,8 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
         
         metodosPagoExtension.unshift({ id: "mixto", nombre: "Pago Mixto" });
         const tarifaNocheUnicaExt = tiempos.find(t => t.nombre.toLowerCase().includes('noche'));
-        const opcionesNochesExt = crearOpcionesNochesConPersonalizada(horarios, 5, reservaActiva.fecha_fin, tarifaNocheUnicaExt, room);
+        const fechaBaseExtension = getExtensionReferenceDate(reservaActiva.fecha_fin);
+        const opcionesNochesExt = crearOpcionesNochesConPersonalizada(horarios, 5, fechaBaseExtension, tarifaNocheUnicaExt, room);
         const opcionesHorasExt = Array.isArray(tiempos)
   ? tiempos
       .filter(t => Number(t.minutos) > 0 && String(t.tipo_unidad || '').toLowerCase() !== 'noche')
@@ -974,24 +1028,26 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             const valorPrecioLibre = parseFloat(valorPrecioLibreExtEl.value) || 0;
 
             if (nochesSelExt > 0) {
-                let fechaCalculo = new Date(reservaActiva.fecha_fin);
-                fechaCalculo.setDate(fechaCalculo.getDate() + nochesSelExt);
-                const [checkoutH, checkoutM] = horarios.checkout.split(':').map(Number);
-                fechaCalculo.setHours(checkoutH, checkoutM, 0, 0);
-                nuevaFechaFinExt = fechaCalculo;
+                nuevaFechaFinExt = calcularNuevaFechaFinExtension({
+                    fechaFinActual: reservaActiva.fecha_fin,
+                    noches: nochesSelExt,
+                    checkoutStr: horarios.checkout
+                });
                 descExtra = `${nochesSelExt} noche${nochesSelExt > 1 ? 's' : ''}`;
 
                 if (esPrecioLibre) {
                     precioExtra = valorPrecioLibre;
                     descExtra += " (Precio Manual)";
                 } else {
-                    let precioBaseNocheExtension = room.precio || 0;
-                    precioExtra = precioBaseNocheExtension * nochesSelExt;
+                    precioExtra = calcularPrecioExtensionNoches(room, reservaActiva.cantidad_huespedes, nochesSelExt);
                 }
 
             } else if (minutosSelExt > 0) {
-                nuevaFechaFinExt = new Date(new Date(reservaActiva.fecha_fin).getTime() + minutosSelExt * 60 * 1000);
-                const tiempoSelExt = tiempos.find(t => t.minutos === minutosSelExt);
+                nuevaFechaFinExt = calcularNuevaFechaFinExtension({
+                    fechaFinActual: reservaActiva.fecha_fin,
+                    minutos: minutosSelExt
+                });
+                const tiempoSelExt = tiempos.find(t => Number(t.minutos) === minutosSelExt);
                 descExtra = tiempoSelExt?.nombre || formatHorasMin(minutosSelExt);
                 
                 if (esPrecioLibre) {
@@ -1034,22 +1090,26 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             const valorPrecioLibreSubmit = parseFloat(formDataExt.precio_libre_valor) || 0;
 
             if (nochesExtSubmit > 0) {
-                nuevaFechaFinSubmit = new Date(reservaActiva.fecha_fin);
-                nuevaFechaFinSubmit.setDate(nuevaFechaFinSubmit.getDate() + nochesExtSubmit);
-                const [checkoutH, checkoutM] = horarios.checkout.split(':').map(Number);
-                nuevaFechaFinSubmit.setHours(checkoutH, checkoutM, 0, 0);
+                nuevaFechaFinSubmit = calcularNuevaFechaFinExtension({
+                    fechaFinActual: reservaActiva.fecha_fin,
+                    noches: nochesExtSubmit,
+                    checkoutStr: horarios.checkout
+                });
                 descExtraSubmit = `${nochesExtSubmit} noche(s) adicional(es)`;
                 
                 if (esPrecioLibreSubmit) {
                     precioExtraSubmit = valorPrecioLibreSubmit;
                     notasAdicionales = `[EXTENSI\u00d3N MANUAL: ${formatCOP(precioExtraSubmit)}]`;
                 } else {
-                    precioExtraSubmit = (room.precio || 0) * nochesExtSubmit;
+                    precioExtraSubmit = calcularPrecioExtensionNoches(room, reservaActiva.cantidad_huespedes, nochesExtSubmit);
                 }
 
             } else if (minutosExtSubmit > 0) {
-                nuevaFechaFinSubmit = new Date(new Date(reservaActiva.fecha_fin).getTime() + minutosExtSubmit * 60 * 1000);
-                const tiempoSelExt = tiempos.find(t => t.minutos === minutosExtSubmit);
+                nuevaFechaFinSubmit = calcularNuevaFechaFinExtension({
+                    fechaFinActual: reservaActiva.fecha_fin,
+                    minutos: minutosExtSubmit
+                });
+                const tiempoSelExt = tiempos.find(t => Number(t.minutos) === minutosExtSubmit);
                 descExtraSubmit = tiempoSelExt?.nombre || formatHorasMin(minutosExtSubmit);
 
                 if (esPrecioLibreSubmit) {
@@ -1109,9 +1169,30 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             };
 
             const finalizarExtension = async () => {
-                const { data: cronoAct } = await supabase.from('cronometros').select('id').eq('reserva_id', reservaActiva.id).eq('activo', true).limit(1).single();
-                if (cronoAct) {
-                    await supabase.from('cronometros').update({ fecha_fin: nuevaFechaFinSubmit.toISOString() }).eq('id', cronoAct.id);
+                const { data: cronoAct } = await supabase
+                    .from('cronometros')
+                    .select('id')
+                    .eq('reserva_id', reservaActiva.id)
+                    .eq('habitacion_id', room.id)
+                    .eq('activo', true)
+                    .order('id', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+
+                if (cronoAct?.id) {
+                    await supabase
+                        .from('cronometros')
+                        .update({ fecha_fin: nuevaFechaFinSubmit.toISOString(), activo: true })
+                        .eq('id', cronoAct.id);
+                } else {
+                    await supabase.from('cronometros').insert({
+                        hotel_id: hotelId,
+                        reserva_id: reservaActiva.id,
+                        habitacion_id: room.id,
+                        fecha_inicio: reservaActiva.fecha_inicio || new Date().toISOString(),
+                        fecha_fin: nuevaFechaFinSubmit.toISOString(),
+                        activo: true
+                    });
                 }
 
                 await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);

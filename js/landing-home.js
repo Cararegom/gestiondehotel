@@ -2,7 +2,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const SUPABASE_FUNCTIONS_BASE = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1';
   const CHATKIT_SESSION_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/chatkit-session`;
   const LANDING_TRACK_EVENT_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/landing-track-event`;
-  const LANDING_SAVE_LEAD_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/landing-save-lead`;
   const CHATKIT_DOMAIN_KEY = 'domain_pk_69c15fef533c819795015e543f83ff950af2fea964c34d54';
   const LANDING_CHAT_VISITOR_KEY = 'gestionhotel.sales_chat_visitor_id';
   const LANDING_SESSION_KEY = 'gestionhotel.landing_session_id';
@@ -34,8 +33,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const carouselEl = document.getElementById('testimonial-carousel');
   const carouselInner = document.querySelector('#testimonial-carousel .carousel-inner');
+  let testimonialsMounted = false;
 
-  if (carouselEl && carouselInner) {
+  function mountTestimonials() {
+    if (!carouselEl || !carouselInner || testimonialsMounted) return;
+
+    testimonialsMounted = true;
+    const fragment = document.createDocumentFragment();
+
     testimonials.forEach((testimonial, index) => {
       const item = document.createElement('div');
       item.className = `carousel-item ${index === 0 ? 'active' : ''}`;
@@ -56,8 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
           </div>
         </div>
       `;
-      carouselInner.appendChild(item);
+      fragment.appendChild(item);
     });
+
+    carouselInner.appendChild(fragment);
 
     if (window.bootstrap?.Carousel) {
       const testimonialCarousel = new window.bootstrap.Carousel(carouselEl, {
@@ -72,6 +79,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  if (carouselEl && 'IntersectionObserver' in window) {
+    const testimonialsObserver = new IntersectionObserver((entries, observer) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      mountTestimonials();
+      observer.disconnect();
+    }, { rootMargin: '240px 0px' });
+
+    testimonialsObserver.observe(carouselEl);
+  } else {
+    mountTestimonials();
+  }
+
   const planes = {
     lite: { cop: 99000, usd: 25, original_cop: 149000, original_usd: 40 },
     pro: { cop: 149000, usd: 38, original_cop: 229000, original_usd: 60 },
@@ -81,6 +100,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const monedaSwitch = document.getElementById('monedaSwitch');
   const periodoSwitch = document.getElementById('periodoSwitch');
+  const planNodes = Object.fromEntries(
+    Object.keys(planes).map((plan) => [
+      plan,
+      {
+        price: document.getElementById(`price-${plan}`),
+        originalPrice: document.getElementById(`price-original-${plan}`),
+        period: document.getElementById(`period-${plan}`),
+        promoNote: document.getElementById(`promo-note-${plan}`)
+      }
+    ])
+  );
 
   function formatLandingCurrency(value, currency) {
     if (currency === 'USD') {
@@ -126,17 +156,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const displayOriginalPrice = isAnnual ? originalPriceAnnual : originalPriceMonthly;
       const periodText = isAnnual ? '/año' : '/mes';
 
-      document.getElementById(`price-${plan}`).textContent = formatLandingCurrency(displayPrice, currencyCode);
+      const planNode = planNodes[plan];
+      if (!planNode?.price || !planNode?.period) return;
 
-      const originalPriceElement = document.getElementById(`price-original-${plan}`);
+      planNode.price.textContent = formatLandingCurrency(displayPrice, currencyCode);
+
+      const originalPriceElement = planNode.originalPrice;
       if (originalPriceElement) {
         originalPriceElement.textContent = formatLandingCurrency(displayOriginalPrice, currencyCode);
         originalPriceElement.style.display = isAnnual ? '' : 'none';
       }
 
-      document.getElementById(`period-${plan}`).textContent = periodText;
+      planNode.period.textContent = periodText;
 
-      const promoNote = document.getElementById(`promo-note-${plan}`);
+      const promoNote = planNode.promoNote;
       if (promoNote) {
         const regularMonthlyPrice = planes[plan][currency];
         if (isAnnual) {
@@ -149,7 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
           promoNote.innerHTML = `
             <div class="promo-inline-kicker">Mes 1 gratis</div>
             <div class="promo-inline-copy">El precio grande de arriba corresponde al valor promocional de los meses 2 al 4.</div>
-            <div class="promo-inline-footnote">Despues del 3er mes promocional pagas la tarifa regular de ${formatLandingCurrency(regularMonthlyPrice, currencyCode)}/mes.</div>
+            <div class="promo-inline-footnote">Después del 3er mes promocional pagas la tarifa regular de ${formatLandingCurrency(regularMonthlyPrice, currencyCode)}/mes.</div>
           `;
         }
       }
@@ -166,14 +199,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const status = document.getElementById('sales-chat-status');
   const fallback = document.getElementById('sales-chat-fallback');
   const chatElement = document.getElementById('landing-sales-chat');
-  const leadToggle = document.getElementById('sales-chat-lead-toggle');
-  const leadForm = document.getElementById('sales-chat-lead-form');
-  const leadFeedback = document.getElementById('sales-chat-lead-feedback');
 
   const salesChatState = {
     initialized: false,
     initializing: false,
-    customizationObserver: null
+    customizationObserver: null,
+    initPromise: null,
+    sessionWarmed: false,
+    widgetWarmIntentBound: false
   };
   let cachedClientSecret = null;
   let clientSecretPromise = null;
@@ -243,22 +276,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { keepalive }).catch((error) => {
       console.warn(`No se pudo registrar el evento ${eventName}:`, error);
     });
-  }
-
-  function setLeadFeedback(message, isError = false) {
-    if (!leadFeedback) return;
-    leadFeedback.hidden = !message;
-    leadFeedback.textContent = message || '';
-    leadFeedback.className = `sales-chat-lead-feedback ${isError ? 'is-error' : 'is-success'}`;
-  }
-
-  function setLeadFormExpanded(isExpanded) {
-    if (!leadForm || !leadToggle) return;
-    leadForm.hidden = !isExpanded;
-    leadToggle.setAttribute('aria-expanded', String(isExpanded));
-    leadToggle.textContent = isExpanded
-      ? 'Ocultar formulario de contacto'
-      : 'Quiero que me contacten';
   }
 
   function bindLandingConversionTracking() {
@@ -490,7 +507,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function initializeSalesChat({ silent = false } = {}) {
-    if (!chatElement || salesChatState.initialized || salesChatState.initializing) return;
+    if (!chatElement) return;
+    if (salesChatState.initialized) {
+      status.hidden = true;
+      fallback.hidden = true;
+      return;
+    }
+    if (salesChatState.initPromise) {
+      if (!silent) {
+        fallback.hidden = true;
+        status.hidden = false;
+        status.textContent = 'Conectando con Laura...';
+      }
+      return salesChatState.initPromise;
+    }
 
     salesChatState.initializing = true;
     fallback.hidden = true;
@@ -500,71 +530,111 @@ document.addEventListener('DOMContentLoaded', () => {
       status.textContent = 'Conectando con Laura...';
     }
 
-    try {
-      await waitForChatKitElement();
-      const apiOptions = {
-        async getClientSecret(currentClientSecret) {
-          return ensureClientSecret(currentClientSecret);
-        }
-      };
-
-      if (['gestiondehotel.com', 'www.gestiondehotel.com'].includes(window.location.hostname)) {
-        apiOptions.domainKey = CHATKIT_DOMAIN_KEY;
-      }
-
-      await chatElement.setOptions({
-        api: apiOptions,
-        frameTitle: 'Chat con Laura',
-        header: {
-          title: {
-            text: 'Laura'
+    salesChatState.initPromise = (async () => {
+      try {
+        await waitForChatKitElement();
+        const apiOptions = {
+          async getClientSecret(currentClientSecret) {
+            return ensureClientSecret(currentClientSecret);
           }
-        },
-        startScreen: {
-          greeting: '¿Que quieres resolver hoy?',
-          prompts: [
-            {
-              label: 'Como funciona la prueba gratis',
-              prompt: 'Explicame como funciona la prueba gratis y que pasa despues del primer mes.'
-            },
-            {
-              label: 'Que plan me conviene',
-              prompt: 'Quiero saber que plan me conviene segun la cantidad de habitaciones y lo que necesito operar.'
-            },
-            {
-              label: 'Cuanto pagaria despues',
-              prompt: 'Quiero entender cuanto pagaria despues del mes gratis y como funciona la promocion de los 3 meses al 50%.'
-            },
-            {
-              label: 'Si sirve para mi hotel',
-              prompt: 'Quiero saber si este sistema realmente se adapta a mi hotel y que problemas me ayudaria a resolver antes de comprar.'
-            }
-          ]
-        },
-        composer: {
-          placeholder: 'Escribe tu mensaje a Laura'
-        }
-      });
+        };
 
-      salesChatState.initialized = true;
-      startChatKitCustomization();
-      trackLandingEvent('sales_chat_ready', {
-        source: 'chatkit',
-        prompts: 4
-      }, { keepalive: true });
-      status.hidden = true;
-    } catch (error) {
-      console.error('Error inicializando el chat comercial:', error);
-      trackLandingEvent('sales_chat_failed', {
-        message: error.message || 'Error desconocido'
-      }, { keepalive: true });
-      if (!silent) {
+        if (['gestiondehotel.com', 'www.gestiondehotel.com'].includes(window.location.hostname)) {
+          apiOptions.domainKey = CHATKIT_DOMAIN_KEY;
+        }
+
+        await chatElement.setOptions({
+          api: apiOptions,
+          frameTitle: 'Chat con Laura',
+          header: {
+            title: {
+              text: 'Laura'
+            }
+          },
+          startScreen: {
+            greeting: '¿Qué quieres resolver hoy?',
+            prompts: [
+              {
+                label: 'Prueba gratis',
+                prompt: 'Explicame como funciona la prueba gratis y que pasa despues del primer mes.'
+              },
+              {
+                label: 'Qué plan me conviene',
+                prompt: 'Quiero saber que plan me conviene segun la cantidad de habitaciones y lo que necesito operar.'
+              },
+              {
+                label: 'Cuánto pago después',
+                prompt: 'Quiero entender cuanto pagaria despues del mes gratis y como funciona la promocion de los 3 meses al 50%.'
+              },
+              {
+                label: 'Pagos internacionales',
+                prompt: 'Quiero saber si puedo contratar desde mi pais y como se veria el cobro internacional.'
+              }
+            ]
+          },
+          composer: {
+            placeholder: 'Escribe tu mensaje a Laura'
+          }
+        });
+
+        salesChatState.initialized = true;
+        startChatKitCustomization();
+        trackLandingEvent('sales_chat_ready', {
+          source: 'chatkit',
+          prompts: 4
+        }, { keepalive: true });
         status.hidden = true;
-        fallback.hidden = false;
+      } catch (error) {
+        console.error('Error inicializando el chat comercial:', error);
+        trackLandingEvent('sales_chat_failed', {
+          message: error.message || 'Error desconocido'
+        }, { keepalive: true });
+        if (!silent) {
+          status.hidden = true;
+          fallback.hidden = false;
+        }
+      } finally {
+        salesChatState.initializing = false;
+        salesChatState.initPromise = null;
       }
-    } finally {
-      salesChatState.initializing = false;
-    }
+    })();
+
+    return salesChatState.initPromise;
+  }
+
+  function warmUpChatSession() {
+    if (salesChatState.sessionWarmed) return;
+    salesChatState.sessionWarmed = true;
+    ensureClientSecret().catch((error) => {
+      console.warn('No se pudo precalentar la sesión de Laura:', error);
+    });
+  }
+
+  function warmUpChatWidgetOnIntent() {
+    initializeSalesChat({ silent: true }).catch((error) => {
+      console.warn('No se pudo precargar el widget de Laura:', error);
+    });
+  }
+
+  function bindSalesChatIntentWarmup() {
+    if (!launcher || salesChatState.widgetWarmIntentBound) return;
+    salesChatState.widgetWarmIntentBound = true;
+
+    const onceWarm = () => {
+      warmUpChatSession();
+      warmUpChatWidgetOnIntent();
+    };
+
+    launcher.addEventListener('pointerenter', onceWarm, { once: true });
+    launcher.addEventListener('focus', onceWarm, { once: true });
+    launcher.addEventListener('touchstart', onceWarm, { once: true, passive: true });
+  }
+
+  function warmUpChatInBackground() {
+    warmUpChatSession();
+    window.setTimeout(() => {
+      warmUpChatWidgetOnIntent();
+    }, 120);
   }
 
   launcher?.addEventListener('click', async () => {
@@ -586,80 +656,6 @@ document.addEventListener('DOMContentLoaded', () => {
     closeSalesChat();
   });
 
-  leadToggle?.addEventListener('click', () => {
-    const nextExpandedState = leadForm?.hidden ?? true;
-    setLeadFormExpanded(nextExpandedState);
-    if (nextExpandedState) {
-      trackLandingEvent('sales_chat_lead_form_opened', { source: 'chat_panel' }, { keepalive: true });
-    }
-  });
-
-  leadForm?.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const submitButton = leadForm.querySelector('button[type="submit"]');
-    if (!submitButton) return;
-
-    const fullName = leadForm.elements.full_name?.value?.trim() || '';
-    const businessName = leadForm.elements.business_name?.value?.trim() || '';
-    const email = leadForm.elements.email?.value?.trim() || '';
-    const whatsapp = leadForm.elements.whatsapp?.value?.trim() || '';
-    const country = leadForm.elements.country?.value?.trim() || '';
-    const roomCount = leadForm.elements.room_count?.value || '';
-    const notes = leadForm.elements.notes?.value?.trim() || '';
-
-    if (!email && !whatsapp) {
-      setLeadFeedback('Comparte al menos un correo o WhatsApp para poder contactarte.', true);
-      return;
-    }
-
-    submitButton.disabled = true;
-    submitButton.textContent = 'Guardando...';
-    setLeadFeedback('');
-
-    try {
-      const response = await postLandingPayload(LANDING_SAVE_LEAD_ENDPOINT, {
-        source: 'chatbot_comercial',
-        visitorId: getLandingVisitorId(),
-        sessionId: getLandingSessionId(),
-        fullName,
-        businessName,
-        email,
-        whatsapp,
-        country,
-        roomCount: roomCount ? Number(roomCount) : null,
-        interest: 'contacto_comercial',
-        pagePath: `${window.location.pathname}${window.location.hash || ''}`,
-        referrer: document.referrer || '',
-        notes,
-        metadata: {
-          channel: 'chat_panel',
-          panel_open: !(panel?.hidden ?? true)
-        },
-        ...getFirstTouchUtm()
-      });
-
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || 'No fue posible guardar tu contacto.');
-      }
-
-      setLeadFeedback('Perfecto. Ya guardamos tus datos para que el equipo comercial te contacte.', false);
-      trackLandingEvent('sales_chat_lead_saved', {
-        has_email: Boolean(email),
-        has_whatsapp: Boolean(whatsapp),
-        room_count: roomCount ? Number(roomCount) : null
-      }, { keepalive: true });
-      leadForm.reset();
-      setLeadFormExpanded(false);
-    } catch (error) {
-      console.error('Error guardando lead comercial:', error);
-      setLeadFeedback(error.message || 'No pudimos guardar tu contacto.', true);
-    } finally {
-      submitButton.disabled = false;
-      submitButton.textContent = 'Quiero que me contacten';
-    }
-  });
-
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && panel && !panel.hidden) {
       trackLandingEvent('sales_chat_closed', { origin: 'escape' }, { keepalive: true });
@@ -667,21 +663,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  const warmUpChat = () => {
-    ensureClientSecret().catch((error) => {
-      console.warn('No se pudo precalentar la sesion de Laura:', error);
-    });
-    initializeSalesChat({ silent: true }).catch((error) => {
-      console.warn('No se pudo precargar el widget de Laura:', error);
-    });
-  };
+  bindSalesChatIntentWarmup();
 
   if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(() => warmUpChat(), { timeout: 3000 });
+    window.requestIdleCallback(() => {
+      warmUpChatInBackground();
+    }, { timeout: 1200 });
   } else {
-    window.setTimeout(warmUpChat, 1200);
+    window.setTimeout(() => {
+      warmUpChatInBackground();
+    }, 450);
   }
 
   bindLandingConversionTracking();
-  setLeadFormExpanded(false);
 });

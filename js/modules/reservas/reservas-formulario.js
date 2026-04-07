@@ -19,6 +19,7 @@ export function gatherReservaFormData(ui) {
         if (selectedOption.value) {
             habitacionInfoDOM = {
                 id: selectedOption.value,
+                nombre: selectedOption.getAttribute('data-nombre') || selectedOption.textContent?.split('(')[0]?.trim() || '',
                 precio_general: parseFloat(selectedOption.getAttribute('data-precio') || '0'),
                 precio_1_persona: parseFloat(selectedOption.getAttribute('data-precio-1') || '0'),
                 precio_2_personas: parseFloat(selectedOption.getAttribute('data-precio-2') || '0'),
