@@ -1,4 +1,6 @@
 const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+const OPENAI_ORGANIZATION_ID = Deno.env.get('OPENAI_ORGANIZATION_ID') ?? Deno.env.get('OPENAI_ORG_ID');
+const OPENAI_PROJECT_ID = Deno.env.get('OPENAI_PROJECT_ID');
 const OPENAI_WORKFLOW_ID =
   Deno.env.get('OPENAI_WORKFLOW_ID') ?? 'wf_69b97a86e2f4819087d103eaeba5e56c0bebc52a8ae89a9c';
 const OPENAI_SUPPORT_WORKFLOW_ID =
@@ -85,7 +87,9 @@ Deno.serve(async (req) => {
       headers: {
         Authorization: `Bearer ${OPENAI_API_KEY}`,
         'Content-Type': 'application/json',
-        'OpenAI-Beta': 'chatkit_beta=v1'
+        'OpenAI-Beta': 'chatkit_beta=v1',
+        ...(OPENAI_ORGANIZATION_ID ? { 'OpenAI-Organization': OPENAI_ORGANIZATION_ID } : {}),
+        ...(OPENAI_PROJECT_ID ? { 'OpenAI-Project': OPENAI_PROJECT_ID } : {})
       },
       body: JSON.stringify({
         workflow: {
