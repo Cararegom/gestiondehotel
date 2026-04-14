@@ -26,6 +26,7 @@ import {
 } from './caja-turnos.js';
 import {
   calcularTotalesSistemaCierre,
+  construirResumenOperativoCierre,
   enviarReporteCierreCaja,
   generarHTMLReporteCierre,
   mostrarResumenCorteDeCaja as mostrarResumenCorteDeCajaFlow,
@@ -120,6 +121,7 @@ async function cerrarTurno(turnoExterno = null, usuarioDelTurnoExterno = null, v
     setTurnoEnSupervision,
     procesarMovimientosParaReporte,
     calcularTotalesSistemaCierre,
+    construirResumenOperativoCierre,
     generarHTMLReporteCierre,
     enviarReporteCierreCaja: ({ asunto, htmlReporte }) => enviarReporteCierreCaja({
       asunto,

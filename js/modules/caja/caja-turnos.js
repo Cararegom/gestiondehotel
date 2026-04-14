@@ -196,6 +196,7 @@ export async function cerrarTurnoFlow({
   setTurnoEnSupervision,
   procesarMovimientosParaReporte,
   calcularTotalesSistemaCierre,
+  construirResumenOperativoCierre,
   generarHTMLReporteCierre,
   enviarReporteCierreCaja,
   sortMovementsByDate
@@ -279,6 +280,76 @@ export async function cerrarTurnoFlow({
     const movimientosOrdenados = sortMovementsByDate(movimientos, true);
     const reporte = procesarMovimientosParaReporte(movimientos);
     const { balanceFinal: balanceFinalEnCaja } = calcularTotalesSistemaCierre(reporte, metodosDePago);
+    let resumenOperativo = null;
+
+    try {
+      const [
+        { data: ventasTiendaTurno, error: ventasTiendaError },
+        { data: ventasRestauranteTurno, error: ventasRestauranteError },
+        { data: serviciosReservaTurno, error: serviciosReservaError }
+      ] = await Promise.all([
+        supabase
+          .from('ventas_tienda')
+          .select('id, total_venta, fecha, creado_en')
+          .eq('hotel_id', currentHotelId)
+          .eq('usuario_id', usuarioDelTurnoId)
+          .gte('creado_en', fechaAperturaISO)
+          .lte('creado_en', fechaCierreISO),
+        supabase
+          .from('ventas_restaurante')
+          .select('id, monto_total, total_venta, fecha_venta, creado_en')
+          .eq('hotel_id', currentHotelId)
+          .eq('usuario_id', usuarioDelTurnoId)
+          .gte('creado_en', fechaAperturaISO)
+          .lte('creado_en', fechaCierreISO),
+        supabase
+          .from('servicios_x_reserva')
+          .select('id, cantidad, precio_cobrado, descripcion_manual, creado_en')
+          .eq('hotel_id', currentHotelId)
+          .gte('creado_en', fechaAperturaISO)
+          .lte('creado_en', fechaCierreISO)
+      ]);
+
+      if (ventasTiendaError) throw ventasTiendaError;
+      if (ventasRestauranteError) throw ventasRestauranteError;
+      if (serviciosReservaError) throw serviciosReservaError;
+
+      const ventaTiendaIds = (ventasTiendaTurno || []).map((item) => item.id).filter(Boolean);
+      const ventasRestauranteIds = (ventasRestauranteTurno || []).map((item) => item.id).filter(Boolean);
+
+      const [
+        { data: detallesVentasTiendaTurno, error: detallesTiendaError },
+        { data: itemsVentasRestauranteTurno, error: itemsRestauranteError }
+      ] = await Promise.all([
+        ventaTiendaIds.length
+          ? supabase
+            .from('detalle_ventas_tienda')
+            .select('venta_id, cantidad, subtotal')
+            .in('venta_id', ventaTiendaIds)
+          : Promise.resolve({ data: [], error: null }),
+        ventasRestauranteIds.length
+          ? supabase
+            .from('ventas_restaurante_items')
+            .select('venta_id, cantidad, subtotal')
+            .in('venta_id', ventasRestauranteIds)
+          : Promise.resolve({ data: [], error: null })
+      ]);
+
+      if (detallesTiendaError) throw detallesTiendaError;
+      if (itemsRestauranteError) throw itemsRestauranteError;
+
+      resumenOperativo = construirResumenOperativoCierre({
+        movimientos: movimientosOrdenados || [],
+        reporte,
+        ventasTienda: ventasTiendaTurno || [],
+        detallesVentasTienda: detallesVentasTiendaTurno || [],
+        ventasRestaurante: ventasRestauranteTurno || [],
+        itemsVentasRestaurante: itemsVentasRestauranteTurno || [],
+        serviciosReserva: serviciosReservaTurno || []
+      });
+    } catch (resumenError) {
+      console.warn('[Caja] No se pudo construir el resumen operativo del cierre.', resumenError);
+    }
 
     const fechaCierreLocal = new Date(fechaCierreISO).toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
     const usuarioNombre = usuarioDelTurno?.nombre || usuarioDelTurno?.email || 'Sistema';
@@ -299,7 +370,8 @@ export async function cerrarTurnoFlow({
       logPrestamos || [],
       stockAmenidades || [],
       stockLenceria || [],
-      valoresReales
+      valoresReales,
+      resumenOperativo
     );
 
     const emailResult = await enviarReporteCierreCaja({

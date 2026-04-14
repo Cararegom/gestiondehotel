@@ -103,6 +103,87 @@ export function calcularTotalesSistemaCierre(reporte, metodosDePago) {
   };
 }
 
+function extraerHabitacionDesdeConcepto(concepto = '') {
+  const texto = normalizeLegacyText(concepto || '');
+  const matchCompleto = texto.match(/(habitaci[oó]n\s+[a-z0-9-]+)/i);
+  if (matchCompleto?.[1]) {
+    return matchCompleto[1]
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^habitaci[oó]n/i, 'Habitación');
+  }
+
+  const matchCorto = texto.match(/hab\.\s*([a-z0-9-]+)/i);
+  if (matchCorto?.[1]) {
+    return `Habitación ${matchCorto[1].trim()}`;
+  }
+
+  return '';
+}
+
+export function construirResumenOperativoCierre({
+  movimientos = [],
+  reporte = null,
+  ventasTienda = [],
+  detallesVentasTienda = [],
+  ventasRestaurante = [],
+  itemsVentasRestaurante = [],
+  serviciosReserva = []
+} = {}) {
+  const movimientosList = Array.isArray(movimientos) ? movimientos : [];
+  const reporteSeguro = reporte || procesarMovimientosParaReporte(movimientosList);
+  const habitacionesDetectadas = new Set();
+
+  movimientosList.forEach((movimiento) => {
+    if (movimiento?.tipo !== 'ingreso') return;
+
+    const concepto = normalizeLegacyText(movimiento?.concepto || '');
+    if (!/habitaci|alquiler|reserva|extensi/i.test(concepto)) return;
+
+    const habitacion = extraerHabitacionDesdeConcepto(concepto);
+    if (habitacion) habitacionesDetectadas.add(habitacion);
+  });
+
+  const tiendaUnidades = (Array.isArray(detallesVentasTienda) ? detallesVentasTienda : []).reduce(
+    (acc, item) => acc + (Number(item?.cantidad) || 0),
+    0
+  );
+  const restauranteUnidades = (Array.isArray(itemsVentasRestaurante) ? itemsVentasRestaurante : []).reduce(
+    (acc, item) => acc + (Number(item?.cantidad) || 0),
+    0
+  );
+
+  const serviciosValidos = (Array.isArray(serviciosReserva) ? serviciosReserva : []).filter((item) => {
+    const descripcion = normalizeLegacyText(item?.descripcion_manual || '');
+    return !/descuento/i.test(descripcion);
+  });
+
+  const serviciosUnidades = serviciosValidos.reduce((acc, item) => acc + (Number(item?.cantidad) || 1), 0);
+  const serviciosTotal = serviciosValidos.reduce((acc, item) => acc + (Number(item?.precio_cobrado) || 0), 0);
+
+  const metodosUsados = new Set(
+    movimientosList
+      .map((movimiento) => normalizeLegacyText(movimiento?.metodos_pago?.nombre || ''))
+      .filter(Boolean)
+  );
+
+  return {
+    habitacionesAlquiladas: habitacionesDetectadas.size || Number(reporteSeguro?.habitaciones?.ventas || 0),
+    habitacionesCobros: Number(reporteSeguro?.habitaciones?.ventas || 0),
+    tiendaVentas: Array.isArray(ventasTienda) ? ventasTienda.length : Number(reporteSeguro?.tienda?.ventas || 0),
+    tiendaUnidades,
+    tiendaIngresos: (Array.isArray(ventasTienda) ? ventasTienda : []).reduce((acc, item) => acc + (Number(item?.total_venta) || 0), 0),
+    restauranteVentas: Array.isArray(ventasRestaurante) ? ventasRestaurante.length : Number(reporteSeguro?.cocina?.ventas || 0),
+    restauranteUnidades,
+    restauranteIngresos: (Array.isArray(ventasRestaurante) ? ventasRestaurante : []).reduce((acc, item) => acc + (Number(item?.monto_total ?? item?.total_venta) || 0), 0),
+    serviciosUnidades,
+    serviciosIngresos: serviciosTotal,
+    ingresosRegistrados: movimientosList.filter((movimiento) => movimiento?.tipo === 'ingreso').length,
+    egresosRegistrados: movimientosList.filter((movimiento) => movimiento?.tipo === 'egreso').length,
+    metodosUsados: metodosUsados.size
+  };
+}
+
 export function renderizarModalArqueo(metodosDePago, onConfirm) {
   const metodoEfectivo = metodosDePago.find((metodo) => esMetodoEfectivo(metodo.nombre));
   const idEfectivo = metodoEfectivo ? metodoEfectivo.id : null;
@@ -591,7 +672,8 @@ export function generarHTMLReporteCierre(
   movsPrestamos,
   stockAmenidades,
   stockLenceria,
-  valoresReales = null
+  valoresReales = null,
+  resumenOperativo = null
 ) {
   const {
     totalesPorMetodo,
@@ -601,6 +683,10 @@ export function generarHTMLReporteCierre(
   } = calcularTotalesSistemaCierre(reporte, metodosDePago);
   const balanceOperativo = totalIngresos - totalGastos;
   const saldoEsperadoEnCaja = balanceFinal;
+  const resumenOperativoSeguro = resumenOperativo || construirResumenOperativoCierre({
+    movimientos: movsCaja,
+    reporte
+  });
 
   let alertaDescuadreHtml = '';
   if (valoresReales) {
@@ -613,85 +699,93 @@ export function generarHTMLReporteCierre(
 
       if (Math.abs(dif) < 1) return '';
 
-      const color = dif < 0 ? 'red' : 'blue';
+      const color = dif < 0 ? '#dc2626' : '#2563eb';
       const signo = dif > 0 ? '+' : '';
       return `<tr>
-        <td style="padding:5px; border-bottom:1px solid #ddd;">${metodo.nombre}</td>
-        <td style="padding:5px; border-bottom:1px solid #ddd; text-align:right;">${formatCurrency(sistema)}</td>
-        <td style="padding:5px; border-bottom:1px solid #ddd; text-align:right;">${formatCurrency(real)}</td>
-        <td style="padding:5px; border-bottom:1px solid #ddd; text-align:right; color:${color}; font-weight:bold;">${signo}${formatCurrency(dif)}</td>
+        <td style="padding:8px; border-bottom:1px solid #e5e7eb; white-space:nowrap;">${metodo.nombre}</td>
+        <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; white-space:nowrap;">${formatCurrency(sistema)}</td>
+        <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; white-space:nowrap;">${formatCurrency(real)}</td>
+        <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; color:${color}; font-weight:bold; white-space:nowrap;">${signo}${formatCurrency(dif)}</td>
       </tr>`;
     }).join('');
 
     const diferenciaTotal = totalDeclarado - saldoEsperadoEnCaja;
     if (Math.abs(diferenciaTotal) > 1 || filasDescuadre.trim() !== '') {
       const tituloEstado = diferenciaTotal < 0 ? 'DESCUADRE: FALTANTE DE DINERO' : (diferenciaTotal > 0 ? 'DESCUADRE: SOBRANTE DE DINERO' : 'DETALLE DE DIFERENCIAS');
-      const colorFondo = diferenciaTotal < 0 ? '#fee2e2' : '#dbeafe';
+      const colorFondo = diferenciaTotal < 0 ? '#fef2f2' : '#eff6ff';
+      const colorBorde = diferenciaTotal < 0 ? '#f87171' : '#60a5fa';
       const colorTexto = diferenciaTotal < 0 ? '#991b1b' : '#1e40af';
 
       alertaDescuadreHtml = `
-        <div style="background-color: ${colorFondo}; border: 2px dashed ${colorTexto}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-          <h3 style="color: ${colorTexto}; margin-top: 0; text-align: center;">${tituloEstado}</h3>
-          <p style="text-align:center; font-size:16px;">
-            El saldo esperado en caja era <b>${formatCurrency(saldoEsperadoEnCaja)}</b>, pero el cajero declaro tener <b>${formatCurrency(totalDeclarado)}</b>.
+        <div style="background-color: ${colorFondo}; border: 2px dashed ${colorBorde}; padding: 20px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
+          <h3 style="color: ${colorTexto}; margin-top: 0; text-align: center; font-size: 18px;">${tituloEstado}</h3>
+          <p style="text-align:center; font-size:15px; color: ${colorTexto}; margin-bottom: 16px;">
+            Saldo esperado: <strong style="font-size: 16px;">${formatCurrency(saldoEsperadoEnCaja)}</strong><br>
+            Cajero declaró: <strong style="font-size: 16px;">${formatCurrency(totalDeclarado)}</strong>
           </p>
-          <div style="text-align:center; font-size:20px; font-weight:bold; color:${colorTexto}; margin-bottom:10px;">
-            Diferencia Total: ${diferenciaTotal > 0 ? '+' : ''}${formatCurrency(diferenciaTotal)}
+          <div style="text-align:center; font-size:22px; font-weight:bold; color:${colorTexto}; margin-bottom:16px; padding: 10px; background: rgba(255,255,255,0.5); border-radius: 8px;">
+            Diferencia: ${diferenciaTotal > 0 ? '+' : ''}${formatCurrency(diferenciaTotal)}
           </div>
-          <table style="width:100%; font-size:13px; background:white; border-collapse:collapse;">
+          <div style="overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius: 8px; border: 1px solid #e5e7eb;">
+          <table style="width:100%; font-size:13px; background:white; border-collapse:collapse; text-align: left;">
             <thead>
-              <tr style="background:#f3f4f6; color:#555;">
-                <th style="padding:5px; text-align:left;">Metodo</th>
-                <th style="padding:5px; text-align:right;">Sistema (Esperado)</th>
-                <th style="padding:5px; text-align:right;">Real (Declarado)</th>
-                <th style="padding:5px; text-align:right;">Diferencia</th>
+              <tr style="background:#f8fafc; color:#475569; font-size: 11px; text-transform: uppercase;">
+                <th style="padding:10px 8px; border-bottom: 2px solid #e5e7eb; white-space:nowrap;">Método</th>
+                <th style="padding:10px 8px; border-bottom: 2px solid #e5e7eb; text-align:right; white-space:nowrap;">Esperado</th>
+                <th style="padding:10px 8px; border-bottom: 2px solid #e5e7eb; text-align:right; white-space:nowrap;">Real</th>
+                <th style="padding:10px 8px; border-bottom: 2px solid #e5e7eb; text-align:right; white-space:nowrap;">Diferencia</th>
               </tr>
             </thead>
             <tbody>${filasDescuadre}</tbody>
           </table>
+          </div>
         </div>`;
     }
   }
 
   const styles = {
     body: 'font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #1f2937; background-color: #eef3f8; margin: 0; padding: 12px;',
-    container: 'max-width: 640px; width: 100%; margin: 0 auto; background-color: #ffffff; border: 1px solid #dbe4ee; border-radius: 18px; overflow: hidden; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);',
-    hero: 'background-color: #0f172a; padding: 24px 18px 20px; color: #ffffff;',
-    heroEyebrow: 'font-size: 11px; letter-spacing: 0.28em; text-transform: uppercase; color: #93c5fd; margin-bottom: 10px; font-weight: bold;',
+    container: 'max-width: 800px; width: 100%; margin: 0 auto; background-color: #ffffff; border: 1px solid #dbe4ee; border-radius: 18px; box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);',
+    hero: 'background-color: #0f172a; padding: 22px 16px 18px; color: #ffffff;',
+    heroEyebrow: 'font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: #93c5fd; margin-bottom: 10px; font-weight: bold;',
     heroTitle: 'font-size: 24px; line-height: 1.15; margin: 0; font-weight: bold;',
     heroSubtitle: 'font-size: 14px; color: #cbd5e1; margin: 8px 0 0;',
-    metaTable: 'width: 100%; margin-top: 18px; border-collapse: collapse;',
+    metaTable: 'width: 100%; margin-top: 16px; border-collapse: collapse;',
     metaLabel: 'font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: #93c5fd;',
     metaValue: 'font-size: 14px; color: #ffffff; font-weight: bold;',
-    section: 'padding: 18px 16px 24px;',
-    headerDetalle: 'color: #0f172a; font-size: 18px; text-align: left; margin: 34px 0 14px; padding: 0 0 10px; border-bottom: 2px solid #e5e7eb;',
-    table: 'width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 18px; font-size: 11px; border: 1px solid #e5e7eb; overflow: hidden;',
-    th: 'border: 1px solid #e5e7eb; padding: 10px 6px; text-align: left; background-color: #f8fafc; color: #334155; font-weight: 700; word-break: break-word;',
-    td: 'border: 1px solid #e5e7eb; padding: 9px 6px; text-align: right; background-color: #ffffff; word-break: break-word;',
-    tdConcepto: 'border: 1px solid #e5e7eb; padding: 9px 6px; text-align: left; font-weight: 500; background-color: #ffffff; word-break: break-word;',
-    tdTotal: 'border: 1px solid #dbeafe; padding: 9px 6px; text-align: right; font-weight: bold; background-color: #f8fbff; word-break: break-word;',
-    tdTotalConcepto: 'border: 1px solid #dbeafe; padding: 9px 6px; text-align: left; font-weight: bold; background-color: #f8fbff; word-break: break-word;',
-    summaryTable: 'width: 100%; border-collapse: separate; border-spacing: 10px; margin: 20px 0 0;',
-    summaryCell: 'background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 18px;',
-    summaryLabel: 'font-size: 11px; text-transform: uppercase; letter-spacing: 0.16em; color: #64748b; margin-bottom: 10px; font-weight: bold;',
-    summaryValue: 'font-size: 24px; line-height: 1.1; color: #0f172a; font-weight: bold;',
-    summaryHint: 'font-size: 12px; color: #64748b; margin-top: 6px;',
-    infoBox: 'background:#f8fafc; border:1px solid #dbeafe; color:#1e3a8a; padding:14px 16px; border-radius:12px; margin:22px 0 6px; font-size:13px; line-height:1.6;',
-    footer: 'text-align: center; font-size: 12px; color: #94a3b8; margin-top: 30px; padding: 18px 0 0; border-top: 1px solid #e5e7eb;'
+    section: 'padding: 16px 14px 24px;',
+    headerDetalle: 'color: #0f172a; font-size: 18px; text-align: left; margin: 28px 0 12px; padding: 0 0 10px; border-bottom: 2px solid #e5e7eb;',
+    legacyTableWrap: 'margin-top: 18px; border-radius: 8px; overflow: hidden; background-color: #ffffff;',
+    legacyTable: 'width: 100%; border-collapse: collapse; font-size: 13px;',
+    legacyTh: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; background-color: #f1f3f5; font-weight: 600; color:#212529;',
+    legacyTd: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: right; color:#333; white-space:nowrap;',
+    legacyTdConcepto: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; font-weight: 500; color:#212529;',
+    legacyTdTotal: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: right; font-weight: bold; background-color: #e9ecef; color:#212529; white-space:nowrap;',
+    legacyTdTotalConcepto: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; font-weight: bold; background-color: #e9ecef; color:#212529;',
+    compactTable: 'width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px;',
+    table: 'width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px;',
+    th: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; background-color: #f1f3f5; font-weight: 600; color:#212529;',
+    td: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: right; color:#333;',
+    tdLeft: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; color:#333;',
+    tdConcepto: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: left; font-weight: 500; color:#212529;',
+    tdMuted: 'display:block; font-size:11px; color:#6c757d; margin-top:4px; line-height:1.45;',
+    tdStrong: 'display:block; font-weight:bold; color:#212529; font-size: 13px;',
+    tdHighlight: 'border: 1px solid #dee2e6; padding: 12px 10px; text-align: right; font-weight: bold; background-color: #f8f9fa;',
+    summaryTable: 'width: 100%; border-collapse: separate; border-spacing: 0 10px; margin: 0;',
+    summaryCell: 'background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 14px 16px;',
+    summaryLabel: 'font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; color: #64748b; margin-bottom: 8px; font-weight: bold;',
+    summaryValue: 'font-size: 22px; line-height: 1.1; color: #0f172a; font-weight: bold;',
+    summaryHint: 'font-size: 12px; color: #64748b; margin-top: 6px; line-height: 1.45;',
+    infoBox: 'background:#f8fafc; border:1px solid #dbeafe; color:#1e3a8a; padding:14px 16px; border-radius:12px; margin:18px 0 4px; font-size:13px; line-height:1.6;',
+    footer: 'text-align: center; font-size: 12px; color: #94a3b8; margin-top: 28px; padding: 18px 0 0; border-top: 1px solid #e5e7eb;'
   };
 
-  const thMetodos = metodosDePago.map((metodo) => `<th style="${styles.th} text-align:right;">${metodo.nombre}</th>`).join('');
-  const generarCeldasFila = (fila) => metodosDePago.map((metodo) => `<td style="${styles.td}">${formatCurrency(fila.pagos[metodo.nombre] || 0)}</td>`).join('');
   const calcularTotalCategoria = (fila) => Object.values(fila?.pagos || {}).reduce((acc, val) => acc + val, 0);
-  const tdTotalesIngresos = metodosDePago.map((metodo) => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[metodo.nombre].ingreso)}</td>`).join('');
-  const tdTotalesGastos = metodosDePago.map((metodo) => `<td style="${styles.tdTotal} color:red;">(${formatCurrency(totalesPorMetodo[metodo.nombre].gasto)})</td>`).join('');
-  const tdTotalesBalanceOperativo = metodosDePago.map((metodo) => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[metodo.nombre].balance)}</td>`).join('');
-  const tdTotalesEsperadoCaja = metodosDePago.map((metodo) => `<td style="${styles.tdTotal}">${formatCurrency(totalesPorMetodo[metodo.nombre].esperadoArqueo)}</td>`).join('');
 
   const renderSummaryCard = (label, value, hint, color = '#0f172a') => `
-    <table role="presentation" style="${styles.summaryTable}; margin-top: 0;">
+    <table role="presentation" style="${styles.summaryTable}">
       <tr>
-        <td style="${styles.summaryCell}; width: 100%;">
+        <td style="${styles.summaryCell}">
           <div style="${styles.summaryLabel}">${label}</div>
           <div style="${styles.summaryValue}; color:${color};">${value}</div>
           <div style="${styles.summaryHint}">${hint}</div>
@@ -708,31 +802,245 @@ export function generarHTMLReporteCierre(
     renderSummaryCard('Balance total incluyendo apertura', formatCurrency(saldoEsperadoEnCaja), 'Apertura mas dinero generado', '#0f766e')
   ].join('');
 
-  const detalleCajaHtml = `
-    <h2 style="${styles.headerDetalle}">Detalle de Movimientos de Caja</h2>
-    <table style="${styles.table}">
+  const thMetodosResumen = metodosDePago
+    .map((metodo) => `<th style="${styles.legacyTh} text-align:right; white-space:nowrap;">${escapeHtml(metodo.nombre)}</th>`)
+    .join('');
+  const generarCeldasResumen = (fila) => metodosDePago
+    .map((metodo) => `<td style="${styles.legacyTd}">${formatCurrency(fila?.pagos?.[metodo.nombre] || 0)}</td>`)
+    .join('');
+  const tdTotalesIngresosResumen = metodosDePago
+    .map((metodo) => `<td style="${styles.legacyTdTotal}">${formatCurrency(totalesPorMetodo[metodo.nombre].ingreso)}</td>`)
+    .join('');
+  const tdTotalesGastosResumen = metodosDePago
+    .map((metodo) => `<td style="${styles.legacyTdTotal} color:#dc2626;">(${formatCurrency(totalesPorMetodo[metodo.nombre].gasto)})</td>`)
+    .join('');
+  const tdTotalesBalanceResumen = metodosDePago
+    .map((metodo) => `<td style="${styles.legacyTdTotal} background-color:#eff6ff;">${formatCurrency(totalesPorMetodo[metodo.nombre].balance)}</td>`)
+    .join('');
+  const tdTotalesEsperadoResumen = metodosDePago
+    .map((metodo) => `<td style="${styles.legacyTdTotal} background-color:#f0fdf4;">${formatCurrency(totalesPorMetodo[metodo.nombre].esperadoArqueo)}</td>`)
+    .join('');
+
+  const resumenPrincipalTablaHtml = `
+    <h2 class="report-heading" style="${styles.headerDetalle}">Reporte de ingresos y gastos</h2>
+    <div style="${styles.legacyTableWrap} overflow-x:auto; -webkit-overflow-scrolling:touch;">
+      <table class="report-table" style="${styles.legacyTable}">
+        <thead>
+          <tr>
+            <th style="${styles.legacyTh} white-space:nowrap;">Concepto</th>
+            <th style="${styles.legacyTh} text-align:center; white-space:nowrap;">N° Ventas</th>
+            <th style="${styles.legacyTh} text-align:center; white-space:nowrap;">Transac.</th>
+            ${thMetodosResumen}
+            <th style="${styles.legacyTh} text-align:right; white-space:nowrap;">Totales</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="${styles.legacyTdConcepto}">Apertura de caja:</td>
+            <td style="${styles.legacyTd} text-align:center;">-</td>
+            <td style="${styles.legacyTd} text-align:center;">-</td>
+            ${metodosDePago.map((metodo) => `<td style="${styles.legacyTd}">${esMetodoEfectivo(metodo.nombre) ? formatCurrency(reporte.apertura) : '$ 0'}</td>`).join('')}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(reporte.apertura)}</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdConcepto}">HABITACIONES:</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.habitaciones?.ventas || 0))}</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.habitaciones?.transacciones || 0))}</td>
+            ${generarCeldasResumen(reporte.habitaciones)}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.habitaciones))}</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdConcepto}">COCINA:</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.cocina?.ventas || 0))}</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.cocina?.transacciones || 0))}</td>
+            ${generarCeldasResumen(reporte.cocina)}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.cocina))}</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdConcepto}">TIENDA:</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.tienda?.ventas || 0))}</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.tienda?.transacciones || 0))}</td>
+            ${generarCeldasResumen(reporte.tienda)}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.tienda))}</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdTotalConcepto}">Ingresos del turno:</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.ventas || 0) + (reporte.cocina?.ventas || 0) + (reporte.tienda?.ventas || 0) + (reporte.propinas?.ventas || 0)))}</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0)))}</td>
+            ${tdTotalesIngresosResumen}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(totalIngresos)}</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdTotalConcepto}">Egresos del turno:</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">-</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String(reporte.gastos?.transacciones || 0))}</td>
+            ${tdTotalesGastosResumen}
+            <td style="${styles.legacyTdTotal} color:red;">(${formatCurrency(totalGastos)})</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdTotalConcepto}">Dinero generado en el turno:</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">-</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String(((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0) + (reporte.gastos?.transacciones || 0))))}</td>
+            ${tdTotalesBalanceResumen}
+            <td style="${styles.legacyTdTotal} background-color:#007bff; color:white;">${formatCurrency(balanceOperativo)}</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdTotalConcepto}">Balance total incluyendo apertura:</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">-</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">-</td>
+            ${tdTotalesEsperadoResumen}
+            <td style="${styles.legacyTdTotal} background-color:#0f766e; color:white;">${formatCurrency(saldoEsperadoEnCaja)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+
+
+  const resumenOperativoHtml = `
+    <h2 class="report-heading" style="${styles.headerDetalle}">Resumen operativo del turno</h2>
+    <table class="report-table" style="${styles.compactTable}">
+      <tbody>
+        <tr>
+          <td style="${styles.tdLeft}">
+            <span style="${styles.tdStrong}">Habitaciones alquiladas</span>
+            <span style="${styles.tdMuted}">${resumenOperativoSeguro.habitacionesCobros || 0} cobros relacionados con alojamiento.</span>
+          </td>
+          <td style="${styles.tdHighlight}">${escapeHtml(String(resumenOperativoSeguro.habitacionesAlquiladas || 0))}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}">
+            <span style="${styles.tdStrong}">Tienda</span>
+            <span style="${styles.tdMuted}">${escapeHtml(String(resumenOperativoSeguro.tiendaVentas || 0))} ventas · ${escapeHtml(String(resumenOperativoSeguro.tiendaUnidades || 0))} unidades</span>
+          </td>
+          <td style="${styles.tdHighlight}">${formatCurrency(resumenOperativoSeguro.tiendaIngresos || 0)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}">
+            <span style="${styles.tdStrong}">Restaurante</span>
+            <span style="${styles.tdMuted}">${escapeHtml(String(resumenOperativoSeguro.restauranteVentas || 0))} ventas · ${escapeHtml(String(resumenOperativoSeguro.restauranteUnidades || 0))} items</span>
+          </td>
+          <td style="${styles.tdHighlight}">${formatCurrency(resumenOperativoSeguro.restauranteIngresos || 0)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}">
+            <span style="${styles.tdStrong}">Servicios y extensiones</span>
+            <span style="${styles.tdMuted}">${escapeHtml(String(resumenOperativoSeguro.serviciosUnidades || 0))} registros aplicados.</span>
+          </td>
+          <td style="${styles.tdHighlight}">${formatCurrency(resumenOperativoSeguro.serviciosIngresos || 0)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}">
+            <span style="${styles.tdStrong}">Transacciones registradas</span>
+            <span style="${styles.tdMuted}">${escapeHtml(String(resumenOperativoSeguro.ingresosRegistrados || 0))} ingresos · ${escapeHtml(String(resumenOperativoSeguro.egresosRegistrados || 0))} egresos · ${escapeHtml(String(resumenOperativoSeguro.metodosUsados || 0))} metodos usados</span>
+          </td>
+          <td style="${styles.tdHighlight}">${escapeHtml(String((resumenOperativoSeguro.ingresosRegistrados || 0) + (resumenOperativoSeguro.egresosRegistrados || 0)))}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  const resumenFinancieroHtml = `
+    <h2 class="report-heading" style="${styles.headerDetalle}">Resumen financiero del turno</h2>
+    <table class="report-table" style="${styles.compactTable}">
+      <tbody>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Apertura de caja (base inicial)</span></td>
+          <td style="${styles.tdHighlight}">${formatCurrency(reporte.apertura)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Habitaciones</span></td>
+          <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.habitaciones))}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Tienda</span></td>
+          <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.tienda))}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Restaurante / cocina</span></td>
+          <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.cocina))}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Propinas</span></td>
+          <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.propinas))}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Ingresos del turno</span></td>
+          <td style="${styles.tdHighlight}">${formatCurrency(totalIngresos)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Egresos del turno</span></td>
+          <td style="${styles.tdHighlight}; color:#b91c1c;">-${formatCurrency(totalGastos)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Dinero generado en el turno</span></td>
+          <td style="${styles.tdHighlight}; color:#2563eb;">${formatCurrency(balanceOperativo)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Balance total incluyendo apertura</span></td>
+          <td style="${styles.tdHighlight}; color:#0f766e;">${formatCurrency(saldoEsperadoEnCaja)}</td>
+        </tr>
+      </tbody>
+    </table>
+  `;
+
+  const metodoRowsHtml = metodosDePago.map((metodo) => {
+    const totalMetodo = totalesPorMetodo[metodo.nombre];
+    return `
+      <tr>
+        <td style="${styles.tdLeft}">
+          <span style="${styles.tdStrong}">${escapeHtml(metodo.nombre)}</span>
+          <span style="${styles.tdMuted}">
+            Ingresos: ${formatCurrency(totalMetodo.ingreso)}<br>
+            Egresos: ${formatCurrency(totalMetodo.gasto)}<br>
+            Neto del turno: ${formatCurrency(totalMetodo.balance)}
+          </span>
+        </td>
+        <td style="${styles.tdHighlight}">${formatCurrency(totalMetodo.esperadoArqueo)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const desgloseMetodosHtml = `
+    <h2 class="report-heading" style="${styles.headerDetalle}">Desglose por metodo de pago</h2>
+    <table class="report-table" style="${styles.compactTable}">
       <thead>
         <tr>
-          <th style="${styles.th}">Fecha</th>
-          <th style="${styles.th}">Detalle</th>
-          <th style="${styles.th}">Monto</th>
+          <th style="${styles.th}">Metodo</th>
+          <th style="${styles.th}; text-align:right;">Saldo esperado</th>
+        </tr>
+      </thead>
+      <tbody>${metodoRowsHtml}</tbody>
+    </table>
+  `;
+
+  const detalleCajaHtml = `
+    <h2 class="report-heading" style="${styles.headerDetalle}">Detalle de Movimientos de Caja</h2>
+    <div style="overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid #e5e7eb; border-radius:8px;">
+    <table class="report-table" style="${styles.compactTable} border:none; margin-top:0;">
+      <thead>
+        <tr>
+          <th style="${styles.th}">Movimiento</th>
+          <th style="${styles.th}; text-align:right; white-space:nowrap;">Monto</th>
         </tr>
       </thead>
       <tbody>
         ${(movsCaja && movsCaja.length > 0) ? movsCaja.map((movimiento) => `
           <tr>
-            <td style="${styles.td} text-align:left; min-width: 130px;">${formatMovementDateTime(movimiento)}</td>
-            <td style="${styles.tdConcepto}">
-              <strong style="display:block; color:#0f172a;">${escapeHtml(normalizeLegacyText(movimiento.concepto || 'Sin concepto'))}</strong>
-              <span style="display:block; font-size:10px; color:#64748b; margin-top:4px;">${escapeHtml(normalizeLegacyText(movimiento.tipo || 'N/A'))} · ${escapeHtml(normalizeLegacyText(movimiento.metodos_pago?.nombre || 'N/A'))}</span>
+            <td style="${styles.tdLeft}">
+              <span style="${styles.tdStrong}">${formatMovementDateTime(movimiento)}</span>
+              <strong style="display:block; color:#0f172a; word-break:break-word;">${escapeHtml(normalizeLegacyText(movimiento.concepto || 'Sin concepto'))}</strong>
+              <span style="display:block; font-size:10px; color:#64748b; margin-top:4px; word-break:break-word;">${escapeHtml(normalizeLegacyText(movimiento.tipo || 'N/A'))} · ${escapeHtml(normalizeLegacyText(movimiento.metodos_pago?.nombre || 'N/A'))}</span>
             </td>
-            <td style="${styles.td} font-weight:bold; color:${movimiento.tipo === 'ingreso' ? 'green' : (movimiento.tipo === 'egreso' ? 'red' : 'inherit')};">
+            <td style="${styles.td} font-weight:bold; color:${movimiento.tipo === 'ingreso' ? '#166534' : (movimiento.tipo === 'egreso' ? '#991b1b' : 'inherit')}; white-space:nowrap; vertical-align:middle;">
               ${formatCurrency(movimiento.monto)}
             </td>
           </tr>
-        `).join('') : `<tr><td colspan="3" style="${styles.td} text-align:center;">No hay movimientos de caja.</td></tr>`}
+        `).join('') : `<tr><td colspan="2" style="${styles.td} text-align:center;">No hay movimientos de caja.</td></tr>`}
       </tbody>
     </table>
+    </div>
   `;
 
   const amenidadesAgrupadas = {};
@@ -747,8 +1055,8 @@ export function generarHTMLReporteCierre(
   }
 
   const detalleAmenidadesHtml = `
-    <h2 style="${styles.headerDetalle}">Registro de Amenidades (Agrupado por Habitacion)</h2>
-    <table style="${styles.table}">
+    <h2 class="report-heading" style="${styles.headerDetalle}">Registro de Amenidades (Agrupado por Habitacion)</h2>
+    <table class="report-table" style="${styles.table}">
       <thead>
         <tr>
           <th style="${styles.th}">Habitacion</th>
@@ -767,35 +1075,38 @@ export function generarHTMLReporteCierre(
   `;
 
   const detalleLenceriaHtml = `
-    <h2 style="${styles.headerDetalle}">Registro de Lenceria (Ropa de cama)</h2>
-    <table style="${styles.table}">
+    <h2 class="report-heading" style="${styles.headerDetalle}">Registro de Lenceria (Ropa de cama)</h2>
+    <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+    <table class="report-table" style="${styles.table}">
       <thead>
         <tr>
-          <th style="${styles.th}">Fecha</th>
+          <th style="${styles.th} white-space:nowrap;">Fecha</th>
           <th style="${styles.th}">Habitacion</th>
           <th style="${styles.th}">Articulo</th>
-          <th style="${styles.th}">Cantidad</th>
+          <th style="${styles.th} white-space:nowrap; text-align:center;">Cant.</th>
         </tr>
       </thead>
       <tbody>
         ${(movsLenceria && movsLenceria.length > 0) ? movsLenceria.map((movimiento) => `
           <tr>
-            <td style="${styles.td} text-align:left; min-width: 130px;">${formatDateTime(movimiento.fecha_uso)}</td>
-            <td style="${styles.tdConcepto}">${movimiento.habitaciones?.nombre || 'N/A'}</td>
-            <td style="${styles.tdConcepto}">${movimiento.inventario_lenceria?.nombre_item || 'N/A'}</td>
+            <td style="${styles.td} text-align:left; white-space:nowrap;">${formatDateTime(movimiento.fecha_uso)}</td>
+            <td style="${styles.tdConcepto} word-break:break-word;">${movimiento.habitaciones?.nombre || 'N/A'}</td>
+            <td style="${styles.tdConcepto} word-break:break-word;">${movimiento.inventario_lenceria?.nombre_item || 'N/A'}</td>
             <td style="${styles.td} text-align:center; font-weight:bold;">${movimiento.cantidad_usada}</td>
           </tr>
         `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de lenceria.</td></tr>`}
       </tbody>
     </table>
+    </div>
   `;
 
   const detallePrestamosHtml = `
-    <h2 style="${styles.headerDetalle}">Registro de Prestamos</h2>
-    <table style="${styles.table}">
+    <h2 class="report-heading" style="${styles.headerDetalle}">Registro de Prestamos</h2>
+    <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+    <table class="report-table" style="${styles.table}">
       <thead>
         <tr>
-          <th style="${styles.th}">Fecha</th>
+          <th style="${styles.th} white-space:nowrap;">Fecha</th>
           <th style="${styles.th}">Habitacion</th>
           <th style="${styles.th}">Articulo</th>
           <th style="${styles.th}">Accion</th>
@@ -804,19 +1115,20 @@ export function generarHTMLReporteCierre(
       <tbody>
         ${(movsPrestamos && movsPrestamos.length > 0) ? movsPrestamos.map((movimiento) => `
           <tr>
-            <td style="${styles.td} text-align:left; min-width: 130px;">${formatDateTime(movimiento.fecha_accion)}</td>
-            <td style="${styles.tdConcepto}">${movimiento.habitaciones?.nombre || 'N/A'}</td>
-            <td style="${styles.tdConcepto}">${movimiento.articulo_nombre}</td>
-            <td style="${styles.tdConcepto}">${movimiento.accion}</td>
+            <td style="${styles.td} text-align:left; white-space:nowrap;">${formatDateTime(movimiento.fecha_accion)}</td>
+            <td style="${styles.tdConcepto} word-break:break-word;">${movimiento.habitaciones?.nombre || 'N/A'}</td>
+            <td style="${styles.tdConcepto} word-break:break-word;">${movimiento.articulo_nombre}</td>
+            <td style="${styles.tdConcepto} word-break:break-word;">${movimiento.accion}</td>
           </tr>
         `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay registros de prestamos.</td></tr>`}
       </tbody>
     </table>
+    </div>
   `;
 
   const stockAmenidadesHtml = `
-    <h2 style="${styles.headerDetalle}">Stock Actual de Amenidades</h2>
-    <table style="${styles.table}">
+    <h2 class="report-heading" style="${styles.headerDetalle}">Stock Actual de Amenidades</h2>
+    <table class="report-table" style="${styles.table}">
       <thead><tr><th style="${styles.th}">Articulo</th><th style="${styles.th}">Stock Actual</th></tr></thead>
       <tbody>
         ${(stockAmenidades && stockAmenidades.length > 0) ? stockAmenidades.map((item) => `
@@ -830,27 +1142,29 @@ export function generarHTMLReporteCierre(
   `;
 
   const stockLenceriaHtml = `
-    <h2 style="${styles.headerDetalle}">Stock Actual de Lenceria</h2>
-    <table style="${styles.table}">
+    <h2 class="report-heading" style="${styles.headerDetalle}">Stock Actual de Lenceria</h2>
+    <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+    <table class="report-table" style="${styles.table}">
       <thead>
         <tr>
           <th style="${styles.th}">Articulo</th>
-          <th style="${styles.th}">Limpio (Almacen)</th>
-          <th style="${styles.th}">En Lavanderia</th>
-          <th style="${styles.th}">Stock Total</th>
+          <th style="${styles.th} text-align:center; white-space:nowrap;">Limpio</th>
+          <th style="${styles.th} text-align:center; white-space:nowrap;">Lavanderia</th>
+          <th style="${styles.th} text-align:center; white-space:nowrap;">Total</th>
         </tr>
       </thead>
       <tbody>
         ${(stockLenceria && stockLenceria.length > 0) ? stockLenceria.map((item) => `
           <tr>
-            <td style="${styles.tdConcepto}">${item.nombre_item}</td>
-            <td style="${styles.td} text-align:center; font-weight:bold; color:green;">${item.stock_limpio_almacen || 0}</td>
+            <td style="${styles.tdConcepto} word-break:break-word;">${item.nombre_item}</td>
+            <td style="${styles.td} text-align:center; font-weight:bold; color:#166534;">${item.stock_limpio_almacen || 0}</td>
             <td style="${styles.td} text-align:center; color:#CA8A04;">${item.stock_en_lavanderia || 0}</td>
             <td style="${styles.td} text-align:center; font-weight:bold;">${item.stock_total || 0}</td>
           </tr>
         `).join('') : `<tr><td colspan="4" style="${styles.td} text-align:center;">No hay datos de stock.</td></tr>`}
       </tbody>
     </table>
+    </div>
   `;
 
   return `
@@ -859,12 +1173,78 @@ export function generarHTMLReporteCierre(
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Cierre de Caja</title>
+        <style>
+          * { box-sizing: border-box; }
+          .mobile-only { display: none; max-height: 0; overflow: hidden; }
+          div.desktop-only { display: block; }
+          .scroll-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; width: 100%; }
+          .report-table { width: 100%; border-collapse: collapse; }
+          .report-table th, .report-table td { word-wrap: break-word; }
+          @media only screen and (max-width: 600px) {
+            body {
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            .report-container {
+              display: block !important;
+              width: 100% !important;
+              max-width: 100% !important;
+              min-width: 0 !important;
+              border-radius: 0 !important;
+              border: none !important;
+              box-shadow: none !important;
+            }
+            .report-hero {
+              padding: 16px 10px 14px !important;
+            }
+            .report-hero-title {
+              font-size: 18px !important;
+            }
+            .report-section {
+              padding: 10px 4px 14px !important;
+            }
+            .report-heading {
+              font-size: 14px !important;
+              margin: 16px 0 8px !important;
+            }
+            .report-table {
+              width: 100% !important;
+              table-layout: fixed !important;
+            }
+            .report-table th,
+            .report-table td {
+              padding: 4px 1px !important;
+              font-size: 8px !important;
+              white-space: normal !important;
+              word-break: break-all !important;
+              overflow-wrap: break-word !important;
+            }
+            .desktop-only {
+              display: none !important;
+              max-height: 0 !important;
+              overflow: hidden !important;
+              mso-hide: all !important;
+            }
+            table.mobile-only {
+              display: table !important;
+              width: 100% !important;
+              max-height: none !important;
+              overflow: visible !important;
+            }
+            div.mobile-only {
+              display: block !important;
+              width: 100% !important;
+              max-height: none !important;
+              overflow: visible !important;
+            }
+          }
+        </style>
       </head>
       <body style="${styles.body}">
-        <div style="${styles.container}">
-          <div style="${styles.hero}">
+        <div class="report-container" style="${styles.container}">
+          <div class="report-hero" style="${styles.hero}">
             <div style="${styles.heroEyebrow}">Gestion de Hotel</div>
-            <h1 style="${styles.heroTitle}">Cierre de Caja</h1>
+            <h1 class="report-hero-title" style="${styles.heroTitle}">Cierre de Caja</h1>
             <p style="${styles.heroSubtitle}">Resumen financiero, movimientos y control de entregas del turno.</p>
             <table role="presentation" style="${styles.metaTable}">
               <tr>
@@ -882,64 +1262,12 @@ export function generarHTMLReporteCierre(
             </table>
           </div>
 
-          <div style="${styles.section}">
-          ${resumenCardsHtml}
-          <div style="${styles.infoBox}">
-            <strong>Como leer este reporte:</strong> la <strong>apertura de caja</strong> es la base inicial del turno. El <strong>dinero generado en el turno</strong> muestra solo ingresos menos egresos. El <strong>balance total incluyendo apertura</strong> incluye la apertura mas el dinero generado en el turno.
-          </div>
+          <div class="report-section" style="${styles.section}">
           ${alertaDescuadreHtml}
-          <table style="${styles.table}">
-            <thead>
-              <tr>
-                <th style="${styles.th}">Concepto</th>
-                ${thMetodos}
-                <th style="${styles.th} text-align:right;">Totales</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td style="${styles.tdConcepto}">Apertura de caja (base inicial):</td>
-                ${metodosDePago.map(() => `<td style="${styles.td}">-</td>`).join('')}
-                <td style="${styles.tdTotal}">${formatCurrency(reporte.apertura)}</td>
-              </tr>
-              <tr>
-                <td style="${styles.tdConcepto}">HABITACIONES:</td>
-                ${generarCeldasFila(reporte.habitaciones)}
-                <td style="${styles.tdTotal}">${formatCurrency(calcularTotalCategoria(reporte.habitaciones))}</td>
-              </tr>
-              <tr>
-                <td style="${styles.tdConcepto}">COCINA:</td>
-                ${generarCeldasFila(reporte.cocina)}
-                <td style="${styles.tdTotal}">${formatCurrency(calcularTotalCategoria(reporte.cocina))}</td>
-              </tr>
-              <tr>
-                <td style="${styles.tdConcepto}">TIENDA:</td>
-                ${generarCeldasFila(reporte.tienda)}
-                <td style="${styles.tdTotal}">${formatCurrency(calcularTotalCategoria(reporte.tienda))}</td>
-              </tr>
-              <tr>
-                <td style="${styles.tdTotalConcepto}">Ingresos del turno:</td>
-                ${tdTotalesIngresos}
-                <td style="${styles.tdTotal}">${formatCurrency(totalIngresos)}</td>
-              </tr>
-              <tr>
-                <td style="${styles.tdTotalConcepto}">Egresos del turno:</td>
-                ${tdTotalesGastos}
-                <td style="${styles.tdTotal} color:red;">(${formatCurrency(totalGastos)})</td>
-              </tr>
-              <tr>
-                <td style="${styles.tdTotalConcepto}">Dinero generado en el turno:</td>
-                ${tdTotalesBalanceOperativo}
-                <td style="${styles.tdTotal} background-color:#007bff; color:white;">${formatCurrency(balanceOperativo)}</td>
-              </tr>
-              <tr>
-                <td style="${styles.tdTotalConcepto}">Balance total incluyendo apertura:</td>
-                ${tdTotalesEsperadoCaja}
-                <td style="${styles.tdTotal} background-color:#0f766e; color:white;">${formatCurrency(saldoEsperadoEnCaja)}</td>
-              </tr>
-            </tbody>
-          </table>
-
+          ${resumenPrincipalTablaHtml}
+          ${resumenOperativoHtml}
+          ${resumenFinancieroHtml}
+          ${desgloseMetodosHtml}
           ${detalleCajaHtml}
           ${detalleAmenidadesHtml}
           ${detalleLenceriaHtml}
