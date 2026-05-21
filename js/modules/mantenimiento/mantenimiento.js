@@ -13,6 +13,8 @@ const TASK_TYPES = {
 const OPEN_TASK_STATES = ['pendiente', 'en_progreso'];
 const CLOSED_TASK_STATES = ['completada', 'cancelada'];
 const PROGRAMMED_TASK_MARKER = '[PROGRAMADO]';
+const LEGACY_BLOCKING_TASK_DB_TYPE = 'general';
+const TASK_TYPE_COMPATIBILITY_ERROR_REGEX = /tipo_tarea_enum|\btipo\b|bloqueante|programado|enum|check|constraint|invalid input value/i;
 const TASK_FREQUENCY_LABELS = {
   unica: 'Unica',
   diaria: 'Diaria',
@@ -160,15 +162,41 @@ function buildProgrammedCompatibilityPayload(payload) {
   };
 }
 
-function shouldRetryProgrammedCompatibility(error, payload) {
-  if (payload?.tipo !== TASK_TYPES.programado) return false;
+function buildBlockingCompatibilityPayload(payload) {
+  return {
+    ...payload,
+    tipo: LEGACY_BLOCKING_TASK_DB_TYPE
+  };
+}
+
+function buildTaskCompatibilityPayload(payload) {
+  return normalizeTaskType(payload?.tipo) === TASK_TYPES.programado
+    ? buildProgrammedCompatibilityPayload(payload)
+    : buildBlockingCompatibilityPayload(payload);
+}
+
+function shouldRetryTaskCompatibility(error, payload) {
+  if (!payload?.tipo) return false;
 
   const details = [error?.message, error?.details, error?.hint, error?.code]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
 
-  return !details || /tipo|programado|enum|check|constraint|invalid|schema|column|pgrst/.test(details);
+  return !details || TASK_TYPE_COMPATIBILITY_ERROR_REGEX.test(details);
+}
+
+async function runTaskMutationWithCompatibility(runMutation, payload) {
+  try {
+    return await runMutation(payload);
+  } catch (error) {
+    if (!shouldRetryTaskCompatibility(error, payload)) {
+      throw error;
+    }
+
+    console.warn('Reintentando tarea con compatibilidad legacy.', error);
+    return runMutation(buildTaskCompatibilityPayload(payload));
+  }
 }
 
 function isBlockingTaskType(tipo) {
@@ -561,7 +589,7 @@ async function ensureNextPreventiveTask({ supabase, task }) {
     titulo: task.titulo,
     descripcion: task.descripcion || null,
     estado: 'pendiente',
-    tipo: task.tipo === TASK_TYPES.programado ? null : task.tipo,
+    tipo: normalizeTaskType(task.tipo),
     frecuencia,
     fecha_programada: nextDate,
     fecha_completada: null,
@@ -573,12 +601,12 @@ async function ensureNextPreventiveTask({ supabase, task }) {
     adjuntos: []
   };
 
-  const payloadToInsert = task.tipo === TASK_TYPES.programado
-    ? buildProgrammedCompatibilityPayload(preventivePayload)
-    : preventivePayload;
-
-  const { error: insertError } = await supabase.from('tareas_mantenimiento').insert(payloadToInsert);
-  if (insertError) {
+  try {
+    await runTaskMutationWithCompatibility(async (payload) => {
+      const { error } = await supabase.from('tareas_mantenimiento').insert(payload);
+      if (error) throw error;
+    }, preventivePayload);
+  } catch (insertError) {
     console.error('No se pudo programar la siguiente tarea preventiva:', insertError);
   }
 }
@@ -612,10 +640,12 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
   let persistedAttachments = Array.isArray(normalizedTask?.adjuntos) ? [...normalizedTask.adjuntos] : [];
 
   modalTargetContainer.innerHTML = `
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div class="relative w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl">
+    <div class="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4">
+      <div class="mx-auto flex min-h-full max-w-2xl items-start justify-center">
+        <div class="relative my-2 w-full overflow-hidden rounded-2xl bg-white shadow-2xl">
         <button id="close-modal-mant" class="absolute right-4 top-3 text-3xl text-slate-400 transition hover:text-red-600">&times;</button>
-        <h3 class="mb-5 text-2xl font-bold text-slate-800">${titleText}</h3>
+        <div class="max-h-[calc(100vh-2rem)] overflow-y-auto p-6 sm:max-h-[calc(100vh-4rem)]">
+        <h3 class="mb-5 pr-10 text-2xl font-bold text-slate-800">${titleText}</h3>
         <form id="mant-form">
           <div class="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
             <p id="mant-task-type-help">${taskTypeHelp}</p>
@@ -726,6 +756,8 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
             ${isEditing ? 'Actualizar tarea' : 'Crear tarea'}
           </button>
         </form>
+        </div>
+        </div>
       </div>
     </div>
   `;
@@ -834,25 +866,14 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
         return data;
       };
 
-      let tareaResult;
+      const tareaResult = await runTaskMutationWithCompatibility(persistTask, dataToSave);
 
-      try {
-        tareaResult = await persistTask(dataToSave);
-      } catch (error) {
-        if (!shouldRetryProgrammedCompatibility(error, dataToSave)) {
-          throw error;
-        }
-
-        console.warn('Reintentando tarea programada con compatibilidad legacy.', error);
-        tareaResult = await persistTask(buildProgrammedCompatibilityPayload(dataToSave));
-      }
-
-      tareaResult = normalizeTaskRecord(tareaResult);
+      const normalizedTaskResult = normalizeTaskRecord(tareaResult);
 
       await ensureNextPreventiveTask({
         supabase,
         task: {
-          ...tareaResult,
+          ...normalizedTaskResult,
           hotel_id: hotelId,
           creada_por: normalizedTask?.creada_por || currentUser?.id || null
         }
@@ -860,7 +881,7 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
 
       await syncTaskOperationalImpact({
         supabase,
-        task: tareaResult,
+        task: normalizedTaskResult,
         previousTask
       });
 
@@ -869,7 +890,7 @@ export async function showModalTarea(container, supabase, hotelId, currentUser, 
         hotelId,
         currentUser,
         habitaciones,
-        task: tareaResult,
+        task: normalizedTaskResult,
         isEdit: Boolean(normalizedTask?.id)
       });
 
