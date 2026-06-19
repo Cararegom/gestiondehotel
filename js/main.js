@@ -31,6 +31,7 @@ const routes = {
   '/habitaciones': { loadModule: () => import('./modules/habitaciones/habitaciones.js'), moduleKey: 'habitaciones' },
   '/mapa-habitaciones': { loadModule: () => import('./modules/mapa-habitaciones/mapa-habitaciones.js'), moduleKey: 'mapa-habitaciones' },
   '/caja': { loadModule: () => import('./modules/caja/caja.js'), moduleKey: 'caja' },
+  '/terraza': { loadModule: () => import('./modules/terraza/terraza.js'), moduleKey: 'terraza' },
   '/clientes': { loadModule: () => import('./modules/clientes/clientes.js'), moduleKey: 'clientes' },
   '/servicios': { loadModule: () => import('./modules/servicios/servicios.js'), moduleKey: 'servicios' },
   '/tienda': { loadModule: () => import('./modules/tienda/tienda.js'), moduleKey: 'tienda' },
@@ -60,6 +61,7 @@ const navLinksConfig = [
   { path: '#/mapa-habitaciones', text: 'Mapa Hotel', icon: '\u{1F5FA}\uFE0F', moduleKey: 'mapa-habitaciones' },
   { path: '#/habitaciones', text: 'Habitaciones', icon: '\u{1F6AA}', moduleKey: 'habitaciones' },
   { path: '#/caja', text: 'Caja/Turnos', icon: '\u{1F4B0}', moduleKey: 'caja' },
+  { path: '#/terraza', text: 'Terraza', icon: '\u{1F379}', moduleKey: 'terraza' },
   { path: '#/clientes', text: 'Clientes', icon: '\u{1F9D1}\u200D\u{1F4BC}', moduleKey: 'clientes' },
   { path: '#/servicios', text: 'Servicios', icon: '\u{1F6CE}\uFE0F', moduleKey: 'servicios' },
   { path: '#/tienda', text: 'Tienda', icon: '\u{1F6CD}\uFE0F', moduleKey: 'tienda' },
@@ -89,9 +91,68 @@ const superadminNavLinksConfig = [
   { path: '#/faq', text: 'FAQ', icon: '\u2753', moduleKey: 'faq' }
 ];
 const superadminAllowedRoutes = new Set(['/ops-saas', '/bitacora', '/soporte', '/faq']);
+const TERRAZA_ENABLED_HOTEL_IDS = new Set(['38373fa5-b953-4aa9-b4e9-25b9739be5f2']);
+const MESERO_ALLOWED_MODULES = new Set(['caja', 'terraza']);
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeRoleKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function isMeseroRole(value) {
+  const roleKey = normalizeRoleKey(value);
+  return roleKey === 'mesero' || roleKey === 'mesero/a' || roleKey === 'mesera';
+}
+
+function roleNamesFromPerfil(perfil = null) {
+  return (perfil?.usuarios_roles || [])
+    .map((item) => item?.roles?.nombre)
+    .filter(Boolean);
+}
+
+function resolveOperationalRole(perfil = null, isSuperadmin = false) {
+  if (isSuperadmin) return 'superadmin';
+
+  const directRole = normalizeRoleKey(perfil?.rol);
+  if (directRole === 'superadmin') return 'superadmin';
+  if (directRole === 'admin' || directRole === 'administrador') return 'admin';
+  if (isMeseroRole(directRole)) return 'mesero';
+
+  const assignedRoleNames = roleNamesFromPerfil(perfil).map(normalizeRoleKey);
+  if (assignedRoleNames.some((roleName) => roleName === 'administrador' || roleName === 'admin')) return 'admin';
+  if (assignedRoleNames.some(isMeseroRole)) return 'mesero';
+  if (assignedRoleNames.some((roleName) => roleName === 'recepcionista')) return 'recepcionista';
+
+  return directRole || 'usuario';
+}
+
+function isTerrazaEnabledForHotelId(hotelId) {
+  return TERRAZA_ENABLED_HOTEL_IDS.has(String(hotelId || ''));
+}
+
+function isTerrazaEnabledForActiveHotel() {
+  return isTerrazaEnabledForHotelId(currentActiveHotel?.id);
+}
+
+function isModuleAllowedByPlan(moduleKey, modulosPermitidos = [], hotelId = currentActiveHotel?.id) {
+  if (moduleKey === 'terraza') {
+    return modulosPermitidos.includes(moduleKey) || isTerrazaEnabledForHotelId(hotelId);
+  }
+  return modulosPermitidos.includes(moduleKey);
+}
+
+function getDefaultHashForCurrentRole() {
+  if (currentUserRole === 'superadmin') return '#/ops-saas';
+  if (isMeseroRole(currentUserRole) && isTerrazaEnabledForActiveHotel()) return '#/terraza';
+  if (isMeseroRole(currentUserRole)) return '#/caja';
+  return '#/dashboard';
 }
 
 function isWhitelistedSuperadminAccount(user, perfil = null) {
@@ -151,7 +212,9 @@ function buildNavLinkElement(linkConfig) {
 function scheduleModuleWarmup(currentRole = null) {
   const preloadRoutes = currentRole === 'superadmin'
     ? ['/ops-saas', '/bitacora', '/soporte']
-    : ['/dashboard', '/operacion-hoy', '/reservas', '/mapa-habitaciones', '/caja', '/onboarding'];
+    : isMeseroRole(currentRole)
+      ? ['/terraza', '/caja']
+      : ['/dashboard', '/operacion-hoy', '/reservas', '/mapa-habitaciones', '/caja', '/onboarding'];
 
   const runner = () => {
     preloadRoutes.forEach((path) => {
@@ -252,6 +315,17 @@ function renderNavigation(user) {
     return;
   }
 
+  if (isMeseroRole(currentUserRole)) {
+    navLinksConfig.forEach((linkConfig) => {
+      if (!MESERO_ALLOWED_MODULES.has(linkConfig.moduleKey)) return;
+      if (linkConfig.moduleKey === 'terraza' && !isTerrazaEnabledForActiveHotel()) return;
+
+      const a = buildNavLinkElement(linkConfig);
+      if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
+    });
+    return;
+  }
+
   let esAdminNavegacion = false;
   if (currentActiveHotel && user && currentUserRole) {
     esAdminNavegacion = (currentUserRole === 'admin' || currentUserRole === 'superadmin' || user.id === currentActiveHotel.creado_por);
@@ -280,7 +354,7 @@ function renderNavigation(user) {
         return;
       }
       // Un enlace se muestra si su 'moduleKey' está en la lista de permitidos O en la lista de exentos.
-      if (modulosPermitidos.includes(linkConfig.moduleKey) || modulosExentos.includes(linkConfig.moduleKey)) {
+      if (isModuleAllowedByPlan(linkConfig.moduleKey, modulosPermitidos) || modulosExentos.includes(linkConfig.moduleKey)) {
         const a = buildNavLinkElement(linkConfig);
         if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
       }
@@ -422,7 +496,7 @@ async function router() {
       return;
     }
 
-    const path = window.location.hash.slice(1) || (currentUserRole === 'superadmin' ? '/ops-saas' : '/dashboard');
+    const path = window.location.hash.slice(1) || getDefaultHashForCurrentRole().slice(1);
     const baseRoute = path.split('?')[0];
     const routeEntry = routes[baseRoute];
     const moduleKeyFromRoute = routeEntry?.moduleKey;
@@ -474,6 +548,20 @@ async function router() {
       hotelIdForModule = perfilUserAppRouter?.hotel_id;
     }
 
+    if (userForModule && isMeseroRole(currentUserRole) && !MESERO_ALLOWED_MODULES.has(moduleKeyFromRoute)) {
+      window.location.hash = isTerrazaEnabledForHotelId(hotelIdForModule) ? '#/terraza' : '#/caja';
+      hideGlobalLoading();
+      routerBusy = false;
+      return;
+    }
+
+    if (userForModule && moduleKeyFromRoute === 'terraza' && !isTerrazaEnabledForHotelId(hotelIdForModule)) {
+      appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Terraza no habilitada</h2><p class="text-gray-700">Este modulo solo esta disponible para el hotel autorizado.</p></div>`;
+      hideGlobalLoading();
+      routerBusy = false;
+      return;
+    }
+
     // En js/main.js, dentro de la función router()
 
     if (userForModule && currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
@@ -486,7 +574,7 @@ async function router() {
       const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
 
       // Si el módulo NO es exento Y NO está en la lista de permitidos del plan, entonces bloqueamos.
-      if (!esModuloExento && moduleKeyFromRoute && !currentActivePlanDetails.funcionalidades.modulos_permitidos.includes(moduleKeyFromRoute)) {
+      if (!esModuloExento && moduleKeyFromRoute && !isModuleAllowedByPlan(moduleKeyFromRoute, currentActivePlanDetails.funcionalidades.modulos_permitidos, hotelIdForModule)) {
 
         console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
         appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al M\u00F3dulo</h2><p class="text-gray-700 mb-1">La funcionalidad o m\u00F3dulo '<strong>${escapeHtml(moduleKeyFromRoute)}</strong>' no est\u00E1 incluida en tu plan actual (<strong>${escapeHtml(currentActivePlanDetails.nombre)}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta secci\u00F3n, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
@@ -650,7 +738,7 @@ async function initializeApp() {
 
       const { data: perfil, error: perfilError } = await supabase
         .from('usuarios')
-        .select('hotel_id, rol')
+        .select('hotel_id, rol, usuarios_roles(roles(nombre))')
         .eq('id', appUser.id)
         .single();
 
@@ -661,7 +749,7 @@ async function initializeApp() {
         currentUserRole = "Usuario";
       } else if (perfil || esSuperadminWhitelisted) {
         if (!hotelIdToLoad) hotelIdToLoad = perfil?.hotel_id || null;
-        currentUserRole = esSuperadminWhitelisted ? 'superadmin' : (perfil.rol || "Usuario");
+        currentUserRole = resolveOperationalRole(perfil, esSuperadminWhitelisted);
       } else {
         console.warn("onAuthStateChange: No se encontró perfil de usuario en la tabla 'usuarios'.");
         currentUserRole = "Usuario";
@@ -728,7 +816,7 @@ async function initializeApp() {
       await initInternalSupportChat(appUser, currentActiveHotel);
 
       if (window.location.pathname.endsWith('/login.html')) {
-        let targetHash = window.location.hash || (currentUserRole === 'superadmin' ? '#/ops-saas' : '#/dashboard');
+        let targetHash = window.location.hash || getDefaultHashForCurrentRole();
         console.log(`[Auth] Usuario autenticado en login.html, redirigiendo a la app con hash: ${targetHash}`);
         window.location.href = `/app/index.html${targetHash}`;
       } else {

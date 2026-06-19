@@ -1,11 +1,92 @@
 import { turnoService } from '../../services/turnoService.js';
 import {
+  formatCurrency,
   hideGlobalLoading,
   showConfirmationModal,
   showError,
   showGlobalLoading,
   showSuccess
 } from '../../uiUtils.js';
+import { escapeHtml } from '../../security.js';
+
+function normalizeRoleKey(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
+
+function isMeseroRoleName(value) {
+  const key = normalizeRoleKey(value);
+  return key === 'mesero' || key === 'mesera' || key === 'meseroa';
+}
+
+function getAssignedRoleNames(perfil = {}) {
+  const rows = Array.isArray(perfil?.usuarios_roles) ? perfil.usuarios_roles : [];
+  return rows.map((row) => row?.roles?.nombre || row?.rol?.nombre || row?.nombre).filter(Boolean);
+}
+
+function isMeseroProfile(perfil = {}) {
+  return isMeseroRoleName(perfil?.rol) || getAssignedRoleNames(perfil).some(isMeseroRoleName);
+}
+
+function buildTerrazaInventoryHtml(productos = []) {
+  const productosList = Array.isArray(productos) ? productos : [];
+  const totalUnidades = productosList.reduce((acc, item) => acc + Number(item?.stock_actual || 0), 0);
+  const productosBajos = productosList.filter((item) => item?.activo !== false && Number(item?.stock_actual || 0) <= Number(item?.stock_minimo || 0)).length;
+  const rowsHtml = productosList.length
+    ? productosList.map((item) => {
+      const stockActual = Number(item?.stock_actual || 0);
+      const stockMinimo = Number(item?.stock_minimo || 0);
+      const stockColor = stockActual <= stockMinimo ? '#b45309' : '#166534';
+      return `
+        <tr>
+          <td style="border:1px solid #e5e7eb; padding:8px; text-align:left; font-weight:600;">${escapeHtml(item?.nombre || 'Producto')}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; text-align:left;">${escapeHtml(item?.categoria || 'Bebidas')}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; text-align:right; white-space:nowrap;">${formatCurrency(item?.precio || 0)}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; text-align:center; font-weight:700; color:${stockColor};">${escapeHtml(String(stockActual))}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; text-align:center;">${escapeHtml(String(stockMinimo))}</td>
+          <td style="border:1px solid #e5e7eb; padding:8px; text-align:center;">${item?.activo === false ? 'Inactivo' : 'Activo'}</td>
+        </tr>
+      `;
+    }).join('')
+    : '<tr><td colspan="6" style="border:1px solid #e5e7eb; padding:10px; text-align:center;">No hay productos registrados en Terraza.</td></tr>';
+
+  return `
+    <h2 class="report-heading" style="font-size:18px; color:#0f172a; margin:26px 0 10px; padding-bottom:8px; border-bottom:2px solid #2563eb;">Inventario de Terraza al cierre</h2>
+    <div style="margin-bottom:10px; color:#475569; font-size:12px;">
+      Productos: <strong>${escapeHtml(String(productosList.length))}</strong> | Unidades totales: <strong>${escapeHtml(String(totalUnidades))}</strong> | Bajo minimo: <strong>${escapeHtml(String(productosBajos))}</strong>
+    </div>
+    <div style="overflow-x:auto; -webkit-overflow-scrolling:touch;">
+      <table class="report-table" style="width:100%; border-collapse:collapse; font-size:12px;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #e5e7eb; padding:8px; text-align:left; background:#f8fafc;">Producto</th>
+            <th style="border:1px solid #e5e7eb; padding:8px; text-align:left; background:#f8fafc;">Categoria</th>
+            <th style="border:1px solid #e5e7eb; padding:8px; text-align:right; background:#f8fafc;">Precio</th>
+            <th style="border:1px solid #e5e7eb; padding:8px; text-align:center; background:#f8fafc;">Stock</th>
+            <th style="border:1px solid #e5e7eb; padding:8px; text-align:center; background:#f8fafc;">Minimo</th>
+            <th style="border:1px solid #e5e7eb; padding:8px; text-align:center; background:#f8fafc;">Estado</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function appendHtmlBeforeBodyEnd(html, fragment) {
+  if (!fragment) return html;
+  const footerPattern = /(\s*<div style="[^"]*">Este es un reporte automatico generado por Gestion de Hotel\.<\/div>)/i;
+  if (footerPattern.test(html)) {
+    return html.replace(footerPattern, `${fragment}$1`);
+  }
+  if (/<\/body>/i.test(html)) {
+    return html.replace(/<\/body>/i, `${fragment}</body>`);
+  }
+  return `${html}${fragment}`;
+}
 
 export async function solicitarMontoInicialTurno() {
   if (typeof Swal !== 'undefined') {
@@ -286,6 +367,7 @@ export async function cerrarTurnoFlow({
       const [
         { data: ventasTiendaTurno, error: ventasTiendaError },
         { data: ventasRestauranteTurno, error: ventasRestauranteError },
+        { data: ventasTerrazaTurno, error: ventasTerrazaError },
         { data: serviciosReservaTurno, error: serviciosReservaError }
       ] = await Promise.all([
         supabase
@@ -303,6 +385,14 @@ export async function cerrarTurnoFlow({
           .gte('creado_en', fechaAperturaISO)
           .lte('creado_en', fechaCierreISO),
         supabase
+          .from('terraza_pedidos')
+          .select('id, total, fecha_cierre, creado_en')
+          .eq('hotel_id', currentHotelId)
+          .eq('usuario_id', usuarioDelTurnoId)
+          .eq('estado', 'pagado')
+          .gte('fecha_cierre', fechaAperturaISO)
+          .lte('fecha_cierre', fechaCierreISO),
+        supabase
           .from('servicios_x_reserva')
           .select('id, cantidad, precio_cobrado, descripcion_manual, creado_en')
           .eq('hotel_id', currentHotelId)
@@ -312,14 +402,17 @@ export async function cerrarTurnoFlow({
 
       if (ventasTiendaError) throw ventasTiendaError;
       if (ventasRestauranteError) throw ventasRestauranteError;
+      if (ventasTerrazaError) throw ventasTerrazaError;
       if (serviciosReservaError) throw serviciosReservaError;
 
       const ventaTiendaIds = (ventasTiendaTurno || []).map((item) => item.id).filter(Boolean);
       const ventasRestauranteIds = (ventasRestauranteTurno || []).map((item) => item.id).filter(Boolean);
+      const ventasTerrazaIds = (ventasTerrazaTurno || []).map((item) => item.id).filter(Boolean);
 
       const [
         { data: detallesVentasTiendaTurno, error: detallesTiendaError },
-        { data: itemsVentasRestauranteTurno, error: itemsRestauranteError }
+        { data: itemsVentasRestauranteTurno, error: itemsRestauranteError },
+        { data: itemsVentasTerrazaTurno, error: itemsTerrazaError }
       ] = await Promise.all([
         ventaTiendaIds.length
           ? supabase
@@ -332,11 +425,18 @@ export async function cerrarTurnoFlow({
             .from('ventas_restaurante_items')
             .select('venta_id, cantidad, subtotal')
             .in('venta_id', ventasRestauranteIds)
+          : Promise.resolve({ data: [], error: null }),
+        ventasTerrazaIds.length
+          ? supabase
+            .from('terraza_pedido_items')
+            .select('pedido_id, cantidad, subtotal')
+            .in('pedido_id', ventasTerrazaIds)
           : Promise.resolve({ data: [], error: null })
       ]);
 
       if (detallesTiendaError) throw detallesTiendaError;
       if (itemsRestauranteError) throw itemsRestauranteError;
+      if (itemsTerrazaError) throw itemsTerrazaError;
 
       resumenOperativo = construirResumenOperativoCierre({
         movimientos: movimientosOrdenados || [],
@@ -345,6 +445,8 @@ export async function cerrarTurnoFlow({
         detallesVentasTienda: detallesVentasTiendaTurno || [],
         ventasRestaurante: ventasRestauranteTurno || [],
         itemsVentasRestaurante: itemsVentasRestauranteTurno || [],
+        ventasTerraza: ventasTerrazaTurno || [],
+        itemsVentasTerraza: itemsVentasTerrazaTurno || [],
         serviciosReserva: serviciosReservaTurno || []
       });
     } catch (resumenError) {
@@ -353,13 +455,43 @@ export async function cerrarTurnoFlow({
 
     const fechaCierreLocal = new Date(fechaCierreISO).toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
     const usuarioNombre = usuarioDelTurno?.nombre || usuarioDelTurno?.email || 'Sistema';
+    let inventarioTerrazaHtml = '';
+
+    try {
+      const { data: perfilCierre, error: perfilCierreError } = await supabase
+        .from('usuarios')
+        .select('rol, usuarios_roles(roles(nombre))')
+        .eq('id', usuarioDelTurnoId)
+        .maybeSingle();
+
+      if (perfilCierreError) throw perfilCierreError;
+
+      const perfilConRoles = {
+        ...(usuarioDelTurno || {}),
+        ...(perfilCierre || {})
+      };
+
+      if (isMeseroProfile(perfilConRoles)) {
+        const { data: inventarioTerraza, error: inventarioTerrazaError } = await supabase
+          .from('terraza_productos')
+          .select('nombre, categoria, precio, stock_actual, stock_minimo, codigo_barras, activo')
+          .eq('hotel_id', currentHotelId)
+          .order('categoria', { ascending: true })
+          .order('nombre', { ascending: true });
+
+        if (inventarioTerrazaError) throw inventarioTerrazaError;
+        inventarioTerrazaHtml = buildTerrazaInventoryHtml(inventarioTerraza || []);
+      }
+    } catch (inventarioError) {
+      console.warn('[Caja] No se pudo adjuntar inventario de Terraza al cierre del mesero.', inventarioError);
+    }
 
     let asuntoEmail = `Cierre de Caja - ${usuarioNombre} - ${fechaCierreLocal}`;
     if (esCierreForzoso) {
       asuntoEmail += ` (Forzado por ${adminNombre})`;
     }
 
-    const htmlReporte = generarHTMLReporteCierre(
+    const htmlReporteBase = generarHTMLReporteCierre(
       reporte,
       metodosDePago,
       usuarioNombre,
@@ -373,6 +505,7 @@ export async function cerrarTurnoFlow({
       valoresReales,
       resumenOperativo
     );
+    const htmlReporte = appendHtmlBeforeBodyEnd(htmlReporteBase, inventarioTerrazaHtml);
 
     const emailResult = await enviarReporteCierreCaja({
       asunto: asuntoEmail,

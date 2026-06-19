@@ -42,6 +42,12 @@ const TEMPLATE_DEFINITIONS = {
     description: 'POS restaurante, menú e inventario.',
     include: ['restaurante', 'plato', 'menu', 'inventario', 'categoria', 'comanda'],
     exclude: ['suscripcion', 'superadmin']
+  },
+  terraza: {
+    label: 'Terraza',
+    description: 'Pedidos, bebidas y cobros por mesa o silla.',
+    include: ['terraza', 'mesero', 'bebida', 'pedido'],
+    exclude: ['suscripcion', 'superadmin']
   }
 };
 
@@ -75,6 +81,7 @@ export function suggestTemplateFromRoles(roleNames = []) {
   if (haystack.includes('caja')) return 'caja';
   if (haystack.includes('mantenimiento')) return 'mantenimiento';
   if (haystack.includes('restaurante')) return 'restaurante';
+  if (haystack.includes('mesero') || haystack.includes('terraza')) return 'terraza';
   if (haystack.includes('tienda') || haystack.includes('inventario')) return 'tienda';
   if (haystack.includes('supervisor') || haystack.includes('admin')) return 'supervisor';
   return null;

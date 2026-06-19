@@ -69,6 +69,9 @@ export function getMovementOriginMeta(movement) {
   if (concept.includes('tienda') || concept.includes('producto')) {
     return { label: 'Tienda', className: 'bg-cyan-100 text-cyan-700' };
   }
+  if (concept.includes('terraza')) {
+    return { label: 'Terraza', className: 'bg-emerald-100 text-emerald-700' };
+  }
   if (concept.includes('restaurante') || concept.includes('cocina')) {
     return { label: 'Restaurante', className: 'bg-orange-100 text-orange-700' };
   }

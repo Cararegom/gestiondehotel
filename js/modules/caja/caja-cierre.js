@@ -17,6 +17,7 @@ export function procesarMovimientosParaReporte(movimientos) {
   const reporte = {
     habitaciones: crearCategoria(),
     cocina: crearCategoria(),
+    terraza: crearCategoria(),
     tienda: crearCategoria(),
     propinas: crearCategoria(),
     gastos: crearCategoria(),
@@ -39,7 +40,9 @@ export function procesarMovimientosParaReporte(movimientos) {
     }
 
     if (movimiento.tipo === 'ingreso') {
-      if (concepto.includes('restaurante') || concepto.includes('cocina')) {
+      if (concepto.includes('terraza')) {
+        categoria = reporte.terraza;
+      } else if (concepto.includes('restaurante') || concepto.includes('cocina')) {
         categoria = reporte.cocina;
       } else if (concepto.includes('tienda') || concepto.includes('producto')) {
         categoria = reporte.tienda;
@@ -73,7 +76,7 @@ export function esMetodoEfectivo(nombreMetodo = '') {
 
 export function calcularTotalesSistemaCierre(reporte, metodosDePago) {
   const calcularTotalFila = (fila) => Object.values(fila?.pagos || {}).reduce((acc, val) => acc + val, 0);
-  const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
+  const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.terraza) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
   const totalGastos = calcularTotalFila(reporte.gastos);
   const balanceFinal = (reporte.apertura || 0) + totalIngresos - totalGastos;
 
@@ -82,6 +85,7 @@ export function calcularTotalesSistemaCierre(reporte, metodosDePago) {
     const nombreMetodo = metodo.nombre;
     const totalIngreso = (reporte.habitaciones.pagos[nombreMetodo] || 0) +
       (reporte.cocina.pagos[nombreMetodo] || 0) +
+      (reporte.terraza?.pagos?.[nombreMetodo] || 0) +
       (reporte.tienda.pagos[nombreMetodo] || 0) +
       (reporte.propinas.pagos[nombreMetodo] || 0);
     const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
@@ -128,6 +132,8 @@ export function construirResumenOperativoCierre({
   detallesVentasTienda = [],
   ventasRestaurante = [],
   itemsVentasRestaurante = [],
+  ventasTerraza = [],
+  itemsVentasTerraza = [],
   serviciosReserva = []
 } = {}) {
   const movimientosList = Array.isArray(movimientos) ? movimientos : [];
@@ -149,6 +155,10 @@ export function construirResumenOperativoCierre({
     0
   );
   const restauranteUnidades = (Array.isArray(itemsVentasRestaurante) ? itemsVentasRestaurante : []).reduce(
+    (acc, item) => acc + (Number(item?.cantidad) || 0),
+    0
+  );
+  const terrazaUnidades = (Array.isArray(itemsVentasTerraza) ? itemsVentasTerraza : []).reduce(
     (acc, item) => acc + (Number(item?.cantidad) || 0),
     0
   );
@@ -176,6 +186,9 @@ export function construirResumenOperativoCierre({
     restauranteVentas: Array.isArray(ventasRestaurante) ? ventasRestaurante.length : Number(reporteSeguro?.cocina?.ventas || 0),
     restauranteUnidades,
     restauranteIngresos: (Array.isArray(ventasRestaurante) ? ventasRestaurante : []).reduce((acc, item) => acc + (Number(item?.monto_total ?? item?.total_venta) || 0), 0),
+    terrazaVentas: Array.isArray(ventasTerraza) ? ventasTerraza.length : Number(reporteSeguro?.terraza?.ventas || 0),
+    terrazaUnidades,
+    terrazaIngresos: (Array.isArray(ventasTerraza) ? ventasTerraza : []).reduce((acc, item) => acc + (Number(item?.total) || 0), 0),
     serviciosUnidades,
     serviciosIngresos: serviciosTotal,
     ingresosRegistrados: movimientosList.filter((movimiento) => movimiento?.tipo === 'ingreso').length,
@@ -857,6 +870,13 @@ export function generarHTMLReporteCierre(
             <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.cocina))}</td>
           </tr>
           <tr>
+            <td style="${styles.legacyTdConcepto}">TERRAZA:</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.terraza?.ventas || 0))}</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.terraza?.transacciones || 0))}</td>
+            ${generarCeldasResumen(reporte.terraza)}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.terraza))}</td>
+          </tr>
+          <tr>
             <td style="${styles.legacyTdConcepto}">TIENDA:</td>
             <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.tienda?.ventas || 0))}</td>
             <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.tienda?.transacciones || 0))}</td>
@@ -865,8 +885,8 @@ export function generarHTMLReporteCierre(
           </tr>
           <tr>
             <td style="${styles.legacyTdTotalConcepto}">Ingresos del turno:</td>
-            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.ventas || 0) + (reporte.cocina?.ventas || 0) + (reporte.tienda?.ventas || 0) + (reporte.propinas?.ventas || 0)))}</td>
-            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0)))}</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.ventas || 0) + (reporte.cocina?.ventas || 0) + (reporte.terraza?.ventas || 0) + (reporte.tienda?.ventas || 0) + (reporte.propinas?.ventas || 0)))}</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.terraza?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0)))}</td>
             ${tdTotalesIngresosResumen}
             <td style="${styles.legacyTdTotal}">${formatCurrency(totalIngresos)}</td>
           </tr>
@@ -880,7 +900,7 @@ export function generarHTMLReporteCierre(
           <tr>
             <td style="${styles.legacyTdTotalConcepto}">Dinero generado en el turno:</td>
             <td style="${styles.legacyTdTotal} text-align:center;">-</td>
-            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String(((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0) + (reporte.gastos?.transacciones || 0))))}</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String(((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.terraza?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0) + (reporte.gastos?.transacciones || 0))))}</td>
             ${tdTotalesBalanceResumen}
             <td style="${styles.legacyTdTotal} background-color:#007bff; color:white;">${formatCurrency(balanceOperativo)}</td>
           </tr>
@@ -925,6 +945,13 @@ export function generarHTMLReporteCierre(
         </tr>
         <tr>
           <td style="${styles.tdLeft}">
+            <span style="${styles.tdStrong}">Terraza</span>
+            <span style="${styles.tdMuted}">${escapeHtml(String(resumenOperativoSeguro.terrazaVentas || 0))} cuentas | ${escapeHtml(String(resumenOperativoSeguro.terrazaUnidades || 0))} items</span>
+          </td>
+          <td style="${styles.tdHighlight}">${formatCurrency(resumenOperativoSeguro.terrazaIngresos || 0)}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}">
             <span style="${styles.tdStrong}">Servicios y extensiones</span>
             <span style="${styles.tdMuted}">${escapeHtml(String(resumenOperativoSeguro.serviciosUnidades || 0))} registros aplicados.</span>
           </td>
@@ -960,6 +987,10 @@ export function generarHTMLReporteCierre(
         <tr>
           <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Restaurante / cocina</span></td>
           <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.cocina))}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Terraza</span></td>
+          <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.terraza))}</td>
         </tr>
         <tr>
           <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Propinas</span></td>
