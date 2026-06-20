@@ -9,7 +9,28 @@ export const TIENDA_TABS = [
   'Lista de Compras',
   'Compras',
   'Compras Pendientes',
+  'Pedidos web',
 ];
+
+export function normalizeRoleKey(value = '') {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+export function isMeseroRole(value = '') {
+  const roleKey = normalizeRoleKey(value);
+  return roleKey === 'mesero' || roleKey === 'mesero/a' || roleKey === 'mesera';
+}
+
+export function getTiendaTabsForCurrentUser() {
+  if (isMeseroRole(tiendaState.currentUser?.role)) {
+    return ['Inventario'];
+  }
+  return TIENDA_TABS;
+}
 
 export async function checkTurnoActivo(supabase, hotelId, usuarioId) {
   const turno = await fetchTurnoActivo(supabase, hotelId, usuarioId);
@@ -102,6 +123,7 @@ export function getModalContainerEl() {
 
 export function renderTiendaTabsShell(activeTab) {
   if (!tiendaState.currentContainerEl) return;
+  const tabs = getTiendaTabsForCurrentUser();
 
   tiendaState.currentContainerEl.innerHTML = `
     <div style="
@@ -114,7 +136,7 @@ export function renderTiendaTabsShell(activeTab) {
       -webkit-overflow-scrolling: touch;
       padding-bottom: 5px;
     ">
-      ${TIENDA_TABS.map((tab) => `
+      ${tabs.map((tab) => `
         <button onclick="onTabTiendaClick('${tab}')" style="
           padding: 7px 16px;
           background: ${tab === activeTab ? '#337ab7' : '#f7f7f7'};

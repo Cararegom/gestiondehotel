@@ -50,6 +50,28 @@ export async function mount(container, supabase, user, hotelId) {
           </div>
         </fieldset>
 
+        <fieldset class="border-2 border-emerald-200 p-6 rounded-xl shadow-md bg-emerald-50/30">
+          <legend class="text-xl font-semibold text-emerald-700 px-3 py-1 bg-white border-2 border-emerald-200 rounded-lg shadow-sm">
+            <span class="mr-2">Tienda</span>Pedidos Web por Habitacion
+          </legend>
+          <p class="form-helper-text mb-4">Configura el enlace que los clientes usaran desde el QR de la habitacion para pedir productos de tienda.</p>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
+            <div>
+              <label for="tienda_whatsapp_numero" class="form-label">WhatsApp para pedidos de tienda</label>
+              <input name="tienda_whatsapp_numero" id="tienda_whatsapp_numero" class="form-control" placeholder="Ej: 573001234567" />
+              <p class="form-helper-text">Incluye indicativo del pais. Si queda vacio, se usara el telefono del hotel cuando exista.</p>
+            </div>
+            <div>
+              <label for="tienda_web_activa" class="form-label">Estado de tienda web</label>
+              <select name="tienda_web_activa" id="tienda_web_activa" class="form-control">
+                <option value="true">Activa para clientes</option>
+                <option value="false">Desactivada temporalmente</option>
+              </select>
+              <p class="form-helper-text">URL sugerida: tienda-web.html?hotel=${currentHotelId || 'ID_HOTEL'}&habitacion=101</p>
+            </div>
+          </div>
+        </fieldset>
+
         <fieldset class="border-2 border-orange-200 p-6 rounded-xl shadow-md bg-orange-50/30">
           <legend class="text-xl font-semibold text-orange-700 px-3 py-1 bg-white border-2 border-orange-200 rounded-lg shadow-sm">
             <span class="mr-2">🍴</span>Impuestos Específicos del Restaurante
@@ -308,6 +330,8 @@ async function cargarConfiguracionHotel() {
     form.telefono_fiscal.value = data.telefono_fiscal || '';
     form.regimen_tributario.value = data.regimen_tributario || '';
     form.correo_reportes.value = data.correo_reportes || data.correos_reportes || '';
+    form.tienda_whatsapp_numero.value = data.tienda_whatsapp_numero || '';
+    form.tienda_web_activa.value = data.tienda_web_activa === false ? 'false' : 'true';
      form.impuesto_porcentaje_restaurante.value = data.impuesto_porcentaje_restaurante !== null ? data.impuesto_porcentaje_restaurante : '';
     form.impuesto_nombre_restaurante.value = data.impuesto_nombre_restaurante || '';
     form.impuesto_restaurante_incluido.value = (data.impuesto_restaurante_incluido === true) ? "true" : "false";
@@ -366,6 +390,8 @@ async function cargarConfiguracionHotel() {
     form.mostrar_logo.value = "true";
     form.tamano_papel.value = '80mm';
     form.tipo_impresora.value = 'termica';
+    form.tienda_whatsapp_numero.value = '';
+    form.tienda_web_activa.value = 'true';
     if(logoPreview) logoPreview.classList.add('hidden');
     if(currentLogoUrlSpan) currentLogoUrlSpan.textContent = 'No hay logo configurado.';
     console.log("No se encontró configuración existente para el hotel. Se usarán valores por defecto en el formulario.");
@@ -422,6 +448,8 @@ async function guardarConfiguracionHotel() {
     telefono_fiscal: form.telefono_fiscal.value.trim() || null,
     regimen_tributario: form.regimen_tributario.value.trim() || null,
     correo_reportes: form.correo_reportes.value.trim() || null,
+    tienda_whatsapp_numero: form.tienda_whatsapp_numero.value.trim() || null,
+    tienda_web_activa: form.tienda_web_activa.value === "true",
     checkin_hora_config: form.checkin_hora_config.value || null,
     checkout_hora_config: form.checkout_hora_config.value || null,
     cobro_al_checkin: form.cobro_al_checkin.value === "true",

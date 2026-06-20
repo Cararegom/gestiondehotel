@@ -34,6 +34,9 @@ export const tiendaState = {
     carritoProveedor: [],
     filtroProveedor: '',
   },
+  pedidosWeb: {
+    lista: [],
+  },
 };
 
 export function setTiendaContext({ containerEl, supabase, user, hotelId }) {
@@ -65,4 +68,5 @@ export function resetTiendaState() {
   tiendaState.listaCompras.filtroProveedor = '';
   tiendaState.compras.carritoProveedor = [];
   tiendaState.compras.filtroProveedor = '';
+  tiendaState.pedidosWeb.lista = [];
 }

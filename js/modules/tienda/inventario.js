@@ -1,49 +1,92 @@
 import { showError } from '../../uiUtils.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
 import { tiendaState } from './state.js';
-import { closeModal, formatCurrency, getModalContainerEl, getTabContentEl } from './helpers.js';
+import { checkTurnoActivo, closeModal, formatCurrency, getModalContainerEl, getTabContentEl, isMeseroRole, normalizeRoleKey } from './helpers.js';
 
 let inventarioProductos = [];
 let categoriasCache = [];
 let proveedoresCache = [];
+let terrazaProductosCache = [];
+let currentRoleKey = '';
 const PRODUCTO_PLACEHOLDER_IMG = 'https://via.placeholder.com/160x160?text=Sin+Foto';
+const TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
 
 export async function renderInventario() {
   const cont = getTabContentEl();
   if (!cont) return;
 
+  cont.innerHTML = '<div style="padding:24px;text-align:center;color:#64748b;">Cargando inventario...</div>';
+  await cargarRolOperativoTienda();
+  await Promise.all([cargarCategoriasYProveedores(), cargarProductosInventario(), cargarProductosTerraza()]);
+
+  const soloTransferenciaMesero = isMeseroOperativo() && !isAdminOperativo();
+  const transferenciasPanel = renderTransferenciasTerrazaPanel();
+
   cont.innerHTML = `
     <div id="inventario-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
-      <h2 style="font-size:1.35rem;font-weight:700;color:#1d4ed8;">Inventario de Productos</h2>
-      <div class="inventario-actions" style="display:flex; gap:10px;">
+      <h2 style="font-size:1.35rem;font-weight:700;color:#1d4ed8;">${soloTransferenciaMesero ? 'Transferencias de Terraza' : 'Inventario de Productos'}</h2>
+      <div class="inventario-actions" style="display:${soloTransferenciaMesero ? 'none' : 'flex'}; gap:10px;">
         <button id="btnHojaConteo" style="background:#fff;color:#4b5563;border:1.5px solid #d1d5db;padding:9px 22px;border-radius:6px;font-size:1em;font-weight:600;">Hoja de Conteo</button>
         <button id="btnDescargarInventario" style="background:#fff;color:#1d4ed8;border:1.5px solid #1d4ed8;padding:9px 22px;border-radius:6px;font-size:1em;font-weight:600;">Descargar</button>
         <button id="btnVerMovimientos" style="background:linear-gradient(90deg,#60a5fa,#3b82f6);color:#fff;padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">Historial</button>
         <button id="btnNuevoProducto" style="background:linear-gradient(90deg,#22c55e,#16a34a);color:#fff;padding:9px 22px;border:none;border-radius:6px;font-size:1em;font-weight:600;">+ Agregar Producto</button>
       </div>
     </div>
-    <div id="inventario-filters" style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
-      <input id="buscarInventario" placeholder="Buscar por nombre, codigo o categoria..." style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
-      <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;"><option value="">Todas las categorias</option></select>
-    </div>
-    <div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 8px #0001;">
-      <table style="width:100%;font-size:14px;border-collapse:collapse;">
-        <thead><tr style="background:#f3f4f6;"><th style="padding:12px;">Foto</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Codigo</th><th style="padding:12px;">Categoria</th><th style="padding:12px;">Stock</th><th style="padding:12px;">Precio Venta</th><th style="padding:12px;">Estado</th><th style="padding:12px 18px;text-align:center;">Acciones</th></tr></thead>
-        <tbody id="invProductos"></tbody>
-      </table>
-    </div>
+    ${transferenciasPanel}
+    ${soloTransferenciaMesero ? '' : `
+      <div id="inventario-filters" style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+        <input id="buscarInventario" placeholder="Buscar por nombre, codigo o categoria..." style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
+        <select id="filtroCategoriaInv" style="padding:8px 13px;border-radius:7px;border:1.5px solid #cbd5e1;font-size:1em;"><option value="">Todas las categorias</option></select>
+      </div>
+      <div style="overflow-x:auto;background:#fff;border-radius:10px;box-shadow:0 2px 8px #0001;">
+        <table style="width:100%;font-size:14px;border-collapse:collapse;">
+          <thead><tr style="background:#f3f4f6;"><th style="padding:12px;">Foto</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Codigo</th><th style="padding:12px;">Categoria</th><th style="padding:12px;">Stock</th><th style="padding:12px;">Precio Venta</th><th style="padding:12px;">Estado</th><th style="padding:12px 18px;text-align:center;">Acciones</th></tr></thead>
+          <tbody id="invProductos"></tbody>
+        </table>
+      </div>
+    `}
   `;
 
-  document.getElementById('btnHojaConteo').onclick = mostrarOpcionesHojaConteo;
-  document.getElementById('btnDescargarInventario').onclick = mostrarOpcionesDescarga;
-  document.getElementById('btnNuevoProducto').onclick = () => showModalProducto();
-  document.getElementById('btnVerMovimientos').onclick = () => showModalHistorial();
-  document.getElementById('buscarInventario').oninput = (e) => renderTablaInventario(e.target.value);
-  document.getElementById('filtroCategoriaInv').onchange = () => renderTablaInventario(document.getElementById('buscarInventario').value);
+  const formEnviarTerraza = document.getElementById('formTransferirTiendaTerraza');
+  if (formEnviarTerraza) formEnviarTerraza.onsubmit = transferirTiendaATerrazaDesdeInventario;
 
-  await Promise.all([cargarCategoriasYProveedores(), cargarProductosInventario()]);
-  document.getElementById('filtroCategoriaInv').innerHTML = `<option value="">Todas las categorias</option>${categoriasCache.map((cat) => `<option value="${cat.id}">${cat.nombre}</option>`).join('')}`;
-  renderTablaInventario('');
+  const formRecibirTienda = document.getElementById('formTransferirTerrazaTienda');
+  if (formRecibirTienda) formRecibirTienda.onsubmit = transferirTerrazaATiendaDesdeInventario;
+
+  if (!soloTransferenciaMesero) {
+    document.getElementById('btnHojaConteo').onclick = mostrarOpcionesHojaConteo;
+    document.getElementById('btnDescargarInventario').onclick = mostrarOpcionesDescarga;
+    document.getElementById('btnNuevoProducto').onclick = () => showModalProducto();
+    document.getElementById('btnVerMovimientos').onclick = () => showModalHistorial();
+    document.getElementById('buscarInventario').oninput = (e) => renderTablaInventario(e.target.value);
+    document.getElementById('filtroCategoriaInv').onchange = () => renderTablaInventario(document.getElementById('buscarInventario').value);
+    document.getElementById('filtroCategoriaInv').innerHTML = `<option value="">Todas las categorias</option>${categoriasCache.map((cat) => `<option value="${cat.id}">${cat.nombre}</option>`).join('')}`;
+    renderTablaInventario('');
+  }
+}
+
+async function cargarRolOperativoTienda() {
+  currentRoleKey = normalizeRoleKey(tiendaState.currentUser?.role || tiendaState.currentUser?.app_metadata?.rol || tiendaState.currentUser?.user_metadata?.rol);
+  if (currentRoleKey || !tiendaState.currentUser?.id) return;
+
+  const { data } = await tiendaState.currentSupabase
+    .from('usuarios')
+    .select('rol, usuarios_roles(roles(nombre))')
+    .eq('id', tiendaState.currentUser.id)
+    .maybeSingle();
+
+  const roleNames = [
+    data?.rol,
+    ...((data?.usuarios_roles || []).map((item) => item?.roles?.nombre))
+  ].filter(Boolean);
+
+  if (roleNames.some(isMeseroRole)) {
+    currentRoleKey = 'mesero';
+  } else if (roleNames.map(normalizeRoleKey).includes('recepcionista')) {
+    currentRoleKey = 'recepcionista';
+  } else if (roleNames.map(normalizeRoleKey).some((role) => role === 'admin' || role === 'administrador' || role === 'superadmin')) {
+    currentRoleKey = 'admin';
+  }
 }
 
 async function cargarCategoriasYProveedores() {
@@ -62,6 +105,163 @@ async function cargarProductosInventario() {
     .eq('hotel_id', tiendaState.currentHotelId)
     .order('nombre', { ascending: true });
   inventarioProductos = data || [];
+}
+
+async function cargarProductosTerraza() {
+  if (tiendaState.currentHotelId !== TERRAZA_HOTEL_ID) {
+    terrazaProductosCache = [];
+    return;
+  }
+
+  const { data } = await tiendaState.currentSupabase
+    .from('terraza_productos')
+    .select('id, nombre, categoria, stock_actual, stock_minimo, activo, tienda_producto_id')
+    .eq('hotel_id', tiendaState.currentHotelId)
+    .order('nombre', { ascending: true });
+  terrazaProductosCache = data || [];
+}
+
+function isRecepcionistaOperativo() {
+  return currentRoleKey === 'recepcionista';
+}
+
+function isMeseroOperativo() {
+  return isMeseroRole(currentRoleKey);
+}
+
+function isAdminOperativo() {
+  return ['admin', 'administrador', 'superadmin'].includes(currentRoleKey);
+}
+
+function renderTransferenciasTerrazaPanel() {
+  if (tiendaState.currentHotelId !== TERRAZA_HOTEL_ID) return '';
+
+  const puedeEnviarATerraza = isRecepcionistaOperativo() || isAdminOperativo();
+  const puedeRecibirDesdeTerraza = isMeseroOperativo() || isAdminOperativo();
+
+  if (!puedeEnviarATerraza && !puedeRecibirDesdeTerraza) return '';
+
+  const productosTiendaConStock = inventarioProductos.filter((producto) => producto.activo !== false && Number(producto.stock_actual || 0) > 0);
+  const productosTerrazaConStock = terrazaProductosCache.filter((producto) => producto.activo !== false && Number(producto.stock_actual || 0) > 0);
+
+  return `
+    <section style="margin-bottom:18px;border:1px solid #bfdbfe;background:#eff6ff;border-radius:14px;padding:16px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:12px;">
+        <div>
+          <h3 style="margin:0;color:#1d4ed8;font-size:1.05rem;font-weight:800;">Transferencias Tienda / Terraza</h3>
+          <p style="margin:4px 0 0;color:#475569;font-size:0.9rem;">Cada movimiento queda asociado al usuario que tenga el turno abierto.</p>
+        </div>
+        <span style="background:#dbeafe;color:#1e40af;border-radius:999px;padding:5px 10px;font-weight:700;font-size:0.78rem;">Hotel con Terraza</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;">
+        ${puedeEnviarATerraza ? `
+          <form id="formTransferirTiendaTerraza" style="background:#fff;border:1px solid #dbeafe;border-radius:12px;padding:14px;">
+            <h4 style="margin:0 0 5px;color:#0f172a;font-weight:800;">Recepcion envia a Terraza</h4>
+            <p style="margin:0 0 12px;color:#64748b;font-size:0.84rem;">Descuenta unidades de Tienda y las suma a Terraza.</p>
+            <label style="display:block;font-size:0.78rem;font-weight:700;color:#475569;margin-bottom:4px;">Producto en Tienda</label>
+            <select name="producto_tienda_id" required ${productosTiendaConStock.length ? '' : 'disabled'} style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;margin-bottom:10px;">
+              <option value="">Selecciona producto</option>
+              ${productosTiendaConStock.map((producto) => `<option value="${producto.id}">${producto.nombre} - stock ${producto.stock_actual || 0}</option>`).join('')}
+            </select>
+            <label style="display:block;font-size:0.78rem;font-weight:700;color:#475569;margin-bottom:4px;">Cantidad</label>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:10px;">
+              <input name="cantidad" type="number" min="1" step="1" value="1" required ${productosTiendaConStock.length ? '' : 'disabled'} style="padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;">
+              <button type="submit" ${productosTiendaConStock.length ? '' : 'disabled'} style="background:#2563eb;color:white;border:none;border-radius:8px;padding:9px 14px;font-weight:800;cursor:pointer;">Enviar</button>
+            </div>
+          </form>
+        ` : ''}
+
+        ${puedeRecibirDesdeTerraza ? `
+          <form id="formTransferirTerrazaTienda" style="background:#fff;border:1px solid #d1fae5;border-radius:12px;padding:14px;">
+            <h4 style="margin:0 0 5px;color:#0f172a;font-weight:800;">Mesero devuelve a Tienda</h4>
+            <p style="margin:0 0 12px;color:#64748b;font-size:0.84rem;">Mueve unidades disponibles de Terraza hacia Tienda.</p>
+            <label style="display:block;font-size:0.78rem;font-weight:700;color:#475569;margin-bottom:4px;">Producto en Terraza</label>
+            <select name="producto_terraza_id" required ${productosTerrazaConStock.length ? '' : 'disabled'} style="width:100%;padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;margin-bottom:10px;">
+              <option value="">Selecciona producto</option>
+              ${productosTerrazaConStock.map((producto) => `<option value="${producto.id}">${producto.nombre} - stock ${producto.stock_actual || 0}</option>`).join('')}
+            </select>
+            <label style="display:block;font-size:0.78rem;font-weight:700;color:#475569;margin-bottom:4px;">Cantidad</label>
+            <div style="display:grid;grid-template-columns:1fr auto;gap:10px;">
+              <input name="cantidad" type="number" min="1" step="1" value="1" required ${productosTerrazaConStock.length ? '' : 'disabled'} style="padding:9px 11px;border:1.5px solid #cbd5e1;border-radius:8px;">
+              <button type="submit" ${productosTerrazaConStock.length ? '' : 'disabled'} style="background:#059669;color:white;border:none;border-radius:8px;padding:9px 14px;font-weight:800;cursor:pointer;">Devolver</button>
+            </div>
+          </form>
+        ` : ''}
+      </div>
+    </section>
+  `;
+}
+
+async function transferirTiendaATerrazaDesdeInventario(event) {
+  event.preventDefault();
+  if (!isRecepcionistaOperativo() && !isAdminOperativo()) {
+    alert('Solo recepcion o administracion puede enviar inventario de Tienda a Terraza.');
+    return;
+  }
+  const turnoOk = await checkTurnoActivo(tiendaState.currentSupabase, tiendaState.currentHotelId, tiendaState.currentUser.id);
+  if (!turnoOk) return;
+
+  const formData = new FormData(event.currentTarget);
+  const productoTiendaId = String(formData.get('producto_tienda_id') || '').trim();
+  const cantidad = Number(formData.get('cantidad') || 0);
+  if (!productoTiendaId || !Number.isInteger(cantidad) || cantidad <= 0) {
+    alert('Selecciona un producto y una cantidad valida.');
+    return;
+  }
+
+  const { data, error } = await tiendaState.currentSupabase.rpc('transferir_tienda_a_terraza', {
+    p_producto_tienda_id: productoTiendaId,
+    p_cantidad: cantidad,
+    p_usuario_id: tiendaState.currentUser.id
+  });
+
+  if (error) {
+    alert(`No se pudo enviar a Terraza: ${error.message}`);
+    return;
+  }
+  if (data?.error) {
+    alert(data.message || 'No se pudo enviar a Terraza.');
+    return;
+  }
+
+  alert('Inventario enviado a Terraza.');
+  await renderInventario();
+}
+
+async function transferirTerrazaATiendaDesdeInventario(event) {
+  event.preventDefault();
+  if (!isMeseroOperativo() && !isAdminOperativo()) {
+    alert('Solo el mesero o administracion puede devolver inventario de Terraza a Tienda.');
+    return;
+  }
+  const turnoOk = await checkTurnoActivo(tiendaState.currentSupabase, tiendaState.currentHotelId, tiendaState.currentUser.id);
+  if (!turnoOk) return;
+
+  const formData = new FormData(event.currentTarget);
+  const productoTerrazaId = String(formData.get('producto_terraza_id') || '').trim();
+  const cantidad = Number(formData.get('cantidad') || 0);
+  if (!productoTerrazaId || !Number.isInteger(cantidad) || cantidad <= 0) {
+    alert('Selecciona un producto y una cantidad valida.');
+    return;
+  }
+
+  const { data, error } = await tiendaState.currentSupabase.rpc('transferir_terraza_a_tienda', {
+    p_producto_terraza_id: productoTerrazaId,
+    p_cantidad: cantidad,
+    p_usuario_id: tiendaState.currentUser.id
+  });
+
+  if (error) {
+    alert(`No se pudo devolver a Tienda: ${error.message}`);
+    return;
+  }
+  if (data?.error) {
+    alert(data.message || 'No se pudo devolver a Tienda.');
+    return;
+  }
+
+  alert('Inventario devuelto a Tienda.');
+  await renderInventario();
 }
 
 function renderTablaInventario(filtro = '') {
@@ -564,4 +764,6 @@ export function resetInventarioState() {
   inventarioProductos = [];
   categoriasCache = [];
   proveedoresCache = [];
+  terrazaProductosCache = [];
+  currentRoleKey = '';
 }

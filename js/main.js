@@ -92,7 +92,7 @@ const superadminNavLinksConfig = [
 ];
 const superadminAllowedRoutes = new Set(['/ops-saas', '/bitacora', '/soporte', '/faq']);
 const TERRAZA_ENABLED_HOTEL_IDS = new Set(['38373fa5-b953-4aa9-b4e9-25b9739be5f2']);
-const MESERO_ALLOWED_MODULES = new Set(['caja', 'terraza']);
+const MESERO_ALLOWED_MODULES = new Set(['caja', 'terraza', 'tienda']);
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
@@ -624,9 +624,10 @@ async function router() {
       : null;
 
     if (moduleDefinition) {
+      const userForModuleWithRole = userForModule ? { ...userForModule, role: currentUserRole } : userForModule;
       if (typeof moduleDefinition.mount !== 'function') {
         if (typeof moduleDefinition.default === 'function') {
-          await moduleDefinition.default(appContainer, supabase, userForModule, hotelIdForModule);
+          await moduleDefinition.default(appContainer, supabase, userForModuleWithRole, hotelIdForModule);
           currentModuleUnmount = null;
         } else {
           if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error: M\u00F3dulo para "${escapeHtml(baseRoute)}" inv\u00E1lido.</p>`;
@@ -642,7 +643,7 @@ async function router() {
         try {
           console.log(`[Router] Montando módulo para: ${baseRoute}`);
           console.log("DEBUG main.js: Valor de 'supabase' antes de pasarlo al módulo:", supabase);
-          await moduleDefinition.mount(appContainer, supabase, userForModule, hotelIdForModule, currentActivePlanDetails);
+          await moduleDefinition.mount(appContainer, supabase, userForModuleWithRole, hotelIdForModule, currentActivePlanDetails);
           currentModuleUnmount = moduleDefinition.unmount || null;
           currentPathLoaded = baseRoute;
         } catch (error) {

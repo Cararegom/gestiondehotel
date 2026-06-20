@@ -5,6 +5,11 @@ import { formatCurrency } from '../../uiUtils.js';
 import { escapeAttribute, escapeHtml } from '../../security.js';
 
 const TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
+const DEFAULT_TERRAZA_CONFIG = Object.freeze({
+  precio_michelada: 0,
+  propina_sugerida_porcentaje: 10,
+  permitir_descarga_pdf: true
+});
 
 let state = {
   container: null,
@@ -15,10 +20,13 @@ let state = {
   productos: [],
   tiendaProductos: [],
   metodosPago: [],
+  configuracion: { ...DEFAULT_TERRAZA_CONFIG },
+  isAdmin: false,
   pedidosAbiertos: [],
   historial: [],
   selectedMesaId: null,
   selectedSillaNumero: null,
+  selectedMetodoPagoId: null,
   editingProductId: null,
   activeTab: 'mapa',
   loading: false
@@ -34,6 +42,11 @@ function addListener(element, type, handler) {
 
 function money(value) {
   return formatCurrency(Number(value || 0));
+}
+
+function numberOrZero(value) {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function formatDate(value) {
@@ -103,6 +116,118 @@ function normalizeTextKey(value = '') {
     .replace(/[^a-z0-9]/g, '');
 }
 
+function getTerrazaConfig() {
+  return { ...DEFAULT_TERRAZA_CONFIG, ...(state.configuracion || {}) };
+}
+
+function getMicheladaPrice() {
+  return numberOrZero(getTerrazaConfig().precio_michelada);
+}
+
+function getTipPercent() {
+  return Math.max(0, numberOrZero(getTerrazaConfig().propina_sugerida_porcentaje));
+}
+
+function canDownloadPdf() {
+  return getTerrazaConfig().permitir_descarga_pdf !== false;
+}
+
+function getSuggestedTip(total) {
+  const percent = getTipPercent();
+  return Math.round(numberOrZero(total) * (percent / 100));
+}
+
+function getPedidoTipAmount(pedido) {
+  return Math.max(0, numberOrZero(pedido?.propina_monto));
+}
+
+function getPedidoSuggestedTipAmount(pedido) {
+  return Math.max(0, numberOrZero(pedido?.propina_sugerida_monto || getSuggestedTip(totalPedido(pedido))));
+}
+
+function getTotalConPropina(subtotal, propina) {
+  return numberOrZero(subtotal) + Math.max(0, numberOrZero(propina));
+}
+
+function getTipInputAmount(fallbackAmount = 0) {
+  const input = state.container?.querySelector('#terraza-propina-monto');
+  if (!input) return Math.max(0, numberOrZero(fallbackAmount));
+  return Math.max(0, numberOrZero(input.value));
+}
+
+function isBeerProduct(producto) {
+  return producto?.permite_michelada === true || normalizeTextKey(producto?.categoria).includes('cerveza');
+}
+
+function isAdminRoleName(value = '') {
+  const roleKey = normalizeTextKey(value);
+  return roleKey === 'admin' || roleKey === 'administrador' || roleKey === 'superadmin';
+}
+
+function isMicheladaItem(item) {
+  return item?.es_michelada === true || item?.es_michelada === 'true';
+}
+
+function getItemDisplayName(item) {
+  const baseName = item?.producto_nombre || 'Producto';
+  return isMicheladaItem(item) ? `${baseName} Michelada` : baseName;
+}
+
+function getItemPriceDetail(item) {
+  if (!isMicheladaItem(item)) return money(item?.precio_unitario);
+  const basePrice = numberOrZero(item?.precio_base || item?.precio_unitario);
+  const micheladaPrice = numberOrZero(item?.precio_michelada);
+  return `${money(item?.precio_unitario)} (${money(basePrice)} + ${money(micheladaPrice)})`;
+}
+
+function buildReceiptItems(pedido) {
+  return getPedidoItems(pedido).map((item) => ({
+    nombre: getItemDisplayName(item),
+    cantidad: item.cantidad,
+    precio: item.precio_unitario,
+    total: item.subtotal
+  }));
+}
+
+function getPedidoById(pedidoId) {
+  return [...state.pedidosAbiertos, ...state.historial].find((pedido) => pedido.id === pedidoId) || null;
+}
+
+function getSafeFileName(value) {
+  return String(value || 'terraza')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'terraza';
+}
+
+async function resolveTerrazaAdminAccess() {
+  if (isAdminRoleName(state.user?.role || state.user?.app_metadata?.rol || state.user?.user_metadata?.rol)) {
+    return true;
+  }
+
+  if (!state.supabase || !state.user?.id) return false;
+
+  const { data, error } = await state.supabase
+    .from('usuarios')
+    .select('rol, usuarios_roles(roles(nombre))')
+    .eq('id', state.user.id)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('[Terraza] No se pudo resolver rol administrativo:', error.message);
+    return false;
+  }
+
+  const roleNames = [
+    data?.rol,
+    ...((data?.usuarios_roles || []).map((item) => item?.roles?.nombre))
+  ].filter(Boolean);
+
+  return roleNames.some(isAdminRoleName);
+}
+
 function isLooseChairGroup(mesa) {
   if (!mesa) return false;
   const tipoKey = normalizeTextKey(mesa.tipo);
@@ -157,6 +282,46 @@ function countItems(pedido) {
 
 function totalPedido(pedido) {
   return Number(pedido?.total || 0);
+}
+
+function getPedidoEstadoMeta(pedido) {
+  if (pedido?.estado === 'pagado') {
+    return {
+      label: 'Pagada',
+      className: 'bg-green-100 text-green-800 border-green-200',
+      documentLabel: 'Ticket Terraza',
+      receiptStatus: 'Pagado'
+    };
+  }
+
+  if (pedido?.estado === 'cancelado' && pedido?.reabierto_en_pedido_id) {
+    return {
+      label: 'Cancelada por reapertura',
+      className: 'bg-amber-100 text-amber-800 border-amber-200',
+      documentLabel: 'Ticket Terraza Cancelado',
+      receiptStatus: 'Cancelado por reapertura'
+    };
+  }
+
+  if (pedido?.estado === 'cancelado') {
+    return {
+      label: 'Cancelada',
+      className: 'bg-red-100 text-red-800 border-red-200',
+      documentLabel: 'Cuenta Terraza Cancelada',
+      receiptStatus: 'Cancelado'
+    };
+  }
+
+  return {
+    label: 'Abierta',
+    className: 'bg-blue-100 text-blue-800 border-blue-200',
+    documentLabel: 'Recibo Terraza',
+    receiptStatus: 'Pendiente'
+  };
+}
+
+function canReopenPedido(pedido) {
+  return pedido?.estado === 'pagado' && !pedido?.reabierto_en_pedido_id;
 }
 
 function pedidosPorMesa(mesaId) {
@@ -226,13 +391,21 @@ function getProductoById(productId) {
   return state.productos.find((producto) => producto.id === productId) || null;
 }
 
+function getMetodosPagoActivos() {
+  return state.metodosPago.filter((metodo) => metodo.activo !== false);
+}
+
+function getSelectedMetodoPago() {
+  return state.metodosPago.find((metodo) => metodo.id === state.selectedMetodoPagoId) || null;
+}
+
 function getTiendaProductoNombre(producto) {
   if (!producto?.tienda_producto_id) return 'Sin enlace';
   return state.tiendaProductos.find((item) => item.id === producto.tienda_producto_id)?.nombre || 'Producto enlazado';
 }
 
 async function cargarDatos() {
-  const [mesasResult, productosResult, tiendaProductosResult, metodosResult, pedidosResult, historialResult] = await Promise.all([
+  const [mesasResult, productosResult, tiendaProductosResult, metodosResult, configResult, pedidosResult, historialResult] = await Promise.all([
     state.supabase
       .from('terraza_mesas')
       .select('*')
@@ -253,10 +426,14 @@ async function cargarDatos() {
       .order('nombre', { ascending: true }),
     state.supabase
       .from('metodos_pago')
-      .select('id, nombre')
+      .select('*')
       .eq('hotel_id', state.hotelId)
-      .eq('activo', true)
       .order('nombre', { ascending: true }),
+    state.supabase
+      .from('terraza_configuracion')
+      .select('*')
+      .eq('hotel_id', state.hotelId)
+      .maybeSingle(),
     state.supabase
       .from('terraza_pedidos')
       .select('*, mesa:terraza_mesas(id, numero, nombre, sillas, tipo), items:terraza_pedido_items(*)')
@@ -267,12 +444,11 @@ async function cargarDatos() {
       .from('terraza_pedidos')
       .select('*, mesa:terraza_mesas(id, numero, nombre, tipo), metodo:metodos_pago(nombre), items:terraza_pedido_items(*)')
       .eq('hotel_id', state.hotelId)
-      .eq('estado', 'pagado')
-      .order('fecha_cierre', { ascending: false })
-      .limit(12)
+      .in('estado', ['pagado', 'cancelado'])
+      .order('actualizado_en', { ascending: false })
   ]);
 
-  const errors = [mesasResult.error, productosResult.error, tiendaProductosResult.error, metodosResult.error, pedidosResult.error, historialResult.error].filter(Boolean);
+  const errors = [mesasResult.error, productosResult.error, tiendaProductosResult.error, metodosResult.error, configResult.error, pedidosResult.error, historialResult.error].filter(Boolean);
   if (errors.length) {
     throw errors[0];
   }
@@ -281,6 +457,10 @@ async function cargarDatos() {
   state.productos = productosResult.data || [];
   state.tiendaProductos = tiendaProductosResult.data || [];
   state.metodosPago = metodosResult.data || [];
+  if (state.selectedMetodoPagoId && !getMetodosPagoActivos().some((metodo) => metodo.id === state.selectedMetodoPagoId)) {
+    state.selectedMetodoPagoId = null;
+  }
+  state.configuracion = { ...DEFAULT_TERRAZA_CONFIG, ...(configResult.data || {}) };
   state.pedidosAbiertos = pedidosResult.data || [];
   state.historial = historialResult.data || [];
 
@@ -461,8 +641,10 @@ function renderProductos() {
             const disponible = getAvailableStock(producto);
             const disabled = disponible <= 0 || Number(producto.precio || 0) <= 0;
             const stockBadge = getStockBadge(producto);
+            const beerProduct = isBeerProduct(producto);
+            const micheladaPrice = getMicheladaPrice();
             return `
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-product-card="${escapeAttribute(producto.id)}">
               <div class="flex min-h-[72px] flex-col justify-between">
                 <div>
                   <div class="flex items-start justify-between gap-3">
@@ -470,6 +652,13 @@ function renderProductos() {
                     <span class="rounded-full border px-2 py-0.5 text-[11px] font-bold ${stockBadge.className}">${escapeHtml(stockBadge.label)}</span>
                   </div>
                   <p class="mt-1 text-xs text-slate-500">${escapeHtml(producto.descripcion || '')}</p>
+                  ${beerProduct ? `
+                    <label class="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
+                      <input type="checkbox" class="h-4 w-4" data-michelada-option>
+                      <span>Vender como michelada</span>
+                      <span class="ml-auto text-amber-700">+ ${money(micheladaPrice)}</span>
+                    </label>
+                  ` : ''}
                 </div>
                 <div class="mt-3 flex items-center justify-between gap-3">
                   <span class="text-lg font-extrabold text-blue-700">${money(producto.precio)}</span>
@@ -494,6 +683,13 @@ function renderPedido() {
   const selectedMesa = getMesaById(state.selectedMesaId);
   const isSillaSuelta = isLooseChairGroup(selectedMesa);
   const disabled = !pedido || !items.length;
+  const total = totalPedido(pedido);
+  const suggestedTip = getSuggestedTip(total);
+  const defaultTipAmount = getPedidoTipAmount(pedido) || suggestedTip;
+  const totalConPropina = getTotalConPropina(total, defaultTipAmount);
+  const allowPdf = canDownloadPdf();
+  const selectedMetodo = getSelectedMetodoPago();
+  const metodosActivos = getMetodosPagoActivos();
 
   return `
     <aside class="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -516,8 +712,11 @@ function renderPedido() {
               ${items.map((item) => `
                 <tr>
                   <td class="py-3">
-                    <div class="font-semibold text-slate-800">${escapeHtml(item.producto_nombre)}</div>
-                    <div class="text-xs text-slate-500">${money(item.precio_unitario)}</div>
+                    <div class="font-semibold text-slate-800">
+                      ${escapeHtml(getItemDisplayName(item))}
+                      ${isMicheladaItem(item) ? '<span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800">Michelada</span>' : ''}
+                    </div>
+                    <div class="text-xs text-slate-500">${escapeHtml(getItemPriceDetail(item))}</div>
                   </td>
                   <td class="py-3 text-center">
                     <div class="inline-flex items-center rounded-lg border border-slate-200">
@@ -536,14 +735,46 @@ function renderPedido() {
       </div>
       <div class="border-t border-slate-200 p-4">
         <div class="mb-4 flex items-center justify-between">
-          <span class="text-sm font-semibold text-slate-600">Total</span>
-          <span class="text-3xl font-extrabold text-blue-700">${money(totalPedido(pedido))}</span>
+          <span class="text-sm font-semibold text-slate-600">Subtotal consumo</span>
+          <span class="text-3xl font-extrabold text-blue-700">${money(total)}</span>
         </div>
-        <label class="mb-1 block text-xs font-semibold uppercase text-slate-500" for="terraza-metodo-pago">Metodo de pago</label>
-        <select id="terraza-metodo-pago" class="form-control mb-3 w-full" ${disabled ? 'disabled' : ''}>
-          <option value="">Selecciona metodo</option>
-          ${state.metodosPago.map((metodo) => `<option value="${escapeAttribute(metodo.id)}">${escapeHtml(metodo.nombre)}</option>`).join('')}
-        </select>
+        <div class="mb-4 rounded-lg bg-emerald-50 p-3 text-sm">
+          <div class="mb-2 flex items-center justify-between text-emerald-800">
+            <span class="font-semibold">Propina sugerida</span>
+            <span class="font-bold">${money(suggestedTip)}</span>
+          </div>
+          <label class="mb-1 block text-xs font-semibold uppercase text-emerald-700" for="terraza-propina-monto">Propina que dio el cliente</label>
+          <input
+            id="terraza-propina-monto"
+            type="number"
+            min="0"
+            step="100"
+            class="form-control w-full border-emerald-200 bg-white"
+            value="${escapeAttribute(String(defaultTipAmount))}"
+            ${disabled ? 'disabled' : ''}
+          >
+          <p class="mt-1 text-xs text-emerald-700">El mesero puede cambiar este valor por el monto real recibido.</p>
+          <div class="mt-3 flex items-center justify-between text-emerald-900">
+            <span class="font-bold">Total con propina</span>
+            <span id="terraza-total-con-propina" class="font-extrabold">${money(totalConPropina)}</span>
+          </div>
+        </div>
+        <div class="mb-3 grid ${allowPdf ? 'grid-cols-2' : 'grid-cols-1'} gap-2">
+          <button class="button button-outline w-full" data-action="print-order-receipt" ${disabled ? 'disabled' : ''}>Imprimir recibo</button>
+          ${allowPdf ? `<button class="button button-neutral w-full" data-action="download-order-pdf" ${disabled ? 'disabled' : ''}>Descargar PDF</button>` : ''}
+        </div>
+        <div class="mb-3">
+          <label class="mb-1 block text-xs font-semibold uppercase text-slate-500">Metodo de pago</label>
+          <button
+            type="button"
+            class="w-full rounded-lg border px-3 py-2 text-left text-sm font-semibold transition ${selectedMetodo ? 'border-blue-300 bg-blue-50 text-blue-800' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}"
+            data-action="choose-payment-method"
+            ${disabled || !metodosActivos.length ? 'disabled' : ''}
+          >
+            ${selectedMetodo ? escapeHtml(selectedMetodo.nombre) : (metodosActivos.length ? 'Seleccionar metodo de pago' : 'No hay metodos activos')}
+          </button>
+          ${!metodosActivos.length ? '<p class="mt-1 text-xs text-red-600">Activa o crea metodos de pago en Configuracion.</p>' : ''}
+        </div>
         <div class="grid grid-cols-2 gap-2">
           <button class="button button-danger w-full" data-action="cancel-order" ${disabled ? 'disabled' : ''}>Cancelar</button>
           <button class="button button-success w-full" data-action="pay-order" ${disabled ? 'disabled' : ''}>Cobrar</button>
@@ -601,6 +832,14 @@ function renderCatalogForm() {
           Activo para ventas
         </label>
       </div>
+
+      <label class="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+        <input name="permite_michelada" type="checkbox" class="mt-1 h-4 w-4" ${product?.permite_michelada || isBeerProduct(product) ? 'checked' : ''}>
+        <span>
+          Permite vender como michelada
+          <span class="block text-xs font-normal text-amber-800">Usalo para cervezas como Corona, Club Colombia, Aguila, Poker, etc.</span>
+        </span>
+      </label>
 
       <div class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
         <div class="md:col-span-3">
@@ -695,6 +934,7 @@ function renderInventarioTable() {
             <tr>
               <th class="px-4 py-3">Producto</th>
               <th class="px-4 py-3">Categoria</th>
+              <th class="px-4 py-3 text-center">Michelada</th>
               <th class="px-4 py-3 text-right">Precio</th>
               <th class="px-4 py-3 text-center">Stock</th>
               <th class="px-4 py-3 text-center">Reservado</th>
@@ -715,6 +955,11 @@ function renderInventarioTable() {
                     <div class="text-xs text-slate-500">${escapeHtml(producto.codigo_barras || 'Sin codigo')}</div>
                   </td>
                   <td class="px-4 py-3">${escapeHtml(producto.categoria || 'Bebidas')}</td>
+                  <td class="px-4 py-3 text-center">
+                    ${isBeerProduct(producto)
+                      ? '<span class="rounded-full bg-amber-100 px-2 py-1 text-xs font-bold text-amber-800">Si</span>'
+                      : '<span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-500">No</span>'}
+                  </td>
                   <td class="px-4 py-3 text-right font-semibold">${money(producto.precio)}</td>
                   <td class="px-4 py-3 text-center font-bold ${bajo ? 'text-amber-700' : 'text-slate-800'}">${escapeHtml(String(producto.stock_actual || 0))}</td>
                   <td class="px-4 py-3 text-center">${escapeHtml(String(reservado))}</td>
@@ -740,29 +985,61 @@ function renderInventarioTable() {
 
 function renderHistorial() {
   if (!state.historial.length) {
-    return '<div class="rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">Aun no hay cuentas cobradas.</div>';
+    return '<div class="rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">Aun no hay movimientos de cuentas en Terraza.</div>';
   }
 
   return `
     <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
       <div class="border-b border-slate-200 p-4">
-        <h3 class="font-bold text-slate-800">Ultimas cuentas cobradas</h3>
+        <h3 class="font-bold text-slate-800">Historial de cuentas y movimientos</h3>
+        <p class="mt-1 text-xs text-slate-500">Incluye cuentas cobradas, canceladas y reabiertas.</p>
       </div>
       <div class="divide-y divide-slate-100">
-        ${state.historial.map((pedido) => `
-          <div class="flex items-center justify-between gap-3 p-4 text-sm">
-            <div>
-              <div class="font-semibold text-slate-800">
-                ${escapeHtml(getPedidoLocationLabel(pedido))}
+        ${state.historial.map((pedido) => {
+          const estadoMeta = getPedidoEstadoMeta(pedido);
+          const fechaMovimiento = pedido.fecha_cancelacion || pedido.fecha_cierre || pedido.actualizado_en || pedido.creado_en;
+          const items = getPedidoItems(pedido);
+          const motivo = pedido.motivo_reapertura || pedido.motivo_cancelacion || '';
+          const subtotal = totalPedido(pedido);
+          const propina = getPedidoTipAmount(pedido);
+          const totalCobrado = getTotalConPropina(subtotal, propina);
+          return `
+            <div class="flex flex-col justify-between gap-3 p-4 text-sm md:flex-row md:items-start">
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="font-semibold text-slate-800">${escapeHtml(getPedidoLocationLabel(pedido))}</span>
+                  <span class="rounded-full border px-2 py-0.5 text-[11px] font-bold ${estadoMeta.className}">${estadoMeta.label}</span>
+                </div>
+                <div class="mt-1 text-xs text-slate-500">
+                  ${formatDate(fechaMovimiento)} - ${escapeHtml(pedido.metodo?.nombre || 'Sin metodo')}
+                </div>
+                ${motivo ? `<div class="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"><strong>Motivo:</strong> ${escapeHtml(motivo)}</div>` : ''}
+                ${items.length ? `
+                  <div class="mt-2 flex flex-wrap gap-1.5">
+                    ${items.map((item) => `
+                      <span class="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+                        ${escapeHtml(String(item.cantidad || 0))}x ${escapeHtml(getItemDisplayName(item))}
+                      </span>
+                    `).join('')}
+                  </div>
+                ` : '<div class="mt-2 text-xs text-slate-400">Sin consumos registrados.</div>'}
               </div>
-              <div class="text-xs text-slate-500">${formatDate(pedido.fecha_cierre)} - ${escapeHtml(pedido.metodo?.nombre || 'Metodo')}</div>
+              <div class="flex flex-col items-start gap-2 md:items-end">
+                <div class="text-right">
+                  <div class="text-xs text-slate-500">Consumo: ${money(subtotal)}</div>
+                  <div class="text-xs text-emerald-700">Propina: ${money(propina)}</div>
+                  <div class="font-bold ${pedido.estado === 'cancelado' ? 'text-slate-500' : 'text-blue-700'}">${money(totalCobrado)}</div>
+                </div>
+                <div class="text-xs text-slate-500">${countItems(pedido)} item(s)</div>
+                <div class="flex flex-wrap gap-2 md:justify-end">
+                  <button class="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-action="print-history-receipt" data-pedido-id="${escapeAttribute(pedido.id)}">Imprimir</button>
+                  ${canDownloadPdf() ? `<button class="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50" data-action="download-history-pdf" data-pedido-id="${escapeAttribute(pedido.id)}">PDF</button>` : ''}
+                  ${canReopenPedido(pedido) ? `<button class="rounded-lg border border-amber-200 px-2 py-1 text-xs font-bold text-amber-800 hover:bg-amber-50" data-action="reopen-history-order" data-pedido-id="${escapeAttribute(pedido.id)}">Reabrir</button>` : ''}
+                </div>
+              </div>
             </div>
-            <div class="text-right">
-              <div class="font-bold text-blue-700">${money(pedido.total)}</div>
-              <div class="text-xs text-slate-500">${countItems(pedido)} item(s)</div>
-            </div>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     </div>
   `;
@@ -773,9 +1050,12 @@ function renderStats() {
   const totalAbierto = state.pedidosAbiertos.reduce((acc, pedido) => acc + totalPedido(pedido), 0);
   const puestosOcupados = state.pedidosAbiertos.filter((pedido) => pedido.silla_numero).length;
   const productosBajos = state.productos.filter((producto) => producto.activo !== false && Number(producto.stock_actual || 0) <= Number(producto.stock_minimo || 0)).length;
+  const propinasCobradas = state.historial
+    .filter((pedido) => pedido.estado === 'pagado')
+    .reduce((acc, pedido) => acc + getPedidoTipAmount(pedido), 0);
 
   return `
-    <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-5">
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div class="text-xs font-semibold uppercase text-slate-500">Cuentas abiertas</div>
         <div class="mt-1 text-2xl font-extrabold text-slate-900">${cuentas}</div>
@@ -792,6 +1072,10 @@ function renderStats() {
         <div class="text-xs font-semibold uppercase text-slate-500">Stock bajo</div>
         <div class="mt-1 text-2xl font-extrabold ${productosBajos ? 'text-amber-700' : 'text-slate-900'}">${productosBajos}</div>
       </div>
+      <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+        <div class="text-xs font-semibold uppercase text-emerald-700">Propinas cobradas</div>
+        <div class="mt-1 text-2xl font-extrabold text-emerald-900">${money(propinasCobradas)}</div>
+      </div>
     </div>
   `;
 }
@@ -802,6 +1086,10 @@ function renderTabNav() {
     { id: 'inventario', label: 'Inventario' },
     { id: 'historial', label: 'Historial' }
   ];
+
+  if (state.isAdmin) {
+    tabs.push({ id: 'configuracion', label: 'Configuracion' });
+  }
 
   return `
     <div class="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
@@ -857,7 +1145,6 @@ function renderInventarioTab() {
   return `
     <div class="space-y-4">
       ${renderStats()}
-      ${renderTransferForms()}
       ${renderCatalogForm()}
       ${renderInventarioTable()}
     </div>
@@ -879,9 +1166,55 @@ function renderHistorialTab() {
   `;
 }
 
+function renderConfiguracionTab() {
+  const config = getTerrazaConfig();
+
+  return `
+    <div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
+      <form id="terraza-config-form" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+        <div class="mb-4">
+          <h2 class="text-lg font-bold text-slate-800">Configuracion de Terraza</h2>
+          <p class="mt-1 text-sm text-slate-500">Define recargos y opciones que usan los meseros al vender y entregar recibos.</p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="form-label text-xs">Precio adicional de michelada</label>
+            <input name="precio_michelada" type="number" min="0" step="100" class="form-control" value="${escapeAttribute(config.precio_michelada ?? 0)}" required>
+            <p class="mt-1 text-xs text-slate-500">Se suma al precio de la cerveza cuando el mesero marca "Vender como michelada".</p>
+          </div>
+          <div>
+            <label class="form-label text-xs">Propina sugerida (%)</label>
+            <input name="propina_sugerida_porcentaje" type="number" min="0" max="100" step="0.01" class="form-control" value="${escapeAttribute(config.propina_sugerida_porcentaje ?? 10)}" required>
+            <p class="mt-1 text-xs text-slate-500">Sirve solo para calcular el monto sugerido; el mesero registra la propina real en pesos al cobrar.</p>
+          </div>
+          <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold text-slate-700 md:col-span-2">
+            <input name="permitir_descarga_pdf" type="checkbox" class="mt-1 h-4 w-4" ${config.permitir_descarga_pdf !== false ? 'checked' : ''}>
+            <span>
+              Permitir descargar factura o ticket en PDF
+              <span class="mt-1 block text-xs font-normal text-slate-500">Si lo desactivas, los meseros solo veran la opcion de imprimir recibo.</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="mt-5 flex justify-end">
+          <button class="button button-primary" type="submit">Guardar configuracion</button>
+        </div>
+      </form>
+
+      <aside class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+        <h3 class="font-bold">Como se aplica</h3>
+        <p class="mt-2">Los productos cuya categoria sea Cerveza o Cervezas muestran el check de michelada en el mapa.</p>
+        <p class="mt-2">Ejemplo: cerveza ${money(7000)} + michelada ${money(config.precio_michelada)} = ${money(7000 + numberOrZero(config.precio_michelada))}.</p>
+      </aside>
+    </div>
+  `;
+}
+
 function renderActiveTab() {
   if (state.activeTab === 'inventario') return renderInventarioTab();
   if (state.activeTab === 'historial') return renderHistorialTab();
+  if (state.activeTab === 'configuracion' && state.isAdmin) return renderConfiguracionTab();
   return renderMapaTab();
 }
 
@@ -960,7 +1293,7 @@ async function ensurePedidoAbierto() {
   return data;
 }
 
-async function addProductToSelectedOrder(productId) {
+async function addProductToSelectedOrder(productId, options = {}) {
   const product = state.productos.find((item) => item.id === productId);
   if (!product) throw new Error('Producto no encontrado.');
   if (product.activo === false) {
@@ -973,9 +1306,22 @@ async function addProductToSelectedOrder(productId) {
     throw new Error(`No hay stock disponible de ${product.nombre}. Revisa inventario o transfiere unidades desde Tienda.`);
   }
 
+  const esMichelada = Boolean(options.esMichelada);
+  if (esMichelada && !isBeerProduct(product)) {
+    throw new Error('Solo los productos de categoria Cerveza pueden venderse como michelada.');
+  }
+  if (esMichelada && getMicheladaPrice() <= 0) {
+    throw new Error('Configura el precio adicional de la michelada antes de venderla.');
+  }
+
+  const precioBase = Number(product.precio || 0);
+  const precioMichelada = esMichelada ? getMicheladaPrice() : 0;
+  const precioUnitario = precioBase + precioMichelada;
   const pedido = await ensurePedidoAbierto();
   const pedidoCompleto = state.pedidosAbiertos.find((item) => item.id === pedido.id) || pedido;
-  const existingItem = getPedidoItems(pedidoCompleto).find((item) => item.producto_id === product.id);
+  const existingItem = getPedidoItems(pedidoCompleto).find((item) => (
+    item.producto_id === product.id && isMicheladaItem(item) === esMichelada
+  ));
 
   if (existingItem) {
     const nuevaCantidad = Number(existingItem.cantidad || 0) + 1;
@@ -983,8 +1329,7 @@ async function addProductToSelectedOrder(productId) {
       .from('terraza_pedido_items')
       .update({
         cantidad: nuevaCantidad,
-        precio_unitario: Number(product.precio || 0),
-        subtotal: nuevaCantidad * Number(product.precio || 0)
+        subtotal: nuevaCantidad * Number(existingItem.precio_unitario || precioUnitario)
       })
       .eq('id', existingItem.id);
     if (error) throw error;
@@ -995,14 +1340,17 @@ async function addProductToSelectedOrder(productId) {
       producto_id: product.id,
       producto_nombre: product.nombre,
       cantidad: 1,
-      precio_unitario: Number(product.precio || 0),
-      subtotal: Number(product.precio || 0)
+      precio_base: precioBase,
+      precio_michelada: precioMichelada,
+      es_michelada: esMichelada,
+      precio_unitario: precioUnitario,
+      subtotal: precioUnitario
     });
     if (error) throw error;
   }
 
   await refreshAndRender();
-  showFeedback(`${product.nombre} agregado a ${getSelectedLocationLabel()}.`, 'success');
+  showFeedback(`${product.nombre}${esMichelada ? ' Michelada' : ''} agregado a ${getSelectedLocationLabel()}.`, 'success');
 }
 
 async function updateItemQuantity(itemId, delta) {
@@ -1051,11 +1399,239 @@ async function cancelSelectedOrder() {
 
   const { error } = await state.supabase
     .from('terraza_pedidos')
-    .update({ estado: 'cancelado', fecha_cierre: new Date().toISOString() })
+    .update({
+      estado: 'cancelado',
+      fecha_cierre: new Date().toISOString(),
+      fecha_cancelacion: new Date().toISOString(),
+      cancelado_por_usuario_id: state.user?.id || null,
+      motivo_cancelacion: 'Cancelada antes de cobrar'
+    })
     .eq('id', pedido.id);
   if (error) throw error;
   await refreshAndRender();
   showFeedback('Cuenta cancelada.', 'success');
+}
+
+async function askReopenReason(pedido) {
+  const location = getPedidoLocationLabel(pedido);
+
+  if (typeof Swal !== 'undefined') {
+    const result = await Swal.fire({
+      icon: 'warning',
+      title: 'Reabrir cuenta',
+      html: `
+        <div class="text-left text-sm">
+          <p>Se cancelara el movimiento de caja anterior y se abrira una cuenta nueva para <strong>${escapeHtml(location)}</strong>.</p>
+          <p class="mt-2">Escribe el motivo para dejar trazabilidad.</p>
+        </div>
+      `,
+      input: 'textarea',
+      inputPlaceholder: 'Ej: Se cerro por error, faltaba agregar una cerveza...',
+      showCancelButton: true,
+      confirmButtonText: 'Reabrir cuenta',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#d97706',
+      inputValidator: (value) => (!String(value || '').trim() ? 'El motivo es obligatorio.' : undefined)
+    });
+
+    return result.isConfirmed ? String(result.value || '').trim() : null;
+  }
+
+  const reason = window.prompt(`Motivo para reabrir la cuenta de ${location}:`);
+  return String(reason || '').trim() || null;
+}
+
+async function reopenHistoryOrder(pedidoId) {
+  const pedido = getPedidoById(pedidoId);
+  if (!pedido) {
+    throw new Error('No se encontro la cuenta en el historial.');
+  }
+  if (!canReopenPedido(pedido)) {
+    throw new Error('Esta cuenta no se puede reabrir.');
+  }
+
+  const motivo = await askReopenReason(pedido);
+  if (!motivo) return;
+
+  const turno = await turnoService.getTurnoAbierto(state.supabase, state.user.id, state.hotelId);
+  if (!turno) {
+    throw new Error('No hay un turno de caja abierto. Abre turno en Caja antes de reabrir la cuenta.');
+  }
+
+  const { data, error } = await state.supabase.rpc('reabrir_pedido_terraza', {
+    p_pedido_id: pedido.id,
+    p_usuario_id: state.user.id,
+    p_turno_id: turno.id,
+    p_motivo: motivo
+  });
+
+  if (error) throw error;
+  if (data?.error) throw new Error(data.message || 'No se pudo reabrir la cuenta.');
+
+  await registrarEnBitacora({
+    supabase: state.supabase,
+    hotel_id: state.hotelId,
+    usuario_id: state.user.id,
+    modulo: 'Terraza',
+    accion: 'Reapertura de cuenta',
+    detalles: {
+      pedido_original_id: pedido.id,
+      pedido_nuevo_id: data?.nuevo_pedido_id,
+      motivo,
+      ubicacion: getPedidoLocationLabel(pedido)
+    }
+  });
+
+  state.activeTab = 'mapa';
+  state.selectedMesaId = data?.mesa_id || pedido.mesa_id;
+  state.selectedSillaNumero = normalizeSilla(data?.silla_numero ?? pedido.silla_numero);
+  await refreshAndRender();
+  showFeedback('Cuenta reabierta. Se creo una cuenta nueva para corregirla.', 'success');
+}
+
+async function printOrderReceipt(pedido, options = {}) {
+  if (!pedido || !getPedidoItems(pedido).length) {
+    throw new Error('No hay consumos para imprimir.');
+  }
+
+  const subtotal = totalPedido(pedido);
+  const estadoMeta = getPedidoEstadoMeta(pedido);
+  const paid = options.paid ?? pedido.estado === 'pagado';
+  const metodoNombre = options.metodoNombre || pedido.metodo?.nombre || 'Metodo';
+  const suggestedTip = getPedidoSuggestedTipAmount(pedido);
+  const storedTip = getPedidoTipAmount(pedido);
+  const defaultTip = pedido.estado === 'abierto'
+    ? getTipInputAmount(storedTip || suggestedTip)
+    : storedTip;
+  const propina = Math.max(0, numberOrZero(options.propinaMonto ?? defaultTip));
+  const total = getTotalConPropina(subtotal, propina);
+  const statusNote = pedido.estado === 'cancelado'
+    ? 'Cuenta cancelada. No debe cobrarse nuevamente sin reapertura.'
+    : (paid ? 'Cuenta pagada.' : 'Recibo previo al cobro.');
+
+  await imprimirTicketOperacion({
+    supabase: state.supabase,
+    hotelId: state.hotelId,
+    documentLabel: paid ? 'Ticket Terraza' : estadoMeta.documentLabel,
+    reference: pedido.id,
+    clientName: pedido.cliente_nombre || null,
+    meta: [
+      { label: 'Ubicacion', value: getPedidoLocationLabel(pedido) },
+      { label: 'Estado', value: paid ? 'Pagado' : estadoMeta.receiptStatus }
+    ],
+    items: buildReceiptItems(pedido),
+    subtotal,
+    tip: propina,
+    tipLabel: 'Propina sugerida',
+    total,
+    payments: paid ? [{ label: metodoNombre, amount: total }] : [],
+    notes: statusNote
+  });
+}
+
+function downloadOrderReceiptPdf(pedido) {
+  if (!pedido || !getPedidoItems(pedido).length) {
+    throw new Error('No hay consumos para descargar.');
+  }
+  if (!canDownloadPdf()) {
+    throw new Error('La descarga en PDF esta desactivada en Configuracion de Terraza.');
+  }
+  if (typeof window.jspdf === 'undefined') {
+    throw new Error('La libreria jsPDF no esta cargada. No se puede generar el PDF.');
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+  const subtotal = totalPedido(pedido);
+  const estadoMeta = getPedidoEstadoMeta(pedido);
+  const suggestedTip = getPedidoSuggestedTipAmount(pedido);
+  const storedTip = getPedidoTipAmount(pedido);
+  const propina = pedido.estado === 'abierto' ? getTipInputAmount(storedTip || suggestedTip) : storedTip;
+  const total = getTotalConPropina(subtotal, propina);
+  const locationLabel = getPedidoLocationLabel(pedido);
+  const items = getPedidoItems(pedido).map((item) => [
+    getItemDisplayName(item),
+    String(item.cantidad || 0),
+    money(item.precio_unitario),
+    money(item.subtotal)
+  ]);
+
+  doc.setFontSize(18);
+  doc.text(pedido.estado === 'pagado' ? 'Ticket Terraza' : estadoMeta.documentLabel, 40, 44);
+  doc.setFontSize(10);
+  doc.text(`Ubicacion: ${locationLabel}`, 40, 64);
+  doc.text(`Estado: ${estadoMeta.receiptStatus}`, 40, 80);
+  doc.text(`Fecha: ${new Date().toLocaleString('es-CO')}`, 40, 96);
+  doc.text(`Referencia: ${pedido.id}`, 40, 112);
+
+  if (typeof doc.autoTable === 'function') {
+    doc.autoTable({
+      startY: 132,
+      head: [['Producto', 'Cant.', 'Precio', 'Subtotal']],
+      body: items,
+      theme: 'grid',
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [37, 99, 235], textColor: 255 }
+    });
+  } else {
+    doc.setFontSize(10);
+    let y = 122;
+    items.forEach((row) => {
+      doc.text(`${row[1]} x ${row[0]} - ${row[3]}`, 40, y);
+      y += 16;
+    });
+  }
+
+  const finalY = (doc.lastAutoTable?.finalY || 140) + 24;
+  doc.setFontSize(11);
+  doc.text(`Subtotal: ${money(subtotal)}`, 380, finalY, { align: 'left' });
+  if (propina > 0) {
+    doc.text(`Propina sugerida: ${money(propina)}`, 380, finalY + 18, { align: 'left' });
+    doc.setFontSize(13);
+    doc.text(`Total: ${money(total)}`, 380, finalY + 40, { align: 'left' });
+  } else {
+    doc.setFontSize(13);
+    doc.text(`Total: ${money(total)}`, 380, finalY + 18, { align: 'left' });
+  }
+
+  const suffix = new Date().toISOString().slice(0, 10);
+  doc.save(`recibo-terraza-${getSafeFileName(locationLabel)}-${suffix}.pdf`);
+}
+
+async function choosePaymentMethod() {
+  const metodos = getMetodosPagoActivos();
+  if (!metodos.length) {
+    throw new Error('No hay metodos de pago activos. Activalos o crealos en Configuracion.');
+  }
+
+  if (typeof Swal !== 'undefined') {
+    const inputOptions = Object.fromEntries(metodos.map((metodo) => [metodo.id, metodo.nombre || 'Sin nombre']));
+    const result = await Swal.fire({
+      title: 'Metodo de pago',
+      input: 'radio',
+      inputOptions,
+      inputValue: state.selectedMetodoPagoId || metodos[0].id,
+      showCancelButton: true,
+      confirmButtonText: 'Seleccionar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#2563eb',
+      inputValidator: (value) => (!value ? 'Selecciona un metodo de pago.' : undefined)
+    });
+
+    if (result.isConfirmed && result.value) {
+      state.selectedMetodoPagoId = result.value;
+      render();
+    }
+    return;
+  }
+
+  const opciones = metodos.map((metodo, index) => `${index + 1}. ${metodo.nombre}`).join('\n');
+  const seleccionado = window.prompt(`Selecciona el metodo de pago:\n${opciones}`);
+  const indice = Number(seleccionado) - 1;
+  if (metodos[indice]) {
+    state.selectedMetodoPagoId = metodos[indice].id;
+    render();
+  }
 }
 
 async function paySelectedOrder() {
@@ -1064,7 +1640,7 @@ async function paySelectedOrder() {
     throw new Error('No hay consumos para cobrar.');
   }
 
-  const metodoPagoId = state.container.querySelector('#terraza-metodo-pago')?.value;
+  const metodoPagoId = state.selectedMetodoPagoId;
   if (!metodoPagoId) {
     throw new Error('Selecciona un metodo de pago.');
   }
@@ -1074,21 +1650,20 @@ async function paySelectedOrder() {
     throw new Error('No hay un turno de caja abierto. Abre turno en Caja antes de cobrar.');
   }
 
-  const itemsImpresion = getPedidoItems(pedido).map((item) => ({
-    nombre: item.producto_nombre,
-    cantidad: item.cantidad,
-    precio: item.precio_unitario,
-    total: item.subtotal
-  }));
   const metodo = state.metodosPago.find((item) => item.id === metodoPagoId);
   const total = totalPedido(pedido);
+  const propinaSugerida = getSuggestedTip(total);
+  const propinaMonto = getTipInputAmount(propinaSugerida);
+  const totalCobrado = getTotalConPropina(total, propinaMonto);
   const label = getSelectedLocationLabel();
 
   const { data, error } = await state.supabase.rpc('cerrar_pedido_terraza', {
     p_pedido_id: pedido.id,
     p_metodo_pago_id: metodoPagoId,
     p_usuario_id: state.user.id,
-    p_turno_id: turno.id
+    p_turno_id: turno.id,
+    p_propina_monto: propinaMonto,
+    p_propina_sugerida_monto: propinaSugerida
   });
 
   if (error) throw error;
@@ -1103,28 +1678,23 @@ async function paySelectedOrder() {
     detalles: {
       pedido_id: pedido.id,
       total,
+      propina_monto: propinaMonto,
+      total_cobrado: totalCobrado,
       ubicacion: label
     }
   });
 
   try {
-    await imprimirTicketOperacion({
-      supabase: state.supabase,
-      hotelId: state.hotelId,
-      documentLabel: 'Ticket Terraza',
-      reference: pedido.id,
-      meta: [{ label: 'Ubicacion', value: label }],
-      items: itemsImpresion,
-      subtotal: total,
-      total,
-      payments: [{ label: metodo?.nombre || 'Metodo', amount: total }]
-    });
+    await printOrderReceipt(
+      { ...pedido, estado: 'pagado', metodo, propina_monto: propinaMonto, propina_sugerida_monto: propinaSugerida },
+      { paid: true, metodoNombre: metodo?.nombre || 'Metodo', propinaMonto }
+    );
   } catch (printError) {
     console.warn('[Terraza] No se pudo imprimir el ticket:', printError);
   }
 
   await refreshAndRender();
-  showFeedback(`Cuenta cobrada: ${money(total)}.`, 'success');
+  showFeedback(`Cuenta cobrada: ${money(totalCobrado)}. Propina: ${money(propinaMonto)}.`, 'success');
 }
 
 async function saveProduct(form) {
@@ -1138,6 +1708,7 @@ async function saveProduct(form) {
   const stockMinimo = Number(formData.get('stock_minimo') || 0);
   const codigoBarras = String(formData.get('codigo_barras') || '').trim();
   const activo = formData.get('activo') === 'on';
+  const permiteMichelada = formData.get('permite_michelada') === 'on';
 
   if (!nombre) throw new Error('El nombre es obligatorio.');
   if (!categoria) throw new Error('La categoria es obligatoria.');
@@ -1154,6 +1725,7 @@ async function saveProduct(form) {
     stock_actual: stockActual,
     stock_minimo: stockMinimo,
     codigo_barras: codigoBarras || null,
+    permite_michelada: permiteMichelada,
     activo
   };
 
@@ -1173,6 +1745,42 @@ async function saveProduct(form) {
   state.editingProductId = null;
   await refreshAndRender();
   showFeedback(productId ? 'Bebida actualizada.' : 'Bebida creada.', 'success');
+}
+
+async function saveConfiguracion(form) {
+  if (!state.isAdmin) {
+    throw new Error('Solo un administrador puede cambiar la configuracion de Terraza.');
+  }
+
+  const formData = new FormData(form);
+  const precioMichelada = Number(formData.get('precio_michelada') || 0);
+  const propinaPorcentaje = Number(formData.get('propina_sugerida_porcentaje') || 0);
+  const permitirPdf = formData.get('permitir_descarga_pdf') === 'on';
+
+  if (!Number.isFinite(precioMichelada) || precioMichelada < 0) {
+    throw new Error('El precio de la michelada no es valido.');
+  }
+  if (!Number.isFinite(propinaPorcentaje) || propinaPorcentaje < 0 || propinaPorcentaje > 100) {
+    throw new Error('La propina sugerida debe estar entre 0 y 100%.');
+  }
+
+  const payload = {
+    hotel_id: state.hotelId,
+    precio_michelada: precioMichelada,
+    propina_sugerida_porcentaje: propinaPorcentaje,
+    permitir_descarga_pdf: permitirPdf
+  };
+
+  const { error } = await state.supabase
+    .from('terraza_configuracion')
+    .upsert(payload, { onConflict: 'hotel_id' });
+
+  if (error) throw error;
+
+  state.configuracion = { ...DEFAULT_TERRAZA_CONFIG, ...payload };
+  state.activeTab = 'configuracion';
+  await refreshAndRender();
+  showFeedback('Configuracion de Terraza guardada.', 'success');
 }
 
 async function transferFromTienda(form) {
@@ -1245,6 +1853,9 @@ async function handleClick(event) {
     if (action === 'refresh') {
       await refreshAndRender();
     } else if (action === 'switch-tab') {
+      if (button.dataset.tab === 'configuracion' && !state.isAdmin) {
+        throw new Error('Solo un administrador puede abrir la configuracion de Terraza.');
+      }
       state.activeTab = button.dataset.tab || 'mapa';
       render();
     } else if (action === 'select-location') {
@@ -1252,7 +1863,9 @@ async function handleClick(event) {
       state.selectedSillaNumero = normalizeSilla(button.dataset.silla);
       render();
     } else if (action === 'add-product') {
-      await addProductToSelectedOrder(button.dataset.productId);
+      const card = button.closest('[data-product-card]');
+      const esMichelada = Boolean(card?.querySelector('[data-michelada-option]')?.checked);
+      await addProductToSelectedOrder(button.dataset.productId, { esMichelada });
     } else if (action === 'increase-item') {
       await updateItemQuantity(button.dataset.itemId, 1);
     } else if (action === 'decrease-item') {
@@ -1261,6 +1874,18 @@ async function handleClick(event) {
       await removeItem(button.dataset.itemId);
     } else if (action === 'cancel-order') {
       await cancelSelectedOrder();
+    } else if (action === 'choose-payment-method') {
+      await choosePaymentMethod();
+    } else if (action === 'print-order-receipt') {
+      await printOrderReceipt(getPedidoSeleccionado());
+    } else if (action === 'download-order-pdf') {
+      downloadOrderReceiptPdf(getPedidoSeleccionado());
+    } else if (action === 'print-history-receipt') {
+      await printOrderReceipt(getPedidoById(button.dataset.pedidoId));
+    } else if (action === 'download-history-pdf') {
+      downloadOrderReceiptPdf(getPedidoById(button.dataset.pedidoId));
+    } else if (action === 'reopen-history-order') {
+      await reopenHistoryOrder(button.dataset.pedidoId);
     } else if (action === 'pay-order') {
       await paySelectedOrder();
     } else if (action === 'edit-product') {
@@ -1307,7 +1932,27 @@ async function handleSubmit(event) {
       console.error('[Terraza] Error transfiriendo hacia Tienda:', error);
       showFeedback(error.message || 'No se pudo transferir hacia Tienda.', 'error', 0);
     }
+  } else if (form.id === 'terraza-config-form') {
+    event.preventDefault();
+    try {
+      await saveConfiguracion(form);
+    } catch (error) {
+      console.error('[Terraza] Error guardando configuracion:', error);
+      showFeedback(error.message || 'No se pudo guardar la configuracion.', 'error', 0);
+    }
   }
+}
+
+function handleInput(event) {
+  if (event.target?.id !== 'terraza-propina-monto') return;
+
+  const pedido = getPedidoSeleccionado();
+  const totalEl = state.container?.querySelector('#terraza-total-con-propina');
+  if (!pedido || !totalEl) return;
+
+  const subtotal = totalPedido(pedido);
+  const propina = getTipInputAmount(getSuggestedTip(subtotal));
+  totalEl.textContent = money(getTotalConPropina(subtotal, propina));
 }
 
 export async function mount(container, sbInstance, user, hotelId) {
@@ -1322,10 +1967,13 @@ export async function mount(container, sbInstance, user, hotelId) {
     productos: [],
     tiendaProductos: [],
     metodosPago: [],
+    configuracion: { ...DEFAULT_TERRAZA_CONFIG },
+    isAdmin: false,
     pedidosAbiertos: [],
     historial: [],
     selectedMesaId: null,
     selectedSillaNumero: null,
+    selectedMetodoPagoId: null,
     editingProductId: null,
     activeTab: 'mapa',
     loading: false
@@ -1337,8 +1985,10 @@ export async function mount(container, sbInstance, user, hotelId) {
   }
 
   container.innerHTML = '<div class="p-8 text-center text-slate-500">Cargando terraza...</div>';
+  state.isAdmin = await resolveTerrazaAdminAccess();
   addListener(container, 'click', handleClick);
   addListener(container, 'submit', handleSubmit);
+  addListener(container, 'input', handleInput);
   await refreshAndRender();
 }
 
@@ -1365,10 +2015,13 @@ export function unmount(container) {
     productos: [],
     tiendaProductos: [],
     metodosPago: [],
+    configuracion: { ...DEFAULT_TERRAZA_CONFIG },
+    isAdmin: false,
     pedidosAbiertos: [],
     historial: [],
     selectedMesaId: null,
     selectedSillaNumero: null,
+    selectedMetodoPagoId: null,
     editingProductId: null,
     activeTab: 'mapa',
     loading: false

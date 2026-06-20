@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; form-action 'self' https:;">
+  <title>Tienda del hotel</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <style>
+    :root {
+      color-scheme: light;
+      --primary: #1d4ed8;
+      --primary-dark: #1e40af;
+      --accent: #16a34a;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --bg: #f8fafc;
+      --card: #ffffff;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.55; }
+
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 390px;
+      gap: 18px;
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 18px;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #1d4ed8, #0f766e);
+      color: white;
+      border-radius: 16px;
+      padding: 22px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 132px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.14);
+    }
+
+    .hero img {
+      width: 72px;
+      height: 72px;
+      object-fit: contain;
+      background: rgba(255,255,255,0.94);
+      border-radius: 14px;
+      padding: 8px;
+      flex: 0 0 auto;
+    }
+
+    .hero h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2.4rem); line-height: 1.05; }
+    .hero p { margin: 8px 0 0; color: rgba(255,255,255,0.86); }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin: 16px 0;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .search {
+      flex: 1;
+      min-width: 220px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px 14px;
+      background: white;
+      outline: none;
+    }
+
+    .category-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+
+    .chip {
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--muted);
+      border-radius: 999px;
+      padding: 9px 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .chip.active {
+      background: #dbeafe;
+      border-color: #93c5fd;
+      color: #1e40af;
+    }
+
+    .product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+      gap: 14px;
+    }
+
+    .product-card {
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+      display: flex;
+      flex-direction: column;
+      min-height: 100%;
+    }
+
+    .product-card img {
+      width: 100%;
+      aspect-ratio: 4 / 3;
+      object-fit: cover;
+      background: #e2e8f0;
+    }
+
+    .product-body {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .product-title {
+      margin: 0;
+      font-size: 1rem;
+      line-height: 1.25;
+      font-weight: 850;
+    }
+
+    .product-description {
+      min-height: 34px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.25;
+    }
+
+    .product-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-top: auto;
+    }
+
+    .price { color: var(--accent); font-weight: 900; font-size: 1.05rem; }
+    .stock { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
+
+    .add-btn {
+      border: 0;
+      border-radius: 10px;
+      background: var(--primary);
+      color: white;
+      font-weight: 850;
+      padding: 10px;
+      width: 100%;
+    }
+
+    .cart-panel {
+      position: sticky;
+      top: 18px;
+      border: 1px solid var(--line);
+      background: white;
+      border-radius: 16px;
+      padding: 16px;
+      height: fit-content;
+      box-shadow: 0 12px 34px rgba(15, 23, 42, 0.1);
+    }
+
+    .cart-panel h2 { margin: 0 0 12px; font-size: 1.25rem; }
+    .cart-title-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+    .close-cart {
+      display: none;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      color: #334155;
+      border-radius: 10px;
+      padding: 7px 10px;
+      font-weight: 900;
+    }
+    .cart-empty {
+      border: 1px dashed #cbd5e1;
+      border-radius: 12px;
+      padding: 18px;
+      text-align: center;
+      color: var(--muted);
+      background: #f8fafc;
+      font-size: 0.94rem;
+    }
+
+    .cart-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      border-bottom: 1px solid #f1f5f9;
+      padding: 10px 0;
+    }
+
+    .cart-name { font-weight: 800; }
+    .cart-sub { color: var(--muted); font-size: 0.84rem; margin-top: 2px; }
+    .qty-controls { display: flex; align-items: center; gap: 6px; }
+    .qty-controls button {
+      width: 30px;
+      height: 30px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+      border-radius: 8px;
+      font-weight: 900;
+    }
+
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin: 14px 0;
+      font-size: 1.08rem;
+      font-weight: 900;
+    }
+
+    .form-grid {
+      display: grid;
+      gap: 10px;
+    }
+
+    .field label {
+      display: block;
+      font-weight: 800;
+      color: #334155;
+      font-size: 0.84rem;
+      margin-bottom: 5px;
+    }
+
+    .field input,
+    .field textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 11px;
+      outline: none;
+      background: #fff;
+    }
+
+    .field textarea { min-height: 76px; resize: vertical; }
+
+    .submit-btn, .whatsapp-btn {
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 13px 14px;
+      font-weight: 900;
+      margin-top: 12px;
+      color: white;
+      text-decoration: none;
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .submit-btn { background: var(--accent); }
+    .whatsapp-btn { background: #128c7e; }
+
+    .status-box {
+      border-radius: 12px;
+      padding: 12px;
+      margin-top: 12px;
+      font-size: 0.92rem;
+      display: none;
+    }
+
+    .status-box.info { display: block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .status-box.success { display: block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+    .status-box.error { display: block; background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
+
+    .mobile-cart-button {
+      display: none;
+      position: fixed;
+      left: 14px;
+      right: 14px;
+      bottom: 14px;
+      z-index: 20;
+      border: 0;
+      background: var(--primary);
+      color: white;
+      border-radius: 14px;
+      padding: 13px;
+      font-weight: 900;
+      box-shadow: 0 16px 40px rgba(29, 78, 216, 0.35);
+    }
+
+    @media (max-width: 920px) {
+      .app-shell { display: block; padding: 12px 12px 86px; }
+      .hero { border-radius: 12px; padding: 18px; }
+      .hero img { width: 58px; height: 58px; }
+      .cart-panel {
+        position: fixed;
+        inset: auto 0 0 0;
+        z-index: 30;
+        max-height: 86vh;
+        overflow-y: auto;
+        border-radius: 18px 18px 0 0;
+        transform: translateY(calc(100% - 0px));
+        transition: transform 180ms ease;
+      }
+      .cart-panel.open { transform: translateY(0); }
+      .mobile-cart-button { display: block; }
+      .close-cart { display: inline-flex; }
+      .product-grid { grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 10px; }
+      .product-description { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app-shell">
+    <section>
+      <header id="store-hero" class="hero">
+        <div>
+          <h1>Tienda del hotel</h1>
+          <p>Cargando productos disponibles...</p>
+        </div>
+      </header>
+      <div class="toolbar">
+        <input id="search-input" class="search" placeholder="Buscar producto o categoria">
+      </div>
+      <div id="category-tabs" class="category-tabs"></div>
+      <div id="product-grid" class="product-grid" style="margin-top:14px;"></div>
+    </section>
+
+    <aside id="cart-panel" class="cart-panel">
+      <div class="cart-title-row">
+        <h2>Tu pedido</h2>
+        <button id="close-cart-button" class="close-cart" type="button">Cerrar</button>
+      </div>
+      <div id="cart-items"></div>
+      <div class="total-row">
+        <span>Total</span>
+        <span id="cart-total">$0</span>
+      </div>
+      <form id="order-form" class="form-grid">
+        <div class="field">
+          <label for="room-input">Habitacion</label>
+          <input id="room-input" required placeholder="Ej: 101">
+        </div>
+        <div class="field">
+          <label for="name-input">Nombre</label>
+          <input id="name-input" placeholder="Opcional">
+        </div>
+        <div class="field">
+          <label for="phone-input">Telefono</label>
+          <input id="phone-input" inputmode="tel" placeholder="Opcional">
+        </div>
+        <div class="field">
+          <label for="notes-input">Observaciones</label>
+          <textarea id="notes-input" placeholder="Ej: enviar con vasos, tocar suave, etc."></textarea>
+        </div>
+        <button id="submit-order" class="submit-btn" type="submit">Enviar pedido</button>
+      </form>
+      <div id="status-box" class="status-box"></div>
+    </aside>
+  </main>
+
+  <button id="mobile-cart-button" class="mobile-cart-button" type="button">Ver pedido - $0</button>
+
+  <script type="module" src="./js/public/tienda-web.js"></script>
+</body>
+</html>

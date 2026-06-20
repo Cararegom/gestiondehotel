@@ -124,6 +124,8 @@ export async function imprimirTicketOperacion({
   subtotal = 0,
   discount = 0,
   taxes = 0,
+  tip = 0,
+  tipLabel = 'Propina sugerida',
   total = 0,
   payments = [],
   notes = ''
@@ -164,6 +166,7 @@ export async function imprimirTicketOperacion({
           <div class="total-row"><span>Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
           ${discount > 0 ? `<div class="total-row"><span>Descuento</span><span>-${formatCurrency(discount)}</span></div>` : ''}
           ${taxes > 0 ? `<div class="total-row"><span>Impuestos</span><span>${formatCurrency(taxes)}</span></div>` : ''}
+          ${tip > 0 ? `<div class="total-row"><span>${tipLabel}</span><span>${formatCurrency(tip)}</span></div>` : ''}
           <div class="total-row grand-total"><strong>Total</strong><strong>${formatCurrency(total)}</strong></div>
           ${renderPayments(payments)}
           ${notes ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="font-size:0.88em;">${notes}</div>` : ''}

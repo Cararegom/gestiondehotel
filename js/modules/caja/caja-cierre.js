@@ -40,14 +40,14 @@ export function procesarMovimientosParaReporte(movimientos) {
     }
 
     if (movimiento.tipo === 'ingreso') {
-      if (concepto.includes('terraza')) {
+      if (concepto.includes('propina')) {
+        categoria = reporte.propinas;
+      } else if (concepto.includes('terraza')) {
         categoria = reporte.terraza;
       } else if (concepto.includes('restaurante') || concepto.includes('cocina')) {
         categoria = reporte.cocina;
       } else if (concepto.includes('tienda') || concepto.includes('producto')) {
         categoria = reporte.tienda;
-      } else if (concepto.includes('propina')) {
-        categoria = reporte.propinas;
       } else if (concepto.includes('habitaci') || concepto.includes('alquiler') || concepto.includes('reserva') || concepto.includes('extensi')) {
         categoria = reporte.habitaciones;
       } else {

@@ -2,9 +2,10 @@ import { turnoService } from '../../services/turnoService.js';
 import { renderCategorias, showModalCategoria, toggleEstadoCategoria } from './categorias.js';
 import { renderModuloCompras, eliminarItemCompra, agregarProductoCompra, verDetallesCompra, resetComprasModuleState } from './compras.js';
 import { renderComprasPendientes, recibirPedido, showModalEditarCompra, guardarCambiosCompra, cancelarCompra, resetComprasPendientesState } from './compras-pendientes.js';
-import { closeModal, injectTiendaStyles, renderTiendaTabsShell } from './helpers.js';
+import { closeModal, getTiendaTabsForCurrentUser, injectTiendaStyles, renderTiendaTabsShell } from './helpers.js';
 import { renderInventario, confirmarEliminarProducto, reactivarProducto, showModalProducto, showModalHistorial, showModalMovimiento, resetInventarioState } from './inventario.js';
 import { renderListaCompras } from './lista-compras.js';
+import { renderPedidosWeb, resetPedidosWebState } from './pedidos-web.js';
 import { renderPOS, updateQtyPOS, removeCartPOS, resetPOSState } from './pos.js';
 import { renderProveedores, showModalProveedor, toggleEstadoProveedor } from './proveedores.js';
 import { resetTiendaState, setTiendaContext, tiendaState } from './state.js';
@@ -45,34 +46,40 @@ function unregisterGlobalHandlers() {
 }
 
 async function renderTiendaTabs(tab) {
-  renderTiendaTabsShell(tab);
+  const tabs = getTiendaTabsForCurrentUser();
+  const activeTab = tabs.includes(tab) ? tab : tabs[0];
+  renderTiendaTabsShell(activeTab);
 
-  if (tab === 'POS') {
+  if (activeTab === 'POS') {
     await renderPOS();
     return;
   }
-  if (tab === 'Inventario') {
+  if (activeTab === 'Inventario') {
     await renderInventario();
     return;
   }
-  if (tab === 'Categor\u00edas') {
+  if (activeTab === 'Categor\u00edas') {
     await renderCategorias();
     return;
   }
-  if (tab === 'Proveedores') {
+  if (activeTab === 'Proveedores') {
     await renderProveedores();
     return;
   }
-  if (tab === 'Lista de Compras') {
+  if (activeTab === 'Lista de Compras') {
     await renderListaCompras();
     return;
   }
-  if (tab === 'Compras') {
+  if (activeTab === 'Compras') {
     await renderModuloCompras();
     return;
   }
-  if (tab === 'Compras Pendientes') {
+  if (activeTab === 'Compras Pendientes') {
     await renderComprasPendientes();
+    return;
+  }
+  if (activeTab === 'Pedidos web') {
+    await renderPedidosWeb();
   }
 }
 
@@ -89,7 +96,7 @@ export async function mount(container, supabase, user, hotelId) {
   }
 
   registerGlobalHandlers();
-  await renderTiendaTabs('POS');
+  await renderTiendaTabs(getTiendaTabsForCurrentUser()[0] || 'POS');
 }
 
 export function unmount() {
@@ -98,5 +105,6 @@ export function unmount() {
   resetInventarioState();
   resetComprasModuleState();
   resetComprasPendientesState();
+  resetPedidosWebState();
   resetTiendaState();
 }

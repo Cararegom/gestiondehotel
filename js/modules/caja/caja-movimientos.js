@@ -66,6 +66,9 @@ export function getTurnElapsedLabel(fechaApertura) {
 export function getMovementOriginMeta(movement) {
   const concept = normalizeLegacyText(movement?.concepto || '').toLowerCase();
 
+  if (concept.includes('propina')) {
+    return { label: 'Propina', className: 'bg-amber-100 text-amber-700' };
+  }
   if (concept.includes('tienda') || concept.includes('producto')) {
     return { label: 'Tienda', className: 'bg-cyan-100 text-cyan-700' };
   }
@@ -74,9 +77,6 @@ export function getMovementOriginMeta(movement) {
   }
   if (concept.includes('restaurante') || concept.includes('cocina')) {
     return { label: 'Restaurante', className: 'bg-orange-100 text-orange-700' };
-  }
-  if (concept.includes('propina')) {
-    return { label: 'Propina', className: 'bg-amber-100 text-amber-700' };
   }
   if (concept.includes('habitaci') || concept.includes('alquiler') || concept.includes('reserva') || concept.includes('extensi')) {
     return { label: 'Habitaciones', className: 'bg-blue-100 text-blue-700' };
