@@ -8,6 +8,8 @@ let currentModuleUser = null;
 let currentChartInstances = {}; // Use an object to manage multiple chart instances
 let supabaseClient = null; // Assigned in mount
 let hotelConfigGlobal = null;
+const TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
+const REPORTE_TERRAZA_KEY = 'ingresos_terraza_periodo';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { formatCurrency, formatDateTime, showConsumosYFacturarModal, mostrarInfoModalGlobal } from '../../uiUtils.js';
 import { escapeAttribute, escapeHtml } from '../../security.js';
@@ -29,12 +31,14 @@ const REPORTES_POR_PLAN = {
   lite: [
     'listado_reservas',
     'ocupacion',
-    'ingresos_por_habitaciones_periodo'
+    'ingresos_por_habitaciones_periodo',
+    REPORTE_TERRAZA_KEY
   ],
   pro: [
     'listado_reservas',
     'ocupacion',
     'ingresos_por_habitaciones_periodo',
+    REPORTE_TERRAZA_KEY,
     'movimientos_financieros_global',
     'detalle_ingresos_categoria',
     'detalle_egresos_categoria',
@@ -44,6 +48,7 @@ const REPORTES_POR_PLAN = {
     'listado_reservas',
     'ocupacion',
     'ingresos_por_habitaciones_periodo',
+    REPORTE_TERRAZA_KEY,
     'movimientos_financieros_global',
     'detalle_ingresos_categoria',
     'detalle_egresos_categoria',
@@ -232,6 +237,9 @@ function renderSelectorReportes(planActivo) {
     { key: 'kpis_avanzados_hotel', label: 'KPIs de Rendimiento del Hotel' },
     { key: 'comparativo_gerencial_operacion', label: 'Comparativo Gerencial de Operacion' }
   ];
+  if (currentHotelId === TERRAZA_HOTEL_ID) {
+    TODOS_LOS_REPORTES.splice(4, 0, { key: REPORTE_TERRAZA_KEY, label: 'Ingresos de Terraza' });
+  }
   // Reportes permitidos por plan
   const tiposDisponibles = REPORTES_POR_PLAN[planActivo] || REPORTES_POR_PLAN['lite'];
   const select = document.getElementById('reporte-tipo-select');
@@ -473,6 +481,123 @@ async function generarReporteIngresosPorPeriodo(resultsContainerEl, fechaInicioI
     }
 }
 
+async function generarReporteIngresosTerraza(resultsContainerEl, fechaInicioInput, fechaFinInput) {
+    if (!resultsContainerEl) return;
+    resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando reporte de ingresos de Terraza...</p>';
+    destroyChartInstance('reporte-ingresos-terraza-chart');
+
+    if (currentHotelId !== TERRAZA_HOTEL_ID) {
+        resultsContainerEl.innerHTML = '<p class="text-center text-gray-500 p-4">Este reporte solo esta disponible para el hotel con Terraza.</p>';
+        return;
+    }
+
+    try {
+        const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
+        const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
+
+        const query = supabaseClient
+            .from('caja')
+            .select(`
+                id, fecha_movimiento, tipo, monto, concepto, venta_terraza_id,
+                metodo_pago_id, metodos_pago(nombre), creado_en
+            `)
+            .eq('hotel_id', currentHotelId)
+            .eq('tipo', 'ingreso')
+            .not('venta_terraza_id', 'is', null)
+            .gte('fecha_movimiento', fechaInicioQuery)
+            .lte('fecha_movimiento', fechaFinQuery)
+            .order('fecha_movimiento', { ascending: true });
+
+        const { data, error } = await fetchAllWithPagination(query);
+        if (error) throw error;
+
+        const movimientos = (data || []).map((mov) => ({
+            ...mov,
+            monto: Number(mov.monto || 0),
+            categoria: String(mov.concepto || '').toLowerCase().includes('propina')
+                ? 'Ingreso: Propina Terraza'
+                : 'Ingreso: Venta Terraza'
+        }));
+
+        if (!movimientos.length) {
+            resultsContainerEl.innerHTML = '<p class="text-center text-gray-500 p-4">No se encontraron ingresos de Terraza para el periodo seleccionado.</p>';
+            return;
+        }
+
+        const consumo = movimientos
+            .filter((mov) => !String(mov.concepto || '').toLowerCase().includes('propina'))
+            .reduce((sum, mov) => sum + mov.monto, 0);
+        const propinas = movimientos
+            .filter((mov) => String(mov.concepto || '').toLowerCase().includes('propina'))
+            .reduce((sum, mov) => sum + mov.monto, 0);
+        const total = consumo + propinas;
+        const cuentas = new Set(movimientos.map((mov) => mov.venta_terraza_id).filter(Boolean)).size;
+
+        const ingresosPorDia = movimientos.reduce((acc, mov) => {
+            const fecha = String(mov.fecha_movimiento || mov.creado_en || '').slice(0, 10);
+            if (!fecha) return acc;
+            acc[fecha] = (acc[fecha] || 0) + mov.monto;
+            return acc;
+        }, {});
+        const labels = Object.keys(ingresosPorDia).sort();
+        const values = labels.map((fecha) => ingresosPorDia[fecha]);
+
+        resultsContainerEl.innerHTML = `
+          <h4 class="text-xl font-semibold mb-4 text-gray-800">Ingresos de Terraza (${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})})</h4>
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-blue-50 p-4 rounded-xl shadow border border-blue-200">
+              <h5 class="text-sm font-semibold text-blue-700">Total Terraza</h5>
+              <p class="text-2xl font-bold text-blue-700">${formatCurrencyLocal(total)}</p>
+            </div>
+            <div class="bg-green-50 p-4 rounded-xl shadow border border-green-200">
+              <h5 class="text-sm font-semibold text-green-700">Consumo</h5>
+              <p class="text-2xl font-bold text-green-700">${formatCurrencyLocal(consumo)}</p>
+            </div>
+            <div class="bg-emerald-50 p-4 rounded-xl shadow border border-emerald-200">
+              <h5 class="text-sm font-semibold text-emerald-700">Propinas</h5>
+              <p class="text-2xl font-bold text-emerald-700">${formatCurrencyLocal(propinas)}</p>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-xl shadow border border-slate-200">
+              <h5 class="text-sm font-semibold text-slate-700">Cuentas cobradas</h5>
+              <p class="text-2xl font-bold text-slate-800">${cuentas}</p>
+            </div>
+          </div>
+          ${window.Chart ? `
+            <div class="chart-container bg-white p-4 rounded-lg shadow-xl border mb-6" style="height:350px; position: relative;">
+              <canvas id="reporte-ingresos-terraza-chart"></canvas>
+            </div>
+          ` : ''}
+          ${renderTablaMovimientos(movimientos, 'Detalle de Ingresos de Terraza')}
+        `;
+
+        const ctx = resultsContainerEl.querySelector('#reporte-ingresos-terraza-chart')?.getContext('2d');
+        if (ctx && labels.length) {
+            currentChartInstances['reporte-ingresos-terraza-chart'] = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels,
+                    datasets: [{
+                        label: 'Ingresos Terraza',
+                        data: values,
+                        backgroundColor: 'rgba(37, 99, 235, 0.72)',
+                        borderColor: 'rgba(37, 99, 235, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, ticks: { callback: value => formatCurrencyLocal(value) } } },
+                    plugins: { tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatCurrencyLocal(ctx.parsed.y)}` } } }
+                }
+            });
+        }
+    } catch (err) {
+        console.error('Error generating terraza income report:', err);
+        resultsContainerEl.innerHTML = `<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">Error al generar reporte de Terraza: ${err.message}</p>`;
+    }
+}
+
 // --- Helper for robust period key sorting ---
 function robustPeriodSort(a, b) {
     const strA = String(a);
@@ -505,6 +630,9 @@ function robustPeriodSort(a, b) {
 function categorizarMovimiento(movimiento, serviciosAdicionales = []) {
     const conceptoLower = String(movimiento.concepto || '').toLowerCase();
     if (movimiento.tipo === 'ingreso') {
+        if (movimiento.venta_terraza_id) {
+            return conceptoLower.includes('propina') ? 'Ingreso: Propina Terraza' : 'Ingreso: Venta Terraza';
+        }
         if (movimiento.venta_tienda_id) return 'Ingreso: Venta Tienda';
         if (movimiento.venta_restaurante_id) return 'Ingreso: Venta Restaurante';
         if (movimiento.reserva_id) return 'Ingreso: Habitación (Reserva)';
@@ -665,7 +793,7 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
             .from('caja')
             .select(`
                 id, fecha_movimiento, tipo, monto, concepto, reserva_id, 
-                venta_tienda_id, venta_restaurante_id, compra_tienda_id,
+                venta_tienda_id, venta_restaurante_id, venta_terraza_id, compra_tienda_id,
                 metodo_pago_id, metodos_pago(nombre), creado_en 
             `)
             .eq('hotel_id', currentHotelId)
@@ -2159,6 +2287,7 @@ export async function mount(container, sbInstance, user) {
       if (tipoReporte === 'listado_reservas') await generarReporteListadoReservas(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'ocupacion') await generarReporteOcupacion(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'ingresos_por_habitaciones_periodo') await generarReporteIngresosPorPeriodo(resultadoContainerEl, fechaInicio, fechaFin);
+      else if (tipoReporte === REPORTE_TERRAZA_KEY) await generarReporteIngresosTerraza(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'cierres_de_caja') await generarReporteCierresDeCaja(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'kpis_avanzados_hotel') await generarReporteKPIsAvanzados(resultadoContainerEl, fechaInicio, fechaFin);
       else if (tipoReporte === 'comparativo_gerencial_operacion') await generarReporteComparativoGerencial(resultadoContainerEl, fechaInicio, fechaFin);

@@ -1,5 +1,6 @@
 import { showError } from '../../uiUtils.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
+import { escapeAttribute, escapeHtml } from '../../security.js';
 import { tiendaState } from './state.js';
 import { checkTurnoActivo, closeModal, formatCurrency, getModalContainerEl, getTabContentEl, isMeseroRole, normalizeRoleKey } from './helpers.js';
 
@@ -7,6 +8,7 @@ let inventarioProductos = [];
 let categoriasCache = [];
 let proveedoresCache = [];
 let terrazaProductosCache = [];
+let salidasPendientesCache = [];
 let currentRoleKey = '';
 const PRODUCTO_PLACEHOLDER_IMG = 'https://via.placeholder.com/160x160?text=Sin+Foto';
 const TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
@@ -17,10 +19,11 @@ export async function renderInventario() {
 
   cont.innerHTML = '<div style="padding:24px;text-align:center;color:#64748b;">Cargando inventario...</div>';
   await cargarRolOperativoTienda();
-  await Promise.all([cargarCategoriasYProveedores(), cargarProductosInventario(), cargarProductosTerraza()]);
+  await Promise.all([cargarCategoriasYProveedores(), cargarProductosInventario(), cargarProductosTerraza(), cargarSolicitudesSalidaPendientes()]);
 
   const soloTransferenciaMesero = isMeseroOperativo() && !isAdminOperativo();
   const transferenciasPanel = renderTransferenciasTerrazaPanel();
+  const autorizacionesPanel = renderAutorizacionesSalidasPanel();
 
   cont.innerHTML = `
     <div id="inventario-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
@@ -33,6 +36,7 @@ export async function renderInventario() {
       </div>
     </div>
     ${transferenciasPanel}
+    ${autorizacionesPanel}
     ${soloTransferenciaMesero ? '' : `
       <div id="inventario-filters" style="margin-bottom:12px;display:flex;align-items:center;gap:10px;">
         <input id="buscarInventario" placeholder="Buscar por nombre, codigo o categoria..." style="flex:1;max-width:320px;padding:9px 15px;border:1.5px solid #cbd5e1;border-radius:7px;font-size:1em;"/>
@@ -52,6 +56,13 @@ export async function renderInventario() {
 
   const formRecibirTienda = document.getElementById('formTransferirTerrazaTienda');
   if (formRecibirTienda) formRecibirTienda.onsubmit = transferirTerrazaATiendaDesdeInventario;
+
+  cont.querySelectorAll('[data-approve-salida]').forEach((button) => {
+    button.onclick = () => aprobarSolicitudSalida(button.dataset.solicitudId);
+  });
+  cont.querySelectorAll('[data-reject-salida]').forEach((button) => {
+    button.onclick = () => rechazarSolicitudSalida(button.dataset.solicitudId);
+  });
 
   if (!soloTransferenciaMesero) {
     document.getElementById('btnHojaConteo').onclick = mostrarOpcionesHojaConteo;
@@ -82,7 +93,7 @@ async function cargarRolOperativoTienda() {
 
   if (roleNames.some(isMeseroRole)) {
     currentRoleKey = 'mesero';
-  } else if (roleNames.map(normalizeRoleKey).includes('recepcionista')) {
+  } else if (roleNames.map(normalizeRoleKey).some((role) => role === 'recepcionista' || role === 'recepcion')) {
     currentRoleKey = 'recepcionista';
   } else if (roleNames.map(normalizeRoleKey).some((role) => role === 'admin' || role === 'administrador' || role === 'superadmin')) {
     currentRoleKey = 'admin';
@@ -122,7 +133,7 @@ async function cargarProductosTerraza() {
 }
 
 function isRecepcionistaOperativo() {
-  return currentRoleKey === 'recepcionista';
+  return currentRoleKey === 'recepcionista' || currentRoleKey === 'recepcion';
 }
 
 function isMeseroOperativo() {
@@ -131,6 +142,139 @@ function isMeseroOperativo() {
 
 function isAdminOperativo() {
   return ['admin', 'administrador', 'superadmin'].includes(currentRoleKey);
+}
+
+async function cargarSolicitudesSalidaPendientes() {
+  salidasPendientesCache = [];
+  if (!tiendaState.currentSupabase || !tiendaState.currentHotelId) return;
+
+  let query = tiendaState.currentSupabase
+    .from('solicitudes_salida_inventario_tienda')
+    .select('*, producto:productos_tienda(nombre, stock_actual, stock_minimo)')
+    .eq('hotel_id', tiendaState.currentHotelId)
+    .eq('estado', 'pendiente')
+    .order('creado_en', { ascending: false });
+
+  if (!isAdminOperativo() && tiendaState.currentUser?.id) {
+    query = query.eq('solicitado_por_usuario_id', tiendaState.currentUser.id);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    if (error.code === '42P01') {
+      console.warn('[Tienda] Tabla de autorizaciones de inventario no aplicada todavia.');
+      return;
+    }
+    console.error('[Tienda] Error cargando solicitudes de salida:', error);
+    return;
+  }
+
+  salidasPendientesCache = data || [];
+}
+
+function renderAutorizacionesSalidasPanel() {
+  if (!isAdminOperativo() && !salidasPendientesCache.length) return '';
+
+  const title = isAdminOperativo()
+    ? 'Salidas de inventario pendientes de autorizacion'
+    : 'Mis solicitudes de salida pendientes';
+  const description = isAdminOperativo()
+    ? 'Aprueba solo las salidas verificadas. Al aprobar, se descuenta el stock y se crea el movimiento de inventario.'
+    : 'Tus salidas manuales no descuentan stock hasta que administracion las autorice.';
+
+  return `
+    <section style="margin-bottom:18px;border:1px solid #fed7aa;background:#fff7ed;border-radius:14px;padding:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+        <div>
+          <h3 style="margin:0;color:#9a3412;font-size:1.05rem;font-weight:800;">${title}</h3>
+          <p style="margin:4px 0 0;color:#7c2d12;font-size:0.9rem;">${description}</p>
+        </div>
+        <span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:5px 10px;font-weight:800;font-size:0.78rem;">${salidasPendientesCache.length} pendiente(s)</span>
+      </div>
+      ${salidasPendientesCache.length ? `
+        <div style="overflow-x:auto;background:#fff;border:1px solid #fed7aa;border-radius:12px;">
+          <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px;">
+            <thead style="background:#fff7ed;color:#9a3412;text-align:left;">
+              <tr>
+                <th style="padding:10px;">Producto</th>
+                <th style="padding:10px;text-align:center;">Cantidad</th>
+                <th style="padding:10px;text-align:center;">Stock actual</th>
+                <th style="padding:10px;">Solicitado por</th>
+                <th style="padding:10px;">Motivo</th>
+                <th style="padding:10px;">Fecha</th>
+                ${isAdminOperativo() ? '<th style="padding:10px;text-align:right;">Acciones</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${salidasPendientesCache.map((solicitud) => `
+                <tr style="border-top:1px solid #ffedd5;">
+                  <td style="padding:10px;font-weight:700;color:#1e293b;">${escapeHtml(solicitud.producto?.nombre || 'Producto')}</td>
+                  <td style="padding:10px;text-align:center;font-weight:800;color:#dc2626;">${escapeHtml(String(solicitud.cantidad || 0))}</td>
+                  <td style="padding:10px;text-align:center;">${escapeHtml(String(solicitud.producto?.stock_actual ?? solicitud.stock_actual_solicitud ?? 0))}</td>
+                  <td style="padding:10px;">${escapeHtml(solicitud.solicitado_por_nombre || 'Usuario')}</td>
+                  <td style="padding:10px;color:#475569;">${escapeHtml(solicitud.razon || 'Sin motivo')}</td>
+                  <td style="padding:10px;color:#64748b;">${new Date(solicitud.creado_en).toLocaleString('es-CO')}</td>
+                  ${isAdminOperativo() ? `
+                    <td style="padding:10px;text-align:right;white-space:nowrap;">
+                      <button data-approve-salida data-solicitud-id="${escapeAttribute(solicitud.id)}" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:7px 10px;font-weight:800;cursor:pointer;">Aprobar</button>
+                      <button data-reject-salida data-solicitud-id="${escapeAttribute(solicitud.id)}" style="background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:7px;padding:7px 10px;font-weight:800;cursor:pointer;margin-left:6px;">Rechazar</button>
+                    </td>
+                  ` : ''}
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : '<div style="background:#fff;border:1px dashed #fed7aa;border-radius:10px;padding:14px;color:#9a3412;font-size:0.9rem;">No hay salidas pendientes por autorizar.</div>'}
+    </section>
+  `;
+}
+
+async function aprobarSolicitudSalida(solicitudId) {
+  if (!solicitudId || !isAdminOperativo()) return;
+  const confirmed = window.confirm('Al aprobar se descontara el inventario y se registrara el movimiento. Deseas continuar?');
+  if (!confirmed) return;
+
+  const { data, error } = await tiendaState.currentSupabase.rpc('aprobar_salida_inventario_tienda', {
+    p_solicitud_id: solicitudId,
+    p_admin_usuario_id: tiendaState.currentUser.id
+  });
+
+  if (error) {
+    alert(`No se pudo aprobar la salida: ${error.message}`);
+    return;
+  }
+  if (data?.error) {
+    alert(data.message || 'No se pudo aprobar la salida.');
+    return;
+  }
+
+  alert('Salida aprobada y stock descontado.');
+  await renderInventario();
+}
+
+async function rechazarSolicitudSalida(solicitudId) {
+  if (!solicitudId || !isAdminOperativo()) return;
+  const motivo = window.prompt('Motivo del rechazo:', 'No autorizado');
+  if (motivo === null) return;
+
+  const { data, error } = await tiendaState.currentSupabase.rpc('rechazar_salida_inventario_tienda', {
+    p_solicitud_id: solicitudId,
+    p_admin_usuario_id: tiendaState.currentUser.id,
+    p_motivo: motivo.trim() || 'No autorizado'
+  });
+
+  if (error) {
+    alert(`No se pudo rechazar la salida: ${error.message}`);
+    return;
+  }
+  if (data?.error) {
+    alert(data.message || 'No se pudo rechazar la salida.');
+    return;
+  }
+
+  alert('Solicitud rechazada.');
+  await renderInventario();
 }
 
 function renderTransferenciasTerrazaPanel() {
@@ -516,19 +660,26 @@ export async function showModalMovimiento(productoId, tipo) {
     return;
   }
 
+  const requiereAutorizacion = tipo === 'SALIDA' && !isAdminOperativo();
+  const titulo = tipo === 'INGRESO'
+    ? 'Ingreso a Inventario'
+    : (requiereAutorizacion ? 'Solicitud de Salida de Inventario' : 'Salida de Inventario');
+  const botonTexto = requiereAutorizacion ? 'Solicitar autorizacion' : `Confirmar ${tipo}`;
+
   modalContainer.style.display = 'flex';
   modalContainer.innerHTML = `
     <div style="background:#fff;border-radius:18px;max-width:400px;width:95vw;margin:auto;padding:28px 24px;position:relative;">
       <button onclick="window.closeModal()" style="position:absolute;right:14px;top:10px;background:none;border:none;font-size:25px;color:#64748b;cursor:pointer;" title="Cerrar">&times;</button>
-      <h2 style="margin-top:0; margin-bottom:15px;text-align:center;font-size:1.2rem;font-weight:700;color:${tipo === 'INGRESO' ? '#16a34a' : '#ef4444'};">${tipo === 'INGRESO' ? 'Ingreso a Inventario' : 'Salida de Inventario'}</h2>
+      <h2 style="margin-top:0; margin-bottom:15px;text-align:center;font-size:1.2rem;font-weight:700;color:${tipo === 'INGRESO' ? '#16a34a' : '#ef4444'};">${titulo}</h2>
       <p style="text-align:center;margin-top:-5px;margin-bottom:20px;font-size:1.1rem;font-weight:600;">${prod.nombre}</p>
       <p style="text-align:center;margin-top:-15px;margin-bottom:20px;font-size:0.9rem;">Stock Actual: <strong style="font-size:1.1rem;">${prod.stock_actual}</strong></p>
+      ${requiereAutorizacion ? '<div style="margin:-8px 0 16px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:10px;font-size:0.88rem;font-weight:600;">Esta salida quedara pendiente hasta que administracion la apruebe desde su usuario.</div>' : ''}
       <form id="formMovimiento">
         <div style="display:flex;flex-direction:column;gap:15px;">
           <div><label style="font-weight:500;">Cantidad</label><input id="movCantidad" type="number" min="1" required style="width:100%;padding:9px 12px;margin-top:3px;border:1.5px solid #cbd5e1;border-radius:6px;font-size:1.1em;"></div>
           <div><label style="font-weight:500;">Razon o Motivo</label><textarea id="movRazon" required rows="3" style="width:100%;padding:8px 11px;margin-top:3px;border:1.5px solid #cbd5e1;border-radius:6px;"></textarea></div>
         </div>
-        <div style="margin-top:25px;text-align:center;"><button type="submit" style="background:linear-gradient(90deg,${tipo === 'INGRESO' ? '#22c55e,#16a34a' : '#f87171,#ef4444'});color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 35px;font-size:1.08em;cursor:pointer;">Confirmar ${tipo}</button></div>
+        <div style="margin-top:25px;text-align:center;"><button type="submit" style="background:linear-gradient(90deg,${tipo === 'INGRESO' ? '#22c55e,#16a34a' : '#f87171,#ef4444'});color:#fff;font-weight:700;border:none;border-radius:7px;padding:11px 35px;font-size:1.08em;cursor:pointer;">${botonTexto}</button></div>
       </form>
     </div>
   `;
@@ -561,6 +712,23 @@ async function saveMovimiento(productoId, tipo) {
 
     if (tipo === 'SALIDA' && cantidad > stockAnterior) {
       throw new Error(`No puedes dar salida a ${cantidad} unidades. Solo hay ${stockAnterior} en stock.`);
+    }
+
+    if (tipo === 'SALIDA' && !isAdminOperativo()) {
+      const { data, error } = await tiendaState.currentSupabase.rpc('solicitar_salida_inventario_tienda', {
+        p_producto_id: productoId,
+        p_cantidad: cantidad,
+        p_razon: razon,
+        p_usuario_id: user.id
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.message || 'No se pudo crear la solicitud de salida.');
+
+      closeModal();
+      alert('Solicitud enviada a administracion. El stock no se descontara hasta que sea aprobada.');
+      await renderInventario();
+      return;
     }
 
     const movimientoData = {
@@ -603,7 +771,7 @@ async function saveMovimiento(productoId, tipo) {
     alert(`Error al registrar el movimiento: ${error.message}`);
   } finally {
     btn.disabled = false;
-    btn.textContent = `Confirmar ${tipo}`;
+    btn.textContent = tipo === 'SALIDA' && !isAdminOperativo() ? 'Solicitar autorizacion' : `Confirmar ${tipo}`;
   }
 }
 
@@ -765,5 +933,6 @@ export function resetInventarioState() {
   categoriasCache = [];
   proveedoresCache = [];
   terrazaProductosCache = [];
+  salidasPendientesCache = [];
   currentRoleKey = '';
 }

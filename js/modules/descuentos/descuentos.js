@@ -1,5 +1,5 @@
 // js/modules/descuentos/descuentos.js
-import { formatCurrency, formatDateShort, showError, showSuccess, clearFeedback, setFormLoadingState, showConfirmationModal } from '/js/uiUtils.js';
+import { formatCurrency, formatDateShort, showError, showSuccess, showLoading, clearFeedback, setFormLoadingState, showConfirmationModal } from '/js/uiUtils.js';
 
 
 let moduleListeners = []; // Centralized array for event listeners

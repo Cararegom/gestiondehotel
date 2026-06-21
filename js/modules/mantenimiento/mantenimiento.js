@@ -15,6 +15,9 @@ const CLOSED_TASK_STATES = ['completada', 'cancelada'];
 const PROGRAMMED_TASK_MARKER = '[PROGRAMADO]';
 const LEGACY_BLOCKING_TASK_DB_TYPE = 'general';
 const TASK_TYPE_COMPATIBILITY_ERROR_REGEX = /tipo_tarea_enum|\btipo\b|bloqueante|programado|enum|check|constraint|invalid input value/i;
+const TASK_ATTACHMENTS_COMPATIBILITY_ERROR_REGEX = /\badjuntos\b|column|schema|pgrst/i;
+const TASK_SELECT_COLUMNS = 'id, habitacion_id, titulo, descripcion, prioridad, estado, tipo, fecha_programada, fecha_completada, asignada_a, creado_en, adjuntos, frecuencia, ultima_realizacion';
+const TASK_SELECT_COLUMNS_LEGACY = 'id, habitacion_id, titulo, descripcion, prioridad, estado, tipo, fecha_programada, fecha_completada, asignada_a, creado_en, frecuencia, ultima_realizacion';
 const TASK_FREQUENCY_LABELS = {
   unica: 'Unica',
   diaria: 'Diaria',
@@ -170,20 +173,25 @@ function buildBlockingCompatibilityPayload(payload) {
 }
 
 function buildTaskCompatibilityPayload(payload) {
-  return normalizeTaskType(payload?.tipo) === TASK_TYPES.programado
+  const compatiblePayload = normalizeTaskType(payload?.tipo) === TASK_TYPES.programado
     ? buildProgrammedCompatibilityPayload(payload)
     : buildBlockingCompatibilityPayload(payload);
+
+  delete compatiblePayload.adjuntos;
+  return compatiblePayload;
 }
 
 function shouldRetryTaskCompatibility(error, payload) {
-  if (!payload?.tipo) return false;
+  if (!payload?.tipo && !Object.prototype.hasOwnProperty.call(payload || {}, 'adjuntos')) return false;
 
   const details = [error?.message, error?.details, error?.hint, error?.code]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
 
-  return !details || TASK_TYPE_COMPATIBILITY_ERROR_REGEX.test(details);
+  return !details
+    || TASK_TYPE_COMPATIBILITY_ERROR_REGEX.test(details)
+    || TASK_ATTACHMENTS_COMPATIBILITY_ERROR_REGEX.test(details);
 }
 
 async function runTaskMutationWithCompatibility(runMutation, payload) {
@@ -197,6 +205,15 @@ async function runTaskMutationWithCompatibility(runMutation, payload) {
     console.warn('Reintentando tarea con compatibilidad legacy.', error);
     return runMutation(buildTaskCompatibilityPayload(payload));
   }
+}
+
+function shouldRetryTaskSelectCompatibility(error) {
+  const details = [error?.message, error?.details, error?.hint, error?.code]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return TASK_ATTACHMENTS_COMPATIBILITY_ERROR_REGEX.test(details);
 }
 
 function isBlockingTaskType(tipo) {
@@ -410,20 +427,28 @@ async function renderTareas(container, supabase, hotelId, currentUser) {
 
   updateHabitacionFilterOptions(container, habitaciones);
 
-  let query = supabase
-    .from('tareas_mantenimiento')
-    .select('id, habitacion_id, titulo, descripcion, prioridad, estado, tipo, fecha_programada, fecha_completada, asignada_a, creado_en, adjuntos, frecuencia, ultima_realizacion')
-    .eq('hotel_id', hotelId);
+  const buildTaskQuery = (selectColumns) => {
+    let query = supabase
+      .from('tareas_mantenimiento')
+      .select(selectColumns)
+      .eq('hotel_id', hotelId);
 
-  if (estadoFiltro) {
-    query = query.eq('estado', estadoFiltro);
+    if (estadoFiltro) {
+      query = query.eq('estado', estadoFiltro);
+    }
+
+    if (habitacionFiltro) {
+      query = query.eq('habitacion_id', habitacionFiltro);
+    }
+
+    return query;
+  };
+
+  let { data: tareasRaw, error } = await buildTaskQuery(TASK_SELECT_COLUMNS).order('creado_en', { ascending: false });
+
+  if (error && shouldRetryTaskSelectCompatibility(error)) {
+    ({ data: tareasRaw, error } = await buildTaskQuery(TASK_SELECT_COLUMNS_LEGACY).order('creado_en', { ascending: false }));
   }
-
-  if (habitacionFiltro) {
-    query = query.eq('habitacion_id', habitacionFiltro);
-  }
-
-  const { data: tareasRaw, error } = await query.order('creado_en', { ascending: false });
 
   if (error) {
     showError(list, `Error cargando tareas: ${error.message}`);

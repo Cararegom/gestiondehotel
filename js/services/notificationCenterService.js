@@ -1,5 +1,8 @@
 import { getUserSession } from '../authService.js';
 
+const NOTIFICATION_SELECT_COLUMNS = 'id, mensaje, tipo, leida, creado_en, entidad_tipo, entidad_id';
+const NOTIFICATION_SELECT_COLUMNS_LEGACY = 'id, mensaje, tipo, leida, creado_en';
+
 function normalizeRole(user) {
   return (
     user?.app_metadata?.rol ||
@@ -54,14 +57,29 @@ function buildNotificationMatchFilter(context) {
   return `usuario_id.eq.${context.userId},rol_destino.eq.${context.role}`;
 }
 
-export async function fetchNotificationFeed(supabase, context, limit = 7) {
-  const { data, error } = await supabase
+function shouldRetryNotificationSelectCompatibility(error) {
+  const details = [error?.message, error?.details, error?.hint, error?.code]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return /\bentidad_tipo\b|\bentidad_id\b|column|schema|pgrst/.test(details);
+}
+
+async function fetchNotificationsWithCompatibility(supabase, context, limit) {
+  const buildQuery = (selectColumns) => supabase
     .from('notificaciones')
-    .select('id, mensaje, tipo, leida, creado_en, entidad_tipo, entidad_id')
+    .select(selectColumns)
     .eq('hotel_id', context.hotelId)
     .or(buildNotificationMatchFilter(context))
     .order('creado_en', { ascending: false })
     .limit(limit);
+
+  let { data, error } = await buildQuery(NOTIFICATION_SELECT_COLUMNS);
+
+  if (error && shouldRetryNotificationSelectCompatibility(error)) {
+    ({ data, error } = await buildQuery(NOTIFICATION_SELECT_COLUMNS_LEGACY));
+  }
 
   if (error) {
     throw error;
@@ -70,20 +88,12 @@ export async function fetchNotificationFeed(supabase, context, limit = 7) {
   return data || [];
 }
 
+export async function fetchNotificationFeed(supabase, context, limit = 7) {
+  return fetchNotificationsWithCompatibility(supabase, context, limit);
+}
+
 export async function fetchNotificationHistory(supabase, context, limit = 100) {
-  const { data, error } = await supabase
-    .from('notificaciones')
-    .select('id, mensaje, tipo, leida, creado_en, entidad_tipo, entidad_id')
-    .eq('hotel_id', context.hotelId)
-    .or(buildNotificationMatchFilter(context))
-    .order('creado_en', { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw error;
-  }
-
-  return data || [];
+  return fetchNotificationsWithCompatibility(supabase, context, limit);
 }
 
 export async function markNotificationAsRead(supabase, notificationId, hotelId) {

@@ -44,9 +44,33 @@ export async function crearNotificacion(supabase, {
     if (payload[key] === undefined) delete payload[key];
   });
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('notificaciones')
     .insert([payload]);
+
+  if (error) {
+    const details = [error?.message, error?.details, error?.hint, error?.code]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    if (/\bentidad_tipo\b|\bentidad_id\b|\buser_id\b|column|schema|pgrst/.test(details)) {
+      const legacyPayload = {
+        hotel_id: hotelId,
+        rol_destino: rolDestino,
+        tipo,
+        mensaje
+      };
+
+      if (userId) {
+        legacyPayload.usuario_id = userId;
+      }
+
+      ({ data, error } = await supabase
+        .from('notificaciones')
+        .insert([legacyPayload]));
+    }
+  }
 
   if (error) {
     console.error('Error al insertar notificación:', error);

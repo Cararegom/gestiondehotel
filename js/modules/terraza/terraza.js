@@ -155,8 +155,31 @@ function getTipInputAmount(fallbackAmount = 0) {
   return Math.max(0, numberOrZero(input.value));
 }
 
+function isBeerText(value = '') {
+  const key = normalizeTextKey(value);
+  if (!key) return false;
+  return [
+    'cerveza',
+    'cervezas',
+    'beer',
+    'corona',
+    'aguila',
+    'poker',
+    'clubcolombia',
+    'costena',
+    'heineken',
+    'budweiser',
+    'stellaartois',
+    'modelo'
+  ].some((term) => key.includes(term));
+}
+
 function isBeerProduct(producto) {
-  return producto?.permite_michelada === true || normalizeTextKey(producto?.categoria).includes('cerveza');
+  return producto?.permite_michelada === true || isBeerText(producto?.categoria) || isBeerText(producto?.nombre);
+}
+
+function isLoungeTable(mesa) {
+  return Number(mesa?.numero) === 6 || normalizeTextKey(mesa?.nombre).includes('sillon');
 }
 
 function isAdminRoleName(value = '') {
@@ -263,7 +286,10 @@ function getSelectedLocationLabel() {
   if (isLooseChairGroup(mesa)) {
     return state.selectedSillaNumero ? `Silla suelta ${state.selectedSillaNumero}` : 'Selecciona una silla suelta';
   }
-  if (state.selectedSillaNumero) return `${mesa.nombre} - Silla ${state.selectedSillaNumero}`;
+  if (state.selectedSillaNumero) {
+    const asientoLabel = isLoungeTable(mesa) ? 'Sillon' : 'Silla';
+    return `${mesa.nombre} - ${asientoLabel} ${state.selectedSillaNumero}`;
+  }
   return `${mesa.nombre} - Cuenta de mesa`;
 }
 
@@ -273,7 +299,8 @@ function getPedidoLocationLabel(pedido) {
   if (isLooseChairGroup(mesa)) {
     return pedido?.silla_numero ? `Silla suelta ${pedido.silla_numero}` : 'Silla suelta';
   }
-  return `${mesa.nombre || 'Mesa'}${pedido?.silla_numero ? ` - Silla ${pedido.silla_numero}` : ''}`;
+  const asientoLabel = isLoungeTable(mesa) ? 'Sillon' : 'Silla';
+  return `${mesa.nombre || 'Mesa'}${pedido?.silla_numero ? ` - ${asientoLabel} ${pedido.silla_numero}` : ''}`;
 }
 
 function countItems(pedido) {
@@ -509,6 +536,8 @@ function renderMesas() {
     const mesaCompleta = getPedidoMesaCompleta(mesa.id);
     const isMesaSelected = state.selectedMesaId === mesa.id && !state.selectedSillaNumero;
     const seats = Array.from({ length: Number(mesa.sillas || 2) }, (_, index) => index + 1);
+    const asientoNombre = isLoungeTable(mesa) ? 'sillon' : 'silla';
+    const asientoNombrePlural = isLoungeTable(mesa) ? 'sillones' : 'sillas';
     const estadoLabel = pedidos.length ? 'Con consumo' : 'Libre';
     const estadoClass = pedidos.length ? 'bg-amber-100 text-amber-800 border-amber-200' : 'bg-green-100 text-green-700 border-green-200';
     const mesaClass = isMesaSelected
@@ -533,7 +562,7 @@ function renderMesas() {
           data-action="select-location"
           data-mesa-id="${escapeAttribute(mesa.id)}"
           data-silla="${seat}"
-          title="Silla ${seat}${hasOrder ? ` - ${money(totalPedido(pedidoSilla))}` : ''}"
+          title="${asientoNombre === 'sillon' ? 'Sillon' : 'Silla'} ${seat}${hasOrder ? ` - ${money(totalPedido(pedidoSilla))}` : ''}"
         >
           ${seat}
         </button>
@@ -545,7 +574,7 @@ function renderMesas() {
         <div class="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 class="text-base font-bold text-slate-800">${escapeHtml(mesa.nombre)}</h3>
-            <p class="text-xs text-slate-500">2 sillas | ${pedidos.length} cuenta(s) abiertas</p>
+            <p class="text-xs text-slate-500">${escapeHtml(String(seats.length))} ${asientoNombrePlural} | ${pedidos.length} cuenta(s) abiertas</p>
           </div>
           <span class="rounded-full border px-2.5 py-1 text-xs font-bold ${estadoClass}">${estadoLabel}</span>
         </div>
@@ -983,6 +1012,16 @@ function renderInventarioTable() {
   `;
 }
 
+function renderTransferInfoPanel() {
+  return `
+    <section class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 shadow-sm">
+      <h3 class="font-bold">Transferencias de inventario</h3>
+      <p class="mt-1">El inventario de Tienda hacia Terraza lo envia recepcion desde <strong>Tienda &gt; Inventario</strong>, cuando el mesero lo solicite.</p>
+      <p class="mt-1">La devolucion de Terraza hacia Tienda tambien se gestiona desde <strong>Tienda &gt; Inventario</strong>, quedando registrada con el usuario y turno correspondiente.</p>
+    </section>
+  `;
+}
+
 function renderHistorial() {
   if (!state.historial.length) {
     return '<div class="rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">Aun no hay movimientos de cuentas en Terraza.</div>';
@@ -1108,6 +1147,7 @@ function renderTabNav() {
 
 function renderMapaTab() {
   const mesasNormales = getMesasNormales();
+  const mesasConSillones = mesasNormales.filter(isLoungeTable).length;
 
   return `
     ${renderStats()}
@@ -1116,7 +1156,7 @@ function renderMapaTab() {
         <div class="flex flex-col justify-between gap-2 md:flex-row md:items-center">
           <div>
             <h2 class="text-lg font-bold text-slate-800">Mapa de mesas y sillas</h2>
-            <p class="text-sm text-slate-500">5 mesas de 2 sillas y 12 sillas sueltas independientes.</p>
+            <p class="text-sm text-slate-500">${mesasNormales.length} mesas: ${mesasNormales.length - mesasConSillones} con sillas, ${mesasConSillones} con sillones y 12 sillas sueltas independientes.</p>
           </div>
           <span class="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700">${mesasNormales.length} mesas | 12 sillas sueltas</span>
         </div>
@@ -1145,6 +1185,7 @@ function renderInventarioTab() {
   return `
     <div class="space-y-4">
       ${renderStats()}
+      ${renderTransferInfoPanel()}
       ${renderCatalogForm()}
       ${renderInventarioTable()}
     </div>
@@ -1708,7 +1749,7 @@ async function saveProduct(form) {
   const stockMinimo = Number(formData.get('stock_minimo') || 0);
   const codigoBarras = String(formData.get('codigo_barras') || '').trim();
   const activo = formData.get('activo') === 'on';
-  const permiteMichelada = formData.get('permite_michelada') === 'on';
+  const permiteMichelada = formData.get('permite_michelada') === 'on' || isBeerProduct({ nombre, categoria });
 
   if (!nombre) throw new Error('El nombre es obligatorio.');
   if (!categoria) throw new Error('La categoria es obligatoria.');
@@ -1783,26 +1824,8 @@ async function saveConfiguracion(form) {
   showFeedback('Configuracion de Terraza guardada.', 'success');
 }
 
-async function transferFromTienda(form) {
-  const formData = new FormData(form);
-  const productoTiendaId = String(formData.get('producto_tienda_id') || '').trim();
-  const cantidad = Number(formData.get('cantidad') || 0);
-
-  if (!productoTiendaId) throw new Error('Selecciona un producto de Tienda.');
-  if (!Number.isInteger(cantidad) || cantidad <= 0) throw new Error('La cantidad debe ser mayor a cero.');
-
-  const { data, error } = await state.supabase.rpc('transferir_tienda_a_terraza', {
-    p_producto_tienda_id: productoTiendaId,
-    p_cantidad: cantidad,
-    p_usuario_id: state.user.id
-  });
-
-  if (error) throw error;
-  if (data?.error) throw new Error(data.message || 'No se pudo transferir desde Tienda.');
-
-  state.activeTab = 'inventario';
-  await refreshAndRender();
-  showFeedback('Inventario transferido desde Tienda a Terraza.', 'success');
+async function transferFromTienda() {
+  throw new Error('Recepcion debe enviar el inventario desde Tienda > Inventario. El mesero no puede tomar stock de Tienda desde Terraza.');
 }
 
 async function transferToTienda(form) {
