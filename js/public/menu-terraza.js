@@ -59,7 +59,7 @@ function clearStatus() {
 }
 
 function getCategories() {
-  return ['Todas', ...new Set(state.products.map((product) => product.categoria || 'Cervezas'))];
+  return ['Todas', ...new Set(state.products.map((product) => product.categoria || 'Terraza'))];
 }
 
 function getFilteredProducts() {
@@ -77,11 +77,11 @@ function renderHero() {
   if (!hotelName || !heroCopy) return;
 
   hotelName.textContent = state.hotel?.nombre
-    ? `${state.hotel.nombre} | Cervezas`
-    : 'Menu de Cervezas';
+    ? `${state.hotel.nombre} | Terraza`
+    : 'Menu de Terraza';
   heroCopy.textContent = state.hotel?.direccion
-    ? `Cervezas frias y micheladas disponibles en terraza. ${state.hotel.direccion}.`
-    : 'Cervezas frias, micheladas y precios actualizados para disfrutar en la terraza.';
+    ? `Bebidas, licores y micheladas disponibles en terraza. ${state.hotel.direccion}.`
+    : 'Bebidas, licores, micheladas y precios actualizados para disfrutar en la terraza.';
 }
 
 function renderCategories() {
@@ -101,7 +101,7 @@ function renderProducts() {
 
   const products = getFilteredProducts();
   if (!products.length) {
-    grid.innerHTML = '<div class="empty">No encontramos cervezas con ese filtro. Prueba otra busqueda.</div>';
+    grid.innerHTML = '<div class="empty">No encontramos productos con ese filtro. Prueba otra busqueda.</div>';
     return;
   }
 
@@ -126,8 +126,8 @@ function renderProducts() {
             <h2 class="beer-title">${escapeHtml(product.nombre)}</h2>
             <div class="price">${money(price)}</div>
           </div>
-          <span class="category">${escapeHtml(product.categoria || 'Cervezas')}</span>
-          <p class="description">${escapeHtml(product.descripcion || 'Cerveza disponible en terraza.')}</p>
+          <span class="category">${escapeHtml(product.categoria || 'Terraza')}</span>
+          <p class="description">${escapeHtml(product.descripcion || 'Producto disponible en terraza.')}</p>
           <div class="addons">
             ${micheladaHtml}
             ${availabilityHtml}
