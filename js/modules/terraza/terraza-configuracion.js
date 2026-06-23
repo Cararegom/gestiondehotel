@@ -3,9 +3,11 @@ export function renderConfiguracionTab(deps) {
     escapeAttribute,
     getTerrazaConfig,
     money,
-    numberOrZero
+    numberOrZero,
+    state
   } = deps;
   const config = getTerrazaConfig();
+  const publicMenuUrl = `${window.location.origin}/menu-terraza.html?hotel=${encodeURIComponent(state.hotelId || '')}`;
 
   return `
     <div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
@@ -44,6 +46,12 @@ export function renderConfiguracionTab(deps) {
         <h3 class="font-bold">Como se aplica</h3>
         <p class="mt-2">Los productos cuya categoria sea Cerveza o Cervezas muestran el check de michelada en el mapa.</p>
         <p class="mt-2">Ejemplo: cerveza ${money(7000)} + michelada ${money(config.precio_michelada)} = ${money(7000 + numberOrZero(config.precio_michelada))}.</p>
+        <div class="mt-5 rounded-xl border border-amber-300 bg-white/70 p-3">
+          <h4 class="font-bold text-amber-950">Menu publico</h4>
+          <p class="mt-1 text-xs text-amber-800">Comparte este enlace para que los clientes vean la lista de cervezas y precios desde cualquier celular.</p>
+          <input class="form-control mt-3 text-xs" value="${escapeAttribute(publicMenuUrl)}" readonly>
+          <a class="button button-secondary mt-3 block text-center" href="${escapeAttribute(publicMenuUrl)}" target="_blank" rel="noopener">Abrir menu</a>
+        </div>
       </aside>
     </div>
   `;
