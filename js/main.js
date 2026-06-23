@@ -92,7 +92,7 @@ const superadminNavLinksConfig = [
 ];
 const superadminAllowedRoutes = new Set(['/ops-saas', '/bitacora', '/soporte', '/faq']);
 const TERRAZA_ENABLED_HOTEL_IDS = new Set(['38373fa5-b953-4aa9-b4e9-25b9739be5f2']);
-const MESERO_ALLOWED_MODULES = new Set(['caja', 'terraza', 'tienda']);
+const MESERO_ALLOWED_MODULES = new Set(['caja', 'terraza']);
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
@@ -137,13 +137,17 @@ function isTerrazaEnabledForHotelId(hotelId) {
   return TERRAZA_ENABLED_HOTEL_IDS.has(String(hotelId || ''));
 }
 
+function canAccessTerrazaForHotel(hotelId = currentActiveHotel?.id, modulosPermitidos = currentActivePlanDetails?.funcionalidades?.modulos_permitidos || []) {
+  return modulosPermitidos.includes('terraza') || isTerrazaEnabledForHotelId(hotelId);
+}
+
 function isTerrazaEnabledForActiveHotel() {
-  return isTerrazaEnabledForHotelId(currentActiveHotel?.id);
+  return canAccessTerrazaForHotel(currentActiveHotel?.id);
 }
 
 function isModuleAllowedByPlan(moduleKey, modulosPermitidos = [], hotelId = currentActiveHotel?.id) {
   if (moduleKey === 'terraza') {
-    return modulosPermitidos.includes(moduleKey) || isTerrazaEnabledForHotelId(hotelId);
+    return canAccessTerrazaForHotel(hotelId, modulosPermitidos);
   }
   return modulosPermitidos.includes(moduleKey);
 }
@@ -549,13 +553,13 @@ async function router() {
     }
 
     if (userForModule && isMeseroRole(currentUserRole) && !MESERO_ALLOWED_MODULES.has(moduleKeyFromRoute)) {
-      window.location.hash = isTerrazaEnabledForHotelId(hotelIdForModule) ? '#/terraza' : '#/caja';
+      window.location.hash = canAccessTerrazaForHotel(hotelIdForModule) ? '#/terraza' : '#/caja';
       hideGlobalLoading();
       routerBusy = false;
       return;
     }
 
-    if (userForModule && moduleKeyFromRoute === 'terraza' && !isTerrazaEnabledForHotelId(hotelIdForModule)) {
+    if (userForModule && moduleKeyFromRoute === 'terraza' && !canAccessTerrazaForHotel(hotelIdForModule)) {
       appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Terraza no habilitada</h2><p class="text-gray-700">Este modulo solo esta disponible para el hotel autorizado.</p></div>`;
       hideGlobalLoading();
       routerBusy = false;
