@@ -545,7 +545,7 @@ export async function mostrarResumenCorteDeCaja({
 export function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egresos, balance, ingresosPorMetodo, egresosPorMetodo, balancesPorMetodo, usuarioNombre, fechaCierre, montoApertura = 0, valoresReales = null) {
   const tamano = (config?.tamano_papel || '').toLowerCase();
   const esTermica = tamano === '58mm' || tamano === '80mm';
-  const widthPage = tamano === '58mm' ? '58mm' : (tamano === '80mm' ? '78mm' : '100%');
+  const widthPage = tamano === '58mm' ? '58mm' : (tamano === '80mm' ? '74mm' : '100%');
   const fontSize = tamano === '58mm' ? '10px' : (tamano === '80mm' ? '11px' : '12px');
 
   const logoUrl = config?.mostrar_logo !== false && config?.logo_url ? config.logo_url : null;
@@ -583,7 +583,8 @@ export function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egreso
 
   const style = `
     @page { margin: ${esTermica ? '0' : '15mm'}; size: auto; }
-    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: ${fontSize}; margin: 0; padding: ${esTermica ? '5px' : '20px'}; width: ${esTermica ? widthPage : 'auto'}; color: #000; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: ${fontSize}; margin: 0; padding: ${esTermica ? '5px' : '20px'}; width: ${esTermica ? widthPage : 'auto'}; max-width: ${esTermica ? widthPage : 'none'}; color: #000; overflow-wrap: anywhere; }
     .container { width: 100%; max-width: ${esTermica ? '100%' : '800px'}; margin: 0 auto; }
     .text-center { text-align: center; }
     .text-right { text-align: right; }
@@ -592,11 +593,13 @@ export function imprimirCorteCajaAdaptable(config, movimientos, ingresos, egreso
     .mt-2 { margin-top: 10px; }
     .border-bottom { border-bottom: 1px dashed #444; padding-bottom: 5px; margin-bottom: 5px; }
     .border-top { border-top: 1px dashed #444; padding-top: 5px; margin-top: 5px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 5px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 5px; }
     th { text-align: left; border-bottom: 1px solid #000; padding: 3px 0; font-weight: bold; text-transform: uppercase; font-size: 0.9em; }
     td { padding: 4px 0; vertical-align: top; }
     .col-hora { width: 12%; } .col-tipo { width: 8%; text-align: center; } .col-concepto { width: 45%; } .col-metodo { width: 15%; } .col-monto { width: 20%; text-align: right; }
-    .resumen-row { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    .resumen-row { display: flex; justify-content: space-between; gap: 6px; margin-bottom: 2px; }
+    .resumen-row span { min-width: 0; overflow-wrap: anywhere; }
+    .resumen-row span:last-child { text-align: right; }
     .balance-box { border: 1px solid #000; padding: 5px; margin: 10px 0; background-color: #f9f9f9; }
     @media print { .no-print { display: none; } body { -webkit-print-color-adjust: exact; } }
   `;

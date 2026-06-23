@@ -181,6 +181,24 @@ function renderAutorizacionesSalidasPanel() {
   const description = isAdminOperativo()
     ? 'Aprueba solo las salidas verificadas. Al aprobar, se descuenta el stock y se crea el movimiento de inventario.'
     : 'Tus salidas manuales no descuentan stock hasta que administracion las autorice.';
+  const canApprove = isAdminOperativo();
+  const renderActions = (solicitud) => canApprove ? `
+    <button data-approve-salida data-solicitud-id="${escapeAttribute(solicitud.id)}" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:7px 10px;font-weight:800;cursor:pointer;">Aprobar</button>
+    <button data-reject-salida data-solicitud-id="${escapeAttribute(solicitud.id)}" style="background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:7px;padding:7px 10px;font-weight:800;cursor:pointer;">Rechazar</button>
+  ` : '';
+  const renderCard = (solicitud) => `
+    <article class="tienda-salida-card">
+      <div class="tienda-salida-card-header">
+        <h4 class="tienda-salida-card-title">${escapeHtml(solicitud.producto?.nombre || 'Producto')}</h4>
+        <span class="tienda-salida-qty">${escapeHtml(String(solicitud.cantidad || 0))} und.</span>
+      </div>
+      <div class="tienda-salida-detail"><strong>Stock actual</strong><span>${escapeHtml(String(solicitud.producto?.stock_actual ?? solicitud.stock_actual_solicitud ?? 0))}</span></div>
+      <div class="tienda-salida-detail"><strong>Solicitado por</strong><span>${escapeHtml(solicitud.solicitado_por_nombre || 'Usuario')}</span></div>
+      <div class="tienda-salida-detail"><strong>Motivo</strong><span>${escapeHtml(solicitud.razon || 'Sin motivo')}</span></div>
+      <div class="tienda-salida-detail"><strong>Fecha</strong><span>${new Date(solicitud.creado_en).toLocaleString('es-CO')}</span></div>
+      ${canApprove ? `<div class="tienda-salida-actions">${renderActions(solicitud)}</div>` : ''}
+    </article>
+  `;
 
   return `
     <section style="margin-bottom:18px;border:1px solid #fed7aa;background:#fff7ed;border-radius:14px;padding:16px;">
@@ -192,7 +210,7 @@ function renderAutorizacionesSalidasPanel() {
         <span style="background:#ffedd5;color:#9a3412;border-radius:999px;padding:5px 10px;font-weight:800;font-size:0.78rem;">${salidasPendientesCache.length} pendiente(s)</span>
       </div>
       ${salidasPendientesCache.length ? `
-        <div style="overflow-x:auto;background:#fff;border:1px solid #fed7aa;border-radius:12px;">
+        <div class="tienda-salidas-table" style="overflow-x:auto;background:#fff;border:1px solid #fed7aa;border-radius:12px;">
           <table style="width:100%;border-collapse:collapse;font-size:13px;min-width:760px;">
             <thead style="background:#fff7ed;color:#9a3412;text-align:left;">
               <tr>
@@ -202,7 +220,7 @@ function renderAutorizacionesSalidasPanel() {
                 <th style="padding:10px;">Solicitado por</th>
                 <th style="padding:10px;">Motivo</th>
                 <th style="padding:10px;">Fecha</th>
-                ${isAdminOperativo() ? '<th style="padding:10px;text-align:right;">Acciones</th>' : ''}
+                ${canApprove ? '<th style="padding:10px;text-align:right;">Acciones</th>' : ''}
               </tr>
             </thead>
             <tbody>
@@ -214,16 +232,18 @@ function renderAutorizacionesSalidasPanel() {
                   <td style="padding:10px;">${escapeHtml(solicitud.solicitado_por_nombre || 'Usuario')}</td>
                   <td style="padding:10px;color:#475569;">${escapeHtml(solicitud.razon || 'Sin motivo')}</td>
                   <td style="padding:10px;color:#64748b;">${new Date(solicitud.creado_en).toLocaleString('es-CO')}</td>
-                  ${isAdminOperativo() ? `
+                  ${canApprove ? `
                     <td style="padding:10px;text-align:right;white-space:nowrap;">
-                      <button data-approve-salida data-solicitud-id="${escapeAttribute(solicitud.id)}" style="background:#16a34a;color:#fff;border:none;border-radius:7px;padding:7px 10px;font-weight:800;cursor:pointer;">Aprobar</button>
-                      <button data-reject-salida data-solicitud-id="${escapeAttribute(solicitud.id)}" style="background:#fff;color:#dc2626;border:1px solid #fecaca;border-radius:7px;padding:7px 10px;font-weight:800;cursor:pointer;margin-left:6px;">Rechazar</button>
+                      <div style="display:flex;justify-content:flex-end;gap:6px;">${renderActions(solicitud)}</div>
                     </td>
                   ` : ''}
                 </tr>
               `).join('')}
             </tbody>
           </table>
+        </div>
+        <div class="tienda-salidas-cards">
+          ${salidasPendientesCache.map(renderCard).join('')}
         </div>
       ` : '<div style="background:#fff;border:1px dashed #fed7aa;border-radius:10px;padding:14px;color:#9a3412;font-size:0.9rem;">No hay salidas pendientes por autorizar.</div>'}
     </section>

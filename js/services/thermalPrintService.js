@@ -16,28 +16,31 @@ function buildPrintStyle(config) {
   const paper = String(config?.tamano_papel || '').toLowerCase();
   if (paper === '58mm') {
     return {
-      width: '55mm',
+      width: '54mm',
+      printPage: '@page{margin:0;}',
       css: `
-        body{font-family:monospace;font-size:11px;max-width:55mm;margin:0;padding:0;background:#fff;color:#111;}
-        .ticket{max-width:55mm;margin:auto;padding:4px 3px;}
-        table{width:100%;border-collapse:collapse;font-size:11px;}
+        body{font-family:monospace;font-size:10.5px;width:54mm;max-width:54mm;margin:0;padding:0;background:#fff;color:#111;}
+        .ticket{width:54mm;max-width:54mm;margin:0;padding:2mm 1.5mm;box-sizing:border-box;}
+        table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:10.5px;}
         th,td{padding:2px 1px;vertical-align:top;}
       `
     };
   }
   if (paper === '80mm') {
     return {
-      width: '78mm',
+      width: '74mm',
+      printPage: '@page{margin:0;}',
       css: `
-        body{font-family:monospace;font-size:13px;max-width:78mm;margin:0;padding:0;background:#fff;color:#111;}
-        .ticket{max-width:78mm;margin:auto;padding:5px 4px;}
-        table{width:100%;border-collapse:collapse;font-size:13px;}
-        th,td{padding:3px 2px;vertical-align:top;}
+        body{font-family:monospace;font-size:11px;width:74mm;max-width:74mm;margin:0;padding:0;background:#fff;color:#111;}
+        .ticket{width:74mm;max-width:74mm;margin:0;padding:3mm 2mm;box-sizing:border-box;}
+        table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px;}
+        th,td{padding:2px 1px;vertical-align:top;}
       `
     };
   }
   return {
     width: '820px',
+    printPage: '@page{margin:3mm;}',
     css: `
       body{font-family:'Segoe UI',Arial,sans-serif;font-size:14px;max-width:820px;margin:0 auto;background:#fff;color:#111;}
       .ticket{max-width:820px;margin:auto;padding:18px;}
@@ -66,11 +69,17 @@ function renderHeader(config = {}, documentLabel) {
 }
 
 function renderMeta(meta = []) {
-  if (!meta.length) return '';
-  return meta.map((item) => `
-    <div style="display:flex;justify-content:space-between;gap:10px;font-size:0.92em;margin-bottom:2px;">
-      <span><b>${item.label}:</b></span>
-      <span style="text-align:right;">${item.value || ''}</span>
+  const cleanMeta = meta.filter((item) => (
+    item
+    && item.value !== undefined
+    && item.value !== null
+    && String(item.value).trim() !== ''
+  ));
+  if (!cleanMeta.length) return '';
+  return cleanMeta.map((item) => `
+    <div class="meta-row">
+      <span class="meta-label"><b>${item.label}:</b></span>
+      <span class="meta-value">${item.value}</span>
     </div>
   `).join('');
 }
@@ -81,17 +90,17 @@ function renderItems(items = []) {
     <table>
       <thead>
         <tr>
-          <th style="text-align:left;">Detalle</th>
-          <th style="text-align:center;width:44px;">Cant.</th>
-          <th style="text-align:right;width:68px;">Total</th>
+          <th class="item-name">Detalle</th>
+          <th class="item-qty">Cant.</th>
+          <th class="item-total">Total</th>
         </tr>
       </thead>
       <tbody>
         ${items.map((item) => `
           <tr>
-            <td>${item.nombre || ''}${item.precio ? `<div style="font-size:0.85em;color:#444;">${formatCurrency(item.precio)}</div>` : ''}</td>
-            <td style="text-align:center;">${item.cantidad || ''}</td>
-            <td style="text-align:right;">${formatCurrency(item.total || 0)}</td>
+            <td class="item-name">${item.nombre || ''}${item.precio ? `<div class="item-price">${formatCurrency(item.precio)}</div>` : ''}</td>
+            <td class="item-qty">${item.cantidad || ''}</td>
+            <td class="item-total">${formatCurrency(item.total || 0)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -105,7 +114,7 @@ function renderPayments(payments = []) {
     <div style="border-top:1px dashed #333;margin:8px 0 6px;"></div>
     <div style="font-weight:700;margin-bottom:4px;">Pagos</div>
     ${payments.map((payment) => `
-      <div style="display:flex;justify-content:space-between;gap:10px;font-size:0.92em;margin-bottom:2px;">
+      <div class="payment-row">
         <span>${payment.label || 'Método'}</span>
         <span>${formatCurrency(payment.amount || 0)}</span>
       </div>
@@ -136,9 +145,9 @@ export async function imprimirTicketOperacion({
     .eq('hotel_id', hotelId)
     .maybeSingle();
 
-  const { width, css } = buildPrintStyle(config);
+  const { width, css, printPage } = buildPrintStyle(config);
   const finalMeta = [
-    { label: 'Referencia', value: reference || '-' },
+    ...(reference ? [{ label: 'Referencia', value: reference }] : []),
     { label: 'Fecha', value: formatDateTime(new Date()) },
     ...(clientName ? [{ label: 'Cliente', value: clientName }] : []),
     ...meta
@@ -150,11 +159,19 @@ export async function imprimirTicketOperacion({
         <title>${documentLabel}</title>
         <style>
           ${css}
-          .ticket{max-width:${width};}
-          .total-row{display:flex;justify-content:space-between;gap:10px;font-size:0.95em;margin:3px 0;}
+          *{box-sizing:border-box;}
+          .ticket{width:${width};max-width:${width};overflow:hidden;}
+          .meta-row,.payment-row,.total-row{display:flex;justify-content:space-between;gap:6px;font-size:0.92em;margin-bottom:2px;max-width:100%;min-width:0;}
+          .meta-label,.meta-value,.payment-row span,.total-row span,.total-row strong{min-width:0;overflow-wrap:anywhere;word-break:break-word;}
+          .meta-value,.payment-row span:last-child,.total-row span:last-child,.total-row strong:last-child{text-align:right;}
+          .item-name{width:54%;text-align:left;overflow-wrap:anywhere;word-break:break-word;}
+          .item-qty{width:14%;text-align:center;white-space:nowrap;}
+          .item-total{width:32%;text-align:right;white-space:nowrap;}
+          .item-price{font-size:0.85em;color:#444;overflow-wrap:anywhere;word-break:break-word;}
+          .total-row{font-size:0.95em;margin:3px 0;}
           .total-row strong{font-weight:800;}
           .grand-total{font-size:1.18em;font-weight:900;}
-          @media print { .no-print{display:none!important;} @page{margin:3mm;} }
+          @media print { .no-print{display:none!important;} ${printPage} body{margin:0;} }
         </style>
       </head>
       <body>

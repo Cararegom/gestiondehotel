@@ -54,6 +54,71 @@ export function injectTiendaStyles() {
   style.id = styleId;
   style.type = 'text/css';
   style.appendChild(document.createTextNode(`
+    .tienda-salidas-cards {
+      display: none;
+    }
+
+    .tienda-salida-card {
+      background: #fff;
+      border: 1px solid #fed7aa;
+      border-radius: 12px;
+      padding: 12px;
+      box-shadow: 0 8px 20px rgba(154, 52, 18, 0.08);
+    }
+
+    .tienda-salida-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .tienda-salida-card-title {
+      margin: 0;
+      color: #1e293b;
+      font-size: 0.96rem;
+      font-weight: 800;
+      line-height: 1.25;
+    }
+
+    .tienda-salida-qty {
+      flex: 0 0 auto;
+      background: #fee2e2;
+      color: #b91c1c;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-weight: 900;
+      font-size: 0.8rem;
+    }
+
+    .tienda-salida-detail {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid #ffedd5;
+      padding-top: 7px;
+      margin-top: 7px;
+      color: #475569;
+      font-size: 0.86rem;
+    }
+
+    .tienda-salida-detail strong {
+      color: #9a3412;
+      font-weight: 800;
+    }
+
+    .tienda-salida-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .tienda-salida-actions button {
+      flex: 1 1 0;
+      min-height: 42px;
+    }
+
     @media (max-width: 768px) {
       #inventario-header {
         flex-direction: column;
@@ -75,6 +140,15 @@ export function injectTiendaStyles() {
       #inventario-filters > select {
         max-width: none;
         width: 100%;
+      }
+
+      .tienda-salidas-table {
+        display: none !important;
+      }
+
+      .tienda-salidas-cards {
+        display: grid;
+        gap: 10px;
       }
     }
   `));
