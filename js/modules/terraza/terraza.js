@@ -936,6 +936,16 @@ function handleInput(event) {
   }
 }
 
+function handleChange(event) {
+  if (event.target?.name !== 'imagen') return;
+
+  const preview = state.container?.querySelector('#terraza-product-image-preview');
+  const file = event.target.files?.[0];
+  if (preview && file) {
+    preview.src = URL.createObjectURL(file);
+  }
+}
+
 export async function mount(container, sbInstance, user, hotelId) {
   unmount(container);
 
@@ -971,6 +981,7 @@ export async function mount(container, sbInstance, user, hotelId) {
   addListener(container, 'click', handleClick);
   addListener(container, 'submit', handleSubmit);
   addListener(container, 'input', handleInput);
+  addListener(container, 'change', handleChange);
   await refreshAndRender();
 }
 

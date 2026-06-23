@@ -1,5 +1,26 @@
 import { escapeAttribute, escapeHtml } from '../../security.js';
 
+const PRODUCTO_TERRAZA_PLACEHOLDER_IMG = 'https://via.placeholder.com/320x220?text=Terraza';
+
+function sanitizeProductImageName(fileName = 'producto') {
+  return fileName
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+async function uploadProductImage(file, existingUrl, deps) {
+  const { state } = deps;
+  if (!file) return existingUrl || null;
+
+  const filePath = `public/${state.hotelId}/terraza_${Date.now()}_${sanitizeProductImageName(file.name)}`;
+  const { error: uploadError } = await state.supabase.storage.from('productos').upload(filePath, file);
+  if (uploadError) throw uploadError;
+
+  const { data: urlData } = state.supabase.storage.from('productos').getPublicUrl(filePath);
+  return urlData?.publicUrl || existingUrl || null;
+}
+
 function renderCatalogForm(deps) {
   const { state, isBeerProduct } = deps;
   const product = state.editingProductId
@@ -67,6 +88,20 @@ function renderCatalogForm(deps) {
           <button class="button button-primary w-full" type="submit">${product ? 'Guardar' : 'Crear'}</button>
         </div>
       </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[150px_minmax(0,1fr)]">
+        <img
+          id="terraza-product-image-preview"
+          src="${escapeAttribute(product?.imagen_url || PRODUCTO_TERRAZA_PLACEHOLDER_IMG)}"
+          alt="Vista previa del producto"
+          class="h-32 w-full rounded-xl border border-slate-200 bg-white object-cover md:h-32"
+        >
+        <div>
+          <label class="form-label text-xs">Imagen para menu publico</label>
+          <input name="imagen" type="file" accept="image/png,image/jpeg,image/webp" class="form-control">
+          <p class="mt-2 text-xs text-slate-500">Se muestra en el menu publico de Terraza. Si no subes una nueva imagen, se conserva la actual.</p>
+        </div>
+      </div>
     </form>
   `;
 }
@@ -114,8 +149,13 @@ function renderInventarioTable(deps) {
               return `
                 <tr class="${producto.activo === false ? 'bg-slate-50 text-slate-500' : 'bg-white'}">
                   <td class="px-4 py-3">
-                    <div class="font-bold text-slate-800">${escapeHtml(producto.nombre)}</div>
-                    <div class="text-xs text-slate-500">${escapeHtml(producto.codigo_barras || 'Sin codigo')}</div>
+                    <div class="flex items-center gap-3">
+                      <img src="${escapeAttribute(producto.imagen_url || PRODUCTO_TERRAZA_PLACEHOLDER_IMG)}" alt="${escapeAttribute(producto.nombre)}" class="h-12 w-12 rounded-lg border border-slate-200 bg-slate-50 object-cover">
+                      <div>
+                        <div class="font-bold text-slate-800">${escapeHtml(producto.nombre)}</div>
+                        <div class="text-xs text-slate-500">${escapeHtml(producto.codigo_barras || 'Sin codigo')}</div>
+                      </div>
+                    </div>
                   </td>
                   <td class="px-4 py-3">${escapeHtml(producto.categoria || 'Bebidas')}</td>
                   <td class="px-4 py-3 text-center">
@@ -171,6 +211,11 @@ export async function saveProduct(form, deps) {
   const { state, isBeerProduct, refreshAndRender, showFeedback } = deps;
   const formData = new FormData(form);
   const productId = formData.get('productId');
+  const currentProduct = productId ? state.productos.find((item) => item.id === productId) : null;
+  const imageEntry = formData.get('imagen');
+  const imageFile = imageEntry && typeof imageEntry === 'object' && Number(imageEntry.size || 0) > 0
+    ? imageEntry
+    : null;
   const nombre = String(formData.get('nombre') || '').trim();
   const categoria = String(formData.get('categoria') || 'Bebidas').trim();
   const descripcion = String(formData.get('descripcion') || '').trim();
@@ -196,6 +241,7 @@ export async function saveProduct(form, deps) {
     stock_actual: stockActual,
     stock_minimo: stockMinimo,
     codigo_barras: codigoBarras || null,
+    imagen_url: await uploadProductImage(imageFile, currentProduct?.imagen_url || null, deps),
     permite_michelada: permiteMichelada,
     activo
   };
