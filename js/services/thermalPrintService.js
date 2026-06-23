@@ -146,8 +146,9 @@ export async function imprimirTicketOperacion({
     .maybeSingle();
 
   const { width, css, printPage } = buildPrintStyle(config);
+  const shouldShowReference = Boolean(reference) && !String(documentLabel || '').toLowerCase().includes('terraza');
   const finalMeta = [
-    ...(reference ? [{ label: 'Referencia', value: reference }] : []),
+    ...(shouldShowReference ? [{ label: 'Referencia', value: reference }] : []),
     { label: 'Fecha', value: formatDateTime(new Date()) },
     ...(clientName ? [{ label: 'Cliente', value: clientName }] : []),
     ...meta
