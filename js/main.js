@@ -154,8 +154,7 @@ function isModuleAllowedByPlan(moduleKey, modulosPermitidos = [], hotelId = curr
 
 function getDefaultHashForCurrentRole() {
   if (currentUserRole === 'superadmin') return '#/ops-saas';
-  if (isMeseroRole(currentUserRole) && isTerrazaEnabledForActiveHotel()) return '#/terraza';
-  if (isMeseroRole(currentUserRole)) return '#/caja';
+  if (isMeseroRole(currentUserRole)) return '#/terraza';
   return '#/dashboard';
 }
 
@@ -322,7 +321,6 @@ function renderNavigation(user) {
   if (isMeseroRole(currentUserRole)) {
     navLinksConfig.forEach((linkConfig) => {
       if (!MESERO_ALLOWED_MODULES.has(linkConfig.moduleKey)) return;
-      if (linkConfig.moduleKey === 'terraza' && !isTerrazaEnabledForActiveHotel()) return;
 
       const a = buildNavLinkElement(linkConfig);
       if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
@@ -553,13 +551,13 @@ async function router() {
     }
 
     if (userForModule && isMeseroRole(currentUserRole) && !MESERO_ALLOWED_MODULES.has(moduleKeyFromRoute)) {
-      window.location.hash = canAccessTerrazaForHotel(hotelIdForModule) ? '#/terraza' : '#/caja';
+      window.location.hash = '#/terraza';
       hideGlobalLoading();
       routerBusy = false;
       return;
     }
 
-    if (userForModule && moduleKeyFromRoute === 'terraza' && !canAccessTerrazaForHotel(hotelIdForModule)) {
+    if (userForModule && !isMeseroRole(currentUserRole) && moduleKeyFromRoute === 'terraza' && !canAccessTerrazaForHotel(hotelIdForModule)) {
       appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Terraza no habilitada</h2><p class="text-gray-700">Este modulo solo esta disponible para el hotel autorizado.</p></div>`;
       hideGlobalLoading();
       routerBusy = false;
@@ -576,9 +574,10 @@ async function router() {
 
       // Verificamos si el módulo actual está en la lista de exentos.
       const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
+      const esModuloMeseroPermitido = isMeseroRole(currentUserRole) && MESERO_ALLOWED_MODULES.has(moduleKeyFromRoute);
 
       // Si el módulo NO es exento Y NO está en la lista de permitidos del plan, entonces bloqueamos.
-      if (!esModuloExento && moduleKeyFromRoute && !isModuleAllowedByPlan(moduleKeyFromRoute, currentActivePlanDetails.funcionalidades.modulos_permitidos, hotelIdForModule)) {
+      if (!esModuloMeseroPermitido && !esModuloExento && moduleKeyFromRoute && !isModuleAllowedByPlan(moduleKeyFromRoute, currentActivePlanDetails.funcionalidades.modulos_permitidos, hotelIdForModule)) {
 
         console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
         appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al M\u00F3dulo</h2><p class="text-gray-700 mb-1">La funcionalidad o m\u00F3dulo '<strong>${escapeHtml(moduleKeyFromRoute)}</strong>' no est\u00E1 incluida en tu plan actual (<strong>${escapeHtml(currentActivePlanDetails.nombre)}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta secci\u00F3n, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
