@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient.js';
 
 let currentUser = null;
 let authStateChangeListeners = [];
+const AUTH_STORAGE_KEY = 'gestionhotel.auth';
 
 // --- Promise para resolver la sesión inicial de forma segura ---
 let resolveInitialSession;
@@ -29,6 +30,49 @@ supabase.auth.onAuthStateChange((event, session) => {
     authStateChangeListeners.forEach(listener => listener(currentUser, session));
   }
 });
+
+function isMissingRemoteSessionError(error) {
+  const status = Number(error?.status || 0);
+  const message = String(error?.message || '').toLowerCase();
+  return status === 403 && message.includes('session') && message.includes('does not exist');
+}
+
+function removeAuthStorageEntries(storage) {
+  if (!storage) return;
+
+  const keysToRemove = [];
+  for (let i = 0; i < storage.length; i += 1) {
+    const key = storage.key(i);
+    if (!key) continue;
+    if (key === AUTH_STORAGE_KEY || (key.startsWith('sb-') && key.includes('auth-token'))) {
+      keysToRemove.push(key);
+    }
+  }
+
+  keysToRemove.forEach((key) => storage.removeItem(key));
+}
+
+function notifySignedOut() {
+  currentUser = null;
+  authStateChangeListeners.forEach(listener => listener(null, null));
+}
+
+async function clearLocalAuthState() {
+  try {
+    await supabase.auth.signOut({ scope: 'local' });
+  } catch (error) {
+    console.warn('Auth Service: no se pudo cerrar la sesion local desde Supabase, limpiando storage manualmente.', error);
+  }
+
+  try {
+    removeAuthStorageEntries(window.localStorage);
+    removeAuthStorageEntries(window.sessionStorage);
+  } catch (error) {
+    console.warn('Auth Service: no se pudo limpiar storage de autenticacion.', error);
+  }
+
+  notifySignedOut();
+}
 
 /**
  * Devuelve el usuario actual de forma síncrona.
@@ -57,12 +101,24 @@ export async function requireAuth() {
 /**
  * Cierra la sesión del usuario.
  */
-export async function handleLogout() {
+export async function handleLogout({ redirectToLogin = false } = {}) {
   try {
     const { error } = await supabase.auth.signOut();
-    if (error) console.error('Error al cerrar sesión:', error);
-  } catch (e) {
-    console.error('Excepción al cerrar sesión:', e);
+    if (error) {
+      if (isMissingRemoteSessionError(error)) {
+        console.warn('Auth Service: la sesion remota ya no existe. Se limpiara la sesion local.');
+      } else {
+        console.error('Error al cerrar sesion:', error);
+      }
+      await clearLocalAuthState();
+    }
+  } catch (error) {
+    console.error('Excepcion al cerrar sesion:', error);
+    await clearLocalAuthState();
+  } finally {
+    if (redirectToLogin && !window.location.pathname.endsWith('/login.html')) {
+      window.location.href = '/login.html';
+    }
   }
 }
 

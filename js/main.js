@@ -469,7 +469,7 @@ function updateUserInfo(user) {
         }
 
         showGlobalLoading("Cerrando sesi\u00F3n...");
-        await handleLogout(supabase);
+        await handleLogout();
         hideGlobalLoading();
       });
     }
@@ -1019,9 +1019,8 @@ function mostrarFormularioNuevaContrasena() {
     } else {
       feedbackEl.className = 'mt-4 text-center text-sm text-green-600'; feedbackEl.textContent = '\u00A1Contrase\u00F1a actualizada con \u00E9xito! Redirigiendo...';
 
-      await supabase.auth.signOut();
       setTimeout(() => {
-        window.location.href = '/login.html';
+        void handleLogout({ redirectToLogin: true });
       }, 2500);
     }
   });
