@@ -29,10 +29,6 @@ function escapeHtml(value = '') {
     .replace(/'/g, '&#039;');
 }
 
-function escapeCssUrl(value = '') {
-  return String(value).replace(/["\\\n\r]/g, '');
-}
-
 function normalize(value = '') {
   return String(value || '')
     .normalize('NFD')
@@ -105,12 +101,13 @@ function renderProducts() {
     return;
   }
 
-  grid.innerHTML = products.map((product) => {
+  grid.innerHTML = products.map((product, index) => {
     const price = Number(product.precio || 0);
     const micheladaTotal = price + state.micheladaPrice;
-    const imageStyle = product.imagen_url
-      ? ` style="--product-image:url('${escapeCssUrl(product.imagen_url)}')"`
-      : '';
+    const imageLoading = index < 4 ? 'eager' : 'lazy';
+    const imageHtml = product.imagen_url
+      ? `<img src="${escapeHtml(product.imagen_url)}" alt="${escapeHtml(product.nombre)}" loading="${imageLoading}" decoding="async">`
+      : '<div class="beer-media-placeholder" aria-hidden="true"></div>';
     const micheladaHtml = product.permite_michelada && state.micheladaPrice > 0
       ? `<span class="addon">Michelada + ${money(state.micheladaPrice)} (${money(micheladaTotal)})</span>`
       : '';
@@ -120,7 +117,9 @@ function renderProducts() {
 
     return `
       <article class="beer-card">
-        <div class="beer-media ${product.imagen_url ? 'has-image' : ''}"${imageStyle}></div>
+        <figure class="beer-media ${product.imagen_url ? 'has-image' : ''}">
+          ${imageHtml}
+        </figure>
         <div class="beer-body">
           <div class="beer-top">
             <h2 class="beer-title">${escapeHtml(product.nombre)}</h2>

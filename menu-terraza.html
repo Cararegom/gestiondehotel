@@ -34,6 +34,7 @@
       min-height: 100vh;
       font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color: var(--cream);
+      overflow-x: hidden;
       background:
         radial-gradient(circle at top left, rgba(245, 158, 11, 0.22), transparent 34rem),
         radial-gradient(circle at 85% 18%, rgba(146, 64, 14, 0.24), transparent 30rem),
@@ -68,6 +69,7 @@
 
     .hero {
       min-height: 310px;
+      max-width: 100%;
       border: 1px solid rgba(251, 191, 36, 0.28);
       border-radius: 20px;
       padding: clamp(22px, 5vw, 46px);
@@ -84,6 +86,7 @@
 
     .hero-content {
       max-width: 760px;
+      min-width: 0;
     }
 
     .eyebrow {
@@ -109,6 +112,7 @@
       line-height: 0.92;
       letter-spacing: 0;
       text-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+      overflow-wrap: anywhere;
     }
 
     .hero p {
@@ -117,10 +121,12 @@
       color: rgba(255, 247, 237, 0.86);
       font-size: clamp(1rem, 2.4vw, 1.2rem);
       line-height: 1.55;
+      overflow-wrap: anywhere;
     }
 
     .toolbar {
       display: grid;
+      max-width: 100%;
       grid-template-columns: minmax(0, 1fr) auto;
       gap: 12px;
       align-items: center;
@@ -182,34 +188,70 @@
 
     .menu-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(245px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(255px, 1fr));
+      gap: 16px;
     }
 
     .beer-card {
       position: relative;
-      min-height: 220px;
+      max-width: 100%;
       border: 1px solid var(--line);
       border-radius: 16px;
       overflow: hidden;
       background: var(--panel);
       box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+      display: flex;
+      flex-direction: column;
     }
 
     .beer-media {
-      height: 112px;
+      margin: 0;
+      min-height: 178px;
+      aspect-ratio: 4 / 3;
+      padding: 12px;
       background:
-        linear-gradient(135deg, rgba(0,0,0,0.16), rgba(0,0,0,0.62)),
+        radial-gradient(circle at 50% 18%, rgba(255, 247, 237, 0.28), transparent 40%),
+        linear-gradient(135deg, rgba(255, 247, 237, 0.16), rgba(0,0,0,0.48)),
+        url("https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=900&q=80");
+      background-size: cover;
+      background-position: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-bottom: 1px solid rgba(251, 191, 36, 0.14);
+    }
+
+    .beer-media.has-image {
+      background:
+        radial-gradient(circle at 50% 20%, rgba(255, 247, 237, 0.65), transparent 48%),
+        linear-gradient(135deg, #f8f2e8, #d7c0a0);
+    }
+
+    .beer-media img {
+      width: 100%;
+      height: 100%;
+      min-width: 0;
+      max-height: 210px;
+      object-fit: contain;
+      object-position: center;
+      filter: drop-shadow(0 18px 22px rgba(0, 0, 0, 0.44));
+      border-radius: 10px;
+    }
+
+    .beer-media-placeholder {
+      width: 100%;
+      height: 100%;
+      min-height: 146px;
+      border-radius: 12px;
+      background:
+        linear-gradient(135deg, rgba(0,0,0,0.18), rgba(0,0,0,0.64)),
         url("https://images.unsplash.com/photo-1608270586620-248524c67de9?auto=format&fit=crop&w=900&q=80");
       background-size: cover;
       background-position: center;
     }
 
-    .beer-media.has-image {
-      background-image: linear-gradient(135deg, rgba(0,0,0,0.12), rgba(0,0,0,0.58)), var(--product-image);
-    }
-
     .beer-body {
+      flex: 1;
       padding: 14px;
     }
 
@@ -221,6 +263,7 @@
     }
 
     .beer-title {
+      min-width: 0;
       margin: 0;
       color: var(--cream);
       font-size: 1.08rem;
@@ -296,10 +339,64 @@
 
     @media (max-width: 760px) {
       body { background-attachment: scroll; }
-      .page { width: min(100% - 18px, 1160px); padding-top: 9px; }
+      .page { width: min(1160px, calc(100% - 18px)); padding-top: 9px; }
       .hero { min-height: 270px; border-radius: 16px; }
       .toolbar { grid-template-columns: 1fr; }
-      .beer-media { height: 96px; }
+      .menu-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .beer-card {
+        border-radius: 14px;
+      }
+      .beer-media {
+        min-height: 210px;
+        aspect-ratio: 16 / 11;
+        padding: 14px;
+      }
+      .beer-media img {
+        max-height: 240px;
+      }
+      .beer-top {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+      .beer-title {
+        font-size: 1rem;
+      }
+      .price {
+        font-size: 1.08rem;
+        text-align: left;
+      }
+    }
+
+    @media (max-width: 420px) {
+      .page { width: min(1160px, calc(100% - 14px)); }
+      .hero {
+        min-height: 238px;
+        padding: 20px;
+      }
+      .hero-content {
+        width: 100%;
+        max-width: calc(100vw - 54px);
+      }
+      h1 {
+        font-size: clamp(2rem, 10vw, 2.72rem);
+        line-height: 0.98;
+      }
+      .hero p {
+        max-width: 100%;
+        font-size: 0.95rem;
+        line-height: 1.45;
+      }
+      .beer-media {
+        min-height: 190px;
+        aspect-ratio: 1 / 1;
+      }
+      .beer-body {
+        padding: 13px;
+      }
     }
   </style>
 </head>
