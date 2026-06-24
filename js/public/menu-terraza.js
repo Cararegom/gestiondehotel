@@ -1,6 +1,7 @@
 import { supabase } from '../supabaseClient.js';
 
 const DEFAULT_TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
+const PUBLIC_MENU_HOTEL_NAME = 'Hotel OK Cartagena';
 
 const state = {
   hotelId: null,
@@ -72,9 +73,7 @@ function renderHero() {
   const heroCopy = document.getElementById('hero-copy');
   if (!hotelName || !heroCopy) return;
 
-  hotelName.textContent = state.hotel?.nombre
-    ? `${state.hotel.nombre} | Terraza`
-    : 'Menu de Terraza';
+  hotelName.textContent = `${PUBLIC_MENU_HOTEL_NAME} | Terraza`;
   heroCopy.textContent = state.hotel?.direccion
     ? `Bebidas, licores y micheladas disponibles en terraza. ${state.hotel.direccion}.`
     : 'Bebidas, licores, micheladas y precios actualizados para disfrutar en la terraza.';
