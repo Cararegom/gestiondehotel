@@ -149,8 +149,9 @@ function renderReservasList(deps) {
           const meta = getReservaStatusMeta(reserva);
           const saldo = getReservaSaldoDisponible(reserva);
           const ubicacion = getPedidoLocationLabel(reserva);
-          const puedeActivar = reserva.estado === 'reservada';
-          const puedeCancelar = reserva.estado === 'reservada';
+          const puedeOperarReserva = !state.isReservasOnly;
+          const puedeActivar = puedeOperarReserva && reserva.estado === 'reservada';
+          const puedeCancelar = puedeOperarReserva && reserva.estado === 'reservada';
           const puedeEliminar = Boolean(state.isAdmin);
           return `
             <article class="flex flex-col justify-between gap-3 p-4 text-sm md:flex-row md:items-start">
@@ -186,7 +187,12 @@ function renderReservasList(deps) {
 export function renderReservasTab(deps) {
   return `
     <div class="space-y-5">
-      ${deps.renderStats()}
+      ${deps.state.isReservasOnly ? `
+        <div class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          <p class="font-extrabold">Modo recepcion: reservas de terraza</p>
+          <p class="mt-1">Puedes crear reservas. Si registras anticipo, debes tener un turno abierto en Caja para que el ingreso quede asociado a tu usuario.</p>
+        </div>
+      ` : deps.renderStats()}
       ${renderReservaForm(deps)}
       ${renderReservasList(deps)}
     </div>
@@ -229,7 +235,7 @@ export async function saveReserva(form, deps) {
   if (anticipo > 0) {
     const turno = await turnoService.getTurnoAbierto(state.supabase, state.user.id, state.hotelId);
     if (!turno) {
-      throw new Error('Abre turno en Caja antes de registrar un anticipo de reserva.');
+      throw new Error('Abre turno en Caja con tu usuario antes de registrar un anticipo. El ingreso quedara asociado a quien crea la reserva.');
     }
     turnoId = turno.id;
   }

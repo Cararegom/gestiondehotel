@@ -67,6 +67,7 @@ let state = {
   metodosPago: [],
   configuracion: { ...DEFAULT_TERRAZA_CONFIG },
   isAdmin: false,
+  isReservasOnly: false,
   pedidosAbiertos: [],
   historial: [],
   reservas: [],
@@ -239,6 +240,14 @@ function getPedidoSaldoAPagar(pedido, propina = 0) {
   const subtotal = totalPedido(pedido);
   const saldoReserva = Math.min(subtotal, getPedidoReservaSaldo(pedido));
   return Math.max(0, subtotal - saldoReserva) + Math.max(0, numberOrZero(propina));
+}
+
+function isRecepcionistaRoleName(value = '') {
+  return normalizeTextKey(value) === 'recepcionista';
+}
+
+function isReservasOnlyRole() {
+  return isRecepcionistaRoleName(state.user?.role || state.user?.app_metadata?.rol || state.user?.user_metadata?.rol);
 }
 
 
@@ -584,13 +593,15 @@ function renderStats() {
 
 function renderTabNav() {
   const tabs = [
-    { id: 'mapa', label: 'Mapa' },
+    ...(state.isReservasOnly ? [] : [{ id: 'mapa', label: 'Mapa' }]),
     { id: 'reservas', label: 'Reservas' },
-    { id: 'inventario', label: 'Inventario' },
-    { id: 'historial', label: 'Historial' }
+    ...(state.isReservasOnly ? [] : [
+      { id: 'inventario', label: 'Inventario' },
+      { id: 'historial', label: 'Historial' }
+    ])
   ];
 
-  if (state.isAdmin) {
+  if (state.isAdmin && !state.isReservasOnly) {
     tabs.push({ id: 'configuracion', label: 'Configuracion' });
   }
 
@@ -775,6 +786,9 @@ function getHistorialModuleDeps() {
 }
 
 function renderActiveTab() {
+  if (state.isReservasOnly && state.activeTab !== 'reservas') {
+    state.activeTab = 'reservas';
+  }
   if (state.activeTab === 'reservas') return renderReservasTab(getReservaModuleDeps());
   if (state.activeTab === 'inventario') return renderInventarioTab(getInventarioModuleDeps());
   if (state.activeTab === 'historial') return renderHistorialTab(getHistorialModuleDeps());
@@ -819,55 +833,76 @@ async function handleClick(event) {
     if (action === 'refresh') {
       await refreshAndRender();
     } else if (action === 'switch-tab') {
+      if (state.isReservasOnly && button.dataset.tab !== 'reservas') {
+        throw new Error('Recepcion solo puede gestionar reservas de Terraza.');
+      }
       if (button.dataset.tab === 'configuracion' && !state.isAdmin) {
         throw new Error('Solo un administrador puede abrir la configuracion de Terraza.');
       }
       state.activeTab = button.dataset.tab || 'mapa';
       render();
     } else if (action === 'select-location') {
+      if (state.isReservasOnly) throw new Error('Recepcion solo puede gestionar reservas de Terraza.');
       state.selectedMesaId = button.dataset.mesaId;
       state.selectedSillaNumero = normalizeSilla(button.dataset.silla);
       render();
     } else if (action === 'add-product') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede registrar consumos de Terraza.');
       const card = button.closest('[data-product-card]');
       const esMichelada = Boolean(card?.querySelector('[data-michelada-option]')?.checked);
       await addProductToSelectedOrder(button.dataset.productId, getPedidosModuleDeps(), { esMichelada });
     } else if (action === 'increase-item') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede modificar consumos de Terraza.');
       await updateItemQuantity(button.dataset.itemId, 1, getPedidosModuleDeps());
     } else if (action === 'decrease-item') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede modificar consumos de Terraza.');
       await updateItemQuantity(button.dataset.itemId, -1, getPedidosModuleDeps());
     } else if (action === 'remove-item') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede modificar consumos de Terraza.');
       await removeItem(button.dataset.itemId, getPedidosModuleDeps());
     } else if (action === 'cancel-order') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede cancelar cuentas de Terraza.');
       await cancelSelectedOrder(getPedidosModuleDeps());
     } else if (action === 'choose-payment-method') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede cobrar cuentas de Terraza.');
       await choosePaymentMethod(getCobrosModuleDeps());
     } else if (action === 'print-order-receipt') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede imprimir cuentas de Terraza.');
       await printOrderReceipt(getPedidoSeleccionado(), getCobrosModuleDeps());
     } else if (action === 'download-order-pdf') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede descargar cuentas de Terraza.');
       downloadOrderReceiptPdf(getPedidoSeleccionado(), getCobrosModuleDeps());
     } else if (action === 'print-history-receipt') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede imprimir historial de Terraza.');
       await printOrderReceipt(getPedidoById(button.dataset.pedidoId), getCobrosModuleDeps());
     } else if (action === 'download-history-pdf') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede descargar historial de Terraza.');
       downloadOrderReceiptPdf(getPedidoById(button.dataset.pedidoId), getCobrosModuleDeps());
     } else if (action === 'reopen-history-order') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede reabrir cuentas de Terraza.');
       await reopenHistoryOrder(button.dataset.pedidoId, getHistorialModuleDeps());
     } else if (action === 'pay-order') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede cobrar cuentas de Terraza.');
       await paySelectedOrder(getCobrosModuleDeps());
     } else if (action === 'activate-reservation') {
+      if (state.isReservasOnly) throw new Error('Recepcion solo puede crear reservas; la activacion la hace mesero o admin.');
       await activateReservation(button.dataset.reservaId, getReservaModuleDeps());
     } else if (action === 'cancel-reservation') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede cancelar reservas de Terraza.');
       await cancelReservation(button.dataset.reservaId, getReservaModuleDeps());
     } else if (action === 'delete-reservation') {
       await deleteReservation(button.dataset.reservaId, getReservaModuleDeps());
     } else if (action === 'edit-product') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede editar inventario de Terraza.');
       state.editingProductId = button.dataset.productId;
       state.activeTab = 'inventario';
       render();
     } else if (action === 'cancel-product-edit') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede editar inventario de Terraza.');
       state.editingProductId = null;
       render();
     } else if (action === 'toggle-product-active') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede editar inventario de Terraza.');
       await toggleProductActive(button.dataset.productId, button.dataset.active === 'true', getInventarioModuleDeps());
     }
   } catch (error) {
@@ -882,6 +917,10 @@ async function handleSubmit(event) {
 
   if (form.id === 'terraza-product-form') {
     event.preventDefault();
+    if (state.isReservasOnly) {
+      showFeedback('Recepcion no puede guardar productos de Terraza.', 'error', 0);
+      return;
+    }
     try {
       await saveProduct(form, getInventarioModuleDeps());
     } catch (error) {
@@ -898,6 +937,10 @@ async function handleSubmit(event) {
     }
   } else if (form.id === 'terraza-transfer-tienda-form') {
     event.preventDefault();
+    if (state.isReservasOnly) {
+      showFeedback('Recepcion no puede mover inventario de Terraza.', 'error', 0);
+      return;
+    }
     try {
       await transferFromTienda(form, getInventarioModuleDeps());
     } catch (error) {
@@ -906,6 +949,10 @@ async function handleSubmit(event) {
     }
   } else if (form.id === 'terraza-transfer-terraza-form') {
     event.preventDefault();
+    if (state.isReservasOnly) {
+      showFeedback('Recepcion no puede mover inventario de Terraza.', 'error', 0);
+      return;
+    }
     try {
       await transferToTienda(form, getInventarioModuleDeps());
     } catch (error) {
@@ -914,6 +961,10 @@ async function handleSubmit(event) {
     }
   } else if (form.id === 'terraza-config-form') {
     event.preventDefault();
+    if (state.isReservasOnly) {
+      showFeedback('Recepcion no puede cambiar la configuracion de Terraza.', 'error', 0);
+      return;
+    }
     try {
       await saveConfiguracion(form, getConfiguracionModuleDeps());
     } catch (error) {
@@ -963,6 +1014,7 @@ export async function mount(container, sbInstance, user, hotelId) {
     metodosPago: [],
     configuracion: { ...DEFAULT_TERRAZA_CONFIG },
     isAdmin: false,
+    isReservasOnly: false,
     pedidosAbiertos: [],
     historial: [],
     reservas: [],
@@ -981,6 +1033,10 @@ export async function mount(container, sbInstance, user, hotelId) {
 
   container.innerHTML = '<div class="p-8 text-center text-slate-500">Cargando terraza...</div>';
   state.isAdmin = await resolveTerrazaAdminAccess();
+  state.isReservasOnly = !state.isAdmin && isReservasOnlyRole();
+  if (state.isReservasOnly) {
+    state.activeTab = 'reservas';
+  }
   addListener(container, 'click', handleClick);
   addListener(container, 'submit', handleSubmit);
   addListener(container, 'input', handleInput);
@@ -1013,6 +1069,7 @@ export function unmount(container) {
     metodosPago: [],
     configuracion: { ...DEFAULT_TERRAZA_CONFIG },
     isAdmin: false,
+    isReservasOnly: false,
     pedidosAbiertos: [],
     historial: [],
     reservas: [],

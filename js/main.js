@@ -111,6 +111,10 @@ function isMeseroRole(value) {
   return roleKey === 'mesero' || roleKey === 'mesero/a' || roleKey === 'mesera';
 }
 
+function isRecepcionistaRole(value) {
+  return normalizeRoleKey(value) === 'recepcionista';
+}
+
 function roleNamesFromPerfil(perfil = null) {
   return (perfil?.usuarios_roles || [])
     .map((item) => item?.roles?.nombre)
@@ -143,7 +147,7 @@ function canAccessTerrazaForHotel(hotelId = currentActiveHotel?.id) {
 
 function canRoleAccessTerraza(role = currentUserRole) {
   const roleKey = normalizeRoleKey(role);
-  return roleKey === 'admin' || roleKey === 'administrador' || isMeseroRole(roleKey);
+  return roleKey === 'admin' || roleKey === 'administrador' || isMeseroRole(roleKey) || isRecepcionistaRole(roleKey);
 }
 
 function canCurrentUserAccessTerraza(hotelId = currentActiveHotel?.id) {
