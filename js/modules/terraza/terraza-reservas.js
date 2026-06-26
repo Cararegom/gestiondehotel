@@ -151,6 +151,7 @@ function renderReservasList(deps) {
           const ubicacion = getPedidoLocationLabel(reserva);
           const puedeActivar = reserva.estado === 'reservada';
           const puedeCancelar = reserva.estado === 'reservada';
+          const puedeEliminar = Boolean(state.isAdmin);
           return `
             <article class="flex flex-col justify-between gap-3 p-4 text-sm md:flex-row md:items-start">
               <div class="min-w-0 flex-1">
@@ -168,9 +169,10 @@ function renderReservasList(deps) {
                   <div class="font-extrabold text-purple-700">Saldo: ${money(saldo)}</div>
                   <div class="text-xs text-slate-500">${escapeHtml(reserva.metodo?.nombre || 'Sin metodo')}</div>
                 </div>
-                <div class="flex flex-wrap gap-2 md:justify-end">
-                  ${puedeActivar ? `<button class="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-purple-700" data-action="activate-reservation" data-reserva-id="${escapeAttribute(reserva.id)}">Activar</button>` : ''}
-                  ${puedeCancelar ? `<button class="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50" data-action="cancel-reservation" data-reserva-id="${escapeAttribute(reserva.id)}">Cancelar</button>` : ''}
+                <div class="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:flex-wrap md:justify-end">
+                  ${puedeActivar ? `<button class="rounded-lg bg-purple-600 px-3 py-2 text-xs font-bold text-white hover:bg-purple-700" data-action="activate-reservation" data-reserva-id="${escapeAttribute(reserva.id)}">Activar</button>` : ''}
+                  ${puedeCancelar ? `<button class="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-50" data-action="cancel-reservation" data-reserva-id="${escapeAttribute(reserva.id)}">Cancelar</button>` : ''}
+                  ${puedeEliminar ? `<button class="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-extrabold text-red-800 hover:bg-red-100" data-action="delete-reservation" data-reserva-id="${escapeAttribute(reserva.id)}">Eliminar</button>` : ''}
                 </div>
               </div>
             </article>
@@ -356,4 +358,44 @@ export async function cancelReservation(reservaId, deps) {
   state.activeTab = 'reservas';
   await refreshAndRender();
   showFeedback('Reserva cancelada.', 'success');
+}
+
+export async function deleteReservation(reservaId, deps) {
+  const {
+    state,
+    confirmDialog,
+    getReservaById,
+    getReservaAnticipo,
+    refreshAndRender,
+    showFeedback
+  } = deps;
+
+  if (!state.isAdmin) {
+    throw new Error('Solo un administrador puede eliminar reservas.');
+  }
+
+  const reserva = getReservaById(reservaId);
+  if (!reserva) throw new Error('No se encontro la reserva.');
+
+  const anticipo = getReservaAnticipo(reserva);
+  const confirmed = await confirmDialog(
+    'Eliminar reserva',
+    anticipo > 0
+      ? 'Esta reserva tiene anticipo registrado. Se eliminara del listado y las referencias en caja/cuenta quedaran desligadas. No se devuelve dinero automaticamente.'
+      : 'Esta accion eliminara la reserva del listado de Terraza. No se puede deshacer.',
+    'Si, eliminar'
+  );
+  if (!confirmed) return;
+
+  const { error } = await state.supabase
+    .from('terraza_reservas')
+    .delete()
+    .eq('id', reservaId)
+    .eq('hotel_id', state.hotelId);
+
+  if (error) throw error;
+
+  state.activeTab = 'reservas';
+  await refreshAndRender();
+  showFeedback('Reserva eliminada.', 'success');
 }

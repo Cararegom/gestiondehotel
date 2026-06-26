@@ -12,6 +12,7 @@ import {
 import {
   activateReservation,
   cancelReservation,
+  deleteReservation,
   renderReservasTab,
   saveReserva
 } from './terraza-reservas.js';
@@ -594,10 +595,10 @@ function renderTabNav() {
   }
 
   return `
-    <div class="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+    <div class="grid w-full grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:grid-cols-3 lg:inline-flex lg:w-auto">
       ${tabs.map((tab) => `
         <button
-          class="rounded-lg px-4 py-2 text-sm font-bold transition ${state.activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}"
+          class="rounded-lg px-3 py-2 text-center text-sm font-bold transition sm:px-4 ${state.activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}"
           data-action="switch-tab"
           data-tab="${escapeAttribute(tab.id)}"
         >
@@ -788,14 +789,14 @@ function render() {
     <section class="terraza-module min-h-screen bg-slate-100 p-4 lg:p-6">
       <div class="mx-auto max-w-[1600px] space-y-5">
         <header class="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center">
-          <div>
+          <div class="min-w-0">
             <p class="text-xs font-bold uppercase tracking-wide text-blue-600">Modulo exclusivo</p>
             <h1 class="text-2xl font-extrabold text-slate-900">Terraza</h1>
             <p class="mt-1 text-sm text-slate-500">Controla consumos por mesa, por silla de mesa o por silla suelta.</p>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex w-full flex-col gap-2 md:w-auto lg:flex-row lg:flex-wrap lg:items-center lg:justify-end">
             ${renderTabNav()}
-            <button class="button button-outline" data-action="refresh">Actualizar</button>
+            <button class="button button-outline w-full lg:w-auto" data-action="refresh">Actualizar</button>
           </div>
         </header>
 
@@ -857,6 +858,8 @@ async function handleClick(event) {
       await activateReservation(button.dataset.reservaId, getReservaModuleDeps());
     } else if (action === 'cancel-reservation') {
       await cancelReservation(button.dataset.reservaId, getReservaModuleDeps());
+    } else if (action === 'delete-reservation') {
+      await deleteReservation(button.dataset.reservaId, getReservaModuleDeps());
     } else if (action === 'edit-product') {
       state.editingProductId = button.dataset.productId;
       state.activeTab = 'inventario';
