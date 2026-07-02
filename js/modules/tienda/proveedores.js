@@ -78,7 +78,7 @@ export function renderTablaProveedores() {
   tbody.innerHTML = tiendaState.proveedores.lista.map((pr) => `
     <tr>
       <td style="padding:12px 10px;font-weight:600;color:#1e293b;">${pr.nombre || 'N/A'}</td>
-      <td style="padding:12px 10px;color:#475569;">${pr.contacto || 'N/A'}</td>
+      <td style="padding:12px 10px;color:#475569;">${pr.contacto_nombre || 'N/A'}</td>
       <td style="padding:12px 10px;text-align:center;color:#475569;">${pr.telefono || 'N/A'}</td>
       <td style="padding:12px 10px;color:#475569;">${pr.email || 'N/A'}</td>
       <td style="padding:12px 10px;text-align:center;color:#475569;">${pr.nit || 'N/A'}</td>
@@ -120,7 +120,7 @@ export async function showModalProveedor(proveedorId = null) {
           </div>
           <div>
             <label>Contacto</label>
-            <input id="provContacto" value="${proveedor?.contacto || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
+            <input id="provContacto" value="${proveedor?.contacto_nombre || ''}" style="width:100%;padding:8px 11px;margin-top:2px;border:1.5px solid #cbd5e1;border-radius:6px;">
           </div>
           <div>
             <label>Telefono</label>
@@ -163,7 +163,7 @@ export async function saveProveedor(proveedorId) {
     const datos = {
       hotel_id: tiendaState.currentHotelId,
       nombre,
-      contacto: document.getElementById('provContacto').value,
+      contacto_nombre: document.getElementById('provContacto').value.trim(),
       telefono: document.getElementById('provTelefono').value,
       email: document.getElementById('provEmail').value,
       nit: document.getElementById('provNit').value,
