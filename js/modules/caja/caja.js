@@ -44,12 +44,30 @@ let currentHotelId = null;
 let currentModuleUser = null;
 let currentContainerEl = null;
 let currentUserRole = null;
+let currentUserRoleNames = [];
 let turnoActivo = null;
 let turnoEnSupervision = null;
 let turnosAbiertosCache = new Map();
 let movementTableState = createInitialMovementTableState();
 
 const ADMIN_ROLES = ['admin', 'administrador'];
+
+function normalizeRoleName(value = '') {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
+
+function isMeseroRole(value) {
+  const role = normalizeRoleName(value);
+  return role === 'mesero' || role === 'mesera' || role === 'meseroa';
+}
+
+function isMeseroUser() {
+  return isMeseroRole(currentUserRole) || currentUserRoleNames.some(isMeseroRole);
+}
 
 function isAdminUser() {
   return !!(currentUserRole && ADMIN_ROLES.includes(String(currentUserRole).toLowerCase()));
@@ -224,6 +242,7 @@ async function renderizarUIAbierta() {
     }
 
     const isAdmin = isAdminUser();
+    const mostrarPropinas = !esModoSupervision && isMeseroUser();
     const usuarioTurnoNombre = escapeHtml(turnoParaMostrar.usuarios?.nombre || currentModuleUser?.nombre || currentModuleUser?.email || 'Usuario');
     const fechaAperturaLabel = formatDateTime(turnoParaMostrar.fecha_apertura);
     const tiempoAbiertoLabel = getTurnElapsedLabel(turnoParaMostrar.fecha_apertura);
@@ -306,7 +325,7 @@ async function renderizarUIAbierta() {
                   </div>
                 </div>
 
-                <div class="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
+                <div class="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 ${mostrarPropinas ? '2xl:grid-cols-6' : '2xl:grid-cols-5'} gap-4">
                   <div class="rounded-3xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm">
                     <span class="block text-xs uppercase tracking-widest text-slate-400">Apertura</span>
                     <span id="turno-total-apertura" class="block text-2xl font-bold mt-3 text-slate-900 leading-tight">$0</span>
@@ -317,6 +336,12 @@ async function renderizarUIAbierta() {
                     <span id="turno-total-ingresos" class="block text-2xl font-bold mt-3 text-emerald-600 leading-tight">$0</span>
                     <span class="block text-xs text-emerald-700/70 mt-2">Dinero que entro en el turno</span>
                   </div>
+                  ${mostrarPropinas ? `
+                  <div class="rounded-3xl border border-amber-200 bg-amber-50/80 p-5 shadow-sm">
+                    <span class="block text-xs uppercase tracking-widest text-amber-700">Propinas del turno</span>
+                    <span id="turno-total-propinas" class="block text-2xl font-bold mt-3 text-amber-600 leading-tight">$0</span>
+                    <span class="block text-xs text-amber-700/70 mt-2">Propina recogida en Terraza</span>
+                  </div>` : ''}
                   <div class="rounded-3xl border border-rose-200 bg-rose-50/80 p-5 shadow-sm">
                     <span class="block text-xs uppercase tracking-widest text-rose-700">Egresos</span>
                     <span id="turno-total-egresos" class="block text-2xl font-bold mt-3 text-rose-600 leading-tight">$0</span>
@@ -492,6 +517,7 @@ async function renderizarUIAbierta() {
         apertura: currentContainerEl.querySelector('#turno-total-apertura'),
         ingresos: currentContainerEl.querySelector('#turno-total-ingresos'),
         egresos: currentContainerEl.querySelector('#turno-total-egresos'),
+        propinas: currentContainerEl.querySelector('#turno-total-propinas'),
         operativo: currentContainerEl.querySelector('#turno-balance-operativo'),
         balance: currentContainerEl.querySelector('#turno-balance')
     };
@@ -701,12 +727,15 @@ export async function mount(container, supabaseInst, user) {
 
   const { data: perfil } = await supabaseInst
     .from('usuarios')
-    .select('hotel_id, rol, nombre, email')
+    .select('hotel_id, rol, nombre, email, usuarios_roles(roles(nombre))')
     .eq('id', user.id)
     .single();
   
   currentHotelId = perfil?.hotel_id;
   currentUserRole = perfil?.rol;
+  currentUserRoleNames = (perfil?.usuarios_roles || [])
+    .map((item) => item?.roles?.nombre)
+    .filter(Boolean);
   currentModuleUser = {
     ...user,
     nombre: perfil?.nombre || user?.user_metadata?.nombre || user?.nombre || '',
@@ -733,6 +762,7 @@ export function unmount() {
   currentModuleUser = null;
   currentContainerEl = null;
   currentUserRole = null;
+  currentUserRoleNames = [];
   turnoActivo = null;
   turnoEnSupervision = null;
   turnosAbiertosCache = new Map();

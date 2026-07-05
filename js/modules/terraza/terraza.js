@@ -32,6 +32,7 @@ import {
   addProductToSelectedOrder,
   cancelSelectedOrder,
   removeItem,
+  setItemQuantity,
   updateItemQuantity
 } from './terraza-pedidos.js';
 import {
@@ -444,6 +445,9 @@ function getMetodosPagoActivos() {
 }
 
 function getSelectedMetodoPago() {
+  if (state.selectedMetodoPagoId === 'mixto') {
+    return { id: 'mixto', nombre: 'Pago mixto' };
+  }
   return state.metodosPago.find((metodo) => metodo.id === state.selectedMetodoPagoId) || null;
 }
 
@@ -484,19 +488,19 @@ async function cargarDatos() {
       .maybeSingle(),
     state.supabase
       .from('terraza_pedidos')
-      .select('*, mesa:terraza_mesas(id, numero, nombre, sillas, tipo), reserva:terraza_reservas!terraza_pedidos_reserva_terraza_id_fkey(*), items:terraza_pedido_items(*)')
+      .select('*, mesa:terraza_mesas(id, numero, nombre, sillas, tipo), reserva:terraza_reservas!terraza_pedidos_reserva_terraza_id_fkey(*, reservado_por:usuarios!terraza_reservas_usuario_id_fkey(nombre)), items:terraza_pedido_items(*)')
       .eq('hotel_id', state.hotelId)
       .eq('estado', 'abierto')
       .order('creado_en', { ascending: true }),
     state.supabase
       .from('terraza_pedidos')
-      .select('*, mesa:terraza_mesas(id, numero, nombre, tipo), metodo:metodos_pago(nombre), reserva:terraza_reservas!terraza_pedidos_reserva_terraza_id_fkey(*), items:terraza_pedido_items(*)')
+      .select('*, mesa:terraza_mesas(id, numero, nombre, tipo), metodo:metodos_pago(nombre), reserva:terraza_reservas!terraza_pedidos_reserva_terraza_id_fkey(*, reservado_por:usuarios!terraza_reservas_usuario_id_fkey(nombre)), items:terraza_pedido_items(*)')
       .eq('hotel_id', state.hotelId)
       .in('estado', ['pagado', 'cancelado'])
       .order('actualizado_en', { ascending: false }),
     state.supabase
       .from('terraza_reservas')
-      .select('*, mesa:terraza_mesas(id, numero, nombre, sillas, tipo), metodo:metodos_pago(nombre), pedido:terraza_pedidos!terraza_reservas_pedido_id_fkey(id, estado, total)')
+      .select('*, mesa:terraza_mesas(id, numero, nombre, sillas, tipo), metodo:metodos_pago(nombre), reservado_por:usuarios!terraza_reservas_usuario_id_fkey(nombre), pedido:terraza_pedidos!terraza_reservas_pedido_id_fkey(id, estado, total)')
       .eq('hotel_id', state.hotelId)
       .in('estado', ['reservada', 'en_curso', 'completada', 'cancelada'])
       .order('fecha_reserva', { ascending: true })
@@ -991,6 +995,21 @@ function handleInput(event) {
 }
 
 function handleChange(event) {
+  const quantityInput = event.target?.closest?.('[data-item-quantity]');
+  if (quantityInput) {
+    if (state.isReservasOnly) {
+      showFeedback('Recepcion no puede modificar consumos de Terraza.', 'error', 0);
+      return;
+    }
+    setItemQuantity(quantityInput.dataset.itemId, quantityInput.value, getPedidosModuleDeps())
+      .catch((error) => {
+        console.error('[Terraza] Error actualizando cantidad:', error);
+        showFeedback(error.message || 'No se pudo actualizar la cantidad.', 'error', 0);
+        refreshAndRender();
+      });
+    return;
+  }
+
   if (event.target?.name !== 'imagen') return;
 
   const preview = state.container?.querySelector('#terraza-product-image-preview');

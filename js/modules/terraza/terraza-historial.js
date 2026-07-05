@@ -54,6 +54,10 @@ function renderHistorial(deps) {
           const subtotal = totalPedido(pedido);
           const propina = getPedidoTipAmount(pedido);
           const totalCobrado = getTotalConPropina(subtotal, propina);
+          const reserva = pedido.reserva;
+          const metodoLabel = Array.isArray(pedido.pagos_mixtos) && pedido.pagos_mixtos.length
+            ? 'Pago mixto'
+            : (pedido.metodo?.nombre || 'Sin metodo');
           return `
             <div class="flex flex-col justify-between gap-3 p-4 text-sm md:flex-row md:items-start">
               <div class="min-w-0 flex-1">
@@ -62,8 +66,14 @@ function renderHistorial(deps) {
                   <span class="rounded-full border px-2 py-0.5 text-[11px] font-bold ${estadoMeta.className}">${estadoMeta.label}</span>
                 </div>
                 <div class="mt-1 text-xs text-slate-500">
-                  ${formatDate(fechaMovimiento)} - ${escapeHtml(pedido.metodo?.nombre || 'Sin metodo')}
+                  ${formatDate(fechaMovimiento)} - ${escapeHtml(metodoLabel)}
                 </div>
+                ${reserva ? `
+                  <div class="mt-2 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-xs text-purple-900">
+                    <strong>Cuenta originada por reserva:</strong> ${escapeHtml(reserva.cliente_nombre || 'Cliente')}
+                    <span class="block mt-1">Reservada por: ${escapeHtml(reserva.reservado_por?.nombre || 'Usuario no disponible')}</span>
+                  </div>
+                ` : ''}
                 ${motivo ? `<div class="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600"><strong>Motivo:</strong> ${escapeHtml(motivo)}</div>` : ''}
                 ${items.length ? `
                   <div class="mt-2 flex flex-wrap gap-1.5">

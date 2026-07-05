@@ -321,7 +321,16 @@ function renderPedido(deps) {
                   <td class="py-3 text-center">
                     <div class="inline-flex items-center rounded-lg border border-slate-200">
                       <button class="px-2 py-1 text-slate-500 hover:bg-slate-50" data-action="decrease-item" data-item-id="${escapeAttribute(item.id)}">-</button>
-                      <span class="min-w-[28px] px-2 font-bold">${escapeHtml(item.cantidad)}</span>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value="${escapeAttribute(String(item.cantidad || 1))}"
+                        class="w-14 border-x border-slate-200 px-1 py-1 text-center font-bold outline-none focus:bg-blue-50"
+                        data-item-quantity
+                        data-item-id="${escapeAttribute(item.id)}"
+                        aria-label="Cantidad de ${escapeAttribute(getItemDisplayName(item))}"
+                      >
                       <button class="px-2 py-1 text-slate-500 hover:bg-slate-50" data-action="increase-item" data-item-id="${escapeAttribute(item.id)}">+</button>
                     </div>
                     <button class="mt-1 block w-full text-xs font-semibold text-red-600 hover:underline" data-action="remove-item" data-item-id="${escapeAttribute(item.id)}">Quitar</button>
@@ -334,9 +343,9 @@ function renderPedido(deps) {
         ` : '<div class="rounded-lg bg-slate-50 p-5 text-center text-sm text-slate-500">Agrega bebidas a esta ubicacion.</div>'}
       </div>
       <div class="border-t border-slate-200 p-4">
-        <div class="mb-4 flex items-center justify-between">
-          <span class="text-sm font-semibold text-slate-600">Subtotal consumo</span>
-          <span class="text-3xl font-extrabold text-blue-700">${money(total)}</span>
+        <div class="mb-4 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2">
+          <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Consumo sin propina</span>
+          <span class="text-lg font-bold text-slate-600">${money(total)}</span>
         </div>
         ${pedido && reservaAsociada ? `
           <div class="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-3 text-sm text-purple-900">
@@ -359,7 +368,7 @@ function renderPedido(deps) {
             <p class="mt-1 text-xs">Usa el boton de la reserva para descontarlo de esta cuenta.</p>
           </div>
         ` : ''}
-        <div class="mb-4 rounded-lg bg-emerald-50 p-3 text-sm">
+        <div class="mb-4 rounded-xl border-2 border-emerald-400 bg-emerald-50 p-4 text-sm shadow-sm">
           <div class="mb-2 flex items-center justify-between text-emerald-800">
             <span class="font-semibold">Propina sugerida</span>
             <span class="font-bold">${money(suggestedTip)}</span>
@@ -375,13 +384,14 @@ function renderPedido(deps) {
             ${disabled ? 'disabled' : ''}
           >
           <p class="mt-1 text-xs text-emerald-700">El mesero puede cambiar este valor por el monto real recibido.</p>
-          <div class="mt-3 flex items-center justify-between text-emerald-900">
-            <span class="font-bold">Total con propina</span>
-            <span id="terraza-total-con-propina" class="font-extrabold">${money(totalConPropina)}</span>
+          <div class="mt-3 flex items-center justify-between text-emerald-800">
+            <span class="text-xs font-semibold uppercase tracking-wide">Consumo + propina</span>
+            <span id="terraza-total-con-propina" class="text-base font-bold">${money(totalConPropina)}</span>
           </div>
-          <div class="mt-2 flex items-center justify-between rounded-lg bg-white/80 px-3 py-2 text-slate-800">
-            <span class="font-bold">Saldo a cobrar</span>
-            <span id="terraza-saldo-a-cobrar" class="font-extrabold">${money(saldoAPagar)}</span>
+          <div class="mt-3 rounded-xl bg-emerald-700 px-4 py-4 text-white shadow-md">
+            <span class="block text-xs font-black uppercase tracking-widest text-emerald-100">Total a cobrar con propina</span>
+            <span id="terraza-saldo-a-cobrar" class="mt-1 block text-right text-4xl font-black leading-none">${money(saldoAPagar)}</span>
+            <span class="mt-2 block text-right text-xs font-semibold text-emerald-100">Este es el valor que debe cobrar el mesero</span>
           </div>
         </div>
         <div class="mb-3 grid ${allowPdf ? 'grid-cols-2' : 'grid-cols-1'} gap-2">

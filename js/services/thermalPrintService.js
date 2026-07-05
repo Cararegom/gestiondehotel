@@ -136,6 +136,7 @@ export async function imprimirTicketOperacion({
   tip = 0,
   tipLabel = 'Propina sugerida',
   total = 0,
+  totalLabel = 'Total',
   payments = [],
   notes = ''
 }) {
@@ -171,7 +172,9 @@ export async function imprimirTicketOperacion({
           .item-price{font-size:0.85em;color:#444;overflow-wrap:anywhere;word-break:break-word;}
           .total-row{font-size:0.95em;margin:3px 0;}
           .total-row strong{font-weight:800;}
-          .grand-total{font-size:1.18em;font-weight:900;}
+          .grand-total{display:block;text-align:center;font-size:1.15em;font-weight:900;border-top:2px solid #111;border-bottom:2px solid #111;padding:7px 0;margin:7px 0;}
+          .grand-total strong{display:block;width:100%;text-align:center!important;white-space:nowrap;overflow-wrap:normal;word-break:normal;}
+          .grand-total strong:last-child{margin-top:3px;font-size:1.45em;line-height:1.1;}
           @media print { .no-print{display:none!important;} ${printPage} body{margin:0;} }
         </style>
       </head>
@@ -185,7 +188,7 @@ export async function imprimirTicketOperacion({
           ${discount > 0 ? `<div class="total-row"><span>Descuento</span><span>-${formatCurrency(discount)}</span></div>` : ''}
           ${taxes > 0 ? `<div class="total-row"><span>Impuestos</span><span>${formatCurrency(taxes)}</span></div>` : ''}
           ${tip > 0 ? `<div class="total-row"><span>${tipLabel}</span><span>${formatCurrency(tip)}</span></div>` : ''}
-          <div class="total-row grand-total"><strong>Total</strong><strong>${formatCurrency(total)}</strong></div>
+          <div class="total-row grand-total"><strong>${totalLabel}</strong><strong>${formatCurrency(total)}</strong></div>
           ${renderPayments(payments)}
           ${notes ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="font-size:0.88em;">${notes}</div>` : ''}
           ${config?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${config.pie_ticket}</div>` : ''}

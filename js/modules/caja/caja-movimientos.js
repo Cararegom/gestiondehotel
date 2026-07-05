@@ -152,11 +152,18 @@ export function renderMovementRows({
 
   let ingresos = 0;
   let egresos = 0;
+  let propinas = 0;
   const apertura = Number(allMovements.find((movement) => movement.tipo === 'apertura')?.monto || 0);
 
   allMovements.forEach((movement) => {
     if (movement.tipo === 'ingreso') ingresos += Number(movement.monto || 0);
     if (movement.tipo === 'egreso') egresos += Number(movement.monto || 0);
+    if (
+      movement.tipo === 'ingreso' &&
+      normalizeLegacyText(movement.concepto || '').toLowerCase().includes('propina')
+    ) {
+      propinas += Number(movement.monto || 0);
+    }
   });
 
   const balanceOperativo = ingresos - egresos;
@@ -164,6 +171,7 @@ export function renderMovementRows({
   if (summaryEls.apertura) summaryEls.apertura.textContent = formatCurrency(apertura);
   if (summaryEls.ingresos) summaryEls.ingresos.textContent = formatCurrency(ingresos);
   if (summaryEls.egresos) summaryEls.egresos.textContent = formatCurrency(egresos);
+  if (summaryEls.propinas) summaryEls.propinas.textContent = formatCurrency(propinas);
   if (summaryEls.operativo) {
     summaryEls.operativo.textContent = formatCurrency(balanceOperativo);
     summaryEls.operativo.className = `block text-2xl font-bold mt-3 leading-tight ${balanceOperativo < 0 ? 'text-red-600' : 'text-sky-600'}`;

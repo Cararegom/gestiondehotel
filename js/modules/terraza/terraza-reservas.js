@@ -134,7 +134,9 @@ function renderReservasList(deps) {
     money
   } = deps;
 
-  if (!state.reservas.length) {
+  const reservasVisibles = state.reservas.filter((reserva) => !['en_curso', 'completada'].includes(reserva.estado));
+
+  if (!reservasVisibles.length) {
     return '<div class="rounded-xl border border-slate-200 bg-white p-5 text-center text-sm text-slate-500">Aun no hay reservas de Terraza.</div>';
   }
 
@@ -145,7 +147,7 @@ function renderReservasList(deps) {
         <p class="mt-1 text-xs text-slate-500">Activa la reserva cuando el cliente llegue para abrir la cuenta con el anticipo consumible.</p>
       </div>
       <div class="divide-y divide-slate-100">
-        ${state.reservas.map((reserva) => {
+        ${reservasVisibles.map((reserva) => {
           const meta = getReservaStatusMeta(reserva);
           const saldo = getReservaSaldoDisponible(reserva);
           const ubicacion = getPedidoLocationLabel(reserva);

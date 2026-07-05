@@ -179,6 +179,44 @@ export async function updateItemQuantity(itemId, delta, deps) {
   await refreshAndRender();
 }
 
+export async function setItemQuantity(itemId, quantity, deps) {
+  const {
+    state,
+    getAvailableStock,
+    getPedidoItems,
+    getPedidoSeleccionado,
+    getProductoById,
+    refreshAndRender
+  } = deps;
+
+  const nuevaCantidad = Number(quantity);
+  if (!Number.isInteger(nuevaCantidad) || nuevaCantidad <= 0) {
+    throw new Error('La cantidad debe ser un numero entero mayor a cero.');
+  }
+
+  const pedido = getPedidoSeleccionado();
+  const item = getPedidoItems(pedido).find((currentItem) => currentItem.id === itemId);
+  if (!item) throw new Error('No se encontro el producto en la cuenta.');
+
+  if (item.producto_id) {
+    const product = getProductoById(item.producto_id);
+    const maximoDisponible = Number(item.cantidad || 0) + (product ? getAvailableStock(product) : 0);
+    if (product && nuevaCantidad > maximoDisponible) {
+      throw new Error(`Solo puedes registrar hasta ${maximoDisponible} unidad(es) de ${product.nombre}.`);
+    }
+  }
+
+  const { error } = await state.supabase
+    .from('terraza_pedido_items')
+    .update({
+      cantidad: nuevaCantidad,
+      subtotal: nuevaCantidad * Number(item.precio_unitario || 0)
+    })
+    .eq('id', itemId);
+  if (error) throw error;
+  await refreshAndRender();
+}
+
 export async function removeItem(itemId, deps) {
   const { state, refreshAndRender } = deps;
   const { error } = await state.supabase
