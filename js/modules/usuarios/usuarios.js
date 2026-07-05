@@ -52,6 +52,176 @@ function clearUsuariosFeedback(feedbackEl) {
   }, 300);
 }
 
+function escapeUsuariosHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function formatUsuariosCurrency(value) {
+  return new Intl.NumberFormat('es-CO', {
+    style: 'currency',
+    currency: 'COP',
+    maximumFractionDigits: 0
+  }).format(Number(value) || 0);
+}
+
+function getCurrentMonthValue() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function getMonthRange(monthValue) {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthValue || '');
+  if (!match) throw new Error('Selecciona un mes valido.');
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  return {
+    start: new Date(year, monthIndex, 1).toISOString(),
+    end: new Date(year, monthIndex + 1, 1).toISOString()
+  };
+}
+
+async function renderTopVentasRecepcionistas(monthValue = getCurrentMonthValue()) {
+  const container = currentContainerEl?.querySelector('#top-ventas-recepcionistas');
+  if (!container || !currentSupabaseInstance || !currentHotelId) return;
+
+  container.innerHTML = '<div class="p-6 text-center text-gray-500">Cargando top de ventas...</div>';
+
+  try {
+    const { start, end } = getMonthRange(monthValue);
+    const { data: rol, error: rolError } = await currentSupabaseInstance
+      .from('roles')
+      .select('id')
+      .ilike('nombre', 'Recepcionista')
+      .limit(1)
+      .maybeSingle();
+    if (rolError) throw rolError;
+
+    if (!rol) {
+      container.innerHTML = '<div class="p-6 text-center text-gray-500">No se encontro el rol Recepcionista.</div>';
+      return;
+    }
+
+    const { data: relaciones, error: relacionesError } = await currentSupabaseInstance
+      .from('usuarios_roles')
+      .select('usuario_id')
+      .eq('hotel_id', currentHotelId)
+      .eq('rol_id', rol.id);
+    if (relacionesError) throw relacionesError;
+
+    const recepcionistaIds = [...new Set((relaciones || []).map((item) => item.usuario_id).filter(Boolean))];
+    if (!recepcionistaIds.length) {
+      container.innerHTML = '<div class="p-6 text-center text-gray-500">Este hotel no tiene recepcionistas registrados.</div>';
+      return;
+    }
+
+    const [usuariosResult, pagosResult, tiendaResult, restauranteResult] = await Promise.all([
+      currentSupabaseInstance
+        .from('usuarios')
+        .select('id, nombre, activo')
+        .eq('hotel_id', currentHotelId)
+        .in('id', recepcionistaIds),
+      currentSupabaseInstance
+        .from('pagos_reserva')
+        .select('usuario_id, monto')
+        .eq('hotel_id', currentHotelId)
+        .gte('fecha_pago', start)
+        .lt('fecha_pago', end)
+        .in('usuario_id', recepcionistaIds),
+      currentSupabaseInstance
+        .from('ventas_tienda')
+        .select('usuario_id, total_venta')
+        .eq('hotel_id', currentHotelId)
+        .gte('fecha', start)
+        .lt('fecha', end)
+        .in('usuario_id', recepcionistaIds),
+      currentSupabaseInstance
+        .from('ventas_restaurante')
+        .select('usuario_id, monto_total, total_venta')
+        .eq('hotel_id', currentHotelId)
+        .gte('fecha_venta', start)
+        .lt('fecha_venta', end)
+        .in('usuario_id', recepcionistaIds)
+    ]);
+
+    const queryError = [usuariosResult, pagosResult, tiendaResult, restauranteResult].find((result) => result.error)?.error;
+    if (queryError) throw queryError;
+
+    const ranking = (usuariosResult.data || []).map((usuario) => {
+      const pagos = (pagosResult.data || []).filter((item) => item.usuario_id === usuario.id);
+      const tienda = (tiendaResult.data || []).filter((item) => item.usuario_id === usuario.id);
+      const restaurante = (restauranteResult.data || []).filter((item) => item.usuario_id === usuario.id);
+      const alojamiento = pagos.reduce((sum, item) => sum + Number(item.monto || 0), 0);
+      const totalTienda = tienda.reduce((sum, item) => sum + Number(item.total_venta || 0), 0);
+      const totalRestaurante = restaurante.reduce((sum, item) => sum + Number(item.monto_total ?? item.total_venta ?? 0), 0);
+
+      return {
+        ...usuario,
+        alojamiento,
+        tienda: totalTienda,
+        restaurante: totalRestaurante,
+        operaciones: pagos.length + tienda.length + restaurante.length,
+        total: alojamiento + totalTienda + totalRestaurante
+      };
+    }).sort((a, b) => b.total - a.total || a.nombre.localeCompare(b.nombre, 'es'));
+
+    const totalHotel = ranking.reduce((sum, item) => sum + item.total, 0);
+    container.innerHTML = `
+      <div class="bg-white p-4 sm:p-6 rounded-xl shadow-lg mt-8 border border-gray-100">
+        <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-5">
+          <div>
+            <h3 class="text-lg font-bold text-gray-800">Top mensual de ventas por recepcionista</h3>
+            <p class="text-sm text-gray-500 mt-1">Alojamiento cobrado, Tienda y Restaurante. Total del hotel: <strong>${formatUsuariosCurrency(totalHotel)}</strong></p>
+          </div>
+          <label class="text-sm font-semibold text-gray-700">
+            Mes
+            <input id="top-ventas-mes" type="month" value="${monthValue}" class="form-control mt-1" aria-label="Mes del ranking de ventas">
+          </label>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[780px] border-collapse">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="p-3 text-center text-xs font-semibold text-gray-500 uppercase">Posicion</th>
+                <th class="p-3 text-left text-xs font-semibold text-gray-500 uppercase">Recepcionista</th>
+                <th class="p-3 text-right text-xs font-semibold text-gray-500 uppercase">Alojamiento</th>
+                <th class="p-3 text-right text-xs font-semibold text-gray-500 uppercase">Tienda</th>
+                <th class="p-3 text-right text-xs font-semibold text-gray-500 uppercase">Restaurante</th>
+                <th class="p-3 text-center text-xs font-semibold text-gray-500 uppercase">Operaciones</th>
+                <th class="p-3 text-right text-xs font-semibold text-gray-500 uppercase">Total</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+              ${ranking.map((item, index) => `
+                <tr class="${index === 0 && item.total > 0 ? 'bg-yellow-50' : ''}">
+                  <td class="p-3 text-center font-bold text-gray-700">${index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`}</td>
+                  <td class="p-3 font-semibold text-gray-800">${escapeUsuariosHtml(item.nombre)}${item.activo ? '' : ' <span class="text-xs text-gray-400">(inactivo)</span>'}</td>
+                  <td class="p-3 text-right">${formatUsuariosCurrency(item.alojamiento)}</td>
+                  <td class="p-3 text-right">${formatUsuariosCurrency(item.tienda)}</td>
+                  <td class="p-3 text-right">${formatUsuariosCurrency(item.restaurante)}</td>
+                  <td class="p-3 text-center">${item.operaciones}</td>
+                  <td class="p-3 text-right font-bold text-blue-700">${formatUsuariosCurrency(item.total)}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    const monthInput = container.querySelector('#top-ventas-mes');
+    const monthChangeHandler = () => renderTopVentasRecepcionistas(monthInput.value);
+    monthInput?.addEventListener('change', monthChangeHandler, { once: true });
+  } catch (error) {
+    console.error('[Usuarios] Error cargando top mensual de ventas:', error);
+    container.innerHTML = `<div class="mt-8 bg-red-100 border border-red-300 text-red-800 p-4 rounded-xl">No se pudo cargar el top de ventas: ${escapeUsuariosHtml(error.message)}</div>`;
+  }
+}
+
 // Función para obtener la configuración de turnos del hotel.
 async function getTipoTurnoGlobal() {
     if (!currentSupabaseInstance || !currentHotelId) return 12; // Valor por defecto
@@ -683,6 +853,8 @@ export async function mount(container, sbInstance, user, hotelId, planDetails) {
             </table>
           </div>
           
+          <div id="top-ventas-recepcionistas"></div>
+
           <div id="horario-turnos-semanal"></div>
         </div>
       </div>
@@ -709,6 +881,7 @@ export async function mount(container, sbInstance, user, hotelId, planDetails) {
     cargarPermisosDisponibles(),
     cargarYRenderizarUsuarios(tablaBodyEl, currentSupabaseInstance, currentHotelId),
     renderConfiguracionGlobalTurnos(turnosGlobalContainer),
+    renderTopVentasRecepcionistas(),
     renderHorarioTurnosSemanal()
   ]);
   
