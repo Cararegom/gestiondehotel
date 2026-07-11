@@ -456,6 +456,41 @@ function getTiendaProductoNombre(producto) {
   return state.tiendaProductos.find((item) => item.id === producto.tienda_producto_id)?.nombre || 'Producto enlazado';
 }
 
+function normalizeSearchText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function filterProductCards(searchValue) {
+  const query = normalizeSearchText(searchValue);
+  const productCards = [...(state.container?.querySelectorAll('[data-product-card]') || [])];
+  const productSections = [...(state.container?.querySelectorAll('[data-product-section]') || [])];
+  const counter = state.container?.querySelector('#terraza-product-count');
+  const noResults = state.container?.querySelector('#terraza-product-no-results');
+  let visibleCount = 0;
+
+  productCards.forEach((card) => {
+    const matches = !query || normalizeSearchText(card.dataset.productSearch).includes(query);
+    card.classList.toggle('hidden', !matches);
+    if (matches) visibleCount += 1;
+  });
+
+  productSections.forEach((section) => {
+    const hasVisibleProduct = Boolean(section.querySelector('[data-product-card]:not(.hidden)'));
+    section.classList.toggle('hidden', !hasVisibleProduct);
+  });
+
+  if (counter) {
+    counter.textContent = String(visibleCount);
+  }
+  if (noResults) {
+    noResults.classList.toggle('hidden', visibleCount > 0);
+  }
+}
+
 async function cargarDatos() {
   const [mesasResult, productosResult, tiendaProductosResult, metodosResult, configResult, pedidosResult, historialResult, reservasResult] = await Promise.all([
     state.supabase
@@ -979,6 +1014,11 @@ async function handleSubmit(event) {
 }
 
 function handleInput(event) {
+  if (event.target?.id === 'terraza-product-search') {
+    filterProductCards(event.target.value);
+    return;
+  }
+
   if (event.target?.id !== 'terraza-propina-monto') return;
 
   const pedido = getPedidoSeleccionado();
