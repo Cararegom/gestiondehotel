@@ -33,6 +33,9 @@ function renderMesas(deps) {
     const estadoClass = pedidos.length
       ? 'bg-amber-100 text-amber-800 border-amber-200'
       : (reservaMesa ? 'bg-purple-100 text-purple-800 border-purple-200' : 'bg-green-100 text-green-700 border-green-200');
+    const accentClass = pedidos.length
+      ? 'from-amber-500 to-orange-500'
+      : (reservaMesa ? 'from-purple-500 to-fuchsia-500' : 'from-emerald-500 to-teal-500');
     const mesaClass = isMesaSelected
       ? 'border-blue-600 bg-blue-600 text-white shadow-lg'
       : mesaCompleta
@@ -68,7 +71,9 @@ function renderMesas(deps) {
     };
 
     return `
-      <article class="rounded-xl border ${state.selectedMesaId === mesa.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-4 shadow-sm transition hover:shadow-md">
+      <article class="overflow-hidden rounded-xl border ${state.selectedMesaId === mesa.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} shadow-sm transition hover:shadow-md">
+        <div class="h-1.5 bg-gradient-to-r ${accentClass}"></div>
+        <div class="p-4">
         <div class="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 class="text-base font-bold text-slate-800">${escapeHtml(mesa.nombre)}</h3>
@@ -100,6 +105,7 @@ function renderMesas(deps) {
             <strong>${escapeHtml(reservaMesa.cliente_nombre || 'Reserva')}</strong> - ${formatDate(reservaMesa.fecha_reserva)} - anticipo ${money(getReservaAnticipo(reservaMesa))}
           </div>
         ` : ''}
+        </div>
       </article>
     `;
   }).join('');
@@ -190,7 +196,7 @@ function renderProductos(deps) {
   return categorias.map((categoria) => {
     const productos = productosActivos.filter((producto) => (producto.categoria || 'Bebidas') === categoria);
     return `
-      <section class="mb-5">
+      <section class="mb-5" data-product-section>
         <h3 class="mb-2 text-sm font-bold uppercase tracking-wide text-slate-500">${escapeHtml(categoria)}</h3>
         <div class="grid grid-cols-1 gap-3">
           ${productos.map((producto) => {
@@ -199,15 +205,23 @@ function renderProductos(deps) {
             const stockBadge = getStockBadge(producto);
             const beerProduct = isBeerProduct(producto);
             const micheladaPrice = getMicheladaPrice();
+            const searchText = [
+              producto.nombre,
+              producto.categoria,
+              producto.descripcion,
+              producto.codigo_barras
+            ].filter(Boolean).join(' ');
+            const imageUrl = producto.imagen_url || '';
             return `
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-product-card="${escapeAttribute(producto.id)}">
-              <div class="flex min-h-[72px] flex-col justify-between">
-                <div>
-                  <div class="flex items-start justify-between gap-3">
-                    <h4 class="font-bold text-slate-800">${escapeHtml(producto.nombre)}</h4>
+            <article class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-blue-200 hover:shadow-md" data-product-card="${escapeAttribute(producto.id)}" data-product-search="${escapeAttribute(searchText)}">
+              <div class="flex gap-3">
+                ${imageUrl ? `<img src="${escapeAttribute(imageUrl)}" alt="${escapeAttribute(producto.nombre)}" class="h-16 w-16 flex-none rounded-lg border border-slate-200 bg-slate-50 object-cover">` : ''}
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-2">
+                    <h4 class="min-w-0 text-sm font-extrabold leading-snug text-slate-800">${escapeHtml(producto.nombre)}</h4>
                     <span class="rounded-full border px-2 py-0.5 text-[11px] font-bold ${stockBadge.className}">${escapeHtml(stockBadge.label)}</span>
                   </div>
-                  <p class="mt-1 text-xs text-slate-500">${escapeHtml(producto.descripcion || '')}</p>
+                  ${producto.descripcion ? `<p class="mt-1 line-clamp-2 text-xs text-slate-500">${escapeHtml(producto.descripcion)}</p>` : ''}
                   ${beerProduct ? `
                     <label class="mt-3 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">
                       <input type="checkbox" class="h-4 w-4" data-michelada-option>
@@ -215,12 +229,12 @@ function renderProductos(deps) {
                       <span class="ml-auto text-amber-700">+ ${money(micheladaPrice)}</span>
                     </label>
                   ` : ''}
-                </div>
-                <div class="mt-3 flex items-center justify-between gap-3">
-                  <span class="text-lg font-extrabold text-blue-700">${money(producto.precio)}</span>
-                  <div class="flex gap-2">
-                    <button class="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50" data-action="edit-product" data-product-id="${escapeAttribute(producto.id)}">Editar</button>
-                    <button class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300" data-action="add-product" data-product-id="${escapeAttribute(producto.id)}" ${disabled ? 'disabled' : ''}>Agregar</button>
+                  <div class="mt-3 flex items-center justify-between gap-3">
+                    <span class="text-lg font-extrabold text-blue-700">${money(producto.precio)}</span>
+                    <div class="flex gap-2">
+                      <button class="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50" data-action="edit-product" data-product-id="${escapeAttribute(producto.id)}">Editar</button>
+                      <button class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-bold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300" data-action="add-product" data-product-id="${escapeAttribute(producto.id)}" ${disabled ? 'disabled' : ''}>Agregar</button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -446,15 +460,32 @@ export function renderMapaTab(deps) {
 
       <div class="space-y-4 xl:col-span-4">
         ${renderPedido(deps)}
-        <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section class="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div class="rounded-t-xl border-b border-slate-100 bg-slate-50/80 p-4">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 class="text-lg font-bold text-slate-800">Bebidas y tragos</h2>
-              <p class="text-xs text-slate-500">${getProductosActivos().length} activos para venta</p>
+              <p class="text-xs text-slate-500"><span id="terraza-product-count">${getProductosActivos().length}</span> activos para venta</p>
             </div>
             <button class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50" data-action="switch-tab" data-tab="inventario">Inventario</button>
           </div>
+          <div class="mb-3">
+            <label class="mb-1 block text-xs font-semibold uppercase text-slate-500" for="terraza-product-search">Buscar producto</label>
+            <input
+              id="terraza-product-search"
+              type="search"
+              class="form-control"
+              placeholder="Nombre, categoria o codigo"
+              autocomplete="off"
+            >
+          </div>
+          </div>
+          <div class="p-4 pt-3">
+          <div id="terraza-product-no-results" class="mb-3 hidden rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+            No se encontraron productos.
+          </div>
           <div class="max-h-[58vh] overflow-y-auto pr-1">${renderProductos(deps)}</div>
+          </div>
         </section>
       </div>
     </div>

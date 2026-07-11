@@ -3,6 +3,31 @@ import { turnoService } from '../../services/turnoService.js';
 import { imprimirTicketOperacion } from '../../services/thermalPrintService.js';
 import { escapeAttribute, escapeHtml } from '../../security.js';
 
+const TERRAZA_MIXED_PAYMENT_RPC = 'cerrar_pedido_terraza_mixto';
+
+function isMissingRpcError(error, rpcName) {
+  const errorText = [
+    error?.code,
+    error?.message,
+    error?.details,
+    error?.hint
+  ].filter(Boolean).join(' ');
+
+  return error?.status === 404
+    || (rpcName && errorText.includes(rpcName))
+    || /schema cache|could not find the function/i.test(errorText);
+}
+
+function buildRpcError(error, rpcName) {
+  if (rpcName === TERRAZA_MIXED_PAYMENT_RPC && isMissingRpcError(error, rpcName)) {
+    return new Error(
+      'La funcion de pago mixto de Terraza no esta instalada en Supabase. Aplica las migraciones pendientes, incluida 20260711112500_terraza_pagos_mixtos_postgrest.sql, para crear el RPC y recargar PostgREST.'
+    );
+  }
+
+  return error;
+}
+
 function buildReceiptItems(pedido, deps) {
   const { getItemDisplayName, getPedidoItems } = deps;
   return getPedidoItems(pedido).map((item) => ({
@@ -360,7 +385,7 @@ export async function paySelectedOrder(deps) {
     };
   }
 
-  const rpcName = pagosMixtos ? 'cerrar_pedido_terraza_mixto' : 'cerrar_pedido_terraza';
+  const rpcName = pagosMixtos ? TERRAZA_MIXED_PAYMENT_RPC : 'cerrar_pedido_terraza';
   const rpcParams = {
     p_pedido_id: pedido.id,
     p_usuario_id: state.user.id,
@@ -373,7 +398,7 @@ export async function paySelectedOrder(deps) {
   };
   const { data, error } = await state.supabase.rpc(rpcName, rpcParams);
 
-  if (error) throw error;
+  if (error) throw buildRpcError(error, rpcName);
   if (data?.error) throw new Error(data.message || 'No se pudo cobrar la cuenta.');
 
   await registrarEnBitacora({
