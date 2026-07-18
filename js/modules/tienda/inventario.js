@@ -358,6 +358,14 @@ function renderTransferenciasTerrazaPanel() {
 
 async function transferirTiendaATerrazaDesdeInventario(event) {
   event.preventDefault();
+  const form = event.currentTarget instanceof HTMLFormElement
+    ? event.currentTarget
+    : event.target?.closest?.('form');
+  if (!form) {
+    alert('No se pudo leer el formulario de transferencia.');
+    return;
+  }
+
   if (!isRecepcionistaOperativo() && !isAdminOperativo()) {
     alert('Solo recepcion o administracion puede enviar inventario de Tienda a Terraza.');
     return;
@@ -365,7 +373,7 @@ async function transferirTiendaATerrazaDesdeInventario(event) {
   const turnoOk = await checkTurnoActivo(tiendaState.currentSupabase, tiendaState.currentHotelId, tiendaState.currentUser.id);
   if (!turnoOk) return;
 
-  const formData = new FormData(event.currentTarget);
+  const formData = new FormData(form);
   const productoTiendaId = String(formData.get('producto_tienda_id') || '').trim();
   const cantidad = Number(formData.get('cantidad') || 0);
   if (!productoTiendaId || !Number.isInteger(cantidad) || cantidad <= 0) {
@@ -394,6 +402,14 @@ async function transferirTiendaATerrazaDesdeInventario(event) {
 
 async function transferirTerrazaATiendaDesdeInventario(event) {
   event.preventDefault();
+  const form = event.currentTarget instanceof HTMLFormElement
+    ? event.currentTarget
+    : event.target?.closest?.('form');
+  if (!form) {
+    alert('No se pudo leer el formulario de transferencia.');
+    return;
+  }
+
   if (!isMeseroOperativo() && !isAdminOperativo()) {
     alert('Solo el mesero o administracion puede devolver inventario de Terraza a Tienda.');
     return;
@@ -401,7 +417,7 @@ async function transferirTerrazaATiendaDesdeInventario(event) {
   const turnoOk = await checkTurnoActivo(tiendaState.currentSupabase, tiendaState.currentHotelId, tiendaState.currentUser.id);
   if (!turnoOk) return;
 
-  const formData = new FormData(event.currentTarget);
+  const formData = new FormData(form);
   const productoTerrazaId = String(formData.get('producto_terraza_id') || '').trim();
   const cantidad = Number(formData.get('cantidad') || 0);
   if (!productoTerrazaId || !Number.isInteger(cantidad) || cantidad <= 0) {
