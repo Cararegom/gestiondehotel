@@ -30,6 +30,7 @@ import {
 } from './terraza-historial.js';
 import {
   exportListaCompraExcel,
+  printListaCompra,
   renderListaCompraTab
 } from './terraza-lista-compras.js';
 import { renderMapaTab } from './terraza-mapa.js';
@@ -913,6 +914,10 @@ async function handleClick(event) {
       if (state.isReservasOnly) throw new Error('Recepcion no puede exportar lista de compra de Terraza.');
       exportListaCompraExcel(getListaCompraModuleDeps());
       showFeedback('Lista de compra exportada.', 'success');
+    } else if (action === 'print-shopping-list') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede imprimir lista de compra de Terraza.');
+      printListaCompra(getListaCompraModuleDeps());
+      showFeedback('Lista de compra enviada a impresion.', 'success');
     } else if (action === 'reopen-history-order') {
       if (state.isReservasOnly) throw new Error('Recepcion no puede reabrir cuentas de Terraza.');
       await reopenHistoryOrder(button.dataset.pedidoId, getHistorialModuleDeps());

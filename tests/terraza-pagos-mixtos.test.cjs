@@ -31,9 +31,13 @@ test('Terraza conserva pagos mixtos, reserva y cantidades editables', () => {
   assert.match(terraza, /state\.isAdmin \? \[\{ id: 'inventario', label: 'Inventario' \}\] : \[\]/);
   assert.match(terraza, /\{ id: 'lista-compra', label: 'Lista de compra' \}/);
   assert.match(terraza, /renderListaCompraTab/);
+  assert.match(terraza, /printListaCompra/);
+  assert.match(terraza, /print-shopping-list/);
   assert.match(listaCompra, /renderListaCompraTab/);
   assert.match(listaCompra, /item\.disponible < item\.stockMinimo/);
   assert.match(listaCompra, /sugerido: Math\.max\(0, stockMinimo - disponible\)/);
+  assert.match(listaCompra, /data-action="print-shopping-list"/);
+  assert.match(listaCompra, /export function printListaCompra/);
   assert.match(listaCompra, /exportListaCompraExcel/);
   assert.match(terraza, /data-action="print-inventory"/);
   assert.match(mapa, /state\.isAdmin \? `<button class="rounded-lg border border-slate-200 px-2 py-1/);

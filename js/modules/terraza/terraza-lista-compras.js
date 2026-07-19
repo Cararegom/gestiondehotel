@@ -125,11 +125,97 @@ export function renderListaCompraTab(deps) {
           <h2 class="text-lg font-bold text-slate-800">Lista de compra</h2>
           <p class="text-sm text-slate-500">${items.length} producto(s) con disponible bajo minimo | ${totalSugerido} unidad(es) sugeridas.</p>
         </div>
-        <button class="button button-success w-full sm:w-auto" data-action="export-shopping-list" ${items.length ? '' : 'disabled'}>Exportar Excel</button>
+        <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <button class="button button-primary w-full sm:w-auto" data-action="print-shopping-list" ${items.length ? '' : 'disabled'}>Imprimir</button>
+          <button class="button button-success w-full sm:w-auto" data-action="export-shopping-list" ${items.length ? '' : 'disabled'}>Exportar Excel</button>
+        </div>
       </section>
       ${items.length ? `${renderShoppingCards(items)}${renderShoppingTable(items)}` : renderEmptyState()}
     </div>
   `;
+}
+
+export function printListaCompra(deps) {
+  const items = getListaCompraItems(deps);
+  if (!items.length) {
+    throw new Error('No hay productos en la lista de compra para imprimir.');
+  }
+
+  const fecha = new Date().toLocaleString('es-CO');
+  const totalSugerido = items.reduce((acc, item) => acc + item.sugerido, 0);
+  const userName = deps.state.user?.user_metadata?.full_name
+    || deps.state.user?.user_metadata?.nombre
+    || deps.state.user?.app_metadata?.nombre
+    || deps.state.user?.email
+    || 'Usuario';
+
+  const rowsHtml = items.map((item) => `
+    <div class="item">
+      <div class="item-name">
+        <strong>${escapeHtml(item.nombre)}</strong>
+        <span>${escapeHtml(item.categoria)}${item.codigo ? ` | Cod: ${escapeHtml(item.codigo)}` : ''}</span>
+        <span>${escapeHtml(item.tiendaProducto)}</span>
+      </div>
+      <div class="item-num">${escapeHtml(String(item.disponible))}</div>
+      <div class="item-num">${escapeHtml(String(item.stockMinimo))}</div>
+      <div class="item-num buy">+${escapeHtml(String(item.sugerido))}</div>
+    </div>
+  `).join('');
+
+  const html = `
+    <html>
+      <head>
+        <title>Lista de compra Terraza</title>
+        <style>
+          *{box-sizing:border-box;}
+          body{font-family:monospace;font-size:11px;width:74mm;max-width:74mm;margin:0;padding:0;background:#fff;color:#111;}
+          .ticket{width:74mm;max-width:74mm;margin:0;padding:3mm 2mm;overflow:hidden;}
+          .center{text-align:center;}
+          .title{font-size:1.16em;font-weight:900;text-transform:uppercase;}
+          .dash{border-top:1px dashed #333;margin:7px 0;}
+          .meta{display:flex;justify-content:space-between;gap:6px;margin-bottom:2px;}
+          .meta span{min-width:0;overflow-wrap:anywhere;word-break:break-word;}
+          .meta span:last-child{text-align:right;}
+          .summary{border:1px solid #111;margin:7px 0;padding:5px;text-align:center;font-weight:900;}
+          .head,.item{display:grid;grid-template-columns:minmax(0,1fr) 10mm 10mm 12mm;gap:2mm;align-items:start;}
+          .head{font-weight:900;border-top:1px dashed #333;border-bottom:1px dashed #333;padding:4px 0;}
+          .item{border-bottom:1px dashed #bbb;padding:5px 0;}
+          .item-name{min-width:0;line-height:1.22;overflow-wrap:anywhere;word-break:break-word;}
+          .item-name strong,.item-name span{display:block;}
+          .item-name span{font-size:0.82em;color:#333;}
+          .item-num{text-align:right;font-weight:800;white-space:nowrap;}
+          .buy{font-size:1.08em;border-bottom:2px solid #111;}
+          @media print{body{margin:0;} @page{margin:0;}}
+        </style>
+      </head>
+      <body>
+        <div class="ticket">
+          <div class="center title">Lista de compra Terraza</div>
+          <div class="dash"></div>
+          <div class="meta"><span><b>Fecha:</b></span><span>${escapeHtml(fecha)}</span></div>
+          <div class="meta"><span><b>Usuario:</b></span><span>${escapeHtml(userName)}</span></div>
+          <div class="summary">${escapeHtml(String(items.length))} producto(s) | ${escapeHtml(String(totalSugerido))} unidad(es)</div>
+          <div class="head">
+            <div>Producto</div>
+            <div class="item-num">Disp</div>
+            <div class="item-num">Min</div>
+            <div class="item-num">Comp</div>
+          </div>
+          ${rowsHtml}
+          <div class="dash"></div>
+          <div class="center" style="font-size:0.82em;">Disp: disponible | Min: minimo | Comp: comprar</div>
+        </div>
+        <script>window.onload = function(){ window.focus(); window.print(); };</script>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open('', '', 'width=420,height=760');
+  if (!printWindow) {
+    throw new Error('No se pudo abrir la ventana de impresion. Revisa el bloqueo de ventanas emergentes.');
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 export function exportListaCompraExcel(deps) {
