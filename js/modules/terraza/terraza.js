@@ -601,7 +601,7 @@ function renderTabNav() {
     ...(state.isReservasOnly ? [] : [{ id: 'mapa', label: 'Mapa' }]),
     { id: 'reservas', label: 'Reservas' },
     ...(state.isReservasOnly ? [] : [
-      { id: 'inventario', label: 'Inventario' },
+      ...(state.isAdmin ? [{ id: 'inventario', label: 'Inventario' }] : []),
       { id: 'historial', label: 'Historial' }
     ])
   ];
@@ -794,6 +794,9 @@ function renderActiveTab() {
   if (state.isReservasOnly && state.activeTab !== 'reservas') {
     state.activeTab = 'reservas';
   }
+  if (state.activeTab === 'inventario' && !state.isAdmin) {
+    state.activeTab = 'mapa';
+  }
   if (state.activeTab === 'reservas') return renderReservasTab(getReservaModuleDeps());
   if (state.activeTab === 'inventario') return renderInventarioTab(getInventarioModuleDeps());
   if (state.activeTab === 'historial') return renderHistorialTab(getHistorialModuleDeps());
@@ -815,6 +818,7 @@ function render() {
           </div>
           <div class="flex w-full flex-col gap-2 md:w-auto lg:flex-row lg:flex-wrap lg:items-center lg:justify-end">
             ${renderTabNav()}
+            ${!state.isReservasOnly ? `<button class="button button-primary w-full lg:w-auto" data-action="print-inventory" ${getProductosActivos().length ? '' : 'disabled'}>Imprimir inventario</button>` : ''}
             <button class="button button-outline w-full lg:w-auto" data-action="refresh">Actualizar</button>
           </div>
         </header>
@@ -840,6 +844,9 @@ async function handleClick(event) {
     } else if (action === 'switch-tab') {
       if (state.isReservasOnly && button.dataset.tab !== 'reservas') {
         throw new Error('Recepcion solo puede gestionar reservas de Terraza.');
+      }
+      if (button.dataset.tab === 'inventario' && !state.isAdmin) {
+        throw new Error('Solo administracion puede abrir el inventario de Terraza.');
       }
       if (button.dataset.tab === 'configuracion' && !state.isAdmin) {
         throw new Error('Solo un administrador puede abrir la configuracion de Terraza.');
@@ -901,16 +908,16 @@ async function handleClick(event) {
     } else if (action === 'delete-reservation') {
       await deleteReservation(button.dataset.reservaId, getReservaModuleDeps());
     } else if (action === 'edit-product') {
-      if (state.isReservasOnly) throw new Error('Recepcion no puede editar inventario de Terraza.');
+      if (!state.isAdmin) throw new Error('Solo administracion puede editar inventario de Terraza.');
       state.editingProductId = button.dataset.productId;
       state.activeTab = 'inventario';
       render();
     } else if (action === 'cancel-product-edit') {
-      if (state.isReservasOnly) throw new Error('Recepcion no puede editar inventario de Terraza.');
+      if (!state.isAdmin) throw new Error('Solo administracion puede editar inventario de Terraza.');
       state.editingProductId = null;
       render();
     } else if (action === 'toggle-product-active') {
-      if (state.isReservasOnly) throw new Error('Recepcion no puede editar inventario de Terraza.');
+      if (!state.isAdmin) throw new Error('Solo administracion puede editar inventario de Terraza.');
       await toggleProductActive(button.dataset.productId, button.dataset.active === 'true', getInventarioModuleDeps());
     }
   } catch (error) {
@@ -925,8 +932,8 @@ async function handleSubmit(event) {
 
   if (form.id === 'terraza-product-form') {
     event.preventDefault();
-    if (state.isReservasOnly) {
-      showFeedback('Recepcion no puede guardar productos de Terraza.', 'error', 0);
+    if (!state.isAdmin) {
+      showFeedback('Solo administracion puede guardar productos de Terraza.', 'error', 0);
       return;
     }
     try {
@@ -945,8 +952,8 @@ async function handleSubmit(event) {
     }
   } else if (form.id === 'terraza-transfer-tienda-form') {
     event.preventDefault();
-    if (state.isReservasOnly) {
-      showFeedback('Recepcion no puede mover inventario de Terraza.', 'error', 0);
+    if (!state.isAdmin) {
+      showFeedback('Solo administracion puede mover inventario desde Terraza.', 'error', 0);
       return;
     }
     try {
@@ -957,8 +964,8 @@ async function handleSubmit(event) {
     }
   } else if (form.id === 'terraza-transfer-terraza-form') {
     event.preventDefault();
-    if (state.isReservasOnly) {
-      showFeedback('Recepcion no puede mover inventario de Terraza.', 'error', 0);
+    if (!state.isAdmin) {
+      showFeedback('Solo administracion puede mover inventario desde Terraza.', 'error', 0);
       return;
     }
     try {

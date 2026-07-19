@@ -170,6 +170,7 @@ function renderSillasSueltas(deps) {
 
 function renderProductos(deps) {
   const {
+    state,
     escapeAttribute,
     escapeHtml,
     getAvailableStock,
@@ -219,7 +220,7 @@ function renderProductos(deps) {
                 <div class="mt-3 flex items-center justify-between gap-3">
                   <span class="text-lg font-extrabold text-blue-700">${money(producto.precio)}</span>
                   <div class="flex gap-2">
-                    <button class="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50" data-action="edit-product" data-product-id="${escapeAttribute(producto.id)}">Editar</button>
+                    ${state.isAdmin ? `<button class="rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50" data-action="edit-product" data-product-id="${escapeAttribute(producto.id)}">Editar</button>` : ''}
                     <button class="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300" data-action="add-product" data-product-id="${escapeAttribute(producto.id)}" ${disabled ? 'disabled' : ''}>Agregar</button>
                   </div>
                 </div>
@@ -421,6 +422,7 @@ function renderPedido(deps) {
 
 export function renderMapaTab(deps) {
   const {
+    state,
     getMesasNormales,
     getProductosActivos,
     isLoungeTable,
@@ -452,7 +454,7 @@ export function renderMapaTab(deps) {
               <h2 class="text-lg font-bold text-slate-800">Bebidas y tragos</h2>
               <p class="text-xs text-slate-500">${getProductosActivos().length} activos para venta</p>
             </div>
-            <button class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50" data-action="switch-tab" data-tab="inventario">Inventario</button>
+            ${state.isAdmin ? '<button class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50" data-action="switch-tab" data-tab="inventario">Inventario</button>' : ''}
           </div>
           <div class="max-h-[58vh] overflow-y-auto pr-1">${renderProductos(deps)}</div>
         </section>

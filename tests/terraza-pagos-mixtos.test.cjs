@@ -11,6 +11,7 @@ test('Terraza conserva pagos mixtos, reserva y cantidades editables', () => {
     'utf8'
   );
   const cobros = fs.readFileSync(path.join(root, 'js/modules/terraza/terraza-cobros.js'), 'utf8');
+  const terraza = fs.readFileSync(path.join(root, 'js/modules/terraza/terraza.js'), 'utf8');
   const mapa = fs.readFileSync(path.join(root, 'js/modules/terraza/terraza-mapa.js'), 'utf8');
   const historial = fs.readFileSync(path.join(root, 'js/modules/terraza/terraza-historial.js'), 'utf8');
   const inventario = fs.readFileSync(path.join(root, 'js/modules/terraza/terraza-inventario.js'), 'utf8');
@@ -26,6 +27,9 @@ test('Terraza conserva pagos mixtos, reserva y cantidades editables', () => {
   assert.match(historial, /Reservada por:/);
   assert.match(inventario, /data-action="print-inventory"/);
   assert.match(inventario, /productosActivos = state\.productos\.filter\(\(producto\) => producto\.activo !== false\)/);
+  assert.match(terraza, /state\.isAdmin \? \[\{ id: 'inventario', label: 'Inventario' \}\] : \[\]/);
+  assert.match(terraza, /data-action="print-inventory"/);
+  assert.match(mapa, /state\.isAdmin \? `<button class="rounded-lg border border-slate-200 px-2 py-1/);
   assert.match(pedidos, /product\.activo === false/);
   assert.match(menuPublico, /filter\(\(product\) => product\?\.activo !== false\)/);
 });
