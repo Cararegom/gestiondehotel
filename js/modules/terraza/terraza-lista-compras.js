@@ -199,7 +199,6 @@ export function printListaCompra(deps) {
           <div class="dash"></div>
           <div class="center" style="font-size:0.82em;">Disp: disponible | Min: minimo | Comp: comprar</div>
         </div>
-        <script>window.onload = function(){ window.focus(); window.print(); };</script>
       </body>
     </html>
   `;
@@ -210,6 +209,14 @@ export function printListaCompra(deps) {
   }
   printWindow.document.write(html);
   printWindow.document.close();
+
+  // Ejecutar la impresion desde el contexto principal evita dejar un callback
+  // onload asociado a una ventana emergente cuyo contexto ya fue descartado.
+  window.setTimeout(() => {
+    if (printWindow.closed) return;
+    printWindow.focus();
+    printWindow.print();
+  }, 250);
 }
 
 export function exportListaCompraExcel(deps) {
