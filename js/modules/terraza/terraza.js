@@ -28,6 +28,10 @@ import {
   renderHistorialTab,
   reopenHistoryOrder
 } from './terraza-historial.js';
+import {
+  exportListaCompraExcel,
+  renderListaCompraTab
+} from './terraza-lista-compras.js';
 import { renderMapaTab } from './terraza-mapa.js';
 import {
   addProductToSelectedOrder,
@@ -602,6 +606,7 @@ function renderTabNav() {
     { id: 'reservas', label: 'Reservas' },
     ...(state.isReservasOnly ? [] : [
       ...(state.isAdmin ? [{ id: 'inventario', label: 'Inventario' }] : []),
+      { id: 'lista-compra', label: 'Lista de compra' },
       { id: 'historial', label: 'Historial' }
     ])
   ];
@@ -657,6 +662,16 @@ function getInventarioModuleDeps() {
     refreshAndRender,
     renderStats,
     showFeedback
+  };
+}
+
+function getListaCompraModuleDeps() {
+  return {
+    state,
+    getAvailableStock,
+    getReservedQuantity,
+    getTiendaProductoNombre,
+    renderStats
   };
 }
 
@@ -799,6 +814,7 @@ function renderActiveTab() {
   }
   if (state.activeTab === 'reservas') return renderReservasTab(getReservaModuleDeps());
   if (state.activeTab === 'inventario') return renderInventarioTab(getInventarioModuleDeps());
+  if (state.activeTab === 'lista-compra') return renderListaCompraTab(getListaCompraModuleDeps());
   if (state.activeTab === 'historial') return renderHistorialTab(getHistorialModuleDeps());
   if (state.activeTab === 'configuracion' && state.isAdmin) return renderConfiguracionTab(getConfiguracionModuleDeps());
   return renderMapaTab(getMapaModuleDeps());
@@ -893,6 +909,10 @@ async function handleClick(event) {
     } else if (action === 'print-inventory') {
       if (state.isReservasOnly) throw new Error('Recepcion no puede imprimir inventario de Terraza.');
       await printInventory(getInventarioModuleDeps());
+    } else if (action === 'export-shopping-list') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede exportar lista de compra de Terraza.');
+      exportListaCompraExcel(getListaCompraModuleDeps());
+      showFeedback('Lista de compra exportada.', 'success');
     } else if (action === 'reopen-history-order') {
       if (state.isReservasOnly) throw new Error('Recepcion no puede reabrir cuentas de Terraza.');
       await reopenHistoryOrder(button.dataset.pedidoId, getHistorialModuleDeps());
