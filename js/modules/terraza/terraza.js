@@ -17,6 +17,7 @@ import {
   saveReserva
 } from './terraza-reservas.js';
 import {
+  printInventory,
   renderInventarioTab,
   saveProduct,
   toggleProductActive,
@@ -882,6 +883,9 @@ async function handleClick(event) {
     } else if (action === 'download-history-pdf') {
       if (state.isReservasOnly) throw new Error('Recepcion no puede descargar historial de Terraza.');
       downloadOrderReceiptPdf(getPedidoById(button.dataset.pedidoId), getCobrosModuleDeps());
+    } else if (action === 'print-inventory') {
+      if (state.isReservasOnly) throw new Error('Recepcion no puede imprimir inventario de Terraza.');
+      await printInventory(getInventarioModuleDeps());
     } else if (action === 'reopen-history-order') {
       if (state.isReservasOnly) throw new Error('Recepcion no puede reabrir cuentas de Terraza.');
       await reopenHistoryOrder(button.dataset.pedidoId, getHistorialModuleDeps());

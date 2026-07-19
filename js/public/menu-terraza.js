@@ -154,10 +154,12 @@ async function loadMenu() {
 
     state.hotel = data?.hotel || null;
     state.micheladaPrice = Number(data?.precio_michelada || 0);
-    state.products = (data?.productos || []).map((product) => ({
-      ...product,
-      precio: Number(product.precio || 0)
-    }));
+    state.products = (data?.productos || [])
+      .filter((product) => product?.activo !== false)
+      .map((product) => ({
+        ...product,
+        precio: Number(product.precio || 0)
+      }));
 
     clearStatus();
     renderAll();

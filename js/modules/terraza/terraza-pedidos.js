@@ -163,6 +163,9 @@ export async function updateItemQuantity(itemId, delta, deps) {
 
   if (delta > 0 && item.producto_id) {
     const product = getProductoById(item.producto_id);
+    if (product?.activo === false) {
+      throw new Error('Este producto esta inactivo para ventas.');
+    }
     if (product && getAvailableStock(product) <= 0) {
       throw new Error(`No hay mas stock disponible de ${product.nombre}.`);
     }
@@ -200,6 +203,9 @@ export async function setItemQuantity(itemId, quantity, deps) {
 
   if (item.producto_id) {
     const product = getProductoById(item.producto_id);
+    if (product?.activo === false && nuevaCantidad > Number(item.cantidad || 0)) {
+      throw new Error('Este producto esta inactivo para ventas.');
+    }
     const maximoDisponible = Number(item.cantidad || 0) + (product ? getAvailableStock(product) : 0);
     if (product && nuevaCantidad > maximoDisponible) {
       throw new Error(`Solo puedes registrar hasta ${maximoDisponible} unidad(es) de ${product.nombre}.`);

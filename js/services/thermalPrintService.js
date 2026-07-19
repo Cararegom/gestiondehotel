@@ -1,3 +1,5 @@
+import { escapeHtml } from '../security.js';
+
 function formatCurrency(value) {
   return new Intl.NumberFormat('es-CO', {
     style: 'currency',
@@ -192,6 +194,136 @@ export async function imprimirTicketOperacion({
           ${renderPayments(payments)}
           ${notes ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="font-size:0.88em;">${notes}</div>` : ''}
           ${config?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${config.pie_ticket}</div>` : ''}
+        </div>
+        <script>window.onload = function(){ window.focus(); window.print(); };</script>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open('', '', 'width=420,height=760');
+  if (!printWindow) {
+    throw new Error('No se pudo abrir la ventana de impresion. Revisa el bloqueo de ventanas emergentes.');
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+}
+
+export async function imprimirInventarioTerraza80mm({
+  supabase,
+  hotelId,
+  productos = [],
+  userName = ''
+}) {
+  if (!Array.isArray(productos) || !productos.length) {
+    throw new Error('No hay productos de Terraza para imprimir.');
+  }
+
+  const { data: config } = await supabase
+    .from('configuracion_hotel')
+    .select('logo_url, nombre_hotel, direccion_fiscal, nit_rut, razon_social, tipo_impresora, tamano_papel, encabezado_ticket, encabezado_ticket_l1, encabezado_ticket_l2, encabezado_ticket_l3, pie_ticket, mostrar_logo')
+    .eq('hotel_id', hotelId)
+    .maybeSingle();
+
+  const printConfig = {
+    ...(config || {}),
+    tipo_impresora: 'termica',
+    tamano_papel: '80mm'
+  };
+  const { width, css, printPage } = buildPrintStyle(printConfig);
+  const fecha = formatDateTime(new Date());
+  const resumen = productos.reduce((acc, producto) => {
+    const stock = Number(producto.stockActual || 0);
+    const reservado = Number(producto.reservado || 0);
+    const disponible = Number(producto.disponible || 0);
+    const stockMinimo = Number(producto.stockMinimo || 0);
+    acc.stock += stock;
+    acc.reservado += reservado;
+    acc.disponible += disponible;
+    if (producto.activo !== false && stock <= stockMinimo) acc.bajos += 1;
+    if (producto.activo === false) acc.inactivos += 1;
+    return acc;
+  }, { stock: 0, reservado: 0, disponible: 0, bajos: 0, inactivos: 0 });
+
+  const rowsHtml = productos.map((producto) => {
+    const stock = Number(producto.stockActual || 0);
+    const reservado = Number(producto.reservado || 0);
+    const disponible = Number(producto.disponible || 0);
+    const stockMinimo = Number(producto.stockMinimo || 0);
+    const bajo = producto.activo !== false && stock <= stockMinimo;
+    const estado = producto.activo === false ? 'Inactivo' : (bajo ? 'Stock bajo' : 'Activo');
+    const detalle = [
+      producto.categoria || 'Sin categoria',
+      producto.codigoBarras ? `Cod: ${producto.codigoBarras}` : 'Sin codigo',
+      producto.tiendaProducto ? `Tienda: ${producto.tiendaProducto}` : ''
+    ].filter(Boolean).join(' | ');
+
+    return `
+      <div class="inventory-row ${bajo ? 'is-low' : ''} ${producto.activo === false ? 'is-inactive' : ''}">
+        <div class="inventory-name">
+          <strong>${escapeHtml(producto.nombre || 'Producto')}</strong>
+          <span>${escapeHtml(detalle)}</span>
+          <span>Min: ${escapeHtml(String(stockMinimo))} | ${escapeHtml(estado)}</span>
+        </div>
+        <div class="inventory-num">${escapeHtml(String(stock))}</div>
+        <div class="inventory-num">${escapeHtml(String(reservado))}</div>
+        <div class="inventory-num inventory-available">${escapeHtml(String(disponible))}</div>
+      </div>
+    `;
+  }).join('');
+
+  const html = `
+    <html>
+      <head>
+        <title>Inventario Terraza</title>
+        <style>
+          ${css}
+          *{box-sizing:border-box;}
+          .ticket{width:${width};max-width:${width};overflow:hidden;}
+          .meta-row{display:flex;justify-content:space-between;gap:6px;font-size:0.92em;margin-bottom:2px;max-width:100%;min-width:0;}
+          .meta-label,.meta-value{min-width:0;overflow-wrap:anywhere;word-break:break-word;}
+          .meta-value{text-align:right;}
+          .summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:3px;margin:7px 0;}
+          .summary-box{border:1px solid #111;padding:4px 2px;text-align:center;}
+          .summary-box span{display:block;font-size:0.78em;text-transform:uppercase;}
+          .summary-box strong{display:block;font-size:1.15em;}
+          .inventory-head,.inventory-row{display:grid;grid-template-columns:minmax(0,1fr) 10mm 10mm 12mm;gap:2mm;align-items:start;}
+          .inventory-head{border-top:1px dashed #333;border-bottom:1px dashed #333;font-weight:800;padding:4px 0;margin-top:6px;}
+          .inventory-row{border-bottom:1px dashed #bbb;padding:5px 0;}
+          .inventory-name{min-width:0;overflow-wrap:anywhere;word-break:break-word;line-height:1.22;}
+          .inventory-name strong{display:block;font-size:1em;}
+          .inventory-name span{display:block;font-size:0.82em;color:#333;}
+          .inventory-num{text-align:right;font-weight:800;white-space:nowrap;}
+          .inventory-available{font-size:1.05em;}
+          .is-low .inventory-available{border-bottom:2px solid #111;}
+          .is-inactive{color:#555;}
+          @media print { .no-print{display:none!important;} ${printPage} body{margin:0;} }
+        </style>
+      </head>
+      <body>
+        <div class="ticket">
+          ${renderHeader(printConfig, 'Inventario Terraza')}
+          ${renderMeta([
+            { label: 'Fecha', value: escapeHtml(fecha) },
+            { label: 'Usuario', value: escapeHtml(userName || 'Usuario') },
+            { label: 'Formato', value: 'Termica 80mm' }
+          ])}
+          <div class="summary">
+            <div class="summary-box"><span>Productos</span><strong>${escapeHtml(String(productos.length))}</strong></div>
+            <div class="summary-box"><span>Stock</span><strong>${escapeHtml(String(resumen.stock))}</strong></div>
+            <div class="summary-box"><span>Reservado</span><strong>${escapeHtml(String(resumen.reservado))}</strong></div>
+            <div class="summary-box"><span>Disponible</span><strong>${escapeHtml(String(resumen.disponible))}</strong></div>
+          </div>
+          <div class="meta-row"><span><b>Bajo minimo:</b></span><span>${escapeHtml(String(resumen.bajos))}</span></div>
+          ${resumen.inactivos ? `<div class="meta-row"><span><b>Inactivos:</b></span><span>${escapeHtml(String(resumen.inactivos))}</span></div>` : ''}
+          <div class="inventory-head">
+            <div>Producto</div>
+            <div class="inventory-num">Sis</div>
+            <div class="inventory-num">Res</div>
+            <div class="inventory-num">Disp</div>
+          </div>
+          ${rowsHtml}
+          <div style="margin-top:8px;text-align:center;font-size:0.82em;">Sis: stock sistema | Res: reservado | Disp: disponible</div>
+          ${printConfig?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${printConfig.pie_ticket}</div>` : ''}
         </div>
         <script>window.onload = function(){ window.focus(); window.print(); };</script>
       </body>

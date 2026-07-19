@@ -1,4 +1,5 @@
 import { escapeAttribute, escapeHtml } from '../../security.js';
+import { imprimirInventarioTerraza80mm } from '../../services/thermalPrintService.js';
 
 const PRODUCTO_TERRAZA_PLACEHOLDER_IMG = 'https://via.placeholder.com/320x220?text=Terraza';
 
@@ -196,9 +197,26 @@ function renderTransferInfoPanel() {
   `;
 }
 
+function renderInventoryPrintPanel(deps) {
+  const activeProducts = deps.state.productos.filter((producto) => producto.activo !== false).length;
+
+  return `
+    <section class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h3 class="text-base font-bold text-slate-800">Inventario de Terraza</h3>
+        <p class="text-xs text-slate-500">${activeProducts} producto(s) activo(s) para impresion.</p>
+      </div>
+      <button type="button" class="button button-primary w-full sm:w-auto" data-action="print-inventory" ${activeProducts ? '' : 'disabled'}>
+        Imprimir inventario
+      </button>
+    </section>
+  `;
+}
+
 export function renderInventarioTab(deps) {
   return `
     <div class="space-y-4">
+      ${renderInventoryPrintPanel(deps)}
       ${deps.renderStats()}
       ${renderTransferInfoPanel()}
       ${renderCatalogForm(deps)}
@@ -262,6 +280,48 @@ export async function saveProduct(form, deps) {
   state.editingProductId = null;
   await refreshAndRender();
   showFeedback(productId ? 'Bebida actualizada.' : 'Bebida creada.', 'success');
+}
+
+export async function printInventory(deps) {
+  const {
+    state,
+    getAvailableStock,
+    getReservedQuantity,
+    getTiendaProductoNombre,
+    showFeedback
+  } = deps;
+
+  const productosActivos = state.productos.filter((producto) => producto.activo !== false);
+  if (!productosActivos.length) {
+    throw new Error('No hay productos activos de Terraza para imprimir.');
+  }
+
+  const productos = productosActivos.map((producto) => ({
+    nombre: producto.nombre,
+    categoria: producto.categoria,
+    codigoBarras: producto.codigo_barras,
+    stockActual: Number(producto.stock_actual || 0),
+    stockMinimo: Number(producto.stock_minimo || 0),
+    reservado: getReservedQuantity(producto.id),
+    disponible: getAvailableStock(producto),
+    activo: producto.activo,
+    tiendaProducto: getTiendaProductoNombre(producto)
+  }));
+
+  const userName = state.user?.user_metadata?.full_name
+    || state.user?.user_metadata?.nombre
+    || state.user?.app_metadata?.nombre
+    || state.user?.email
+    || 'Usuario';
+
+  await imprimirInventarioTerraza80mm({
+    supabase: state.supabase,
+    hotelId: state.hotelId,
+    productos,
+    userName
+  });
+
+  showFeedback('Inventario enviado a impresion.', 'success');
 }
 
 export async function transferFromTienda() {
