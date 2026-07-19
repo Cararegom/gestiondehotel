@@ -39,6 +39,8 @@ test('Terraza conserva pagos mixtos, reserva y cantidades editables', () => {
   assert.match(listaCompra, /data-action="print-shopping-list"/);
   assert.match(listaCompra, /export function printListaCompra/);
   assert.match(listaCompra, /exportListaCompraExcel/);
+  assert.doesNotMatch(listaCompra, /tiendaProducto/);
+  assert.doesNotMatch(listaCompra, /Tienda:/);
   assert.match(terraza, /data-action="print-inventory"/);
   assert.match(mapa, /state\.isAdmin \? `<button class="rounded-lg border border-slate-200 px-2 py-1/);
   assert.match(pedidos, /product\.activo === false/);

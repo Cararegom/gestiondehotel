@@ -4,8 +4,7 @@ function getListaCompraItems(deps) {
   const {
     state,
     getAvailableStock,
-    getReservedQuantity,
-    getTiendaProductoNombre
+    getReservedQuantity
   } = deps;
 
   return state.productos
@@ -24,8 +23,7 @@ function getListaCompraItems(deps) {
         stockMinimo,
         reservado,
         disponible,
-        sugerido: Math.max(0, stockMinimo - disponible),
-        tiendaProducto: getTiendaProductoNombre(producto)
+        sugerido: Math.max(0, stockMinimo - disponible)
       };
     })
     .filter((item) => item.stockMinimo > 0 && item.disponible < item.stockMinimo)
@@ -64,7 +62,6 @@ function renderShoppingCards(items) {
             <div class="rounded-lg bg-slate-50 p-2"><span class="block text-xs font-semibold uppercase text-slate-500">Reservado</span><strong>${escapeHtml(String(item.reservado))}</strong></div>
             <div class="rounded-lg bg-slate-50 p-2"><span class="block text-xs font-semibold uppercase text-slate-500">Disponible</span><strong>${escapeHtml(String(item.disponible))}</strong></div>
           </div>
-          <p class="mt-3 text-xs font-semibold text-blue-700">${escapeHtml(item.tiendaProducto)}</p>
         </article>
       `).join('')}
     </div>
@@ -86,7 +83,6 @@ function renderShoppingTable(items) {
             <th class="px-4 py-3 text-right">Reservado</th>
             <th class="px-4 py-3 text-right">Disponible</th>
             <th class="px-4 py-3 text-right">Sugerido comprar</th>
-            <th class="px-4 py-3">Tienda</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
@@ -104,7 +100,6 @@ function renderShoppingTable(items) {
               <td class="px-4 py-3 text-right">
                 <span class="inline-flex rounded-full bg-amber-100 px-3 py-1 text-sm font-black text-amber-800">+${escapeHtml(String(item.sugerido))}</span>
               </td>
-              <td class="px-4 py-3 text-xs font-semibold text-blue-700">${escapeHtml(item.tiendaProducto)}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -154,7 +149,6 @@ export function printListaCompra(deps) {
       <div class="item-name">
         <strong>${escapeHtml(item.nombre)}</strong>
         <span>${escapeHtml(item.categoria)}${item.codigo ? ` | Cod: ${escapeHtml(item.codigo)}` : ''}</span>
-        <span>${escapeHtml(item.tiendaProducto)}</span>
       </div>
       <div class="item-num">${escapeHtml(String(item.disponible))}</div>
       <div class="item-num">${escapeHtml(String(item.stockMinimo))}</div>
@@ -235,8 +229,7 @@ export function exportListaCompraExcel(deps) {
     'Stock Minimo': item.stockMinimo,
     Reservado: item.reservado,
     Disponible: item.disponible,
-    'Sugerido Comprar': item.sugerido,
-    Tienda: item.tiendaProducto
+    'Sugerido Comprar': item.sugerido
   }));
 
   const worksheet = XLSX.utils.json_to_sheet(rows);

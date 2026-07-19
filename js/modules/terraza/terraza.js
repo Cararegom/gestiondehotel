@@ -671,7 +671,6 @@ function getListaCompraModuleDeps() {
     state,
     getAvailableStock,
     getReservedQuantity,
-    getTiendaProductoNombre,
     renderStats
   };
 }
