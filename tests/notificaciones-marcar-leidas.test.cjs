@@ -23,7 +23,9 @@ test('marcar todas las notificaciones tiene RPC segura y respaldo compatible', (
   assert.match(migration, /n\.hotel_id = v_actor\.hotel_id/);
   assert.match(migration, /v_actor\.rol::text IN \('admin', 'superadmin'\)/);
   assert.match(service, /usando actualización compatible/);
-  assert.match(service, /\.or\(buildNotificationMatchFilter\(context\)\)/);
+  assert.match(service, /if \(!isAdministrativeRole\(context\.role\)\)/);
+  assert.match(service, /\.select\('hotel_id, rol'\)/);
+  assert.match(service, /role === 'administrador'\) return 'admin'/);
   assert.match(ui, /markAllNotificationsAsRead\(supabase, context\)/);
   assert.match(ui, /if \(markAllButton\.disabled\) return/);
 });

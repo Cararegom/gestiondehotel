@@ -3,12 +3,16 @@ import { getUserSession } from '../authService.js';
 const NOTIFICATION_SELECT_COLUMNS = 'id, mensaje, tipo, leida, creado_en, entidad_tipo, entidad_id';
 const NOTIFICATION_SELECT_COLUMNS_LEGACY = 'id, mensaje, tipo, leida, creado_en';
 
-function normalizeRole(user) {
-  return (
-    user?.app_metadata?.rol ||
-    user?.user_metadata?.rol ||
-    'recepcionista'
-  );
+function normalizeRoleValue(value) {
+  const role = String(value || '').trim().toLowerCase();
+  if (role === 'administrador') return 'admin';
+  if (['limpieza', 'camarero', 'camarera'].includes(role)) return 'camarera';
+  if (role === 'recepcion') return 'recepcionista';
+  return role || 'recepcionista';
+}
+
+function isAdministrativeRole(role) {
+  return ['admin', 'superadmin'].includes(normalizeRoleValue(role));
 }
 
 export async function resolveNotificationContext(supabase, currentUser = null, providedHotelId = null) {
@@ -20,19 +24,22 @@ export async function resolveNotificationContext(supabase, currentUser = null, p
   }
 
   let hotelId = providedHotelId || user.user_metadata?.hotel_id || user.app_metadata?.hotel_id || null;
-  if (!hotelId) {
+  let role = user.app_metadata?.rol || user.user_metadata?.rol || null;
+
+  if (!hotelId || !role) {
     const { data: perfil } = await supabase
       .from('usuarios')
-      .select('hotel_id')
+      .select('hotel_id, rol')
       .eq('id', user.id)
       .maybeSingle();
-    hotelId = perfil?.hotel_id || null;
+    hotelId = hotelId || perfil?.hotel_id || null;
+    role = role || perfil?.rol || null;
   }
 
   return {
     user,
     userId: user.id,
-    role: normalizeRole(user),
+    role: normalizeRoleValue(role),
     hotelId
   };
 }
@@ -67,13 +74,20 @@ function shouldRetryNotificationSelectCompatibility(error) {
 }
 
 async function fetchNotificationsWithCompatibility(supabase, context, limit) {
-  const buildQuery = (selectColumns) => supabase
-    .from('notificaciones')
-    .select(selectColumns)
-    .eq('hotel_id', context.hotelId)
-    .or(buildNotificationMatchFilter(context))
-    .order('creado_en', { ascending: false })
-    .limit(limit);
+  const buildQuery = (selectColumns) => {
+    let query = supabase
+      .from('notificaciones')
+      .select(selectColumns)
+      .eq('hotel_id', context.hotelId);
+
+    if (!isAdministrativeRole(context.role)) {
+      query = query.or(buildNotificationMatchFilter(context));
+    }
+
+    return query
+      .order('creado_en', { ascending: false })
+      .limit(limit);
+  };
 
   let { data, error } = await buildQuery(NOTIFICATION_SELECT_COLUMNS);
 
@@ -117,12 +131,17 @@ export async function markAllNotificationsAsRead(supabase, context) {
   }
 
   console.warn('La RPC para marcar notificaciones falló; usando actualización compatible.', rpcError);
-  const { error: fallbackError } = await supabase
+  let fallbackQuery = supabase
     .from('notificaciones')
     .update({ leida: true, actualizado_en: new Date().toISOString() })
     .eq('hotel_id', context.hotelId)
-    .eq('leida', false)
-    .or(buildNotificationMatchFilter(context));
+    .eq('leida', false);
+
+  if (!isAdministrativeRole(context.role)) {
+    fallbackQuery = fallbackQuery.or(buildNotificationMatchFilter(context));
+  }
+
+  const { error: fallbackError } = await fallbackQuery;
 
   if (fallbackError) {
     throw fallbackError;
