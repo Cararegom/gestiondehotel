@@ -108,10 +108,24 @@ export async function markNotificationAsRead(supabase, notificationId, hotelId) 
   }
 }
 
-export async function markAllNotificationsAsRead(supabase) {
-  const { error } = await supabase.rpc('marcar_todas_mis_notificaciones_leidas');
-  if (error) {
-    throw error;
+export async function markAllNotificationsAsRead(supabase, context) {
+  const { error: rpcError } = await supabase.rpc('marcar_todas_mis_notificaciones_leidas');
+  if (!rpcError) return;
+
+  if (!context?.hotelId || !context?.userId || !context?.role) {
+    throw rpcError;
+  }
+
+  console.warn('La RPC para marcar notificaciones falló; usando actualización compatible.', rpcError);
+  const { error: fallbackError } = await supabase
+    .from('notificaciones')
+    .update({ leida: true, actualizado_en: new Date().toISOString() })
+    .eq('hotel_id', context.hotelId)
+    .eq('leida', false)
+    .or(buildNotificationMatchFilter(context));
+
+  if (fallbackError) {
+    throw fallbackError;
   }
 }
 

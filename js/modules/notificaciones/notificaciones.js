@@ -157,11 +157,15 @@ export async function inicializarCampanitaGlobal(bellContainer, supabase, curren
   };
 
   const handleMarkAll = async () => {
+    if (markAllEl?.disabled) return;
+    markAllEl.disabled = true;
     try {
-      await markAllNotificationsAsRead(supabase);
+      await markAllNotificationsAsRead(supabase, currentBellContext);
       await refreshBellFeed(supabase, bellUi);
     } catch (error) {
       console.error('Error marcando notificaciones como leidas:', error);
+    } finally {
+      markAllEl.disabled = false;
     }
   };
 
@@ -308,15 +312,30 @@ export async function mount(pageContainer, supabase, currentUser) {
     const markAllButton = pageContainer.querySelector('#notifications-mark-all-page');
 
     addPageListener(markAllButton, 'click', async () => {
-      await markAllNotificationsAsRead(supabase);
-      await mount(pageContainer, supabase, currentUser);
+      if (markAllButton.disabled) return;
+      markAllButton.disabled = true;
+      try {
+        await markAllNotificationsAsRead(supabase, context);
+        await mount(pageContainer, supabase, currentUser);
+      } catch (error) {
+        console.error('Error marcando todas las notificaciones como leidas:', error);
+        markAllButton.disabled = false;
+        markAllButton.textContent = 'No se pudieron marcar. Reintentar';
+      }
     });
 
     addPageListener(tbody, 'click', async (event) => {
       const button = event.target.closest('.marcar-leida-historial');
       if (!button) return;
-      await markNotificationAsRead(supabase, button.dataset.id, context.hotelId);
-      await mount(pageContainer, supabase, currentUser);
+      button.disabled = true;
+      try {
+        await markNotificationAsRead(supabase, button.dataset.id, context.hotelId);
+        await mount(pageContainer, supabase, currentUser);
+      } catch (error) {
+        console.error('Error marcando la notificacion como leida:', error);
+        button.disabled = false;
+        button.textContent = 'Reintentar';
+      }
     });
   } catch (error) {
     console.error('Error cargando el historial de notificaciones:', error);
