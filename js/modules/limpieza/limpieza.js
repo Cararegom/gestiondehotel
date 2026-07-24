@@ -1,6 +1,6 @@
 // js/modules/limpieza/limpieza.js
 import { ROOM_STATUS_OPTIONS } from '../../config.js';
-import { crearNotificacion } from '../../services/NotificationService.js';
+import { notificarHabitacionFueraDeLimpieza } from '../../services/NotificationService.js';
 import {
   showGlobalLoading,
   hideGlobalLoading,
@@ -144,14 +144,10 @@ async function confirmCleaningById(roomId, roomNombre, feedbackEl, listEl) {
       .select('id,nombre')
       .single();
     if (updErr) throw updErr;
-    await crearNotificacion(supabase, {
+    await notificarHabitacionFueraDeLimpieza(supabase, {
       hotelId: currentHotelId,
-      rolDestino: 'recepcionista',
-      tipo: 'limpieza_completada',
-      mensaje: `La habitación '${updated.nombre}' ha sido marcada como limpia y está lista.`,
-      entidadTipo: 'habitacion',
-      entidadId: updated.id,
-      generadaPorUsuarioId: user.id
+      habitacion: updated,
+      actor: user
     });
     showAppFeedback(feedbackEl, `Habitación <b>${updated.nombre}</b>: limpieza lista y confirmada 👌`, 'success');
     await fetchPendientes(listEl, feedbackEl);

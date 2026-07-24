@@ -16,6 +16,7 @@ import { buscarDescuentoParaServicios } from './descuentos-helper.js';
 import { showModalTarea as importarMantenimientoUI } from '../mantenimiento/mantenimiento.js';
 import { showGlobalLoading, hideGlobalLoading, formatCurrency } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
+import { notificarHabitacionLiberada } from '../../services/NotificationService.js';
 import { escapeHtml } from '../../security.js';
 
 function refreshMapaHabitaciones() {
@@ -1023,6 +1024,12 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
             .update({ estado: 'limpieza' })
             .eq('id', room.id);
 
+          await notificarHabitacionLiberada(supabase, {
+            hotelId,
+            habitacion: room,
+            actor: currentUser
+          });
+
           // 2. Matar cualquier cronómetro huérfano (si lo hubiera)
           await supabase.from('cronometros')
             .update({ activo: false, fecha_fin: new Date().toISOString() })
@@ -1155,6 +1162,12 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
       await supabase.from('habitaciones')
         .update({ estado: 'limpieza', actualizado_en: ahoraISO })
         .eq('id', room.id);
+
+      await notificarHabitacionLiberada(supabase, {
+        hotelId,
+        habitacion: room,
+        actor: currentUser
+      });
 
       // 8. Registrar en bitácora (opcional)
       // ... tu lógica de bitácora ...

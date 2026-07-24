@@ -78,3 +78,69 @@ export async function crearNotificacion(supabase, {
   }
   return data;
 }
+
+export async function obtenerNombreActorNotificacion(supabase, actor) {
+  const nombreSesion = (
+    actor?.nombre ||
+    actor?.name ||
+    actor?.user_metadata?.nombre ||
+    actor?.user_metadata?.name
+  )?.trim();
+
+  if (nombreSesion) return nombreSesion;
+
+  if (actor?.id) {
+    const { data: perfil, error } = await supabase
+      .from('usuarios')
+      .select('nombre, email')
+      .eq('id', actor.id)
+      .maybeSingle();
+
+    if (error) {
+      console.warn('No se pudo consultar el nombre del usuario para la notificación:', error);
+    } else {
+      const nombrePerfil = (perfil?.nombre || perfil?.email)?.trim();
+      if (nombrePerfil) return nombrePerfil;
+    }
+  }
+
+  return actor?.email?.trim() || 'Usuario desconocido';
+}
+
+export async function notificarHabitacionLiberada(supabase, {
+  hotelId,
+  habitacion,
+  actor
+}) {
+  const nombreActor = await obtenerNombreActorNotificacion(supabase, actor);
+
+  return crearNotificacion(supabase, {
+    hotelId,
+    rolDestino: 'camarera',
+    tipo: 'general_info',
+    mensaje: `La habitación '${habitacion.nombre}' fue liberada y pasó a limpieza. La liberó: ${nombreActor}.`,
+    entidadTipo: 'habitacion',
+    entidadId: habitacion.id,
+    // Debe quedar por rol para que todo el equipo de limpieza pueda verla.
+    userId: null
+  });
+}
+
+export async function notificarHabitacionFueraDeLimpieza(supabase, {
+  hotelId,
+  habitacion,
+  actor
+}) {
+  const nombreActor = await obtenerNombreActorNotificacion(supabase, actor);
+
+  return crearNotificacion(supabase, {
+    hotelId,
+    rolDestino: 'recepcionista',
+    tipo: 'limpieza_completada',
+    mensaje: `La habitación '${habitacion.nombre}' salió de limpieza y está lista. La sacó de limpieza: ${nombreActor}.`,
+    entidadTipo: 'habitacion',
+    entidadId: habitacion.id,
+    // Debe quedar por rol para que todo el equipo de recepción pueda verla.
+    userId: null
+  });
+}
