@@ -1,3 +1,5 @@
+import { notificarHabitacionLiberada } from '../../services/NotificationService.js';
+
 export async function handleReservaDelete({
     reservaId,
     ui,
@@ -118,15 +120,25 @@ export async function handleReservaEstadoUpdate({
     let habActualizada = false;
 
     if (habitacionIdReserva && nuevoEstadoHabitacion) {
-        const { error: errHab } = await state.supabase
+        const { data: habitacionActualizada, error: errHab } = await state.supabase
             .from('habitaciones')
             .update({ estado: nuevoEstadoHabitacion })
-            .eq('id', habitacionIdReserva);
+            .eq('id', habitacionIdReserva)
+            .select('id, nombre')
+            .single();
         if (errHab) {
             msgExito += ` (Pero hubo un error actualizando la habitacion: ${errHab.message})`;
         } else {
             habActualizada = true;
             msgExito += ` Estado de habitacion actualizado a ${nuevoEstadoHabitacion}.`;
+
+            if (nuevoEstadoReserva === 'completada' && nuevoEstadoHabitacion === 'limpieza') {
+                await notificarHabitacionLiberada(state.supabase, {
+                    hotelId: state.hotelId,
+                    habitacion: habitacionActualizada,
+                    actor: state.currentUser
+                });
+            }
         }
     }
 

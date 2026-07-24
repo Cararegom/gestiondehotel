@@ -18,6 +18,10 @@ test('las transiciones de habitaciones notifican el usuario responsable', () => 
     path.join(root, 'js/modules/limpieza/limpieza.js'),
     'utf8'
   );
+  const reservasEstado = fs.readFileSync(
+    path.join(root, 'js/modules/reservas/reservas-estado.js'),
+    'utf8'
+  );
 
   assert.match(service, /La liberó: \$\{nombreActor\}/);
   assert.match(service, /La sacó de limpieza: \$\{nombreActor\}/);
@@ -27,4 +31,9 @@ test('las transiciones de habitaciones notifican el usuario responsable', () => 
     'deben notificarse tanto la liberación normal como la forzada'
   );
   assert.match(limpieza, /await notificarHabitacionFueraDeLimpieza\(/);
+  assert.match(
+    reservasEstado,
+    /nuevoEstadoReserva === 'completada' && nuevoEstadoHabitacion === 'limpieza'/
+  );
+  assert.match(reservasEstado, /await notificarHabitacionLiberada\(/);
 });
