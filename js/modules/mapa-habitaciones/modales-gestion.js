@@ -597,8 +597,9 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
     const { data, error } = await supabase
       .from('reservas')
       .select('id, cliente_nombre, telefono, cantidad_huespedes, fecha_inicio, fecha_fin')
+      .eq('hotel_id', hotelId)
       .eq('habitacion_id', room.id)
-      .eq('estado', 'reservada')
+      .in('estado', ['reservada', 'confirmada'])
       .gte('fecha_fin', new Date().toISOString())
       .order('fecha_inicio', { ascending: true }) // La más próxima
       .limit(1)
@@ -701,8 +702,9 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
     const { data: reservasFuturas } = await supabase
       .from('reservas')
       .select('fecha_inicio')
+      .eq('hotel_id', hotelId)
       .eq('habitacion_id', room.id)
-      .in('estado', ['reservada', 'activa'])
+      .in('estado', ['reservada', 'confirmada', 'activa'])
       .gte('fecha_fin', ahora.toISOString())
       .order('fecha_inicio', { ascending: true })
       .limit(1);
@@ -743,8 +745,9 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   setupButtonListener('btn-info-huesped', async () => {
     const { data: reserva } = await supabase.from('reservas')
       .select('*')
+      .eq('hotel_id', hotelId)
       .eq('habitacion_id', room.id)
-      .in('estado', ['activa', 'ocupada', 'tiempo agotado', 'reservada'])
+      .in('estado', ['activa', 'ocupada', 'tiempo agotado', 'reservada', 'confirmada'])
       .order('fecha_inicio', { ascending: false })
       .limit(1)
       .single();
