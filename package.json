@@ -1,5 +1,6 @@
 {
   "scripts": {
+    "build:tailwind": "tailwindcss -i ./css/tailwind-source.css -o ./tailwind.css --minify",
     "schema:snapshot": "node scripts/fetch-supabase-schema-snapshot.js",
     "schema:baseline": "node scripts/build-supabase-baseline.js",
     "rls:audit": "node scripts/generate-rls-audit.js",
@@ -9,5 +10,8 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.1.10",
     "tailwindcss": "^4.1.10"
+  },
+  "devDependencies": {
+    "tailwindcss3": "npm:tailwindcss@3.4.17"
   }
 }
