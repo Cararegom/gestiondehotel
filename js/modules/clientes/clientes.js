@@ -147,19 +147,22 @@ async function cargarCRMInsightsHotel() {
     if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;
 
     try {
-        const [
-            { data: reservas = [] },
-            { data: ventas = [] },
-            { data: ventasTienda = [] },
-            { data: ventasRestaurante = [] },
-            { data: actividades = [] }
-        ] = await Promise.all([
+        const results = await Promise.all([
             supabaseInstance.from('reservas').select('cliente_id, fecha_inicio, fecha_fin, monto_total, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
-            supabaseInstance.from('ventas').select('cliente_id, total, fecha_venta, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
-            supabaseInstance.from('ventas_tienda').select('cliente_id, total_venta, total, fecha, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
-            supabaseInstance.from('ventas_restaurante').select('cliente_id, monto_total, total_venta, total, fecha_venta, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
+            supabaseInstance.from('ventas').select('cliente_id, total, fecha_venta').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
+            supabaseInstance.from('ventas_tienda').select('cliente_id, total_venta, fecha, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
+            supabaseInstance.from('ventas_restaurante').select('cliente_id, monto_total, total_venta, fecha_venta, fecha, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
             supabaseInstance.from('crm_actividades').select('cliente_id, tipo, estado, fecha').eq('hotel_id', hotelIdActual)
         ]);
+
+        const labels = ['reservas', 'ventas', 'ventas_tienda', 'ventas_restaurante', 'crm_actividades'];
+        const rows = results.map((result, index) => {
+            if (result?.error) {
+                logError(`No se pudieron cargar datos de ${labels[index]} para las metricas CRM:`, result.error);
+            }
+            return Array.isArray(result?.data) ? result.data : [];
+        });
+        const [reservas, ventas, ventasTienda, ventasRestaurante, actividades] = rows;
 
         crmInsightsByClientId = buildClientCommercialInsights({
             clientes: clientesData,

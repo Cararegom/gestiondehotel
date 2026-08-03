@@ -1,4 +1,4 @@
-const APP_VERSION = '20260413-2';
+const APP_VERSION = '20260728-1';
 const APP_SHELL_CACHE = `gestiondehotel-shell-${APP_VERSION}`;
 const RUNTIME_CACHE = `gestiondehotel-runtime-${APP_VERSION}`;
 const OFFLINE_URL = '/app/offline.html';
@@ -98,6 +98,14 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   if (request.mode === 'navigate') {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  // Los modulos JS y estilos deben reflejar inmediatamente la version actual.
+  // Esto evita que Live Server (y una publicacion nueva) ejecute primero una
+  // copia antigua guardada por stale-while-revalidate.
+  if (request.destination === 'script' || request.destination === 'style') {
     event.respondWith(networkFirst(request));
     return;
   }

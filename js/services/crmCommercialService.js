@@ -70,7 +70,14 @@ export function buildClientCommercialInsights({
   ventasTienda = [],
   ventasRestaurante = [],
   actividades = []
-}) {
+} = {}) {
+  clientes = Array.isArray(clientes) ? clientes : [];
+  reservas = Array.isArray(reservas) ? reservas : [];
+  ventas = Array.isArray(ventas) ? ventas : [];
+  ventasTienda = Array.isArray(ventasTienda) ? ventasTienda : [];
+  ventasRestaurante = Array.isArray(ventasRestaurante) ? ventasRestaurante : [];
+  actividades = Array.isArray(actividades) ? actividades : [];
+
   const grouped = new Map();
 
   clientes.forEach((cliente) => {

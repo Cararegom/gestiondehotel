@@ -195,7 +195,7 @@ export async function imprimirTicketOperacion({
           ${notes ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="font-size:0.88em;">${notes}</div>` : ''}
           ${config?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${config.pie_ticket}</div>` : ''}
         </div>
-        <script>window.onload = function(){ window.focus(); window.print(); };</script>
+        <!-- La impresion se inicia desde la ventana principal. -->
       </body>
     </html>
   `;
@@ -206,6 +206,15 @@ export async function imprimirTicketOperacion({
   }
   printWindow.document.write(html);
   printWindow.document.close();
+  window.setTimeout(() => {
+    if (printWindow.closed) return;
+    try {
+      printWindow.focus();
+      printWindow.print();
+    } catch (error) {
+      console.warn('[Impresion] La ventana ya no esta disponible:', error?.message || error);
+    }
+  }, 250);
 }
 
 export async function imprimirInventarioTerraza80mm({
@@ -325,7 +334,7 @@ export async function imprimirInventarioTerraza80mm({
           <div style="margin-top:8px;text-align:center;font-size:0.82em;">Sis: stock sistema | Res: reservado | Disp: disponible</div>
           ${printConfig?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${printConfig.pie_ticket}</div>` : ''}
         </div>
-        <script>window.onload = function(){ window.focus(); window.print(); };</script>
+        <!-- La impresion se inicia desde la ventana principal. -->
       </body>
     </html>
   `;
@@ -336,4 +345,13 @@ export async function imprimirInventarioTerraza80mm({
   }
   printWindow.document.write(html);
   printWindow.document.close();
+  window.setTimeout(() => {
+    if (printWindow.closed) return;
+    try {
+      printWindow.focus();
+      printWindow.print();
+    } catch (error) {
+      console.warn('[Impresion] La ventana ya no esta disponible:', error?.message || error);
+    }
+  }, 250);
 }

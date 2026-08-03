@@ -2273,12 +2273,7 @@ async function renderReservas() {
 
     const { data: rs, error } = await state.supabase
         .from('reservas')
-        .select(`
-            *,
-            habitaciones(nombre, tipo),
-            pagos_reserva(monto),
-            cancelador:cancelado_por_usuario_id(nombre)
-        `)
+        .select('*')
         .eq('hotel_id', state.hotelId)
         .in('estado', estadosVisibles)
         .order('fecha_inicio', { ascending: false })
@@ -2288,6 +2283,54 @@ async function renderReservas() {
         showError(ui.reservasListEl, `Error cargando reservas: ${error.message}`);
         console.error("[Reservas] Render: Error detallado en la consulta:", error);
         return;
+    }
+
+    // Evita un unico join embebido grande en PostgREST. Esa consulta puede agotar
+    // el tiempo del servidor cuando el historial y sus pagos crecen.
+    if (rs?.length) {
+        const habitacionIds = [...new Set(rs.map((reserva) => reserva.habitacion_id).filter(Boolean))];
+        const canceladorIds = [...new Set(rs.map((reserva) => reserva.cancelado_por_usuario_id).filter(Boolean))];
+        const reservaIds = rs.map((reserva) => reserva.id);
+
+        const consultarEnLotes = async (tabla, columnas, campo, ids, tamanoLote = 100) => {
+            if (!ids.length) return [];
+            const filas = [];
+            for (let indice = 0; indice < ids.length; indice += tamanoLote) {
+                const lote = ids.slice(indice, indice + tamanoLote);
+                const { data, error: errorLote } = await state.supabase
+                    .from(tabla)
+                    .select(columnas)
+                    .in(campo, lote);
+                if (errorLote) throw errorLote;
+                filas.push(...(data || []));
+            }
+            return filas;
+        };
+
+        try {
+            const [habitaciones, pagos, canceladores] = await Promise.all([
+                consultarEnLotes('habitaciones', 'id, nombre, tipo', 'id', habitacionIds),
+                consultarEnLotes('pagos_reserva', 'reserva_id, monto', 'reserva_id', reservaIds),
+                consultarEnLotes('usuarios', 'id, nombre', 'id', canceladorIds)
+            ]);
+            const habitacionesPorId = new Map(habitaciones.map((habitacion) => [habitacion.id, habitacion]));
+            const canceladoresPorId = new Map(canceladores.map((usuario) => [usuario.id, usuario]));
+            const pagosPorReserva = new Map();
+            pagos.forEach((pago) => {
+                const pagosReserva = pagosPorReserva.get(pago.reserva_id) || [];
+                pagosReserva.push({ monto: pago.monto });
+                pagosPorReserva.set(pago.reserva_id, pagosReserva);
+            });
+            rs.forEach((reserva) => {
+                reserva.habitaciones = habitacionesPorId.get(reserva.habitacion_id) || null;
+                reserva.pagos_reserva = pagosPorReserva.get(reserva.id) || [];
+                reserva.cancelador = canceladoresPorId.get(reserva.cancelado_por_usuario_id) || null;
+            });
+        } catch (relatedError) {
+            showError(ui.reservasListEl, `Error cargando datos relacionados de reservas: ${relatedError.message}`);
+            console.error('[Reservas] Error cargando relaciones por lotes:', relatedError);
+            return;
+        }
     }
 
     let htmlGeneral = '';

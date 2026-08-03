@@ -89,6 +89,18 @@ export async function syncReservasConGoogleCalendar({
   try {
     if (!hotelId || !supabase || !currentUserId) return;
 
+    // La sincronizacion se ejecuta al montar el modulo. Evita llamar la funcion
+    // de eventos si el hotel no tiene una cuenta de Google conectada.
+    const { data: calendarStatus, error: statusError } = await supabase.functions.invoke(
+      'calendar-get-status',
+      { body: { hotelId } }
+    );
+    if (statusError) {
+      console.warn('[Sync] No fue posible comprobar el estado de Google Calendar:', statusError);
+      return;
+    }
+    if (!calendarStatus?.google?.connected) return;
+
     const [reservasResult, habitacionesResult] = await Promise.all([
       supabase.from('reservas').select('google_event_id').eq('hotel_id', hotelId).not('google_event_id', 'is', null),
       supabase.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId)
@@ -111,7 +123,17 @@ export async function syncReservasConGoogleCalendar({
     );
 
     if (errorInvocacion) {
-      console.error('CRITICO: Error al invocar la Edge Function:', errorInvocacion);
+      let detalle = errorInvocacion.message;
+      try {
+        const respuesta = errorInvocacion.context;
+        if (respuesta && typeof respuesta.clone === 'function') {
+          const cuerpo = await respuesta.clone().json();
+          detalle = cuerpo?.error || cuerpo?.message || detalle;
+        }
+      } catch (_) {
+        // Conserva el mensaje original si la respuesta no contiene JSON.
+      }
+      console.error('[Sync] Error sincronizando Google Calendar:', detalle, errorInvocacion);
       return;
     }
 

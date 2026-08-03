@@ -463,7 +463,14 @@ function getTiendaProductoNombre(producto) {
 }
 
 async function cargarDatos() {
-  const [mesasResult, productosResult, tiendaProductosResult, metodosResult, configResult, pedidosResult, historialResult, reservasResult] = await Promise.all([
+  const consultarProductosTienda = () => state.supabase
+    .from('productos_tienda')
+    .select('id, nombre, descripcion, codigo_barras, precio, precio_venta, stock_actual, stock_minimo, imagen_url, activo')
+    .eq('hotel_id', state.hotelId)
+    .eq('activo', true)
+    .order('nombre', { ascending: true });
+
+  let [mesasResult, productosResult, tiendaProductosResult, metodosResult, configResult, pedidosResult, historialResult, reservasResult] = await Promise.all([
     state.supabase
       .from('terraza_mesas')
       .select('*')
@@ -476,12 +483,7 @@ async function cargarDatos() {
       .eq('hotel_id', state.hotelId)
       .order('categoria', { ascending: true })
       .order('nombre', { ascending: true }),
-    state.supabase
-      .from('productos_tienda')
-      .select('id, nombre, descripcion, codigo_barras, precio, precio_venta, stock_actual, stock_minimo, imagen_url, activo')
-      .eq('hotel_id', state.hotelId)
-      .eq('activo', true)
-      .order('nombre', { ascending: true }),
+    consultarProductosTienda(),
     state.supabase
       .from('metodos_pago')
       .select('*')
@@ -512,9 +514,40 @@ async function cargarDatos() {
       .order('fecha_reserva', { ascending: true })
   ]);
 
-  const errors = [mesasResult.error, productosResult.error, tiendaProductosResult.error, metodosResult.error, configResult.error, pedidosResult.error, historialResult.error, reservasResult.error].filter(Boolean);
-  if (errors.length) {
-    throw errors[0];
+  // Live Server puede recargar una ventana de impresion antigua y hacer que el
+  // navegador rechace una peticion en curso. No es un error de PostgREST: llega
+  // sin codigo y menciona un callback de window.print que ya no es ejecutable.
+  const tiendaErrorText = `${tiendaProductosResult.error?.message || ''} ${tiendaProductosResult.error?.details || ''}`;
+  if (!tiendaProductosResult.error?.code && /callback is no longer runnable|Failed to execute 'print'/i.test(tiendaErrorText)) {
+    await new Promise((resolve) => window.setTimeout(resolve, 100));
+    tiendaProductosResult = await consultarProductosTienda();
+  }
+
+  const consultas = [
+    ['terraza_mesas', mesasResult],
+    ['terraza_productos', productosResult],
+    ['productos_tienda', tiendaProductosResult],
+    ['metodos_pago', metodosResult],
+    ['terraza_configuracion', configResult],
+    ['terraza_pedidos abiertos', pedidosResult],
+    ['terraza_pedidos historial', historialResult],
+    ['terraza_reservas', reservasResult]
+  ];
+  const consultaFallida = consultas.find(([, resultado]) => resultado.error);
+  if (consultaFallida) {
+    const [origen, resultado] = consultaFallida;
+    const dbError = resultado.error;
+    const partes = [
+      `Consulta ${origen}`,
+      dbError.message,
+      dbError.code ? `codigo ${dbError.code}` : '',
+      dbError.details ? `detalle ${dbError.details}` : '',
+      dbError.hint ? `sugerencia ${dbError.hint}` : ''
+    ].filter(Boolean);
+    const error = new Error(partes.join(' | '));
+    error.cause = dbError;
+    error.query = origen;
+    throw error;
   }
 
   state.mesas = mesasResult.data || [];
@@ -542,8 +575,12 @@ async function refreshAndRender() {
     await cargarDatos();
     render();
   } catch (error) {
-    console.error('[Terraza] Error cargando datos:', error);
-    renderError(`No se pudo cargar Terraza. Verifica que la migracion 20260619120000_terraza_module.sql este aplicada. Detalle: ${error.message}`);
+    console.error('[Terraza] Error cargando datos:', {
+      consulta: error.query || 'desconocida',
+      mensaje: error.message || String(error),
+      causa: error.cause || error
+    });
+    renderError(`No se pudo cargar Terraza. Detalle: ${error.message || String(error)}`);
   } finally {
     setLoading(false);
   }
