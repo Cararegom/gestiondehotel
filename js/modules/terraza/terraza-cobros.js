@@ -394,6 +394,11 @@ export async function paySelectedOrder(deps) {
     }
   });
 
+  // Completa la recarga antes de abrir el dialogo nativo de impresion. Algunos
+  // navegadores invalidan callbacks de fetch mientras window.print esta activo.
+  await refreshAndRender();
+  showFeedback(`Cuenta cerrada. Anticipo aplicado: ${money(anticipoAplicado)}. Cobrado ahora: ${money(saldoACobrar)}.`, 'success');
+
   try {
     await printOrderReceipt(
       { ...pedido, estado: 'pagado', metodo, propina_monto: propinaMonto, propina_sugerida_monto: propinaSugerida },
@@ -404,6 +409,4 @@ export async function paySelectedOrder(deps) {
     console.warn('[Terraza] No se pudo imprimir el ticket:', printError);
   }
 
-  await refreshAndRender();
-  showFeedback(`Cuenta cerrada. Anticipo aplicado: ${money(anticipoAplicado)}. Cobrado ahora: ${money(saldoACobrar)}.`, 'success');
 }

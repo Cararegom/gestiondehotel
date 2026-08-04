@@ -28,11 +28,26 @@ serve(async (req)=>{
   }
   try {
     const { hotelId } = await req.json();
+    if (!hotelId) {
+      throw new Error("hotelId es requerido");
+    }
     const supabaseAdmin = createClient(Deno.env.get("SUPABASE_URL"), Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"));
     // 1. Buscar tokens del hotel
-    const { data: dbTokenData, error: tokenError } = await supabaseAdmin.from("oauth_tokens").select("access_token_encrypted, refresh_token_encrypted, expires_at").eq("hotel_id", hotelId).eq("provider", "google").single();
-    if (!dbTokenData) throw new Error("Token no encontrado para este hotel");
+    const { data: dbTokenData, error: tokenError } = await supabaseAdmin.from("oauth_tokens").select("access_token_encrypted, refresh_token_encrypted, expires_at").eq("hotel_id", hotelId).eq("provider", "google").maybeSingle();
+    if (tokenError) throw tokenError;
+    // La sincronizacion se lanza al abrir Reservas. No tener Google conectado es
+    // un estado normal y no debe producir un 400 en cada visita.
+    if (!dbTokenData) {
+      return new Response(JSON.stringify({ events: [], skipped: "google_not_connected" }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        },
+        status: 200
+      });
+    }
     const ENCRYPTION_KEY = Deno.env.get("MY_ENCRYPTION_SECRET");
+    if (!ENCRYPTION_KEY) throw new Error("MY_ENCRYPTION_SECRET no esta configurado");
     let accessToken = await decrypt(dbTokenData.access_token_encrypted, ENCRYPTION_KEY);
     let refreshToken = await decrypt(dbTokenData.refresh_token_encrypted, ENCRYPTION_KEY);
     let expiresAt = dbTokenData.expires_at ? new Date(dbTokenData.expires_at).getTime() : 0;

@@ -214,8 +214,12 @@ export function printListaCompra(deps) {
   // onload asociado a una ventana emergente cuyo contexto ya fue descartado.
   window.setTimeout(() => {
     if (printWindow.closed) return;
-    printWindow.focus();
-    printWindow.print();
+    try {
+      printWindow.focus();
+      printWindow.print();
+    } catch (error) {
+      console.warn('[Terraza] La ventana de impresion ya no esta disponible:', error?.message || error);
+    }
   }, 250);
 }
 

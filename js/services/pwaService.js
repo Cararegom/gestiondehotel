@@ -2,6 +2,25 @@ let pwaContainer = null;
 let deferredInstallPrompt = null;
 let activeRegistration = null;
 
+function isLocalDevelopment() {
+  return ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname);
+}
+
+async function clearLocalPwaState() {
+  if ('serviceWorker' in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  }
+  if ('caches' in window) {
+    const cacheNames = await caches.keys();
+    await Promise.all(
+      cacheNames
+        .filter((name) => name.startsWith('gestiondehotel-'))
+        .map((name) => caches.delete(name))
+    );
+  }
+}
+
 function getContainer() {
   if (pwaContainer) return pwaContainer;
   pwaContainer = document.getElementById('app-pwa-hub');
@@ -93,6 +112,17 @@ async function registerServiceWorker() {
 
 export async function initPWAExperience() {
   if (typeof window === 'undefined') return;
+
+  // Live Server debe leer siempre los archivos actuales desde disco. Mantener
+  // una PWA activa en localhost mezcla modulos de distintas revisiones.
+  if (isLocalDevelopment()) {
+    try {
+      await clearLocalPwaState();
+    } catch (error) {
+      console.warn('[PWA] No se pudo limpiar el cache local:', error?.message || error);
+    }
+    return;
+  }
 
   window.addEventListener('online', renderPWAHub);
   window.addEventListener('offline', renderPWAHub);
