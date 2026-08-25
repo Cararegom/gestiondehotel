@@ -21,14 +21,15 @@ import {
 import { formatCurrency, formatDateTime, showAppFeedback } from '../../uiUtils.js';
 
 const STATUS_META = Object.freeze({
-  detected: { label: 'Detectado', className: 'border-blue-200 bg-blue-50 text-blue-700' },
-  matched: { label: 'Coincidencia', className: 'border-violet-200 bg-violet-50 text-violet-700' },
-  confirmed: { label: 'Confirmado', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  detected: { label: 'Pago recibido sin asociar', className: 'border-blue-200 bg-blue-50 text-blue-700' },
+  matched: { label: 'Asociado, pendiente de confirmar', className: 'border-violet-200 bg-violet-50 text-violet-700' },
+  confirmed: { label: 'Conciliado', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
   manual_review: { label: 'Revision manual', className: 'border-amber-200 bg-amber-50 text-amber-700' },
   rejected: { label: 'Rechazado', className: 'border-red-200 bg-red-50 text-red-700' },
   duplicated: { label: 'Duplicado', className: 'border-slate-200 bg-slate-100 text-slate-700' }
 });
 const EVENT_PAGE_SIZE = 100;
+const BANK_FIRST_WORKFLOW = true;
 
 function createState() {
   return {
@@ -37,8 +38,6 @@ function createState() {
     user: null,
     hotelId: null,
     pilotStatus: null,
-    expectedOptions: { reservations: [], rooms: [], sales: [] },
-    expectedOperation: null,
     events: [],
     hasMoreEvents: false,
     nextEventsOffset: 0,
@@ -180,9 +179,9 @@ function renderMetrics() {
   const total = state.events.reduce((sum, event) => sum + eventAmount(event), 0);
 
   container.innerHTML = renderMetricGrid([
-    renderMetricCard({ label: 'Detectados', value: count('detected'), helper: 'Sin relacion confirmada', tone: 'blue', icon: 'IN' }),
+    renderMetricCard({ label: 'Recibidos sin asociar', value: count('detected'), helper: 'Esperan el registro en el sistema', tone: 'blue', icon: 'IN' }),
     renderMetricCard({ label: 'Revision manual', value: count('manual_review'), helper: 'Requieren una decision', tone: 'amber', icon: '!' }),
-    renderMetricCard({ label: 'Confirmados', value: count('confirmed'), helper: 'Validados por el hotel', tone: 'emerald', icon: 'OK' }),
+    renderMetricCard({ label: 'Conciliados', value: count('confirmed'), helper: 'Pago y registro validados', tone: 'emerald', icon: 'OK' }),
     renderMetricCard({ label: 'Rechazados', value: count('rejected'), helper: 'Descartados por revision', tone: 'rose', icon: 'X' }),
     renderMetricCard({
       label: 'Monto listado',
@@ -264,10 +263,10 @@ function renderEventsTable() {
 
 function renderShell() {
   const hero = renderPageHero({
-    eyebrow: 'Piloto seguro',
-    title: 'Pagos bancarios',
-    description: 'Revisa transferencias detectadas desde Gmail, resuelve coincidencias y conserva trazabilidad sin exponer el correo original.',
-    badges: ['Solo hotel autorizado', 'Montos en COP', 'Revision humana ante ambigüedad'],
+    eyebrow: 'Fase 6 · Piloto Marena San Isidro',
+    title: 'Conciliación bancaria',
+    description: 'Primero se recibe el pago y luego la recepcionista registra la reserva o venta. Aquí el administrador asocia ambos registros para comprobar que correspondan.',
+    badges: ['Solo administradores', 'No duplica ingresos en Caja', 'Revisión humana ante ambigüedad'],
     actions: [
       { id: 'bank-payments-refresh', label: 'Actualizar', className: 'button button-neutral app-touch-button' }
     ]
@@ -341,7 +340,7 @@ function renderShell() {
       })
     : '';
 
-  const expectedPaymentSetup = state.pilotStatus?.isAdmin
+  const expectedPaymentSetup = !BANK_FIRST_WORKFLOW && state.pilotStatus?.isAdmin
     ? renderSectionCard({
         eyebrow: 'Preparar cobro',
         title: 'Crear pago esperado para una reserva',
@@ -390,6 +389,9 @@ function renderShell() {
       <div id="bank-payments-metrics"></div>
       ${filters}
       ${expectedPaymentSetup}
+      <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+        <strong>Flujo del hotel:</strong> el pago bancario aparece primero como recibido sin asociar. Después de que la recepcionista registre la operación, el administrador abre el pago, selecciona esa reserva o venta y lo confirma. Esta acción no crea cobros ni movimientos adicionales en Caja.
+      </div>
       <section class="app-section-card">
         <div class="app-section-card__header">
           <div>
@@ -648,7 +650,7 @@ function renderDetailModal(event, candidates) {
               <label class="form-label" for="bank-detail-room">Habitacion</label>
               <select id="bank-detail-room" class="form-control"><option value="">Sin seleccionar</option>${renderCandidateOptions(rooms, roomCandidateLabel)}</select>
             </div>
-            <div>
+            <div class="${BANK_FIRST_WORKFLOW ? 'hidden' : ''}">
               <label class="form-label" for="bank-detail-expected">Pago esperado</label>
               <select id="bank-detail-expected" class="form-control"><option value="">Sin seleccionar</option>${renderCandidateOptions(expectedPayments, expectedPaymentCandidateLabel)}</select>
             </div>
@@ -982,7 +984,7 @@ export async function mount(container, supabase, user, hotelId) {
     return;
   }
 
-  if (state.pilotStatus.isAdmin) {
+  if (!BANK_FIRST_WORKFLOW && state.pilotStatus.isAdmin) {
     try {
       state.expectedOptions = await getBankExpectedPaymentOptions(supabase, hotelId);
     } catch {

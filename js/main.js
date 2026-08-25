@@ -70,7 +70,6 @@ const navLinksConfig = [
   { path: '#/mapa-habitaciones', text: 'Mapa Hotel', icon: '\u{1F5FA}\uFE0F', moduleKey: 'mapa-habitaciones' },
   { path: '#/habitaciones', text: 'Habitaciones', icon: '\u{1F6AA}', moduleKey: 'habitaciones' },
   { path: '#/caja', text: 'Caja/Turnos', icon: '\u{1F4B0}', moduleKey: 'caja' },
-  { path: '#/pagos-bancarios', text: 'Pagos bancarios', icon: '\u{1F3E6}', moduleKey: 'pagos-bancarios' },
   { path: '#/terraza', text: 'Terraza', icon: '\u{1F379}', moduleKey: 'terraza' },
   { path: '#/clientes', text: 'Clientes', icon: '\u{1F9D1}\u200D\u{1F4BC}', moduleKey: 'clientes' },
   { path: '#/servicios', text: 'Servicios', icon: '\u{1F6CE}\uFE0F', moduleKey: 'servicios' },

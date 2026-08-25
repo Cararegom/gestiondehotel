@@ -1,3 +1,5 @@
+import { getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
+
 let root = null;
 let activeModule = null;
 
@@ -6,7 +8,8 @@ const tabs = [
   { key: 'resultados', label: 'Estado de resultados', icon: '📈', adminOnly: true, load: () => import('./finanzas-pnl.js') },
   { key: 'cuentas', label: 'Cuentas financieras', icon: '🏦', adminOnly: true, load: () => import('../finanzas-cuentas/finanzas-cuentas.js') },
   { key: 'gastos', label: 'Gastos y cuentas por pagar', icon: '🧾', adminOnly: true, load: () => import('../gastos/gastos.js') },
-  { key: 'costeo', label: 'Costeo y margen', icon: '📦', adminOnly: true, load: () => import('../costeo/costeo.js') }
+  { key: 'costeo', label: 'Costeo y margen', icon: '📦', adminOnly: true, load: () => import('../costeo/costeo.js') },
+  { key: 'conciliacion', label: 'Conciliación bancaria', icon: '🏦', adminOnly: true, pilotOnly: true, load: () => import('../pagos-bancarios/pagos-bancarios.js') }
 ];
 
 function normalizeRole(value) {
@@ -41,7 +44,18 @@ export async function mount(container, supabase, user, hotelId, planDetails) {
   unmount();
   root = container;
   const admin = isAdmin(user);
-  const visibleTabs = tabs.filter((tab) => !tab.adminOnly || admin);
+  let bankPilotEnabled = false;
+  if (admin) {
+    try {
+      const pilotStatus = await getBankPaymentPilotStatus(supabase, hotelId);
+      bankPilotEnabled = pilotStatus.canAccess === true && pilotStatus.isAdmin === true;
+    } catch {
+      console.warn('[Reportes] No se pudo verificar el piloto de conciliación bancaria.');
+    }
+  }
+  const visibleTabs = tabs.filter((tab) =>
+    (!tab.adminOnly || admin) && (!tab.pilotOnly || bankPilotEnabled)
+  );
   root.innerHTML = `
     <section class="min-h-full bg-slate-50 p-3 md:p-5">
       <header class="mb-4 rounded-2xl bg-gradient-to-r from-slate-950 via-blue-950 to-blue-700 p-5 text-white shadow-lg">
