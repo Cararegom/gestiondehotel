@@ -10,6 +10,18 @@ let supabase = null;
 let currentUser = null;
 let hotelId = null;
 let moduleListeners = []; // Para limpiar eventos al desmontar
+const UNIDADES_MEDIDA = [
+  ['unidad', 'Unidad (und)'], ['gr', 'Gramo (g)'], ['kg', 'Kilogramo (kg)'],
+  ['ml', 'Mililitro (ml)'], ['lt', 'Litro (L)'], ['oz', 'Onza (oz)'],
+  ['lb', 'Libra (lb)'], ['porcion', 'Porción']
+];
+
+function opcionesUnidad(valorActual = '') {
+  const normalizado = String(valorActual || '').trim().toLowerCase();
+  const opciones = [...UNIDADES_MEDIDA];
+  if (normalizado && !opciones.some(([value]) => value === normalizado)) opciones.unshift([normalizado, `${valorActual} (actual)`]);
+  return opciones.map(([value, label]) => `<option value="${value}" ${value === normalizado ? 'selected' : ''}>${label}</option>`).join('');
+}
 
 /**
  * Función principal que se ejecuta al cargar el módulo.
@@ -193,15 +205,18 @@ function showModalIngrediente(ingrediente = null) {
           </div>
           <div>
             <label class="form-label required">Unidad de Medida</label>
-            <input name="unidad_medida" type="text" class="form-control" value="${ingrediente?.unidad_medida || ''}" placeholder="kg, lt, unidades" required>
+            <select name="unidad_medida" class="form-control" required>
+              <option value="">Selecciona cómo se controla el ingrediente</option>
+              ${opcionesUnidad(ingrediente?.unidad_medida)}
+            </select>
+            <p class="mt-1 text-xs text-gray-500">Usa “Unidad” para contar mojarras enteras; usa gramos solo si las porcionas por peso.</p>
           </div>
 
-          ${!ingrediente ? `
-            <div>
-              <label class="form-label">Stock Inicial</label>
-              <input name="stock_actual" type="number" step="any" class="form-control" value="0">
-            </div>
-          ` : ''}
+          <div>
+            <label class="form-label">${ingrediente ? 'Stock actual en esta medida' : 'Stock inicial'}</label>
+            <input name="stock_actual" type="number" min="0" step="any" class="form-control" value="${ingrediente?.stock_actual || 0}" required>
+            ${ingrediente ? '<p class="mt-1 text-xs text-amber-700">Si cambias la medida, escribe la equivalencia real. Ejemplo: 1.900 g pueden equivaler a 4 unidades, no a 1.900 unidades.</p>' : ''}
+          </div>
           
           <div>
             <label class="form-label">Stock Mínimo (Alerta)</label>
@@ -230,24 +245,18 @@ function showModalIngrediente(ingrediente = null) {
     e.preventDefault();
     const formData = new FormData(form);
     const id = formData.get('id');
-    const dataToSave = {
-      hotel_id: hotelId,
-      nombre: formData.get('nombre'),
-      unidad_medida: formData.get('unidad_medida'),
-      stock_minimo: parseFloat(formData.get('stock_minimo') || 0),
-      costo_unitario: parseFloat(formData.get('costo_unitario') || 0),
+    const payload = {
+      p_ingrediente_id: id || null,
+      p_nombre: formData.get('nombre'),
+      p_unidad_medida: formData.get('unidad_medida'),
+      p_stock_actual: parseFloat(formData.get('stock_actual') || 0),
+      p_stock_minimo: parseFloat(formData.get('stock_minimo') || 0),
+      p_costo_unitario: parseFloat(formData.get('costo_unitario') || 0),
     };
 
     try {
-      if (id) { // Actualizar
-        const { error } = await supabase.from('ingredientes').update(dataToSave).eq('id', id);
-        if (error) throw error;
-      } else { // Crear
-        // ACTUALIZACIÓN 1: Incluir stock_actual al crear
-        dataToSave.stock_actual = parseFloat(formData.get('stock_actual') || 0);
-        const { error } = await supabase.from('ingredientes').insert(dataToSave);
-        if (error) throw error;
-      }
+      const { error } = await supabase.rpc('gestionar_ingrediente_restaurante', payload);
+      if (error) throw error;
       console.log("INVENTARIO: Ingrediente guardado exitosamente.");
       closeModal();
       cargarYRenderizarIngredientes();

@@ -1,4 +1,4 @@
-const APP_VERSION = '20260825-reportes-finanzas-fase5-2';
+const APP_VERSION = '20260825-ingredientes-unidades-1';
 const APP_SHELL_CACHE = `gestiondehotel-shell-${APP_VERSION}`;
 const RUNTIME_CACHE = `gestiondehotel-runtime-${APP_VERSION}`;
 const OFFLINE_URL = '/app/offline.html';

@@ -8,7 +8,10 @@ const newItemsSql = fs.readFileSync('supabase/migrations/20260825162000_fase4_nu
 const storeReferenceSql = fs.readFileSync('supabase/migrations/20260825170000_fase4_precio_compra_costeo_tienda.sql', 'utf8');
 const restaurantRecipeSql = fs.readFileSync('supabase/migrations/20260825171000_fase4_restaurante_recetas_cmv.sql', 'utf8');
 const recipeWriteSql = fs.readFileSync('supabase/migrations/20260825172000_guardar_receta_restaurante_atomica.sql', 'utf8');
+const ingredientWriteSql = fs.readFileSync('supabase/migrations/20260825203000_gestionar_ingredientes_restaurante.sql', 'utf8');
+const ingredientRepairSql = fs.readFileSync('supabase/migrations/20260825204000_sincronizar_costos_ingredientes_existentes.sql', 'utf8');
 const restaurantUi = fs.readFileSync('js/modules/restaurante/restaurante.js', 'utf8');
+const restaurantInventoryUi = fs.readFileSync('js/modules/restaurante/inventario.js', 'utf8');
 const ui = fs.readFileSync('js/modules/costeo/costeo.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 
@@ -74,4 +77,15 @@ test('restaurant recipes are replaced atomically through an authorized RPC', () 
   assert.match(recipeWriteSql, /No repitas ingredientes/);
   assert.match(restaurantUi, /rpc\('guardar_receta_plato_atomica'/);
   assert.doesNotMatch(restaurantUi, /from\('platos_recetas'\)\.delete/);
+});
+
+test('restaurant ingredients persist cost and measurement through an authorized audited RPC', () => {
+  assert.match(ingredientWriteSql, /gestionar_ingrediente_restaurante/);
+  assert.match(ingredientWriteSql, /fase1_actor_tiene_permiso\(v_actor\.hotel_id,'inventario\.ajustar'\)/);
+  assert.match(ingredientWriteSql, /average_unit_cost=excluded\.average_unit_cost/);
+  assert.match(ingredientWriteSql, /restaurante\.ingrediente_editar/);
+  assert.match(restaurantInventoryUi, /Unidad \(und\)/);
+  assert.match(restaurantInventoryUi, /rpc\('gestionar_ingrediente_restaurante'/);
+  assert.doesNotMatch(restaurantInventoryUi, /from\('ingredientes'\)\.update/);
+  assert.match(ingredientRepairSql, /i\.costo_unitario,0\)=0 AND b\.average_unit_cost>0/);
 });
