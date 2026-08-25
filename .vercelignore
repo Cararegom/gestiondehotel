@@ -1,0 +1,14 @@
+.git
+.github
+.agents
+.codex-staging-deploy
+archive
+docs
+node_modules
+prueba-google-watch
+scripts
+supabase
+tests
+.env*
+.codex-remote-schema-audit.sql
+gestion de tales.rar
