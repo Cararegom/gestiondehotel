@@ -52,6 +52,34 @@ export function getMovementTimeLabel(movement) {
   return (parts[1] || parts[0] || '').trim().slice(0, 5) || '--:--';
 }
 
+export function formatSaleItems(items, relationName) {
+  return (items || [])
+    .map((item) => {
+      const name = item?.[relationName]?.nombre;
+      const quantity = Number(item?.cantidad || 0);
+      return name && quantity > 0 ? `${quantity} x ${name}` : '';
+    })
+    .filter(Boolean)
+    .join(', ');
+}
+
+export function getReadableSaleConcept(movement, storeDetailsBySale, restaurantDetailsBySale) {
+  let area = '';
+  let detail = '';
+
+  if (movement?.venta_tienda_id) {
+    area = 'Tienda';
+    detail = storeDetailsBySale.get(movement.venta_tienda_id) || '';
+  } else if (movement?.venta_restaurante_id) {
+    area = 'Restaurante';
+    detail = restaurantDetailsBySale.get(movement.venta_restaurante_id) || '';
+  }
+
+  if (!detail) return movement?.concepto || 'Sin concepto';
+  const isReversal = movement?.source === 'caja_reversal' || Boolean(movement?.original_movement_id);
+  return `${isReversal ? 'Reversión · ' : ''}${area}: ${detail}`;
+}
+
 export function getTurnElapsedLabel(fechaApertura) {
   if (!fechaApertura) return 'Sin hora de apertura';
   const elapsedMs = Date.now() - new Date(fechaApertura).getTime();
@@ -404,13 +432,46 @@ export async function loadAndRenderMovements({
   try {
     const { data: movements, error } = await supabase
       .from('caja')
-      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
+      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,venta_tienda_id,venta_restaurante_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
       .eq('hotel_id', hotelId)
       .eq('turno_id', turnoId);
 
     if (error) throw error;
 
     const movementIds = (movements || []).map((movement) => movement.id);
+    const storeSaleIds = [...new Set((movements || []).map((movement) => movement.venta_tienda_id).filter(Boolean))];
+    const restaurantSaleIds = [...new Set((movements || []).map((movement) => movement.venta_restaurante_id).filter(Boolean))];
+    const [storeResult, restaurantResult] = await Promise.all([
+      storeSaleIds.length
+        ? supabase
+          .from('detalle_ventas_tienda')
+          .select('venta_id,cantidad,producto:productos_tienda!detalle_ventas_tienda_producto_id_fkey(nombre)')
+          .in('venta_id', storeSaleIds)
+        : Promise.resolve({ data: [], error: null }),
+      restaurantSaleIds.length
+        ? supabase
+          .from('ventas_restaurante_items')
+          .select('venta_id,cantidad,plato:platos!ventas_restaurante_items_plato_id_fkey(nombre)')
+          .in('venta_id', restaurantSaleIds)
+        : Promise.resolve({ data: [], error: null })
+    ]);
+    if (storeResult.error) throw storeResult.error;
+    if (restaurantResult.error) throw restaurantResult.error;
+
+    const storeDetailsBySale = new Map();
+    const restaurantDetailsBySale = new Map();
+    storeSaleIds.forEach((saleId) => {
+      storeDetailsBySale.set(saleId, formatSaleItems(
+        (storeResult.data || []).filter((item) => item.venta_id === saleId),
+        'producto'
+      ));
+    });
+    restaurantSaleIds.forEach((saleId) => {
+      restaurantDetailsBySale.set(saleId, formatSaleItems(
+        (restaurantResult.data || []).filter((item) => item.venta_id === saleId),
+        'plato'
+      ));
+    });
     let revertedIds = new Set();
     if (movementIds.length) {
       const { data: reversals, error: reversalsError } = await supabase
@@ -422,6 +483,8 @@ export async function loadAndRenderMovements({
     }
     movementTableState.all = sortMovementsByDate((movements || []).map((movement) => ({
       ...movement,
+      concepto_original: movement.concepto,
+      concepto: getReadableSaleConcept(movement, storeDetailsBySale, restaurantDetailsBySale),
       reverted: revertedIds.has(movement.id)
     })));
     updateMovementMethodFilter(movementRefs.methodFilterEl, movementTableState.all, movementTableState);
