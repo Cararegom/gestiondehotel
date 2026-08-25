@@ -24,6 +24,7 @@ const oidc = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared',
 const oauth = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'bank-email', 'google-oauth.ts'), 'utf8');
 const tokenCrypto = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'bank-email', 'token-crypto.ts'), 'utf8');
 const gmailApi = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'bank-email', 'gmail-api.ts'), 'utf8');
+const integrationService = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'bank-email', 'integration-service.ts'), 'utf8');
 
 function sqlFunction(name) {
   const start = migration.indexOf(`CREATE OR REPLACE FUNCTION public.${name}`);
@@ -142,6 +143,9 @@ test('15. Pub/Sub autentica, persiste, deduplica y recupera reintentos', () => {
   assert.match(queue, /shouldDeadLetterPubSubInboxItem\(attempts\)/);
   assert.match(queue, /alertQueueDeadLetter[\s\S]*bank_email_integration/);
   assert.match(queue, /listLabeledMessageIdsForRecovery\(accessToken, labelId, 500\)/);
+  assert.match(queue, /const GMAIL_WATCH_LABEL_ID = 'INBOX'/);
+  assert.match(queue, /isConfiguredBankSender\(normalized\)/);
+  assert.match(integrationService, /registerGmailWatch\(accessToken, topicName, 'INBOX'\)/);
   assert.doesNotMatch(gmailApi, /newer_than:/);
   assert.match(gmailApi, /gmail_recovery_too_large/);
 });

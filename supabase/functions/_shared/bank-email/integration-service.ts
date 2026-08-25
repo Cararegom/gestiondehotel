@@ -134,7 +134,10 @@ export async function renewGmailWatch(
     });
   }
 
-  const watch = await registerGmailWatch(accessToken, topicName, label.id);
+  // Vigilar INBOX evita perder pagos cuando una regla de Gmail no aplica la
+  // etiqueta personalizada antes de que se emita la notificacion push.
+  // El servidor filtra despues por remitente y autenticacion bancaria.
+  const watch = await registerGmailWatch(accessToken, topicName, 'INBOX');
   const patch: Record<string, unknown> = {
     gmail_label_name: labelName,
     gmail_label_id: label.id,

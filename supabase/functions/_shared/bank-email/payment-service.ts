@@ -67,6 +67,23 @@ export function parseConfiguredRules(): BankParserRule[] {
     : [BANCOLOMBIA_MARENA_RULE, ...configured];
 }
 
+function addressDomain(address: string): string {
+  return address.slice(address.lastIndexOf('@') + 1).trim().toLowerCase();
+}
+
+export function isConfiguredBankSender(email: NormalizedEmail): boolean {
+  const address = String(email.fromAddress || '').trim().toLowerCase();
+  if (!address) return false;
+  const domain = addressDomain(address);
+  return parseConfiguredRules().some((rule) => {
+    const addresses = (rule.allowedFromAddresses || []).map((value) => value.trim().toLowerCase());
+    const domains = (rule.allowedFromDomains || []).map((value) => value.trim().toLowerCase());
+    return addresses.includes(address) || domains.some((allowed) =>
+      domain === allowed || domain.endsWith(`.${allowed}`)
+    );
+  });
+}
+
 function domainFromAddress(address: string | null): string | null {
   if (!address) return null;
   const at = address.lastIndexOf('@');

@@ -9,7 +9,7 @@ import {
   type GmailMessageReference
 } from './gmail-api.ts';
 import { parseGmailMessage } from './gmail-message.ts';
-import { analyzeBankEmail } from './payment-service.ts';
+import { analyzeBankEmail, isConfiguredBankSender } from './payment-service.ts';
 import { safeErrorCode } from './http.ts';
 import { isTerminalMissingGmailMessage, shouldDeadLetterPubSubInboxItem } from './pubsub.ts';
 
@@ -23,6 +23,8 @@ interface InboxRow {
   status: string;
   attempts: number;
 }
+
+const GMAIL_WATCH_LABEL_ID = 'INBOX';
 
 function compareHistoryIds(left: string | null, right: string): number {
   try {
@@ -162,10 +164,6 @@ async function processInboxRow(
     await markInbox(admin, row, 'ignored', 'gmail_account_mismatch');
     return;
   }
-  if (!integration.gmail_label_id) {
-    throw Object.assign(new Error('La etiqueta Gmail aun no esta configurada.'), { code: 'gmail_label_missing' });
-  }
-
   const config = readBankEmailConfig();
   assertBankEmailConfig(config);
   const { accessToken } = await getValidGmailAccessToken(admin, integration);
@@ -179,7 +177,7 @@ async function processInboxRow(
     accessToken,
     integration.gmail_history_id,
     row.history_id,
-    integration.gmail_label_id
+    GMAIL_WATCH_LABEL_ID
   );
   for (const reference of references) {
     let resource;
@@ -197,7 +195,7 @@ async function processInboxRow(
       });
       continue;
     }
-    if (!resource.labelIds?.includes(integration.gmail_label_id)) continue;
+    if (!resource.labelIds?.includes(GMAIL_WATCH_LABEL_ID)) continue;
     let normalized;
     try {
       normalized = parseGmailMessage(resource as never);
@@ -211,6 +209,7 @@ async function processInboxRow(
       });
       continue;
     }
+    if (!isConfiguredBankSender(normalized)) continue;
     await analyzeBankEmail(admin, pilotHotel, normalized, config, {
       save: true,
       isTest: false,

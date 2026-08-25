@@ -198,6 +198,7 @@ test('4d. reconoce la alerta real de transferencia Bancolombia de Marena', async
   assert.equal(result.transactionOccurredAt, '2026-08-22T19:24:00.000Z');
   assert.equal(result.reviewReason, null);
   assert.equal(result.parserVersion, 'bancolombia-marena-2.0.0');
+  assert.equal(paymentService.isConfiguredBankSender(email), true);
 });
 
 test('5. rechaza remitentes no incluidos en la allowlist aunque el nombre visible parezca bancario', async () => {
