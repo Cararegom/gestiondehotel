@@ -21,6 +21,10 @@ test('Gastos is an admin-only routed module using the authorized RPCs', () => {
   assert.match(ui, /rpc\(name, args\)/);
   for (const rpc of ['crear_gasto', 'aprobar_gasto', 'pagar_gasto', 'cancelar_gasto']) assert.match(ui, new RegExp(rpc));
   assert.match(ui, /Solo el administrador/);
+  assert.match(ui, /id="payment-form"/);
+  assert.match(ui, /id="cancel-form"/);
+  assert.match(ui, /¿De qué cuenta saldrá el dinero\?/);
+  assert.doesNotMatch(ui, /window\.prompt|window\.alert|window\.confirm/);
 });
 
 test('expense writes are RPC-only and tenant authorized', () => {
