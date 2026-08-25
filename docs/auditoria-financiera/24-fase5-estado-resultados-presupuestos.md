@@ -39,3 +39,15 @@ Durante esta fase `shadow`, cerrar un periodo deja evidencia administrativa pero
 ## Criterio de salida
 
 Antes de considerar el estado de resultados como oficial se debe completar al menos un cierre mensual de prueba, conciliarlo contra Caja/CxP/inventarios y resolver cualquier venta con novedad de costo.
+
+## Control de cierre incorporado
+
+El cierre mensual se rechaza si el periodo contiene una venta con `cost_issue`. El informe muestra el producto, fecha, ingreso y causa, junto con accesos a Restaurante y Costeo y margen. Esta validación solo protege el cierre financiero: no bloquea Caja, ventas, recepción ni liberación de habitaciones.
+
+En la comprobación productiva del 25 de agosto de 2026 se identificó una venta de `mojarra` por $12.000 sin CMV porque el plato no tiene receta configurada. El sistema no asignó un costo ficticio. Para resolverla se debe:
+
+1. configurar en Restaurante los ingredientes y cantidades reales de la mojarra;
+2. verificar que esos ingredientes tengan costo y existencias;
+3. usar `Recalcular` en Costeo y margen;
+4. confirmar que el informe indique cero ventas con costo pendiente;
+5. ejecutar el cierre mensual de prueba.

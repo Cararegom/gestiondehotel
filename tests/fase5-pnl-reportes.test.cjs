@@ -4,6 +4,7 @@ const fs = require('node:fs');
 
 const sql = fs.readFileSync('supabase/migrations/20260825200000_fase5_pnl_presupuestos_periodos.sql', 'utf8');
 const indexSql = fs.readFileSync('supabase/migrations/20260825201000_fase5_indices_auditoria.sql', 'utf8');
+const closingSql = fs.readFileSync('supabase/migrations/20260825202000_fase5_bloqueo_cierre_calidad.sql', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 const hub = fs.readFileSync('js/modules/reportes/reportes-centro.js', 'utf8');
 const pnl = fs.readFileSync('js/modules/reportes/finanzas-pnl.js', 'utf8');
@@ -20,6 +21,15 @@ test('Fase 5 builds a traceable shadow P&L with budgets and periods', () => {
   assert.match(sql, /usuario_actual_es_admin_hotel/);
   assert.match(sql, /REVOKE ALL ON public\.financial_transactions FROM PUBLIC, anon, authenticated/);
   for (const column of ['created_by', 'updated_by', 'closed_by', 'reopened_by']) assert.match(indexSql, new RegExp(`\\(${column}\\)`));
+});
+
+test('financial close is blocked until every sale has a valid frozen cost', () => {
+  assert.match(closingSql, /No se puede cerrar el mes/);
+  assert.match(closingSql, /cost_issue IS NOT NULL/);
+  assert.match(closingSql, /'issues',v_issues/);
+  assert.match(closingSql, /'can_close',jsonb_array_length\(v_issues\)=0/);
+  assert.match(pnl, /Pendientes que impiden cerrar el mes/);
+  assert.match(pnl, /Configurar receta/);
 });
 
 test('Reportes is the visible hub while legacy finance routes remain protected', () => {
