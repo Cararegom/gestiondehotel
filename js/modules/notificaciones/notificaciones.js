@@ -97,10 +97,7 @@ function showInstantBankPaymentToast(notification = {}) {
     </div>
     <div class="px-5 py-4">
       <p class="whitespace-pre-line text-sm leading-6 text-slate-700">${escapeHtml(notification.mensaje || 'Se recibio una transferencia bancaria.')}</p>
-      <div class="mt-4 flex items-center justify-end gap-2">
-        <button type="button" data-close-bank-toast class="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">${canOpenBankPayment ? 'Cerrar' : 'Entendido'}</button>
-        ${canOpenBankPayment ? '<button type="button" data-open-bank-payment class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">Ver pago</button>' : ''}
-      </div>
+      ${canOpenBankPayment ? '<div class="mt-4 flex justify-end"><button type="button" data-open-bank-payment class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">Ver pago</button></div>' : ''}
     </div>`;
   host.prepend(toast);
 
@@ -110,7 +107,6 @@ function showInstantBankPaymentToast(notification = {}) {
     removeToast();
     navigateToBankPayment(paymentEventId);
   });
-  window.setTimeout(removeToast, 15000);
 }
 
 function renderHistoryActions(notification) {

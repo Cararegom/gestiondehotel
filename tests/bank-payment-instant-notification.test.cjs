@@ -12,6 +12,8 @@ test('muestra un globo global cuando llega una transferencia bancaria', () => {
   assert.match(notifications, /data-open-bank-payment/);
   assert.match(notifications, /canOpenBankPayment = \['admin', 'superadmin'\]/);
   assert.match(notifications, /z-\[10000\]/);
+  assert.doesNotMatch(notifications, /setTimeout\(removeToast/);
+  assert.doesNotMatch(notifications, />Entendido</);
 });
 
 test('evita avisos ajenos o repetidos para el usuario conectado', () => {
