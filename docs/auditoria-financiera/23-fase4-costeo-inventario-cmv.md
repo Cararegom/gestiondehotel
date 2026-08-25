@@ -38,8 +38,11 @@ Las existencias presentes al momento del corte se copian con valor cero y estado
 - `supabase/migrations/20260825160000_fase4_costeo_inventario_cmv.sql`
 - `supabase/migrations/20260825161000_fase4_ajustes_inventario_valorizados.sql`
 - `supabase/migrations/20260825162000_fase4_nuevos_items_costeo.sql`
+- `supabase/migrations/20260825170000_fase4_precio_compra_costeo_tienda.sql`
 - `js/modules/costeo/costeo.js`
 - `tests/fase4-costeo.test.cjs`
+
+Para Tienda, el campo `productos_tienda.precio` ("Precio compra") inicializa automáticamente el costo del inventario existente y de productos nuevos. Cuando se recibe la primera compra valorizada, el costo promedio móvil pasa a ser la fuente contable y las ediciones posteriores de la ficha no lo sobrescriben.
 
 ## Siguiente fase
 

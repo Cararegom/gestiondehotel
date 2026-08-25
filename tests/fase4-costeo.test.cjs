@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const sql = fs.readFileSync('supabase/migrations/20260825160000_fase4_costeo_inventario_cmv.sql', 'utf8');
 const adjustmentSql = fs.readFileSync('supabase/migrations/20260825161000_fase4_ajustes_inventario_valorizados.sql', 'utf8');
 const newItemsSql = fs.readFileSync('supabase/migrations/20260825162000_fase4_nuevos_items_costeo.sql', 'utf8');
+const storeReferenceSql = fs.readFileSync('supabase/migrations/20260825170000_fase4_precio_compra_costeo_tienda.sql', 'utf8');
 const ui = fs.readFileSync('js/modules/costeo/costeo.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 
@@ -43,4 +44,12 @@ test('admin cost dashboard exposes initialization, valuation and margin', () => 
   assert.match(ui, /establecer_costo_inicial_inventario/);
   assert.match(ui, /Inventario valorizado/);
   assert.match(ui, /Margen bruto/);
+});
+
+test('store purchase price initializes cost without replacing a received-purchase average', () => {
+  assert.match(storeReferenceSql, /v_cost:=coalesce\(NEW\.precio,0\)/);
+  assert.match(storeReferenceSql, /m\.source='purchase_receipt'/);
+  assert.match(storeReferenceSql, /average_unit_cost=p\.precio/);
+  assert.match(ui, /Precio compra \(ficha\)/);
+  assert.match(ui, /productos_tienda/);
 });
