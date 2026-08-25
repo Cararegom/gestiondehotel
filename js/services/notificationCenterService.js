@@ -160,8 +160,10 @@ export function subscribeToNotificationFeed(supabase, context, onChange) {
         table: 'notificaciones',
         filter: `hotel_id=eq.${context.hotelId}`
       },
-      () => {
-        onChange?.();
+      (payload) => {
+        const notification = payload?.new || null;
+        if (notification?.usuario_id && notification.usuario_id !== context.userId) return;
+        onChange?.(notification);
       }
     )
     .subscribe();

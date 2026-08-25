@@ -14,6 +14,7 @@ let bellListeners = [];
 let pageListeners = [];
 let currentBellContext = null;
 let currentBellContainer = null;
+const displayedInstantNotificationIds = new Set();
 
 const BANK_PAYMENT_ENTITY_TYPES = new Set(['bank_payment_event', 'bank_payment_events']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -63,6 +64,53 @@ function getBankPaymentNotificationId(notification = {}) {
 function navigateToBankPayment(paymentEventId) {
   if (!UUID_PATTERN.test(String(paymentEventId || ''))) return;
   window.location.hash = `#/pagos-bancarios?payment=${encodeURIComponent(paymentEventId)}`;
+}
+
+function showInstantBankPaymentToast(notification = {}) {
+  const paymentEventId = getBankPaymentNotificationId(notification);
+  if (!paymentEventId || !notification.id || displayedInstantNotificationIds.has(notification.id)) return;
+  displayedInstantNotificationIds.add(notification.id);
+  const canOpenBankPayment = ['admin', 'superadmin'].includes(currentBellContext?.role);
+
+  const hostId = 'bank-payment-instant-alerts';
+  let host = document.getElementById(hostId);
+  if (!host) {
+    host = document.createElement('div');
+    host.id = hostId;
+    host.className = 'fixed right-4 top-20 z-[10000] flex w-[min(92vw,420px)] flex-col gap-3';
+    host.setAttribute('aria-live', 'assertive');
+    document.body.appendChild(host);
+  }
+
+  const toast = document.createElement('section');
+  toast.className = 'overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-2xl ring-1 ring-black/5';
+  toast.setAttribute('role', 'alert');
+  toast.innerHTML = `
+    <div class="bg-gradient-to-r from-emerald-600 to-teal-500 px-5 py-4 text-white">
+      <div class="flex items-start justify-between gap-4">
+        <div>
+          <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-50">Pago recibido</p>
+          <h2 class="mt-1 text-lg font-black">Nueva transferencia bancaria</h2>
+        </div>
+        <button type="button" data-close-bank-toast class="rounded-full bg-white/15 px-2.5 py-1 text-lg leading-none hover:bg-white/25" aria-label="Cerrar notificacion">&times;</button>
+      </div>
+    </div>
+    <div class="px-5 py-4">
+      <p class="whitespace-pre-line text-sm leading-6 text-slate-700">${escapeHtml(notification.mensaje || 'Se recibio una transferencia bancaria.')}</p>
+      <div class="mt-4 flex items-center justify-end gap-2">
+        <button type="button" data-close-bank-toast class="rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">${canOpenBankPayment ? 'Cerrar' : 'Entendido'}</button>
+        ${canOpenBankPayment ? '<button type="button" data-open-bank-payment class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700">Ver pago</button>' : ''}
+      </div>
+    </div>`;
+  host.prepend(toast);
+
+  const removeToast = () => toast.remove();
+  toast.querySelectorAll('[data-close-bank-toast]').forEach((button) => button.addEventListener('click', removeToast));
+  toast.querySelector('[data-open-bank-payment]')?.addEventListener('click', () => {
+    removeToast();
+    navigateToBankPayment(paymentEventId);
+  });
+  window.setTimeout(removeToast, 15000);
 }
 
 function renderHistoryActions(notification) {
@@ -237,8 +285,9 @@ export async function inicializarCampanitaGlobal(bellContainer, supabase, curren
 
   await refreshBellFeed(supabase, bellUi);
 
-  bellSubscription = subscribeToNotificationFeed(supabase, context, () => {
+  bellSubscription = subscribeToNotificationFeed(supabase, context, (notification) => {
     void refreshBellFeed(supabase, bellUi);
+    showInstantBankPaymentToast(notification);
   });
 }
 
