@@ -49,6 +49,17 @@ test('reservation checkout liquidates linked consumption through an authorized R
   assert.match(sql, /UPDATE public\.ventas_restaurante/);
 });
 
+test('cash reversal is idempotent by original movement and hides repeated action', () => {
+  const cashUi = read('js/modules/caja/caja-movimientos.js');
+  const sql = read('supabase/migrations/20260825174000_hacer_reversion_caja_idempotente.sql');
+  assert.match(sql, /original_movement_id=v_original\.id/);
+  assert.match(sql, /'already_reverted',true/);
+  assert.doesNotMatch(sql, /El movimiento ya fue revertido/);
+  assert.match(cashUi, /from\('caja_reversiones'\)/);
+  assert.match(cashUi, /!isReversal && !isReverted/);
+  assert.match(cashUi, /ya estaba revertido/);
+});
+
 test('Bogota business dates cover evening and midnight boundaries', () => {
   const bogotaDate = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
   assert.equal(bogotaDate('2026-08-09T23:30:00-05:00'), '2026-08-09');

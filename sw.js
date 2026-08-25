@@ -1,4 +1,4 @@
-const APP_VERSION = '20260825-costeo-fase4-9';
+const APP_VERSION = '20260825-caja-reversion-1';
 const APP_SHELL_CACHE = `gestiondehotel-shell-${APP_VERSION}`;
 const RUNTIME_CACHE = `gestiondehotel-runtime-${APP_VERSION}`;
 const OFFLINE_URL = '/app/offline.html';

@@ -205,6 +205,8 @@ export function renderMovementRows({
       const typeAttr = escapeAttribute(movement.tipo || '');
       const currentMethodAttr = escapeAttribute(movement.metodo_pago_id || '');
       const originMeta = getMovementOriginMeta(movement);
+      const isReversal = movement.source === 'caja_reversal' || Boolean(movement.original_movement_id);
+      const isReverted = Boolean(movement.reverted);
       const movementDate = formatMovementDateTime(movement);
       const isIncome = movement.tipo === 'ingreso';
       const amountClass = movement.tipo === 'egreso' ? 'text-red-600' : (isIncome ? 'text-green-600' : 'text-blue-600');
@@ -233,7 +235,8 @@ export function renderMovementRows({
               <span class="truncate">${safeMethodName}</span>
               <div class="flex-shrink-0 flex items-center gap-3">
                 <button class="text-blue-600 hover:text-blue-800 font-medium" title="Editar metodo de pago" data-edit-metodo="${movementIdAttr}" data-metodo-actual="${currentMethodAttr}">Editar</button>
-                ${isAdminUser ? `<button class="text-red-500 hover:text-red-700 font-medium" title="Eliminar movimiento" data-delete-movimiento="${movementIdAttr}" data-concepto="${conceptAttr}" data-monto="${amountAttr}" data-tipo="${typeAttr}">Eliminar</button>` : ''}
+                ${isReverted ? '<span class="text-xs font-semibold text-amber-700">Revertido</span>' : ''}
+                ${isAdminUser && !isReversal && !isReverted ? `<button class="text-red-500 hover:text-red-700 font-medium" title="Revertir movimiento" data-delete-movimiento="${movementIdAttr}" data-concepto="${conceptAttr}" data-monto="${amountAttr}" data-tipo="${typeAttr}">Revertir</button>` : ''}
               </div>
             </div>
           </td>
@@ -342,7 +345,7 @@ export async function handleMovementTableClick({
     showGlobalLoading('Eliminando movimiento...');
     const reason = `Reversion administrativa: ${concepto || 'movimiento de caja'}`;
     const operationScope = buildOperationScope('caja-reversion', { movimientoId, reason });
-    const { error: rpcError } = await supabase.rpc('revertir_movimiento_caja', {
+    const { data: reversalResult, error: rpcError } = await supabase.rpc('revertir_movimiento_caja', {
       p_original_movement_id: movimientoId,
       p_reason: reason,
       p_client_operation_id: getStableOperationId(operationScope),
@@ -356,7 +359,9 @@ export async function handleMovementTableClick({
       return;
     }
 
-    showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Movimiento eliminado y registrado.');
+    showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), reversalResult?.already_reverted
+      ? 'El movimiento ya estaba revertido; no se creó otra reversión.'
+      : 'Movimiento revertido y registrado.');
     await loadAndRenderMovements({
       tBodyEl,
       summaryEls,
@@ -399,13 +404,26 @@ export async function loadAndRenderMovements({
   try {
     const { data: movements, error } = await supabase
       .from('caja')
-      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
+      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
       .eq('hotel_id', hotelId)
       .eq('turno_id', turnoId);
 
     if (error) throw error;
 
-    movementTableState.all = sortMovementsByDate(movements || []);
+    const movementIds = (movements || []).map((movement) => movement.id);
+    let revertedIds = new Set();
+    if (movementIds.length) {
+      const { data: reversals, error: reversalsError } = await supabase
+        .from('caja_reversiones')
+        .select('original_movement_id')
+        .in('original_movement_id', movementIds);
+      if (reversalsError) throw reversalsError;
+      revertedIds = new Set((reversals || []).map((item) => item.original_movement_id));
+    }
+    movementTableState.all = sortMovementsByDate((movements || []).map((movement) => ({
+      ...movement,
+      reverted: revertedIds.has(movement.id)
+    })));
     updateMovementMethodFilter(movementRefs.methodFilterEl, movementTableState.all, movementTableState);
     renderMovementRows({
       tBodyEl,
