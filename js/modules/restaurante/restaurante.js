@@ -304,20 +304,22 @@ function renderPOSPlatosUI(containerEl, platos, onPlatoClickCallback) {
 
     platos.forEach(plato => {
         const card = document.createElement('div');
+        const hasRecipe = Array.isArray(plato.platos_recetas) && plato.platos_recetas.length > 0;
         // Se quita el padding general para que la imagen ocupe todo el ancho.
-        card.className = 'plato-card-pos bg-white rounded-lg shadow border hover:shadow-lg hover:border-indigo-500 transition-all cursor-pointer flex flex-col h-full overflow-hidden';
+        card.className = `plato-card-pos bg-white rounded-lg shadow border transition-all flex flex-col h-full overflow-hidden ${hasRecipe ? 'hover:shadow-lg hover:border-indigo-500 cursor-pointer' : 'opacity-60 cursor-not-allowed border-red-300'}`;
         
         // --- INICIO DE LA MODIFICACIÓN ---
         card.innerHTML = `
             <img src="${plato.imagen_url || placeholderImg}" alt="${plato.nombre}" class="w-full h-24 object-cover">
             <div class="p-2 flex flex-col flex-grow">
                 <h5 class="text-sm font-semibold text-gray-800 truncate flex-grow" title="${plato.nombre}">${plato.nombre}</h5>
+                ${hasRecipe ? '' : '<span class="text-xs font-semibold text-red-600">Sin receta · no vendible</span>'}
                 <p class="text-md font-bold text-indigo-600 mt-1 self-end">${formatCurrencyLocal(plato.precio)}</p>
             </div>
         `;
         // --- FIN DE LA MODIFICACIÓN ---
 
-        card.addEventListener('click', () => onPlatoClickCallback(plato));
+        if (hasRecipe) card.addEventListener('click', () => onPlatoClickCallback(plato));
         grid.appendChild(card);
     });
     containerEl.appendChild(grid);
@@ -843,7 +845,8 @@ if (categorias?.length) {
                 const info = ingredientesDisponibles.find(i => i.id === item.ingrediente_id);
                 const itemEl = document.createElement('div');
                 itemEl.className = 'flex justify-between items-center bg-white p-2 rounded border text-sm';
-                itemEl.innerHTML = `<span>${info?.nombre}</span><div class="flex items-center gap-2"><span class="font-semibold">${item.cantidad} ${info?.unidad_medida}</span><button type="button" data-index="${index}" class="btn-remove-receta-item text-red-500">&times;</button></div>`;
+                const costoLinea = Number(item.cantidad || 0) * Number(info?.costo_unitario || 0);
+                itemEl.innerHTML = `<span>${info?.nombre}<small class="block text-xs text-gray-500">Costo: ${formatCurrencyLocal(costoLinea)}</small></span><div class="flex items-center gap-2"><span class="font-semibold">${item.cantidad} ${info?.unidad_medida}</span><button type="button" data-index="${index}" class="btn-remove-receta-item text-red-500">&times;</button></div>`;
                 recetaItemsListEl.appendChild(itemEl);
             });
             recetaItemsListEl.querySelectorAll('.btn-remove-receta-item').forEach(btn => {
@@ -880,6 +883,11 @@ if (categorias?.length) {
             const formData = new FormData(formPlatoEl);
             const platoId = formData.get('id');
             const submitButton = formPlatoEl.querySelector('#btn-guardar-plato');
+
+            if (formData.get('activo') === 'on' && recetaActual.length === 0) {
+                showRestauranteFeedback(modalFeedbackEl, 'Un plato activo debe tener al menos un ingrediente en su receta.', 'error-indicator', 0);
+                return;
+            }
             
             setFormLoadingState(formPlatoEl, true, submitButton, "Guardar Cambios", "Guardando...");
             try {
@@ -947,6 +955,7 @@ if (categorias?.length) {
                         <th class="p-2 text-left">Nombre</th>
                         <th class="p-2 text-left">Categoría</th>
                         <th class="p-2 text-right">Precio</th>
+                        <th class="p-2 text-center">Receta / costo</th>
                         <th class="p-2 text-center">Activo</th>
                         <th class="p-2 text-center">Acciones</th>
                     </tr>
@@ -960,6 +969,7 @@ if (categorias?.length) {
                             <td class="p-2 font-medium">${p.nombre}</td>
                             <td class="p-2">${p.categorias_producto?.nombre || 'N/A'}</td>
                             <td class="p-2 text-right">${formatCurrencyLocal(p.precio)}</td>
+                            <td class="p-2 text-center">${p.platos_recetas?.length ? `<span class="text-emerald-700">${p.platos_recetas.length} ingrediente(s)</span><small class="block text-gray-500">${formatCurrencyLocal(p.platos_recetas.reduce((sum, item) => sum + Number(item.cantidad || 0) * Number(item.ingredientes?.costo_unitario || 0), 0))}</small>` : '<span class="font-semibold text-red-600">Sin receta</span>'}</td>
                             <td class="p-2 text-center"><span class="px-2 py-1 text-xs rounded-full ${p.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${p.activo ? 'Sí' : 'No'}</span></td>
                             <td class="p-2 text-center"><button class="button button-outline button-small btn-editar-plato">Editar</button></td>
                         </tr>
@@ -980,7 +990,7 @@ if (categorias?.length) {
         try {
     const { data, error } = await supabaseInstance
     .from('platos')
-    .select('*, categorias_producto(nombre)')
+    .select('*, categorias_producto(nombre), platos_recetas(id, cantidad, ingrediente_id, ingredientes(nombre, unidad_medida, costo_unitario))')
     .eq('hotel_id', hotelId)
     .order('nombre');
     
@@ -1140,7 +1150,7 @@ showRestauranteLoading(restauranteLoadingEl, true, "Cargando POS...");
 
 try {
     const [ { data: platos }, { data: metodos }, { data: habitaciones }, { data: config } ] = await Promise.all([
-        supabaseInstance.from('platos').select('*, categoria:categoria_id(nombre)').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
+        supabaseInstance.from('platos').select('*, categoria:categoria_id(nombre), platos_recetas(id)').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
         supabaseInstance.from('metodos_pago').select('id, nombre').eq('hotel_id', hotelId).eq('activo', true).order('nombre'),
         supabaseInstance.from('habitaciones').select('id, nombre').eq('hotel_id', hotelId).eq('estado', 'ocupada').order('nombre'),
         supabaseInstance.from('configuracion_hotel').select('impuesto_nombre_restaurante, impuesto_porcentaje_restaurante, impuesto_restaurante_incluido').eq('hotel_id', hotelId).single()

@@ -35,7 +35,12 @@ function inventoryRows() {
 
 function cogsRows() {
   if (!cogs.length) return '<tr><td colspan="6" class="p-6 text-center text-slate-500">Aún no hay ventas costeadas.</td></tr>';
-  return cogs.map(row => `<tr class="border-t"><td class="p-3">${escapeHtml(row.business_date)}</td><td class="p-3"><span class="text-xs text-slate-500">${areaName[row.area]}</span><div>${escapeHtml(row.item_name)}</div></td><td class="p-3 text-right">${money(row.revenue)}</td><td class="p-3 text-right text-red-600">${money(row.total_cost)}</td><td class="p-3 text-right font-semibold ${Number(row.margin) < 0 ? 'text-red-600' : 'text-emerald-700'}">${money(row.margin)}</td><td class="p-3">${row.cost_status === 'active' ? 'Confirmado' : '<span class="text-amber-700">Estimado</span>'}</td></tr>`).join('');
+  return cogs.map(row => {
+    const quality = row.cost_issue
+      ? `<span class="block font-semibold text-red-600">${row.cost_issue === 'missing_recipe' ? 'Sin receta' : 'Costo de ingrediente en cero'}</span><button type="button" class="reprocess-cogs mt-1 rounded-lg bg-blue-600 px-2 py-1 text-xs font-semibold text-white" data-id="${row.id}">Recalcular</button>`
+      : (row.cost_status === 'active' ? 'Confirmado' : '<span class="text-amber-700">Estimado</span>');
+    return `<tr class="border-t"><td class="p-3">${escapeHtml(row.business_date)}</td><td class="p-3"><span class="text-xs text-slate-500">${areaName[row.area]}</span><div>${escapeHtml(row.item_name)}</div></td><td class="p-3 text-right">${money(row.revenue)}</td><td class="p-3 text-right text-red-600">${money(row.total_cost)}</td><td class="p-3 text-right font-semibold ${Number(row.margin) < 0 ? 'text-red-600' : 'text-emerald-700'}">${money(row.margin)}</td><td class="p-3">${quality}</td></tr>`;
+  }).join('');
 }
 
 function render() {
@@ -62,6 +67,12 @@ function bindEvents() {
     const { error } = await supabase.rpc('establecer_costo_inicial_inventario', { p_area: form.dataset.area, p_item_id: form.dataset.item, p_unit_cost: cost });
     if (error) { button.disabled = false; button.textContent = 'Activar'; const feedback = root.querySelector('#cost-feedback'); feedback.textContent = error.message; feedback.className = 'text-sm text-red-600'; return; }
     await loadData(); const feedback = root.querySelector('#cost-feedback'); feedback.textContent = 'Costo inicial guardado. Las próximas entradas usarán promedio móvil.'; feedback.className = 'text-sm text-emerald-600';
+  }));
+  root.querySelectorAll('.reprocess-cogs').forEach(button => button.addEventListener('click', async () => {
+    button.disabled = true; button.textContent = 'Recalculando...';
+    const { error } = await supabase.rpc('reprocesar_cmv_restaurante', { p_cogs_id: button.dataset.id });
+    if (error) { button.disabled = false; button.textContent = 'Recalcular'; const feedback = root.querySelector('#cost-feedback'); feedback.textContent = error.message; feedback.className = 'text-sm text-red-600'; return; }
+    await loadData(); const feedback = root.querySelector('#cost-feedback'); feedback.textContent = 'CMV recalculado y existencias de ingredientes actualizadas.'; feedback.className = 'text-sm text-emerald-600';
   }));
 }
 

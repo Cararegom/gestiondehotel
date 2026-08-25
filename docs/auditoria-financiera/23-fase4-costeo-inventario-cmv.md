@@ -39,10 +39,13 @@ Las existencias presentes al momento del corte se copian con valor cero y estado
 - `supabase/migrations/20260825161000_fase4_ajustes_inventario_valorizados.sql`
 - `supabase/migrations/20260825162000_fase4_nuevos_items_costeo.sql`
 - `supabase/migrations/20260825170000_fase4_precio_compra_costeo_tienda.sql`
+- `supabase/migrations/20260825171000_fase4_restaurante_recetas_cmv.sql`
 - `js/modules/costeo/costeo.js`
 - `tests/fase4-costeo.test.cjs`
 
 Para Tienda, el campo `productos_tienda.precio` ("Precio compra") inicializa automáticamente el costo del inventario existente y de productos nuevos. Cuando se recibe la primera compra valorizada, el costo promedio móvil pasa a ser la fuente contable y las ediciones posteriores de la ficha no lo sobrescriben.
+
+Para Restaurante, cada plato activo debe tener una receta. La venta descuenta las cantidades configuradas de cada ingrediente y congela su CMV. Los registros anteriores que quedaron en cero por falta de receta se marcan como pendientes y pueden reprocesarse desde Costeo y margen después de completar la receta.
 
 ## Siguiente fase
 

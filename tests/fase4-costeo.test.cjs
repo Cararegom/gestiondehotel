@@ -6,6 +6,8 @@ const sql = fs.readFileSync('supabase/migrations/20260825160000_fase4_costeo_inv
 const adjustmentSql = fs.readFileSync('supabase/migrations/20260825161000_fase4_ajustes_inventario_valorizados.sql', 'utf8');
 const newItemsSql = fs.readFileSync('supabase/migrations/20260825162000_fase4_nuevos_items_costeo.sql', 'utf8');
 const storeReferenceSql = fs.readFileSync('supabase/migrations/20260825170000_fase4_precio_compra_costeo_tienda.sql', 'utf8');
+const restaurantRecipeSql = fs.readFileSync('supabase/migrations/20260825171000_fase4_restaurante_recetas_cmv.sql', 'utf8');
+const restaurantUi = fs.readFileSync('js/modules/restaurante/restaurante.js', 'utf8');
 const ui = fs.readFileSync('js/modules/costeo/costeo.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 
@@ -52,4 +54,14 @@ test('store purchase price initializes cost without replacing a received-purchas
   assert.match(storeReferenceSql, /average_unit_cost=p\.precio/);
   assert.match(ui, /Precio compra \(ficha\)/);
   assert.match(ui, /productos_tienda/);
+});
+
+test('restaurant refuses recipe-less plates and supports repairing affected COGS', () => {
+  assert.match(restaurantRecipeSql, /no tiene receta/);
+  assert.match(restaurantRecipeSql, /THEN 'missing_recipe'/);
+  assert.match(restaurantRecipeSql, /reprocesar_cmv_restaurante/);
+  assert.match(restaurantRecipeSql, /UPDATE public\.ingredientes SET stock_actual=stock_actual-v_qty/);
+  assert.match(restaurantUi, /Sin receta · no vendible/);
+  assert.match(restaurantUi, /Un plato activo debe tener al menos un ingrediente/);
+  assert.match(ui, /reprocesar_cmv_restaurante/);
 });

@@ -365,7 +365,7 @@ export async function getIngredientesList(supabaseClient, hotelId) {
     console.log("INVENTARIO: Solicitada lista de ingredientes...");
     const { data, error } = await supabaseClient
         .from('ingredientes')
-        .select('id, nombre, unidad_medida')
+        .select('id, nombre, unidad_medida, costo_unitario, stock_actual')
         .eq('hotel_id', hotelId)
         .order('nombre');
 
