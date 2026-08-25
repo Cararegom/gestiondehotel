@@ -20,20 +20,51 @@ export interface AnalyzeBankEmailOptions {
   integrationId?: string | null;
 }
 
-function parseConfiguredRules(): BankParserRule[] {
-  const source = Deno.env.get('BANK_EMAIL_RULES_JSON') || '';
-  if (!source.trim()) return [];
+const BANCOLOMBIA_MARENA_RULE: BankParserRule = {
+  id: 'bancolombia',
+  bankName: 'Bancolombia',
+  allowedFromAddresses: ['alertasynotificaciones@an.notificacionesbancolombia.com'],
+  allowedFromDomains: ['an.notificacionesbancolombia.com'],
+  requireSpf: true,
+  requireDkim: true,
+  requireDmarc: true,
+  expectedSubjectTerms: ['alertas y notificaciones'],
+  expectedBodyTerms: ['recibiste una transferencia'],
+  successExpressions: ['\\brecibiste\\s+una\\s+transferencia\\b'],
+  amountExpressions: ['\\$\\s*([0-9][0-9.,]*)'],
+  referenceExpressions: ['cuenta\\s+\\*+([0-9]{4})'],
+  payerNameExpressions: [
+    'recibiste\\s+una\\s+transferencia\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+de\\s+([^,;]+?)\\s+en\\s+tu\\s+cuenta'
+  ],
+  parserVersion: 'bancolombia-marena-2.0.0'
+};
+
+export function parseConfiguredRules(): BankParserRule[] {
+  const runtime = globalThis as typeof globalThis & {
+    Deno?: { env?: { get(name: string): string | undefined } };
+    process?: { env?: Record<string, string | undefined> };
+  };
+  const source = runtime.Deno?.env?.get('BANK_EMAIL_RULES_JSON')
+    || runtime.process?.env?.BANK_EMAIL_RULES_JSON
+    || '';
+  let configured: BankParserRule[] = [];
   try {
-    const parsed = JSON.parse(source);
-    if (!Array.isArray(parsed) || parsed.length > 30) return [];
-    return parsed.filter((rule): rule is BankParserRule => {
-      if (!rule || typeof rule !== 'object') return false;
-      const candidate = rule as Record<string, unknown>;
-      return typeof candidate.id === 'string' && typeof candidate.bankName === 'string';
-    });
+    if (source.trim()) {
+      const parsed = JSON.parse(source);
+      if (Array.isArray(parsed) && parsed.length <= 30) {
+        configured = parsed.filter((rule): rule is BankParserRule => {
+          if (!rule || typeof rule !== 'object') return false;
+          const candidate = rule as Record<string, unknown>;
+          return typeof candidate.id === 'string' && typeof candidate.bankName === 'string';
+        });
+      }
+    }
   } catch {
-    return [];
+    configured = [];
   }
+  return configured.some((rule) => rule.id.trim().toLowerCase() === 'bancolombia')
+    ? configured
+    : [BANCOLOMBIA_MARENA_RULE, ...configured];
 }
 
 function domainFromAddress(address: string | null): string | null {

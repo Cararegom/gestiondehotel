@@ -84,6 +84,10 @@ export function extractPayerName(text: string, rule?: BankParserRule): string | 
     /\brecibiste\s+un\s+pago\s+de\s+([^\r\n,;]{2,120}?)\s+por\s+(?=(?:(?:COP\b|\$)\s*)?\d)/iu,
   )?.[1];
   if (receivedPayment) return receivedPayment.trim().replace(/\s+/g, " ").slice(0, 120);
+  const receivedTransfer = text.match(
+    /\brecibiste\s+una\s+transferencia\s+por\s+(?:(?:COP\b|\$)\s*)?\d[\d.,]*\s+de\s+([^\r\n,;]{2,120}?)\s+en\s+tu\s+cuenta\b/iu,
+  )?.[1];
+  if (receivedTransfer) return receivedTransfer.trim().replace(/\s+/g, " ").slice(0, 120);
   const fallback = text.match(/\b(?:remitente|pagador|enviado\s+por)\s*[:#-]?\s*([^\n,;]{2,120})/i)?.[1];
   return fallback?.trim().replace(/\s+/g, " ") ?? null;
 }

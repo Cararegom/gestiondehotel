@@ -177,6 +177,29 @@ test('4c. reconoce el formato real de pago Bancolombia conectado a @hotelok', as
   assert.ok(result.reasons.includes('bank_rule_not_configured'));
 });
 
+test('4d. reconoce la alerta real de transferencia Bancolombia de Marena', async () => {
+  const core = await corePromise;
+  const paymentService = await paymentServicePromise;
+  const email = core.parseGmailMessage(gmailResource({
+    subject: 'Alertas y Notificaciones',
+    body: 'Bancolombia: Recibiste una transferencia por $50,000 de GLORIA GOMEZ en tu cuenta **8537, el 22/08/2026 a las 14:24. Si tienes dudas, hablemos: 018000931987.',
+    from: 'Alertas y Notificaciones <alertasynotificaciones@an.notificacionesbancolombia.com>',
+    returnPath: '<alertasynotificaciones@an.notificacionesbancolombia.com>',
+    authenticationResults: 'mx.google.com; spf=pass smtp.mailfrom=an.notificacionesbancolombia.com; dkim=pass header.d=an.notificacionesbancolombia.com; dmarc=pass header.from=an.notificacionesbancolombia.com',
+    internalDate: String(Date.parse('2026-08-22T14:25:00-05:00')),
+  }));
+  const result = core.parseBankEmail(email, config(core), paymentService.parseConfiguredRules());
+
+  assert.equal(result.parserId, 'bancolombia');
+  assert.equal(result.disposition, 'detected');
+  assert.equal(result.amountCop, 50_000);
+  assert.equal(result.senderName, 'GLORIA GOMEZ');
+  assert.equal(result.transactionReference, '8537');
+  assert.equal(result.transactionOccurredAt, '2026-08-22T19:24:00.000Z');
+  assert.equal(result.reviewReason, null);
+  assert.equal(result.parserVersion, 'bancolombia-marena-2.0.0');
+});
+
 test('5. rechaza remitentes no incluidos en la allowlist aunque el nombre visible parezca bancario', async () => {
   const core = await corePromise;
   const email = core.parseGmailMessage(gmailResource({
