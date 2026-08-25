@@ -35,9 +35,9 @@ const routes = {
   '/habitaciones': { loadModule: () => import('./modules/habitaciones/habitaciones.js'), moduleKey: 'habitaciones' },
   '/mapa-habitaciones': { loadModule: () => import('./modules/mapa-habitaciones/mapa-habitaciones.js'), moduleKey: 'mapa-habitaciones' },
   '/caja': { loadModule: () => import('./modules/caja/caja.js'), moduleKey: 'caja' },
-  '/finanzas-cuentas': { loadModule: () => import('./modules/finanzas-cuentas/finanzas-cuentas.js'), moduleKey: 'finanzas-cuentas' },
-  '/gastos': { loadModule: () => import('./modules/gastos/gastos.js'), moduleKey: 'gastos' },
-  '/costeo': { loadModule: () => import('./modules/costeo/costeo.js'), moduleKey: 'costeo' },
+  '/finanzas-cuentas': { loadModule: () => import('./modules/finanzas-cuentas/finanzas-cuentas.js'), moduleKey: 'finanzas-cuentas', adminOnly: true },
+  '/gastos': { loadModule: () => import('./modules/gastos/gastos.js'), moduleKey: 'gastos', adminOnly: true },
+  '/costeo': { loadModule: () => import('./modules/costeo/costeo.js'), moduleKey: 'costeo', adminOnly: true },
   '/pagos-bancarios': { loadModule: () => import('./modules/pagos-bancarios/pagos-bancarios.js'), moduleKey: 'pagos-bancarios' },
   '/terraza': { loadModule: () => import('./modules/terraza/terraza.js'), moduleKey: 'terraza' },
   '/clientes': { loadModule: () => import('./modules/clientes/clientes.js'), moduleKey: 'clientes' },
@@ -46,7 +46,7 @@ const routes = {
   '/restaurante': { loadModule: () => import('./modules/restaurante/restaurante.js'), moduleKey: 'restaurante' },
   '/usuarios': { loadModule: () => import('./modules/usuarios/usuarios.js'), moduleKey: 'usuarios' },
   '/configuracion': { loadModule: () => import('./modules/configuracion/configuracion.js'), moduleKey: 'configuracion' },
-  '/reportes': { loadModule: () => import('./modules/reportes/reportes.js'), moduleKey: 'reportes' },
+  '/reportes': { loadModule: () => import('./modules/reportes/reportes-centro.js'), moduleKey: 'reportes' },
   '/limpieza': { loadModule: () => import('./modules/limpieza/limpieza.js'), moduleKey: 'limpieza' },
   '/integraciones': { loadModule: () => import('./modules/integraciones/integraciones.js'), moduleKey: 'integraciones' },
   '/notificaciones': { loadModule: () => import('./modules/notificaciones/notificaciones.js'), moduleKey: 'notificaciones_page' },
@@ -70,9 +70,6 @@ const navLinksConfig = [
   { path: '#/mapa-habitaciones', text: 'Mapa Hotel', icon: '\u{1F5FA}\uFE0F', moduleKey: 'mapa-habitaciones' },
   { path: '#/habitaciones', text: 'Habitaciones', icon: '\u{1F6AA}', moduleKey: 'habitaciones' },
   { path: '#/caja', text: 'Caja/Turnos', icon: '\u{1F4B0}', moduleKey: 'caja' },
-  { path: '#/finanzas-cuentas', text: 'Cuentas financieras', icon: '\u{1F3E6}', moduleKey: 'finanzas-cuentas', adminOnly: true },
-  { path: '#/gastos', text: 'Gastos y cuentas por pagar', icon: '\u{1F9FE}', moduleKey: 'gastos', adminOnly: true },
-  { path: '#/costeo', text: 'Costeo y margen', icon: '\u{1F4E6}', moduleKey: 'costeo', adminOnly: true },
   { path: '#/pagos-bancarios', text: 'Pagos bancarios', icon: '\u{1F3E6}', moduleKey: 'pagos-bancarios' },
   { path: '#/terraza', text: 'Terraza', icon: '\u{1F379}', moduleKey: 'terraza' },
   { path: '#/clientes', text: 'Clientes', icon: '\u{1F9D1}\u200D\u{1F4BC}', moduleKey: 'clientes' },
@@ -714,7 +711,7 @@ async function router() {
       const usuarioId = userForModule.id;
       const esAdminRouter = (currentUserRole === 'admin' || currentUserRole === 'superadmin' || usuarioId === currentActiveHotel.creado_por);
 
-      const routeConfig = navLinksConfig.find((linkConfig) => linkConfig.moduleKey === moduleKeyFromRoute);
+      const routeConfig = navLinksConfig.find((linkConfig) => linkConfig.moduleKey === moduleKeyFromRoute) || routeEntry;
       if (routeConfig?.adminOnly && !esAdminRouter) {
         appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso restringido</h2><p class="text-gray-700">Esta vista es solo para administradores del hotel.</p></div>`;
         hideGlobalLoading();
