@@ -1884,7 +1884,8 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
     ].reduce((s, monto) => s + monto, 0));
 
     const deudaTotal = asInt(totalEstancia + totalServicios + totalTienda + totalRest);
-    const totalPagado = asInt(pagos.reduce((s, p) => s + asInt(p.monto), 0));
+    const pagosRegistrados = asInt(pagos.reduce((s, p) => s + asInt(p.monto), 0));
+    const totalPagado = Math.max(pagosRegistrados, asInt(reserva.monto_pagado));
     const saldo = Math.max(0, asInt(deudaTotal - totalPagado));
     const pagoAplicadoAHospedaje = Math.max(0, asInt(totalPagado - totalExtrasPagados));
     const saldoHospedaje = Math.max(0, asInt(totalEstancia - pagoAplicadoAHospedaje));

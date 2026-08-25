@@ -89,7 +89,7 @@ export function calcularSaldoReserva(arg1, reservaId, hotelId) {
         { data: ventasRest },
         { data: pagos }
       ] = await Promise.all([
-        supabase.from('reservas').select('monto_total').eq('id', reservaId).maybeSingle(),
+        supabase.from('reservas').select('monto_total, monto_pagado').eq('id', reservaId).maybeSingle(),
         supabase.from('servicios_x_reserva').select('precio_cobrado').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
         supabase.from('ventas_tienda').select('total_venta').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
         supabase.from('ventas_restaurante').select('monto_total, total_venta').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
@@ -100,7 +100,10 @@ export function calcularSaldoReserva(arg1, reservaId, hotelId) {
       const totalServicios = (servicios || []).reduce((acc, item) => acc + Number(item.precio_cobrado || 0), 0);
       const totalTienda = (ventasTienda || []).reduce((acc, item) => acc + Number(item.total_venta || 0), 0);
       const totalRest = (ventasRest || []).reduce((acc, item) => acc + Number(item.monto_total || item.total_venta || 0), 0);
-      const totalPagado = (pagos || []).reduce((acc, item) => acc + Number(item.monto || 0), 0);
+      // monto_pagado conserva pagos legítimos de registros anteriores a pagos_reserva.
+      // En datos nuevos ambas fuentes coinciden; usar el mayor evita duplicar el pago.
+      const pagosRegistrados = (pagos || []).reduce((acc, item) => acc + Number(item.monto || 0), 0);
+      const totalPagado = Math.max(pagosRegistrados, Number(reserva?.monto_pagado || 0));
 
       return {
         totalDeTodosLosCargos: totalEstancia + totalServicios + totalTienda + totalRest,

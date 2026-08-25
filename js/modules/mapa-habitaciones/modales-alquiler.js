@@ -331,6 +331,13 @@ export async function registrarReservaYMovimientosCaja({
     const totalPagado = pagosLimpios.reduce((sum, pago) => sum + pago.monto, 0);
     const metodoPagoReserva = pagosLimpios.length === 1 ? pagosLimpios[0].metodo_pago_id : null;
 
+    const turnoActivoId = turnoService.getActiveTurnId
+        ? turnoService.getActiveTurnId()
+        : (await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId))?.id;
+    if (pagosLimpios.length > 0 && !turnoActivoId) {
+        throw new Error('Debes abrir un turno antes de registrar una reserva con pago.');
+    }
+
     let clienteIdFinal = formData?.cliente_id || null;
     const cedula = (formData?.cedula ?? '').toString().trim() || null;
     const telefono = (formData?.telefono ?? '').toString().trim() || null;
@@ -370,7 +377,8 @@ export async function registrarReservaYMovimientosCaja({
         fecha_fin: detallesEstancia.finAt.toISOString(),
         cantidad_huespedes: cantidadHuespedes,
         monto_total: Number(detallesEstancia?.precioTotal) || 0,
-        monto_pagado: totalPagado,
+        // El RPC de pago actualiza este acumulado después de crear cada pago real.
+        monto_pagado: 0,
         metodo_pago_id: metodoPagoReserva,
         estado: 'ocupada',
         tipo_duracion: detallesEstancia?.tipoCalculo || null,
@@ -417,10 +425,6 @@ export async function registrarReservaYMovimientosCaja({
         });
 
     if (errCrono) throw new Error(`Reserva creada, pero error al crear cron\u00f3metro: ${errCrono.message}`);
-
-    const turnoActivoId = turnoService.getActiveTurnId
-        ? turnoService.getActiveTurnId()
-        : (await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId))?.id;
 
     if (turnoActivoId && pagosLimpios.length > 0) {
         await procesarPagosReservaAtomicos(supabase, {
