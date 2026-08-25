@@ -34,12 +34,15 @@ const BANCOLOMBIA_MARENA_RULE: BankParserRule = {
   expectedBodyTerms: ['recibiste una transferencia', 'recibiste un pago'],
   successExpressions: ['\\brecibiste\\s+(?:una\\s+transferencia|un\\s+pago)\\b'],
   amountExpressions: ['\\$\\s*([0-9][0-9.,]*)'],
-  referenceExpressions: ['cuenta\\s+\\*+([0-9]{4})'],
+  // Los cuatro digitos despues de "cuenta" identifican la cuenta receptora,
+  // no la operacion. Gmail message id es la clave idempotente mientras el
+  // banco no entregue una referencia unica de transferencia.
+  referenceExpressions: [],
   payerNameExpressions: [
     'recibiste\\s+una\\s+transferencia\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+de\\s+([^,;]+?)\\s+en\\s+tu\\s+cuenta',
     'recibiste\\s+un\\s+pago\\s+de\\s+([^,;]+?)\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+en\\s+tu\\s+cuenta'
   ],
-  parserVersion: 'bancolombia-marena-3.0.0'
+  parserVersion: 'bancolombia-marena-3.1.0'
 };
 
 export function parseConfiguredRules(): BankParserRule[] {

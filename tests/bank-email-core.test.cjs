@@ -194,10 +194,10 @@ test('4d. reconoce la alerta real de transferencia Bancolombia de Marena', async
   assert.equal(result.disposition, 'detected');
   assert.equal(result.amountCop, 50_000);
   assert.equal(result.senderName, 'GLORIA GOMEZ');
-  assert.equal(result.transactionReference, '8537');
+  assert.equal(result.transactionReference, null);
   assert.equal(result.transactionOccurredAt, '2026-08-22T19:24:00.000Z');
   assert.equal(result.reviewReason, null);
-  assert.equal(result.parserVersion, 'bancolombia-marena-3.0.0');
+  assert.equal(result.parserVersion, 'bancolombia-marena-3.1.0');
   assert.equal(paymentService.isConfiguredBankSender(email), true);
 });
 
@@ -217,7 +217,7 @@ test('4e. el formato real @hotelok no se confunde con el consejo de enviar plata
   assert.equal(result.disposition, 'detected');
   assert.equal(result.amountCop, 30_000);
   assert.equal(result.senderName, 'MARIANA CAROLINA PADILLA URDANETA');
-  assert.equal(result.transactionReference, '8537');
+  assert.equal(result.transactionReference, null);
   assert.equal(result.transactionOccurredAt, '2026-08-25T20:15:00.000Z');
   assert.equal(result.reviewReason, null);
 });
