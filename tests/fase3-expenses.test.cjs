@@ -24,6 +24,8 @@ test('Gastos is an admin-only routed module using the authorized RPCs', () => {
   assert.match(ui, /id="payment-form"/);
   assert.match(ui, /id="cancel-form"/);
   assert.match(ui, /¿De qué cuenta saldrá el dinero\?/);
+  assert.match(ui, /Abonar \/ pagar/);
+  assert.match(ui, /Saldo que quedará después del abono/);
   assert.doesNotMatch(ui, /window\.prompt|window\.alert|window\.confirm/);
 });
 
