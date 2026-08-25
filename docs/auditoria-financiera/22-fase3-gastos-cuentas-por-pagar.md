@@ -43,4 +43,4 @@ No se convirtieron gastos históricos automáticamente. Esto evita clasificar co
 
 ## Siguiente fase recomendada
 
-Fase 4: conciliación bancaria y arqueo asistido. Debe comparar los movimientos del ledger con extractos o confirmaciones externas, proponer coincidencias sin confirmarlas silenciosamente y registrar diferencias, responsables y resolución.
+Fase 4: costeo de inventario y CMV mediante costo promedio móvil. La conciliación bancaria corresponde a la Fase 6 del plan maestro.

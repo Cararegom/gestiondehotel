@@ -37,6 +37,7 @@ const routes = {
   '/caja': { loadModule: () => import('./modules/caja/caja.js'), moduleKey: 'caja' },
   '/finanzas-cuentas': { loadModule: () => import('./modules/finanzas-cuentas/finanzas-cuentas.js'), moduleKey: 'finanzas-cuentas' },
   '/gastos': { loadModule: () => import('./modules/gastos/gastos.js'), moduleKey: 'gastos' },
+  '/costeo': { loadModule: () => import('./modules/costeo/costeo.js'), moduleKey: 'costeo' },
   '/pagos-bancarios': { loadModule: () => import('./modules/pagos-bancarios/pagos-bancarios.js'), moduleKey: 'pagos-bancarios' },
   '/terraza': { loadModule: () => import('./modules/terraza/terraza.js'), moduleKey: 'terraza' },
   '/clientes': { loadModule: () => import('./modules/clientes/clientes.js'), moduleKey: 'clientes' },
@@ -71,6 +72,7 @@ const navLinksConfig = [
   { path: '#/caja', text: 'Caja/Turnos', icon: '\u{1F4B0}', moduleKey: 'caja' },
   { path: '#/finanzas-cuentas', text: 'Cuentas financieras', icon: '\u{1F3E6}', moduleKey: 'finanzas-cuentas', adminOnly: true },
   { path: '#/gastos', text: 'Gastos y cuentas por pagar', icon: '\u{1F9FE}', moduleKey: 'gastos', adminOnly: true },
+  { path: '#/costeo', text: 'Costeo y margen', icon: '\u{1F4E6}', moduleKey: 'costeo', adminOnly: true },
   { path: '#/pagos-bancarios', text: 'Pagos bancarios', icon: '\u{1F3E6}', moduleKey: 'pagos-bancarios' },
   { path: '#/terraza', text: 'Terraza', icon: '\u{1F379}', moduleKey: 'terraza' },
   { path: '#/clientes', text: 'Clientes', icon: '\u{1F9D1}\u200D\u{1F4BC}', moduleKey: 'clientes' },
@@ -442,7 +444,7 @@ function renderNavigation(user) {
 
     // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
     // Se añade la misma lista de módulos exentos que en el router.
-    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos'];
+    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos', 'costeo'];
 
     navLinksConfig.forEach(linkConfig => {
       if (linkConfig.energyOnly && !currentEnergyControlEnabled) return;
@@ -688,7 +690,7 @@ async function router() {
 
       // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
       // Creamos una lista de módulos que SIEMPRE deben estar accesibles.
-      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos'];
+      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos', 'costeo'];
 
       // Verificamos si el módulo actual está en la lista de exentos.
       const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
