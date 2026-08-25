@@ -78,38 +78,94 @@ function calcularSaldoReservaLocal(reservaActiva) {
   };
 }
 
+export function calcularPagoExternoVentas(movimientos = []) {
+  return Math.max(0, (movimientos || []).reduce((total, movimiento) => {
+    const monto = Number(movimiento?.monto || 0);
+    return total + (movimiento?.tipo === 'egreso' ? -monto : monto);
+  }, 0));
+}
+
+export function calcularResumenSaldoCheckout({
+  totalEstancia = 0,
+  servicios = [],
+  ventasTienda = [],
+  ventasRestaurante = [],
+  movimientosCajaTienda = [],
+  movimientosCajaRestaurante = [],
+  totalPagado = 0
+} = {}) {
+  const sumar = (items, obtenerMonto) => (items || [])
+    .reduce((total, item) => total + Number(obtenerMonto(item) || 0), 0);
+  const totalServicios = sumar(servicios, (item) => item.precio_cobrado);
+  const totalTienda = sumar(ventasTienda, (item) => item.total_venta);
+  const totalRestaurante = sumar(ventasRestaurante, (item) => item.monto_total ?? item.total_venta);
+  const pagoExternoTienda = Math.min(totalTienda, calcularPagoExternoVentas(movimientosCajaTienda));
+  const pagoExternoRestaurante = Math.min(totalRestaurante, calcularPagoExternoVentas(movimientosCajaRestaurante));
+  const totalDeTodosLosCargos = Number(totalEstancia || 0) + totalServicios + totalTienda + totalRestaurante;
+  const deudaPendienteCobrable = Math.max(0, totalDeTodosLosCargos - pagoExternoTienda - pagoExternoRestaurante);
+
+  return {
+    totalDeTodosLosCargos,
+    deudaPendienteCobrable,
+    totalPagado: Number(totalPagado || 0),
+    saldoPendiente: Math.max(0, deudaPendienteCobrable - Number(totalPagado || 0)),
+    totalServicios,
+    totalTienda,
+    totalRestaurante,
+    pagoExternoTienda,
+    pagoExternoRestaurante
+  };
+}
+
 export function calcularSaldoReserva(arg1, reservaId, hotelId) {
   if (arg1 && typeof arg1.from === 'function' && reservaId) {
     const supabase = arg1;
     return (async () => {
+      const resultados = await Promise.all([
+        supabase.from('reservas').select('monto_total, monto_pagado').eq('id', reservaId).maybeSingle(),
+        supabase.from('servicios_x_reserva').select('precio_cobrado, estado_pago').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
+        supabase.from('ventas_tienda').select('id, total_venta, estado_pago').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
+        supabase.from('ventas_restaurante').select('id, monto_total, total_venta, estado_pago').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
+        supabase.from('pagos_reserva').select('monto').eq('reserva_id', reservaId).eq('hotel_id', hotelId)
+      ]);
+      const primerError = resultados.find((resultado) => resultado.error)?.error;
+      if (primerError) throw primerError;
+
       const [
         { data: reserva },
         { data: servicios },
         { data: ventasTienda },
         { data: ventasRest },
         { data: pagos }
-      ] = await Promise.all([
-        supabase.from('reservas').select('monto_total, monto_pagado').eq('id', reservaId).maybeSingle(),
-        supabase.from('servicios_x_reserva').select('precio_cobrado').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
-        supabase.from('ventas_tienda').select('total_venta').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
-        supabase.from('ventas_restaurante').select('monto_total, total_venta').eq('reserva_id', reservaId).eq('hotel_id', hotelId),
-        supabase.from('pagos_reserva').select('monto').eq('reserva_id', reservaId).eq('hotel_id', hotelId)
-      ]);
+      ] = resultados;
 
       const totalEstancia = Number(reserva?.monto_total || 0);
-      const totalServicios = (servicios || []).reduce((acc, item) => acc + Number(item.precio_cobrado || 0), 0);
-      const totalTienda = (ventasTienda || []).reduce((acc, item) => acc + Number(item.total_venta || 0), 0);
-      const totalRest = (ventasRest || []).reduce((acc, item) => acc + Number(item.monto_total || item.total_venta || 0), 0);
       // monto_pagado conserva pagos legítimos de registros anteriores a pagos_reserva.
       // En datos nuevos ambas fuentes coinciden; usar el mayor evita duplicar el pago.
       const pagosRegistrados = (pagos || []).reduce((acc, item) => acc + Number(item.monto || 0), 0);
       const totalPagado = Math.max(pagosRegistrados, Number(reserva?.monto_pagado || 0));
+      const tiendaIds = (ventasTienda || []).map((venta) => venta.id).filter(Boolean);
+      const restauranteIds = (ventasRest || []).map((venta) => venta.id).filter(Boolean);
+      const [cajaTienda, cajaRestaurante] = await Promise.all([
+        tiendaIds.length
+          ? supabase.from('caja').select('tipo, monto, venta_tienda_id').eq('hotel_id', hotelId).in('venta_tienda_id', tiendaIds)
+          : Promise.resolve({ data: [], error: null }),
+        restauranteIds.length
+          ? supabase.from('caja').select('tipo, monto, venta_restaurante_id').eq('hotel_id', hotelId).in('venta_restaurante_id', restauranteIds)
+          : Promise.resolve({ data: [], error: null })
+      ]);
+      if (cajaTienda.error) throw cajaTienda.error;
+      if (cajaRestaurante.error) throw cajaRestaurante.error;
 
-      return {
-        totalDeTodosLosCargos: totalEstancia + totalServicios + totalTienda + totalRest,
-        totalPagado,
-        saldoPendiente: totalEstancia + totalServicios + totalTienda + totalRest - totalPagado
-      };
+      return calcularResumenSaldoCheckout({
+        totalEstancia,
+        servicios,
+        ventasTienda,
+        ventasRestaurante: ventasRest,
+        movimientosCajaTienda: cajaTienda.data,
+        movimientosCajaRestaurante: cajaRestaurante.data,
+        totalPagado
+      });
     })();
   }
 

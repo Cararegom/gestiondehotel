@@ -10,7 +10,12 @@ import {
   marcarModalMapaHotelAbierto,
   sincronizarEstadoModalMapaHotel
 } from './helpers.js';
-import { calcularSaldoReserva, obtenerReservaActivaIdDeHabitacion, puedeHacerCheckIn } from './datos.js';
+import {
+  calcularResumenSaldoCheckout,
+  calcularSaldoReserva,
+  obtenerReservaActivaIdDeHabitacion,
+  puedeHacerCheckIn
+} from './datos.js';
 import { showAlquilarModal, showExtenderTiempoModal } from './modales-alquiler.js';
 import { buscarDescuentoParaServicios } from './descuentos-helper.js';
 import { showModalTarea as importarMantenimientoUI } from '../mantenimiento/mantenimiento.js';
@@ -1874,20 +1879,38 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
     const pagos = pagosRes.data || [];
 
     const totalEstancia = asInt(reserva.monto_total);
-    const totalServicios = asInt(servicios.reduce((s, x) => s + asInt(x.precio_cobrado), 0));
-    const totalTienda = asInt(ventasTienda.reduce((s, v) => s + asInt(v.total_venta), 0));
-    const totalRest = asInt(ventasRest.reduce((s, v) => s + asInt(v.monto_total ?? v.total_venta), 0));
-    const totalExtrasPagados = asInt([
-      ...servicios.filter((x) => (x.estado_pago || 'pendiente') === 'pagado').map((x) => asInt(x.precio_cobrado)),
-      ...ventasTienda.filter((v) => (v.estado_pago || 'pendiente') === 'pagado').map((v) => asInt(v.total_venta)),
-      ...ventasRest.filter((v) => (v.estado_pago || 'pendiente') === 'pagado').map((v) => asInt(v.monto_total ?? v.total_venta)),
-    ].reduce((s, monto) => s + monto, 0));
-
-    const deudaTotal = asInt(totalEstancia + totalServicios + totalTienda + totalRest);
     const pagosRegistrados = asInt(pagos.reduce((s, p) => s + asInt(p.monto), 0));
     const totalPagado = Math.max(pagosRegistrados, asInt(reserva.monto_pagado));
-    const saldo = Math.max(0, asInt(deudaTotal - totalPagado));
-    const pagoAplicadoAHospedaje = Math.max(0, asInt(totalPagado - totalExtrasPagados));
+    const [cajaTiendaRes, cajaRestRes] = await Promise.all([
+      ventaTiendaIds.length
+        ? supabase
+          .from('caja')
+          .select('tipo, monto, venta_tienda_id')
+          .eq('hotel_id', hotelId)
+          .in('venta_tienda_id', ventaTiendaIds)
+        : Promise.resolve({ data: [], error: null }),
+      ventaRestIds.length
+        ? supabase
+          .from('caja')
+          .select('tipo, monto, venta_restaurante_id')
+          .eq('hotel_id', hotelId)
+          .in('venta_restaurante_id', ventaRestIds)
+        : Promise.resolve({ data: [], error: null })
+    ]);
+    if (cajaTiendaRes.error) throw cajaTiendaRes.error;
+    if (cajaRestRes.error) throw cajaRestRes.error;
+    const resumenSaldo = calcularResumenSaldoCheckout({
+      totalEstancia,
+      servicios,
+      ventasTienda,
+      ventasRestaurante: ventasRest,
+      movimientosCajaTienda: cajaTiendaRes.data,
+      movimientosCajaRestaurante: cajaRestRes.data,
+      totalPagado
+    });
+    const deudaTotal = asInt(resumenSaldo.totalDeTodosLosCargos);
+    const saldo = asInt(resumenSaldo.saldoPendiente);
+    const pagoAplicadoAHospedaje = Math.min(totalEstancia, totalPagado);
     const saldoHospedaje = Math.max(0, asInt(totalEstancia - pagoAplicadoAHospedaje));
 
     const mapTiendaEstado = Object.fromEntries(ventasTienda.map(v => [v.id, (v.estado_pago || 'pendiente')]));
