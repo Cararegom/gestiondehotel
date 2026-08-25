@@ -45,6 +45,7 @@ function createState() {
     modalListeners: [],
     subscription: null,
     refreshTimer: null,
+    liveRefreshInterval: null,
     requestSequence: 0,
     currentDetailId: null,
     mounted: false
@@ -998,6 +999,9 @@ export async function mount(container, supabase, user, hotelId) {
 
   if (!state.mounted) return;
   state.subscription = subscribeToBankPaymentEvents(supabase, hotelId, scheduleRefresh);
+  state.liveRefreshInterval = window.setInterval(() => {
+    if (state.mounted && !document.hidden) void loadEvents({ silent: true });
+  }, 10000);
   const requestedId = getRequestedPaymentId();
   if (requestedId) void openPaymentDetail(requestedId, { syncHash: false });
 }
@@ -1007,6 +1011,7 @@ export function unmount() {
   state.mounted = false;
   state.requestSequence += 1;
   window.clearTimeout(state.refreshTimer);
+  window.clearInterval(state.liveRefreshInterval);
   cleanupListeners();
   cleanupModalListeners();
   if (state.subscription) {

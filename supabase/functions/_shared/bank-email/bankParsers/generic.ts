@@ -43,10 +43,12 @@ const RECEIVED_LANGUAGE = [
 
 export function classifyTransactionLanguage(subject: string, body: string): TransactionLanguage {
   const text = normalizeForMatching(`${subject}\n${body}`);
-  for (const [classification, expressions] of NEGATIVE_LANGUAGE) {
+  for (const [classification, expressions] of NEGATIVE_LANGUAGE.filter(([kind]) => kind !== "sent")) {
     if (expressions.some((expression) => expression.test(text))) return classification;
   }
-  return RECEIVED_LANGUAGE.some((expression) => expression.test(text)) ? "received" : "unknown";
+  if (RECEIVED_LANGUAGE.some((expression) => expression.test(text))) return "received";
+  const sentExpressions = NEGATIVE_LANGUAGE.find(([kind]) => kind === "sent")?.[1] || [];
+  return sentExpressions.some((expression) => expression.test(text)) ? "sent" : "unknown";
 }
 
 function safeExpression(source: string): RegExp | null {

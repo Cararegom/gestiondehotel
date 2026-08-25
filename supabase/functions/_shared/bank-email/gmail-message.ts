@@ -270,7 +270,6 @@ export function validateBankSender(email: NormalizedEmail, rule: BankSenderRule)
     }
   }
 
-  let authenticationIdentityMissing = false;
   for (const mechanism of ["spf", "dkim", "dmarc"] as const) {
     const verdict = email.authentication[mechanism];
     if (isExplicitAuthenticationFailure(verdict)) reasons.push(`${mechanism}_failed`);
@@ -282,24 +281,19 @@ export function validateBankSender(email: NormalizedEmail, rule: BankSenderRule)
     if (required && verdict !== "pass" && !isExplicitAuthenticationFailure(verdict)) {
       reasons.push(`${mechanism}_missing_or_unverified`);
     }
-    const authenticatedDomain = {
-      spf: email.authentication.spfDomain,
-      dkim: email.authentication.dkimDomain,
-      dmarc: email.authentication.dmarcDomain,
-    }[mechanism];
-    if (required && verdict === "pass" && !authenticatedDomain) authenticationIdentityMissing = true;
   }
-  if (authenticationIdentityMissing) reasons.push("authentication_domain_missing_or_unverified");
+
+  const observedAuthenticationDomains = [
+    email.authentication.spfDomain,
+    email.authentication.dkimDomain,
+    email.authentication.dmarcDomain,
+  ].filter((domain): domain is string => Boolean(domain));
+  if (observedAuthenticationDomains.length === 0) reasons.push("authentication_domain_missing_or_unverified");
 
   if (authDomains.size > 0) {
-    const observed = [
-      email.authentication.spfDomain,
-      email.authentication.dkimDomain,
-      email.authentication.dmarcDomain,
-    ].filter((domain): domain is string => Boolean(domain));
-    if (observed.length === 0) {
+    if (observedAuthenticationDomains.length === 0) {
       reasons.push("authentication_domain_missing_or_unverified");
-    } else if (observed.some((domain) => !domainMatches(domain, [...authDomains]))) {
+    } else if (observedAuthenticationDomains.some((domain) => !domainMatches(domain, [...authDomains]))) {
       reasons.push("authentication_domain_not_authorized");
     }
   }

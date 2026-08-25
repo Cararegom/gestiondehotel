@@ -197,8 +197,29 @@ test('4d. reconoce la alerta real de transferencia Bancolombia de Marena', async
   assert.equal(result.transactionReference, '8537');
   assert.equal(result.transactionOccurredAt, '2026-08-22T19:24:00.000Z');
   assert.equal(result.reviewReason, null);
-  assert.equal(result.parserVersion, 'bancolombia-marena-2.0.0');
+  assert.equal(result.parserVersion, 'bancolombia-marena-3.0.0');
   assert.equal(paymentService.isConfiguredBankSender(email), true);
+});
+
+test('4e. el formato real @hotelok no se confunde con el consejo de enviar plata', async () => {
+  const core = await corePromise;
+  const paymentService = await paymentServicePromise;
+  const email = core.parseGmailMessage(gmailResource({
+    subject: 'Alertas y Notificaciones',
+    body: 'Bancolombia: HOTEL OK, recibiste un pago de MARIANA CAROLINA PADILLA URDANETA por $30,000.00 en tu cuenta *8537 conectado a la llave @hotelok el 25/08/2026 a las 15:15. Para que enviar plata siempre sea un exito, revisa tus datos.',
+    from: 'Alertas y Notificaciones <alertasynotificaciones@an.notificacionesbancolombia.com>',
+    returnPath: '<notificacion@trans.an.notificacionesbancolombia.com>',
+    authenticationResults: 'mx.google.com; spf=pass; dkim=pass; dmarc=pass header.from=notificacionesbancolombia.com',
+    internalDate: String(Date.parse('2026-08-25T15:16:00-05:00')),
+  }));
+  const result = core.parseBankEmail(email, config(core), paymentService.parseConfiguredRules());
+
+  assert.equal(result.disposition, 'detected');
+  assert.equal(result.amountCop, 30_000);
+  assert.equal(result.senderName, 'MARIANA CAROLINA PADILLA URDANETA');
+  assert.equal(result.transactionReference, '8537');
+  assert.equal(result.transactionOccurredAt, '2026-08-25T20:15:00.000Z');
+  assert.equal(result.reviewReason, null);
 });
 
 test('5. rechaza remitentes no incluidos en la allowlist aunque el nombre visible parezca bancario', async () => {

@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const notifications = fs.readFileSync('js/modules/notificaciones/notificaciones.js', 'utf8');
 const service = fs.readFileSync('js/services/notificationCenterService.js', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260825214500_notificacion_instantanea_pago_llave.sql', 'utf8');
+const recipientFix = fs.readFileSync('supabase/migrations/20260825220000_corregir_destinatarios_alertas_bancarias.sql', 'utf8');
 
 test('muestra un globo global cuando llega una transferencia bancaria', () => {
   assert.match(notifications, /showInstantBankPaymentToast/);
@@ -14,6 +15,9 @@ test('muestra un globo global cuando llega una transferencia bancaria', () => {
   assert.match(notifications, /z-\[10000\]/);
   assert.doesNotMatch(notifications, /setTimeout\(removeToast/);
   assert.doesNotMatch(notifications, />Entendido</);
+  assert.match(notifications, /showUnreadBankAlerts: true/);
+  assert.match(notifications, /markNotificationAsRead\(supabase, notification\.id/);
+  assert.match(notifications, /bellPollTimer = window\.setInterval/);
 });
 
 test('evita avisos ajenos o repetidos para el usuario conectado', () => {
@@ -27,6 +31,7 @@ test('la notificacion incluye llave, remitente, fecha y hora y llega solo a oper
   assert.match(migration, /Remitente:/);
   assert.match(migration, /Fecha:/);
   assert.match(migration, /Hora:/);
-  assert.match(migration, /'recepcionista', 'recepcion', 'admin', 'administrador'/);
+  assert.match(migration, /'usuario', 'recepcionista', 'recepcion', 'admin', 'administrador'/);
+  assert.match(recipientFix, /'usuario', 'recepcionista', 'recepcion', 'admin', 'administrador'/);
   assert.match(migration, /ON CONFLICT \(hotel_id, usuario_id, entidad_tipo, entidad_id\)/);
 });

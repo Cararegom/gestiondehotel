@@ -25,18 +25,21 @@ const BANCOLOMBIA_MARENA_RULE: BankParserRule = {
   bankName: 'Bancolombia',
   allowedFromAddresses: ['alertasynotificaciones@an.notificacionesbancolombia.com'],
   allowedFromDomains: ['an.notificacionesbancolombia.com'],
+  allowedReturnPathDomains: ['an.notificacionesbancolombia.com'],
+  allowedAuthenticationDomains: ['notificacionesbancolombia.com'],
   requireSpf: true,
   requireDkim: true,
   requireDmarc: true,
   expectedSubjectTerms: ['alertas y notificaciones'],
-  expectedBodyTerms: ['recibiste una transferencia'],
-  successExpressions: ['\\brecibiste\\s+una\\s+transferencia\\b'],
+  expectedBodyTerms: ['recibiste una transferencia', 'recibiste un pago'],
+  successExpressions: ['\\brecibiste\\s+(?:una\\s+transferencia|un\\s+pago)\\b'],
   amountExpressions: ['\\$\\s*([0-9][0-9.,]*)'],
   referenceExpressions: ['cuenta\\s+\\*+([0-9]{4})'],
   payerNameExpressions: [
-    'recibiste\\s+una\\s+transferencia\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+de\\s+([^,;]+?)\\s+en\\s+tu\\s+cuenta'
+    'recibiste\\s+una\\s+transferencia\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+de\\s+([^,;]+?)\\s+en\\s+tu\\s+cuenta',
+    'recibiste\\s+un\\s+pago\\s+de\\s+([^,;]+?)\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+en\\s+tu\\s+cuenta'
   ],
-  parserVersion: 'bancolombia-marena-2.0.0'
+  parserVersion: 'bancolombia-marena-3.0.0'
 };
 
 export function parseConfiguredRules(): BankParserRule[] {

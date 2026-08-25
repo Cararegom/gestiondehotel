@@ -15,6 +15,7 @@ let pageListeners = [];
 let currentBellContext = null;
 let currentBellContainer = null;
 const displayedInstantNotificationIds = new Set();
+let bellPollTimer = null;
 
 const BANK_PAYMENT_ENTITY_TYPES = new Set(['bank_payment_event', 'bank_payment_events']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -66,7 +67,7 @@ function navigateToBankPayment(paymentEventId) {
   window.location.hash = `#/pagos-bancarios?payment=${encodeURIComponent(paymentEventId)}`;
 }
 
-function showInstantBankPaymentToast(notification = {}) {
+function showInstantBankPaymentToast(notification = {}, supabase = null, bellUi = null) {
   const paymentEventId = getBankPaymentNotificationId(notification);
   if (!paymentEventId || !notification.id || displayedInstantNotificationIds.has(notification.id)) return;
   displayedInstantNotificationIds.add(notification.id);
@@ -101,7 +102,14 @@ function showInstantBankPaymentToast(notification = {}) {
     </div>`;
   host.prepend(toast);
 
-  const removeToast = () => toast.remove();
+  const removeToast = () => {
+    toast.remove();
+    if (supabase && currentBellContext?.hotelId) {
+      void markNotificationAsRead(supabase, notification.id, currentBellContext.hotelId)
+        .then(() => refreshBellFeed(supabase, bellUi))
+        .catch((error) => console.error('Error confirmando alerta bancaria:', error));
+    }
+  };
   toast.querySelectorAll('[data-close-bank-toast]').forEach((button) => button.addEventListener('click', removeToast));
   toast.querySelector('[data-open-bank-payment]')?.addEventListener('click', () => {
     removeToast();
@@ -157,12 +165,18 @@ function renderDropdownList(listEl, badgeEl, notifications = []) {
   }).join('');
 }
 
-async function refreshBellFeed(supabase, bellUi) {
+async function refreshBellFeed(supabase, bellUi, { showUnreadBankAlerts = false } = {}) {
   if (!currentBellContext) return;
 
   try {
     const notifications = await fetchNotificationFeed(supabase, currentBellContext, 7);
     renderDropdownList(bellUi.listEl, bellUi.badgeEl, notifications);
+    if (showUnreadBankAlerts) {
+      notifications
+        .filter((item) => !item.leida && getBankPaymentNotificationId(item))
+        .reverse()
+        .forEach((item) => showInstantBankPaymentToast(item, supabase, bellUi));
+    }
   } catch (error) {
     console.error('Error cargando notificaciones para campanita:', error);
     bellUi.listEl.innerHTML = '<li class="px-4 py-3 text-sm text-red-500 text-center">Error al cargar.</li>';
@@ -177,6 +191,8 @@ export async function inicializarCampanitaGlobal(bellContainer, supabase, curren
     await bellSubscription.unsubscribe().catch(() => {});
     bellSubscription = null;
   }
+  window.clearInterval(bellPollTimer);
+  bellPollTimer = null;
 
   const context = await resolveNotificationContext(supabase, currentUser, providedHotelId);
   if (!context?.user || !context?.hotelId) {
@@ -279,12 +295,15 @@ export async function inicializarCampanitaGlobal(bellContainer, supabase, curren
   addBellListener(listEl, 'click', handleNotificationClick);
   addBellListener(document, 'click', closeDropdown);
 
-  await refreshBellFeed(supabase, bellUi);
+  await refreshBellFeed(supabase, bellUi, { showUnreadBankAlerts: true });
 
   bellSubscription = subscribeToNotificationFeed(supabase, context, (notification) => {
     void refreshBellFeed(supabase, bellUi);
-    showInstantBankPaymentToast(notification);
+    showInstantBankPaymentToast(notification, supabase, bellUi);
   });
+  bellPollTimer = window.setInterval(() => {
+    if (!document.hidden) void refreshBellFeed(supabase, bellUi, { showUnreadBankAlerts: true });
+  }, 10000);
 }
 
 export function desmontarCampanitaGlobal() {
@@ -293,6 +312,8 @@ export function desmontarCampanitaGlobal() {
     bellSubscription.unsubscribe().catch(() => {});
     bellSubscription = null;
   }
+  window.clearInterval(bellPollTimer);
+  bellPollTimer = null;
   if (currentBellContainer) {
     currentBellContainer.innerHTML = '';
   }
