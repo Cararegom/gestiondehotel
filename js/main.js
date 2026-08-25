@@ -7,6 +7,7 @@ import { destroyMonitoring, initMonitoring, logMonitoringEvent } from './service
 import { escapeHtml, installLegacyTextNormalizer } from './security.js';
 import { initInternalSupportChat, destroyInternalSupportChat } from './app-support-chat.js';
 import { initPWAExperience } from './services/pwaService.js';
+import { getBankPaymentPilotStatus } from './services/bankPaymentService.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -23,7 +24,10 @@ let routerBusy = false;
 let currentActiveHotel = null;
 let currentActivePlanDetails = null;
 let currentUserRole = null;
+let currentProfileHotelId = null;
 let isSubscriptionFueraDeGracia = false;
+let currentBankPaymentPilotStatus = createClosedBankPaymentPilotStatus();
+let currentEnergyControlEnabled = false;
 
 const routes = {
   '/dashboard': { loadModule: () => import('./modules/dashboard/dashboard.js'), moduleKey: 'dashboard' },
@@ -31,6 +35,9 @@ const routes = {
   '/habitaciones': { loadModule: () => import('./modules/habitaciones/habitaciones.js'), moduleKey: 'habitaciones' },
   '/mapa-habitaciones': { loadModule: () => import('./modules/mapa-habitaciones/mapa-habitaciones.js'), moduleKey: 'mapa-habitaciones' },
   '/caja': { loadModule: () => import('./modules/caja/caja.js'), moduleKey: 'caja' },
+  '/finanzas-cuentas': { loadModule: () => import('./modules/finanzas-cuentas/finanzas-cuentas.js'), moduleKey: 'finanzas-cuentas' },
+  '/gastos': { loadModule: () => import('./modules/gastos/gastos.js'), moduleKey: 'gastos' },
+  '/pagos-bancarios': { loadModule: () => import('./modules/pagos-bancarios/pagos-bancarios.js'), moduleKey: 'pagos-bancarios' },
   '/terraza': { loadModule: () => import('./modules/terraza/terraza.js'), moduleKey: 'terraza' },
   '/clientes': { loadModule: () => import('./modules/clientes/clientes.js'), moduleKey: 'clientes' },
   '/servicios': { loadModule: () => import('./modules/servicios/servicios.js'), moduleKey: 'servicios' },
@@ -52,6 +59,7 @@ const routes = {
   '/onboarding': { loadModule: () => import('./modules/onboarding/onboarding.js'), moduleKey: 'onboarding' },
   '/sandbox': { loadModule: () => import('./modules/sandbox/sandbox.js'), moduleKey: 'sandbox' },
   '/operacion-hoy': { loadModule: () => import('./modules/operacion-hoy/operacion-hoy.js'), moduleKey: 'operacion-hoy' }
+  ,'/control-energia': { loadModule: () => import('./modules/control-energia/control-energia.js'), moduleKey: 'control-energia' }
 };
 
 const navLinksConfig = [
@@ -61,12 +69,16 @@ const navLinksConfig = [
   { path: '#/mapa-habitaciones', text: 'Mapa Hotel', icon: '\u{1F5FA}\uFE0F', moduleKey: 'mapa-habitaciones' },
   { path: '#/habitaciones', text: 'Habitaciones', icon: '\u{1F6AA}', moduleKey: 'habitaciones' },
   { path: '#/caja', text: 'Caja/Turnos', icon: '\u{1F4B0}', moduleKey: 'caja' },
+  { path: '#/finanzas-cuentas', text: 'Cuentas financieras', icon: '\u{1F3E6}', moduleKey: 'finanzas-cuentas', adminOnly: true },
+  { path: '#/gastos', text: 'Gastos y cuentas por pagar', icon: '\u{1F9FE}', moduleKey: 'gastos', adminOnly: true },
+  { path: '#/pagos-bancarios', text: 'Pagos bancarios', icon: '\u{1F3E6}', moduleKey: 'pagos-bancarios' },
   { path: '#/terraza', text: 'Terraza', icon: '\u{1F379}', moduleKey: 'terraza' },
   { path: '#/clientes', text: 'Clientes', icon: '\u{1F9D1}\u200D\u{1F4BC}', moduleKey: 'clientes' },
   { path: '#/servicios', text: 'Servicios', icon: '\u{1F6CE}\uFE0F', moduleKey: 'servicios' },
   { path: '#/tienda', text: 'Tienda', icon: '\u{1F6CD}\uFE0F', moduleKey: 'tienda' },
   { path: '#/restaurante', text: 'Restaurante', icon: '\u{1F37D}\uFE0F', moduleKey: 'restaurante' },
   { path: '#/limpieza', text: 'Limpieza', icon: '\u{1F9F9}', moduleKey: 'limpieza' },
+  { path: '#/control-energia', text: 'Escanear Control de Energía', icon: '📷', moduleKey: 'control-energia', energyOnly: true },
   { path: '#/reportes', text: 'Reportes', icon: '\u{1F4C8}', moduleKey: 'reportes' },
   { path: '#/soporte', text: 'Soporte', icon: '\u{1F6DF}\uFE0F', moduleKey: 'soporte' },
   { path: '#/mantenimiento', text: 'Mantenimiento', icon: '\u{1F6E0}\uFE0F', moduleKey: 'mantenimiento' },
@@ -91,8 +103,66 @@ const superadminNavLinksConfig = [
   { path: '#/faq', text: 'FAQ', icon: '\u2753', moduleKey: 'faq' }
 ];
 const superadminAllowedRoutes = new Set(['/ops-saas', '/bitacora', '/soporte', '/faq']);
-const TERRAZA_ENABLED_HOTEL_IDS = new Set(['38373fa5-b953-4aa9-b4e9-25b9739be5f2']);
 const MESERO_ALLOWED_MODULES = new Set(['caja', 'terraza']);
+
+function createClosedBankPaymentPilotStatus() {
+  return {
+    hotelId: null,
+    eligible: false,
+    integrationEnabled: false,
+    isAdmin: false,
+    pilotHotelName: null,
+    canAccess: false
+  };
+}
+
+function canCurrentUserAccessBankPaymentPilot(hotelId = currentActiveHotel?.id) {
+  const normalizedHotelId = String(hotelId || '');
+  return Boolean(
+    normalizedHotelId &&
+    currentUserRole !== 'superadmin' &&
+    String(currentActiveHotel?.id || '') === normalizedHotelId &&
+    currentProfileHotelId === normalizedHotelId &&
+    currentBankPaymentPilotStatus.hotelId === normalizedHotelId &&
+    currentBankPaymentPilotStatus.eligible === true &&
+    currentBankPaymentPilotStatus.integrationEnabled === true &&
+    currentBankPaymentPilotStatus.canAccess === true
+  );
+}
+
+async function refreshBankPaymentPilotStatus(hotelId, userId = getCurrentUser()?.id) {
+  currentBankPaymentPilotStatus = createClosedBankPaymentPilotStatus();
+  const normalizedHotelId = String(hotelId || '');
+
+  if (
+    !normalizedHotelId ||
+    currentUserRole === 'superadmin' ||
+    currentProfileHotelId !== normalizedHotelId
+  ) {
+    return currentBankPaymentPilotStatus;
+  }
+
+  try {
+    const status = await getBankPaymentPilotStatus(supabase, normalizedHotelId);
+    const activeUserId = getCurrentUser()?.id;
+    if (activeUserId !== userId || String(currentActiveHotel?.id || '') !== normalizedHotelId) {
+      return currentBankPaymentPilotStatus;
+    }
+
+    currentBankPaymentPilotStatus = {
+      hotelId: normalizedHotelId,
+      eligible: status.eligible === true,
+      integrationEnabled: status.integrationEnabled === true,
+      isAdmin: status.isAdmin === true,
+      pilotHotelName: status.pilotHotelName || null,
+      canAccess: status.canAccess === true
+    };
+  } catch {
+    console.warn('[Pagos bancarios] No fue posible verificar el acceso al piloto.');
+  }
+
+  return currentBankPaymentPilotStatus;
+}
 
 function normalizeEmail(value) {
   return String(value || '').trim().toLowerCase();
@@ -138,7 +208,7 @@ function resolveOperationalRole(perfil = null, isSuperadmin = false) {
 }
 
 function isTerrazaEnabledForHotelId(hotelId) {
-  return TERRAZA_ENABLED_HOTEL_IDS.has(String(hotelId || ''));
+  return Boolean(hotelId);
 }
 
 function canAccessTerrazaForHotel(hotelId = currentActiveHotel?.id) {
@@ -161,6 +231,9 @@ function isTerrazaEnabledForActiveHotel() {
 function isModuleAllowedByPlan(moduleKey, modulosPermitidos = [], hotelId = currentActiveHotel?.id) {
   if (moduleKey === 'terraza') {
     return canCurrentUserAccessTerraza(hotelId);
+  }
+  if (moduleKey === 'pagos-bancarios') {
+    return canCurrentUserAccessBankPaymentPilot(hotelId);
   }
   return modulosPermitidos.includes(moduleKey);
 }
@@ -261,6 +334,7 @@ function calculateSubscriptionExpiredStatus(hotel) {
 }
 
 async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
+  currentEnergyControlEnabled = false;
   if (!hotelId) {
     console.warn("loadHotelAndPlanDetails: hotelId no proporcionado. Usando plan restringido.");
     currentActiveHotel = null;
@@ -277,6 +351,12 @@ async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
     if (hotelError) throw hotelError;
     if (!hotelData) throw new Error(`Hotel con ID ${hotelId} no encontrado.`);
     currentActiveHotel = resolveEffectiveHotelPlan(hotelData);
+    const { data: energyConfig } = await supabaseInstance
+      .from('configuracion_hotel')
+      .select('energy_control_enabled')
+      .eq('hotel_id', hotelId)
+      .maybeSingle();
+    currentEnergyControlEnabled = energyConfig?.energy_control_enabled === true;
 
     if (!currentActiveHotel.plan) {
       console.warn(`Hotel ${currentActiveHotel.id} no tiene un plan ('hoteles.plan') asignado. Usando plan por defecto restringido.`);
@@ -351,6 +431,7 @@ function renderNavigation(user) {
   if (isSubscriptionFueraDeGracia && esAdminNavegacion) {
     // Lógica para suscripción vencida (sin cambios)
     navLinksConfig.forEach(linkConfig => {
+      if (linkConfig.energyOnly && !currentEnergyControlEnabled) return;
       if (linkConfig.moduleKey === 'micuenta') {
         const a = buildNavLinkElement(linkConfig);
         if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
@@ -361,9 +442,10 @@ function renderNavigation(user) {
 
     // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
     // Se añade la misma lista de módulos exentos que en el router.
-    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy'];
+    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos'];
 
     navLinksConfig.forEach(linkConfig => {
+      if (linkConfig.energyOnly && !currentEnergyControlEnabled) return;
       if (linkConfig.adminOnly && !esAdminNavegacion) {
         return;
       }
@@ -518,7 +600,12 @@ async function router() {
     const routeEntry = routes[baseRoute];
     const moduleKeyFromRoute = routeEntry?.moduleKey;
 
-    if (currentPathLoaded === baseRoute && appContainer.innerHTML !== '' && !appContainer.innerHTML.includes('Cargando vista...')) {
+    if (
+      baseRoute !== '/pagos-bancarios' &&
+      currentPathLoaded === baseRoute &&
+      appContainer.innerHTML !== '' &&
+      !appContainer.innerHTML.includes('Cargando vista...')
+    ) {
       console.log(`[Router] Ruta ${baseRoute} ya cargada. Omitiendo re-montaje.`);
       hideGlobalLoading();
       updateActiveNavLink(baseRoute);
@@ -565,6 +652,18 @@ async function router() {
       hotelIdForModule = perfilUserAppRouter?.hotel_id;
     }
 
+    if (userForModule && moduleKeyFromRoute === 'pagos-bancarios') {
+      await refreshBankPaymentPilotStatus(hotelIdForModule, userForModule.id);
+      renderNavigation(userForModule);
+
+      if (!canCurrentUserAccessBankPaymentPilot(hotelIdForModule)) {
+        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="mb-3 text-2xl font-semibold text-red-600">Piloto no disponible</h2><p class="text-gray-700">La conciliacion de pagos bancarios no esta habilitada para este hotel o usuario.</p><div class="mt-6"><a href="#/dashboard" class="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white shadow transition-colors hover:bg-blue-700">Volver al dashboard</a></div></div>`;
+        hideGlobalLoading();
+        routerBusy = false;
+        return;
+      }
+    }
+
     if (userForModule && isMeseroRole(currentUserRole) && !MESERO_ALLOWED_MODULES.has(moduleKeyFromRoute)) {
       window.location.hash = canCurrentUserAccessTerraza(hotelIdForModule) ? '#/terraza' : '#/caja';
       hideGlobalLoading();
@@ -578,6 +677,10 @@ async function router() {
       routerBusy = false;
       return;
     }
+    if (userForModule && moduleKeyFromRoute === 'control-energia' && !currentEnergyControlEnabled) {
+      appContainer.innerHTML = '<div class="p-8 text-center"><h2 class="text-2xl font-semibold text-amber-700">Control de Energía no habilitado</h2><p class="mt-2">Esta función no está activa para este hotel.</p></div>';
+      hideGlobalLoading(); routerBusy = false; return;
+    }
 
     // En js/main.js, dentro de la función router()
 
@@ -585,7 +688,7 @@ async function router() {
 
       // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
       // Creamos una lista de módulos que SIEMPRE deben estar accesibles.
-      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy'];
+      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos'];
 
       // Verificamos si el módulo actual está en la lista de exentos.
       const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
@@ -755,6 +858,8 @@ async function initializeApp() {
     }
 
     if (appUser) {
+      currentProfileHotelId = null;
+      currentBankPaymentPilotStatus = createClosedBankPaymentPilotStatus();
       let hotelIdToLoad = appUser.user_metadata?.hotel_id || appUser.app_metadata?.hotel_id;
 
       const { data: perfil, error: perfilError } = await supabase
@@ -764,6 +869,7 @@ async function initializeApp() {
         .single();
 
       const esSuperadminWhitelisted = isWhitelistedSuperadminAccount(appUser, perfil);
+      currentProfileHotelId = perfil?.hotel_id ? String(perfil.hotel_id) : null;
 
       if (perfilError && !esSuperadminWhitelisted) {
         console.error("onAuthStateChange: Error obteniendo perfil (hotel_id, rol):", perfilError.message);
@@ -796,6 +902,8 @@ async function initializeApp() {
         currentActivePlanDetails = { nombre: "UsuarioSinHotel", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['micuenta'] } };
         isSubscriptionFueraDeGracia = false;
       }
+
+      await refreshBankPaymentPilotStatus(currentActiveHotel?.id, appUser.id);
 
       initMonitoring({
         supabase,
@@ -848,7 +956,9 @@ async function initializeApp() {
       currentActiveHotel = null;
       currentActivePlanDetails = null;
       currentUserRole = null;
+      currentProfileHotelId = null;
       isSubscriptionFueraDeGracia = false;
+      currentBankPaymentPilotStatus = createClosedBankPaymentPilotStatus();
 
       if (campanitaInicializada) {
         desmontarCampanitaGlobal(supabase);

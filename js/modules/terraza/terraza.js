@@ -56,7 +56,6 @@ import {
   numberOrZero
 } from './terraza-utils.js';
 
-const TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
 const DEFAULT_TERRAZA_CONFIG = Object.freeze({
   precio_michelada: 0,
   propina_sugerida_porcentaje: 10,
@@ -1116,11 +1115,6 @@ export async function mount(container, sbInstance, user, hotelId) {
     activeTab: 'mapa',
     loading: false
   };
-
-  if (state.hotelId !== TERRAZA_HOTEL_ID) {
-    renderError('Este modulo solo esta habilitado para el hotel autorizado.');
-    return;
-  }
 
   container.innerHTML = '<div class="p-8 text-center text-slate-500">Cargando terraza...</div>';
   state.isAdmin = await resolveTerrazaAdminAccess();

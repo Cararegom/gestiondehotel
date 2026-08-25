@@ -8,7 +8,6 @@ let currentModuleUser = null;
 let currentChartInstances = {}; // Use an object to manage multiple chart instances
 let supabaseClient = null; // Assigned in mount
 let hotelConfigGlobal = null;
-const TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
 const REPORTE_TERRAZA_KEY = 'ingresos_terraza_periodo';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { formatCurrency, formatDateTime, showConsumosYFacturarModal, mostrarInfoModalGlobal } from '../../uiUtils.js';
@@ -237,7 +236,7 @@ function renderSelectorReportes(planActivo) {
     { key: 'kpis_avanzados_hotel', label: 'KPIs de Rendimiento del Hotel' },
     { key: 'comparativo_gerencial_operacion', label: 'Comparativo Gerencial de Operacion' }
   ];
-  if (currentHotelId === TERRAZA_HOTEL_ID) {
+  if (currentHotelId) {
     TODOS_LOS_REPORTES.splice(4, 0, { key: REPORTE_TERRAZA_KEY, label: 'Ingresos de Terraza' });
   }
   // Reportes permitidos por plan
@@ -486,10 +485,7 @@ async function generarReporteIngresosTerraza(resultsContainerEl, fechaInicioInpu
     resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando reporte de ingresos de Terraza...</p>';
     destroyChartInstance('reporte-ingresos-terraza-chart');
 
-    if (currentHotelId !== TERRAZA_HOTEL_ID) {
-        resultsContainerEl.innerHTML = '<p class="text-center text-gray-500 p-4">Este reporte solo esta disponible para el hotel con Terraza.</p>';
-        return;
-    }
+    if (!currentHotelId) return;
 
     try {
         const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;

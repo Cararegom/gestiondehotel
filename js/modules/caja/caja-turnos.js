@@ -8,6 +8,7 @@ import {
   showSuccess
 } from '../../uiUtils.js';
 import { escapeHtml } from '../../security.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 
 function normalizeRoleKey(value = '') {
   return String(value || '')
@@ -512,14 +513,22 @@ export async function cerrarTurnoFlow({
       htmlReporte
     });
 
-    const { error: updateError } = await supabase.rpc('cerrar_turno_con_balance', {
+    const arqueos = (metodosDePago || []).map((metodo) => ({
+      metodo_pago_id: metodo.id,
+      counted_amount: Number(valoresReales?.[metodo.id] ?? valoresReales?.get?.(metodo.id) ?? 0),
+      note: valoresReales?.notes?.[metodo.id] || null
+    }));
+    const closeScope = buildOperationScope('turno-cierre', { turnoId: turnoACerrar.id, arqueos });
+    const { error: updateError } = await supabase.rpc('cerrar_turno_con_arqueo', {
       p_turno_id: turnoACerrar.id,
-      p_usuario_id: currentModuleUser?.id || usuarioDelTurnoId,
-      p_balance_final: balanceFinalEnCaja,
-      p_fecha_cierre: fechaCierreISO
+      p_arqueos: arqueos,
+      p_client_operation_id: getStableOperationId(closeScope),
+      p_fecha_cierre: fechaCierreISO,
+      p_approved_by: esCierreForzoso ? currentModuleUser?.id : null
     });
 
     if (updateError) throw updateError;
+    completeStableOperation(closeScope);
 
     const successMessage = emailResult?.sent
       ? 'Turno cerrado y reporte enviado.'

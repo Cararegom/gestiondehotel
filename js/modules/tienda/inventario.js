@@ -11,7 +11,6 @@ let terrazaProductosCache = [];
 let salidasPendientesCache = [];
 let currentRoleKey = '';
 const PRODUCTO_PLACEHOLDER_IMG = 'https://via.placeholder.com/160x160?text=Sin+Foto';
-const TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
 
 export async function renderInventario() {
   const cont = getTabContentEl();
@@ -119,7 +118,7 @@ async function cargarProductosInventario() {
 }
 
 async function cargarProductosTerraza() {
-  if (tiendaState.currentHotelId !== TERRAZA_HOTEL_ID) {
+  if (!tiendaState.currentHotelId) {
     terrazaProductosCache = [];
     return;
   }
@@ -298,7 +297,7 @@ async function rechazarSolicitudSalida(solicitudId) {
 }
 
 function renderTransferenciasTerrazaPanel() {
-  if (tiendaState.currentHotelId !== TERRAZA_HOTEL_ID) return '';
+  if (!tiendaState.currentHotelId) return '';
 
   const puedeEnviarATerraza = isRecepcionistaOperativo() || isAdminOperativo();
   const puedeRecibirDesdeTerraza = isMeseroOperativo() || isAdminOperativo();

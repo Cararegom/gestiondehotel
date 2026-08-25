@@ -9,6 +9,7 @@ Este archivo resume la capa backend actualmente versionada en `supabase/function
 - `alegra-save-config`
 - `alegra-test-connection`
 - `alegra-zapier-notify`
+- `bank-email-api`
 - `billing-create-checkout`
 - `calendar-create-event`
 - `calendar-delete-event`
@@ -31,6 +32,9 @@ Este archivo resume la capa backend actualmente versionada en `supabase/function
 - `calendar-webhook`
 - `chatkit-session`
 - `crear_colaborador`
+- `gmail-oauth-callback`
+- `gmail-watch-renew`
+- `gmail-webhook`
 - `mercadopago-create-preference`
 - `mercadopagoWebhook`
 - `registrar-pre-referido`
@@ -73,12 +77,34 @@ Este archivo resume la capa backend actualmente versionada en `supabase/function
 - `OUTLOOK_CLIENT_ID`
 - `OUTLOOK_CLIENT_SECRET`
 
+### Piloto de pagos bancarios por Gmail
+
+- `BANK_EMAIL_INTEGRATION_ENABLED`
+- `BANK_EMAIL_PILOT_HOTEL_NAME`
+- `GMAIL_OAUTH_CLIENT_ID`
+- `GMAIL_OAUTH_CLIENT_SECRET`
+- `GMAIL_OAUTH_REDIRECT_URI`
+- `GOOGLE_REDIRECT_URI`
+- `GOOGLE_PUBSUB_TOPIC`
+- `GOOGLE_PUBSUB_VERIFICATION_AUDIENCE`
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GMAIL_PAYMENT_LABEL`
+- `BANK_TOKEN_ENCRYPTION_KEY`
+- `CRON_SECRET`
+- `BANK_EMAIL_RULES_JSON`
+- `BANK_EMAIL_MIN_AMOUNT_COP`
+- `BANK_EMAIL_MAX_AMOUNT_COP`
+- `BANK_EMAIL_MATCH_WINDOW_MINUTES`
+- `BANK_EMAIL_ALLOWED_ORIGINS`
+
 ### Correo y automatizaciones
 
 - `MAKE_CASH_CLOSE_WEBHOOK_URL`
 - `MAKE_DISCOUNT_EMAIL_WEBHOOK_URL`
 
 ## Estado
+
+La puesta en marcha del piloto de Gmail se documenta en `docs/gmail-bank-payments-pilot.md`; permanece apagado por defecto hasta aplicar la migracion, los secretos y la configuracion externa.
 
 - Todas las funciones activas en Supabase ya tienen carpeta local en el repo.
 - Todas las funciones invocadas desde `functions.invoke(...)` ya tienen implementación local versionada.

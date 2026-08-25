@@ -154,7 +154,12 @@ export function subscribeToNotificationFeed(supabase, context, onChange) {
     .channel(channelName)
     .on(
       'postgres_changes',
-      { event: 'INSERT', schema: 'public', table: 'notificaciones' },
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'notificaciones',
+        filter: `hotel_id=eq.${context.hotelId}`
+      },
       () => {
         onChange?.();
       }

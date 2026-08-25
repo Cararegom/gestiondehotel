@@ -8,6 +8,7 @@ import {
 } from '../../uiUtils.js';
 import { escapeAttribute, escapeHtml, normalizeLegacyText } from '../../security.js';
 import { confirmAction, seleccionarMetodoPago } from './caja-turnos.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 
 export function createInitialMovementTableState() {
   return {
@@ -339,10 +340,15 @@ export async function handleMovementTableClick({
     if (!confirmed) return;
 
     showGlobalLoading('Eliminando movimiento...');
-    const { error: rpcError } = await supabase.rpc('registrar_y_eliminar_mov_caja', {
-      movimiento_id_param: movimientoId,
-      eliminado_por_usuario_id_param: currentModuleUser.id
+    const reason = `Reversion administrativa: ${concepto || 'movimiento de caja'}`;
+    const operationScope = buildOperationScope('caja-reversion', { movimientoId, reason });
+    const { error: rpcError } = await supabase.rpc('revertir_movimiento_caja', {
+      p_original_movement_id: movimientoId,
+      p_reason: reason,
+      p_client_operation_id: getStableOperationId(operationScope),
+      p_approved_by: currentModuleUser.id
     });
+    if (!rpcError) completeStableOperation(operationScope);
     hideGlobalLoading();
 
     if (rpcError) {

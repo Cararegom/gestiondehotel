@@ -37,6 +37,13 @@ async function fetchPendientes(listEl, feedbackEl) {
       .eq('estado', ROOM_STATUS_OPTIONS.limpieza.key)
       .order('nombre');
     if (error) throw error;
+    const { data: energyChecks } = await supabase
+      .from('room_energy_checks')
+      .select('room_id,status,created_at,completed_at,completed_by_user_id,usuarios!room_energy_checks_completed_by_user_id_fkey(nombre)')
+      .eq('hotel_id', currentHotelId)
+      .in('status', ['pending', 'overdue']);
+    const energyByRoom = new Map((energyChecks || []).map((check) => [check.room_id, check]));
+    data.forEach((room) => { room.energyCheck = energyByRoom.get(room.id) || null; });
     renderPendientes(data, listEl, feedbackEl);
   } catch (err) {
     console.error(err);
@@ -66,6 +73,7 @@ function renderPendientes(pendientes, listEl, feedbackEl) {
           <div class="flex-1 w-full md:w-auto text-center md:text-left">
             <div class="text-xl font-bold text-blue-900">${room.nombre}</div>
             <div class="text-blue-600 text-sm mb-1">${room.tipo ? room.tipo : ""}</div>
+            ${room.energyCheck ? `<div class="mt-2 rounded-lg ${room.energyCheck.status === 'overdue' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'} px-3 py-2 text-sm font-bold">⚡ Control de energía ${room.energyCheck.status === 'overdue' ? 'atrasado' : 'pendiente'}</div>` : ''}
           </div>
           <button 
             data-id="${room.id}" 
@@ -153,7 +161,10 @@ async function confirmCleaningById(roomId, roomNombre, feedbackEl, listEl) {
     await fetchPendientes(listEl, feedbackEl);
   } catch (err) {
     console.error(err);
-    showAppFeedback(feedbackEl, `Error al confirmar limpieza: ${err.message}`, 'error');
+    const message = String(err?.message || '').includes('CONTROL_ENERGIA_PENDIENTE')
+      ? 'No se puede liberar la habitación hasta escanear y completar el Control de Energía.'
+      : `Error al confirmar limpieza: ${err.message}`;
+    showAppFeedback(feedbackEl, message, 'error');
   } finally {
     hideGlobalLoading();
   }

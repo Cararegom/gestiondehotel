@@ -18,6 +18,7 @@ import { showGlobalLoading, hideGlobalLoading, formatCurrency } from '../../uiUt
 import { turnoService } from '../../services/turnoService.js';
 import { notificarHabitacionLiberada } from '../../services/NotificationService.js';
 import { escapeHtml } from '../../security.js';
+import { procesarPagoReservaAtomico } from '../../services/fase1OperationService.js';
 
 function refreshMapaHabitaciones() {
   document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
@@ -1385,27 +1386,9 @@ export function showEnhancedServiciosModal(roomDisplayInfo, availableServices, a
         // 2. Registrar Pago en `pagos_reserva`
         const clienteNombreServicio = activeReservation?.cliente_nombre || 'Cliente General';
         const concepto = `Servicios Adicionales (${itemsSeleccionados.map(i => i.nombre).join(', ')}) - Cliente: ${clienteNombreServicio}`;
-        const { data: pagoData, error: errPago } = await supabase.from('pagos_reserva').insert({
-          hotel_id: hotelId,
-          reserva_id: activeReservation.id,
-          monto: totalPagar,
-          metodo_pago_id: metodoPagoId,
-          usuario_id: userId,
-          concepto: concepto
-        }).select().single();
-        if (errPago) throw errPago;
-
-        // 3. Registrar en Caja
-        await supabase.from('caja').insert({
-          hotel_id: hotelId,
-          tipo: 'ingreso',
-          monto: totalPagar,
-          concepto: `Pago Servicios Hab. ${roomDisplayInfo.nombre} - Cliente: ${clienteNombreServicio}`,
-          metodo_pago_id: metodoPagoId,
-          usuario_id: userId,
-          reserva_id: activeReservation.id,
-          pago_reserva_id: pagoData.id,
-          turno_id: turnoId
+        const pagoData = await procesarPagoReservaAtomico(supabase, {
+          reservaId: activeReservation.id, monto: totalPagar, metodoPagoId, turnoId, concepto,
+          operationKey: `servicios:${activeReservation.id}:${itemsSeleccionados.map(i => `${i.servicio_id}:${i.cantidad}`).join('|')}`
         });
 
         // 4. Registrar los servicios como PAGADOS
@@ -1417,14 +1400,10 @@ export function showEnhancedServiciosModal(roomDisplayInfo, availableServices, a
           precio_cobrado: item.subtotal,
           nota: nota,
           estado_pago: 'pagado',
-          pago_reserva_id: pagoData.id
+          pago_reserva_id: pagoData.pago_reserva_id
         }));
         const { error: errServ } = await supabase.from('servicios_x_reserva').insert(serviciosInsert);
         if (errServ) throw errServ;
-
-        // 5. Actualizar monto pagado reserva
-        const nuevoPagado = (activeReservation.monto_pagado || 0) + totalPagar;
-        await supabase.from('reservas').update({ monto_pagado: nuevoPagado }).eq('id', activeReservation.id);
 
         Swal.fire('¡Éxito!', 'Servicios cobrados y registrados.', 'success');
 
@@ -1815,56 +1794,16 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
 
     safeShowLoading('Registrando pago...');
 
-    const { data: pagoData, error: errPago } = await supabase
-      .from('pagos_reserva')
-      .insert({
-        hotel_id: hotelId,
-        reserva_id: reserva.id,
-        monto: montoInt,
-        metodo_pago_id: metodoPagoId,
-        usuario_id: user.id,
-        concepto
-      })
-      .select()
-      .single();
-
-    if (errPago) {
-      safeHideLoading();
-      throw errPago;
-    }
-
-    const { error: errCaja } = await supabase.from('caja').insert({
-      hotel_id: hotelId,
-      tipo: 'ingreso',
+    const pagoData = await procesarPagoReservaAtomico(supabase, {
+      reservaId: reserva.id,
       monto: montoInt,
-      concepto,
-      metodo_pago_id: metodoPagoId,
-      usuario_id: user.id,
-      reserva_id: reserva.id,
-      pago_reserva_id: pagoData.id,
-      turno_id: turnoId
+      metodoPagoId,
+      turnoId,
+      concepto
     });
 
-    if (errCaja) {
-      safeHideLoading();
-      throw errCaja;
-    }
-
-    const totalPagadoDb = await getTotalPagadoDb();
-    const nuevoMontoPagado = Math.min(asInt(deudaTotalActual), totalPagadoDb);
-
-    const { error: errUpd } = await supabase
-      .from('reservas')
-      .update({ monto_pagado: nuevoMontoPagado })
-      .eq('id', reserva.id);
-
-    if (errUpd) {
-      safeHideLoading();
-      throw errUpd;
-    }
-
     safeHideLoading();
-    return { cancelled: false, pagoReservaId: pagoData.id };
+    return { cancelled: false, pagoReservaId: pagoData.pago_reserva_id };
   }
 
   async function marcarPendientesComoPagados(pagoReservaId) {

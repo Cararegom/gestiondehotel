@@ -2,6 +2,7 @@ import { turnoService } from '../../services/turnoService.js';
 import { tiendaState } from './state.js';
 import { formatCurrency, getTabContentEl, hideGlobalLoading, showGlobalLoading } from './helpers.js';
 import { showModalPagoCompra } from './compras.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 
 let comprasPendientesCache = [];
 
@@ -161,50 +162,23 @@ export async function recibirPedido(compraId) {
           turnoIdParaGuardar = turnoActivoId;
         }
 
-        const { data: detallesCompra } = await tiendaState.currentSupabase
-          .from('detalle_compras_tienda')
-          .select('*, producto:productos_tienda!inner(id, nombre)')
-          .eq('compra_id', compraId);
-
-        for (const det of detallesCompra || []) {
-          await tiendaState.currentSupabase.rpc('ajustar_stock_producto', {
-            p_producto_id: det.producto.id,
-            p_cantidad_ajuste: det.cantidad,
-            p_tipo_movimiento: 'ingreso_compra',
-            p_usuario_id: tiendaState.currentUser.id,
-            p_notas: `Recepcion de OC #${compraId.substring(0, 8)}`,
-          });
+        const operationScope = buildOperationScope('tienda-compra-recibir', {
+          compraId,
+          pagos,
+          turnoId: turnoIdParaGuardar,
+          fueraTurno: esEgresoFueraTurnoCheck,
+        });
+        const { data: recepcion, error: recepcionError } = await tiendaState.currentSupabase.rpc('recibir_compra_tienda_atomica', {
+          p_compra_id: compraId,
+          p_pagos: pagos,
+          p_turno_id: turnoIdParaGuardar,
+          p_client_operation_id: getStableOperationId(operationScope),
+          p_occurred_at: new Date().toISOString(),
+        });
+        if (recepcionError || !recepcion?.compra_id) {
+          throw new Error(recepcionError?.message || 'La recepción atómica no devolvió la compra.');
         }
-
-        await tiendaState.currentSupabase
-          .from('compras_tienda')
-          .update({
-            estado: 'recibido',
-            recibido_por_usuario_id: tiendaState.currentUser.id,
-            fecha_recepcion: new Date().toISOString(),
-          })
-          .eq('id', compraId);
-
-        const { data: compraData } = await tiendaState.currentSupabase
-          .from('compras_tienda')
-          .select('proveedor:proveedores(nombre)')
-          .eq('id', compraId)
-          .single();
-
-        const conceptoBase = `Pago Compra a ${compraData?.proveedor?.nombre || 'N/A'}`;
-
-        for (const pago of pagos) {
-          await tiendaState.currentSupabase.from('caja').insert({
-            hotel_id: tiendaState.currentHotelId,
-            tipo: 'egreso',
-            monto: pago.monto,
-            concepto: conceptoBase,
-            usuario_id: tiendaState.currentUser.id,
-            compra_tienda_id: compraId,
-            turno_id: turnoIdParaGuardar,
-            metodo_pago_id: pago.metodo_pago_id,
-          });
-        }
+        completeStableOperation(operationScope);
 
         hideGlobalLoading();
         await Swal.fire('Exito', 'La recepcion y el pago han sido procesados correctamente.', 'success');

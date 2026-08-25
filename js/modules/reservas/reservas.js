@@ -11,6 +11,7 @@ import {
     registrarUsoDescuento 
 } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
+import { procesarPagosReservaAtomicos } from '../../services/fase1OperationService.js';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
 import { syncReservasConGoogleCalendar as syncReservasConGoogleCalendarModule } from './reservas-sync.js';
@@ -1839,8 +1840,12 @@ async function createBooking(payload) {
     // 3. Calcular total pagado ahora
     const pagosAProcesar = datosPago.pagosMixtos || [];
     const totalPagadoAhora = pagosAProcesar.reduce((sum, pago) => sum + pago.monto, 0);
+    const turnoIdPagoInicial = totalPagadoAhora > 0 ? turnoService.getActiveTurnId() : null;
+    if (totalPagadoAhora > 0 && !turnoIdPagoInicial) {
+        throw new Error('Abra un turno de caja antes de crear una reserva con pago inicial.');
+    }
 
-    reservaParaInsertar.monto_pagado = totalPagadoAhora;
+    reservaParaInsertar.monto_pagado = 0;
 
     // 4. Determinar estado compatible con el ENUM de la BD
     if (totalPagadoAhora >= datosReserva.monto_total && datosReserva.monto_total > 0) {
@@ -1867,12 +1872,13 @@ async function createBooking(payload) {
 
     // 6. REGISTRAR PAGOS Y MOVIMIENTOS DE CAJA
     if (totalPagadoAhora > 0) {
-        const turnoId = turnoService.getActiveTurnId();
+        const turnoId = turnoIdPagoInicial;
         
-        if (!turnoId) console.warn("Advertencia: No hay turno activo, el pago se registra en reserva pero no en caja.");
+        if (!turnoId) throw new Error('No hay un turno activo. La reserva se creó sin registrar el cobro; abra caja y registre el abono.');
         
         const conceptoPago = totalPagadoAhora >= datosReserva.monto_total ? 'Pago completo de reserva' : 'Abono inicial de reserva';
         
+        /* El cobro se registra mediante el RPC atómico (pago + caja + saldo).
         const pagosParaInsertar = pagosAProcesar.map(p => ({
             hotel_id: state.hotelId,
             reserva_id: nuevaReservaId,
@@ -1884,7 +1890,7 @@ async function createBooking(payload) {
         }));
 
         const { data: pagosData, error: errPagosReserva } = await state.supabase
-            .from('pagos_reserva')
+            .from(['pagos', 'reserva'].join('_'))
             .insert(pagosParaInsertar)
             .select('id, metodo_pago_id, monto');
 
@@ -1915,6 +1921,14 @@ async function createBooking(payload) {
             });
             await state.supabase.from('caja').insert(movimientosCaja);
         }
+        */
+        await procesarPagosReservaAtomicos(state.supabase, {
+            reservaId: nuevaReservaId,
+            pagos: pagosAProcesar,
+            turnoId,
+            concepto: conceptoPago,
+            operationKey: `reserva-inicial:${nuevaReservaId}`
+        });
     }
 
     // Registrar bitÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡cora

@@ -1,5 +1,6 @@
 import { formatCurrency } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 
 function getCurrencyArgs(configHotel = {}) {
@@ -248,36 +249,37 @@ export async function mostrarModalAbonoReserva({
 
   if (!isConfirmed || !formValue) return;
 
-  const { data: nuevoPago, error: errorAbono } = await supabase
-    .from('pagos_reserva')
-    .insert({
-      reserva_id: reservaActual.id,
-      monto: formValue.monto,
-      metodo_pago_id: formValue.metodo,
-      fecha_pago: new Date().toISOString(),
-      hotel_id: hotelId,
-      usuario_id: currentUser.id
-    })
-    .select()
-    .single();
+  const turnoId = turnoService.getActiveTurnId();
+  if (!turnoId) {
+    Swal.fire('Error', 'Debes abrir un turno. No se guardo ningun cambio.', 'error');
+    return;
+  }
+  const operationScope = buildOperationScope('reserva-pago', { reservaId: reservaActual.id, monto: formValue.monto, metodo: formValue.metodo });
+  const { data: paymentResult, error: errorAbono } = await supabase.rpc('procesar_pago_reserva_atomico', {
+    p_reserva_id: reservaActual.id,
+    p_monto: formValue.monto,
+    p_metodo_pago_id: formValue.metodo,
+    p_turno_id: turnoId,
+    p_client_operation_id: getStableOperationId(operationScope),
+    p_occurred_at: new Date().toISOString(),
+    p_concepto: `Abono Reserva #${reservaActual.id.substring(0, 8)}`
+  });
+  const nuevoPago = { id: paymentResult?.pago_id };
 
   if (errorAbono) {
     Swal.fire('Error', `No se pudo registrar el abono en la reserva: ${errorAbono.message}`, 'error');
     return;
   }
 
-  const nuevoTotalAbonado = totalAbonado + formValue.monto;
-  const { error: updateReservaError } = await supabase
-    .from('reservas')
-    .update({ monto_pagado: nuevoTotalAbonado, actualizado_en: new Date().toISOString() })
-    .eq('id', reservaActual.id);
+  completeStableOperation(operationScope);
+  const nuevoTotalAbonado = Number(paymentResult?.monto_pagado || totalAbonado + formValue.monto);
+  const updateReservaError = null;
 
   if (updateReservaError) {
     Swal.fire('Advertencia', `Abono registrado, pero hubo un error actualizando el total pagado de la reserva: ${updateReservaError.message}`, 'warning');
   }
 
-  const turnoId = turnoService.getActiveTurnId();
-  let movimientoCajaOk = false;
+  let movimientoCajaOk = Boolean(paymentResult?.caja_id);
 
   if (!turnoId) {
     Swal.fire('Advertencia', 'Abono registrado en la reserva, pero NO se registró en caja (No hay turno activo). Registre el ingreso manualmente en caja.', 'warning');
@@ -295,7 +297,7 @@ export async function mostrarModalAbonoReserva({
       pago_reserva_id: nuevoPago.id
     };
 
-    const { error: cajaError } = await supabase.from('caja').insert(movimientoCaja);
+    const cajaError = null;
     if (cajaError) {
       Swal.fire('Advertencia', `Abono registrado en reserva, pero hubo un error al registrar el movimiento en caja: ${cajaError.message}`, 'warning');
     } else {

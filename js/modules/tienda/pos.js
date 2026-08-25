@@ -4,6 +4,7 @@ import { clearPOSDraft, loadPOSDraft, savePOSDraft } from '../../services/posDra
 import { imprimirTicketOperacion } from '../../services/thermalPrintService.js';
 import { tiendaState } from './state.js';
 import { formatCurrency, getTabContentEl } from './helpers.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 
 let descuentoAplicado = null;
 let posProductos = [];
@@ -760,81 +761,27 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
     }
   }
 
-  const ventaPayload = {
-    hotel_id: tiendaState.currentHotelId,
-    usuario_id: tiendaState.currentUser.id,
-    habitacion_id,
-    reserva_id: reservaId,
-    total_venta: totalVentaFinal,
-    fecha: new Date().toISOString(),
-    creado_en: new Date().toISOString(),
-    cliente_temporal,
-    metodo_pago_id: modo === 'inmediato' && pagos.length === 1 ? pagos[0].metodo_pago_id : null,
-    descuento_id: descuentoAplicado ? descuentoAplicado.id : null,
-    monto_descuento: montoDescuento > 0 ? montoDescuento : null,
-  };
-
-  const { data: ventas, error } = await tiendaState.currentSupabase
-    .from('ventas_tienda')
-    .insert([ventaPayload])
-    .select();
-  if (error || !ventas?.[0]) throw new Error(`Error guardando venta: ${error?.message}`);
-
-  const ventaId = ventas[0].id;
-
-  if (descuentoAplicado && montoDescuento > 0) {
-    const { error: rpcError } = await tiendaState.currentSupabase.rpc('incrementar_uso_descuento', {
-      descuento_id_param: descuentoAplicado.id,
-    });
-    if (rpcError) {
-      console.error('Advertencia: No se pudo incrementar el uso del descuento en la tienda.', rpcError);
-    }
-  }
-
-  for (const item of posCarrito) {
-    await tiendaState.currentSupabase.from('detalle_ventas_tienda').insert([{
-      venta_id: ventaId,
-      producto_id: item.id,
-      cantidad: item.cantidad,
-      precio_unitario_venta: item.precio_venta,
-      subtotal: item.cantidad * item.precio_venta,
-      hotel_id: tiendaState.currentHotelId,
-      creado_en: new Date().toISOString(),
-    }]);
-
-    await tiendaState.currentSupabase.rpc('increment', {
-      table_name: 'productos_tienda',
-      column_name: 'stock_actual',
-      row_id: item.id,
-      amount: -item.cantidad,
-    });
-  }
-
   const turnoId = turnoService.getActiveTurnId();
-  if (modo === 'inmediato') {
-    if (!turnoId) {
-      showError(msgPOSEl, 'No hay un turno de caja activo.');
-      return;
-    }
-
-    const nombresProductos = posCarrito.map((item) => `${item.nombre} x${item.cantidad}`).join(', ');
-    for (const pago of pagos) {
-      await tiendaState.currentSupabase.from('caja').insert({
-        hotel_id: tiendaState.currentHotelId,
-        tipo: 'ingreso',
-        monto: Number(pago.monto),
-        concepto: `Venta Tienda: ${nombresProductos}`,
-        fecha_movimiento: new Date().toISOString(),
-        metodo_pago_id: pago.metodo_pago_id,
-        usuario_id: tiendaState.currentUser.id,
-        venta_tienda_id: ventaId,
-        turno_id: turnoId,
-      });
-    }
-    msgPOSEl.textContent = 'Venta registrada.';
-  } else {
-    msgPOSEl.textContent = 'Consumo cargado a la cuenta de la habitacion.';
-  }
+  if (modo === 'inmediato' && !turnoId) throw new Error('No hay un turno de caja activo. No se guardo ningun cambio.');
+  const operationPayload = { items: posCarrito.map((item) => ({ producto_id: item.id, cantidad: item.cantidad })), pagos, modo, reservaId };
+  const operationScope = buildOperationScope('tienda-venta', operationPayload);
+  const { data: ventaResult, error } = await tiendaState.currentSupabase.rpc('procesar_venta_tienda_atomica', {
+    p_items: operationPayload.items,
+    p_pagos: modo === 'inmediato' ? pagos : [],
+    p_modo: modo,
+    p_turno_id: turnoId,
+    p_client_operation_id: getStableOperationId(operationScope),
+    p_reserva_id: reservaId,
+    p_habitacion_id: habitacion_id,
+    p_cliente_temporal: cliente_temporal,
+    p_descuento_id: descuentoAplicado?.id || null,
+    p_occurred_at: new Date().toISOString()
+  });
+  if (error || !ventaResult?.venta_id) throw new Error(`Error guardando venta atomica: ${error?.message || 'respuesta invalida'}`);
+  completeStableOperation(operationScope);
+  const ventaId = ventaResult.venta_id;
+  totalVentaFinal = Number(ventaResult.total);
+  msgPOSEl.textContent = modo === 'inmediato' ? 'Venta registrada.' : 'Consumo cargado a la cuenta de la habitacion.';
 
   posCarrito = [];
   descuentoAplicado = null;

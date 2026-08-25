@@ -1,0 +1,14 @@
+{
+  "nodeModulesDir": "auto",
+  "compilerOptions": {
+    "lib": ["deno.window", "dom", "dom.iterable", "esnext"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": false
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["no-import-prefix"]
+    }
+  }
+}

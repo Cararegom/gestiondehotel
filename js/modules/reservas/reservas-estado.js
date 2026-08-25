@@ -1,4 +1,15 @@
 import { notificarHabitacionLiberada } from '../../services/NotificationService.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
+
+async function cancelarConReversion(supabase, reservaId, reason) {
+    const scope = buildOperationScope('cancelar-reserva', { reservaId, reason });
+    const { data, error } = await supabase.rpc('cancelar_reserva_con_reversion', {
+        p_reserva_id: reservaId, p_reason: reason, p_client_operation_id: getStableOperationId(scope)
+    });
+    if (error) throw error;
+    completeStableOperation(scope);
+    return data;
+}
 
 export async function handleReservaDelete({
     reservaId,
@@ -21,37 +32,20 @@ export async function handleReservaDelete({
         throw new Error(`No se encontro la reserva a eliminar (ID: ${reservaId.substring(0, 8)}).`);
     }
 
-    const confirmed = await ui.showConfirmationModal(`Esta seguro de que desea eliminar permanentemente la reserva de ${reserva.cliente_nombre || 'cliente desconocido'}? Esta accion no se puede deshacer y tambien eliminara los pagos asociados.`);
+    const confirmed = await ui.showConfirmationModal(`¿Cancelar la reserva de ${reserva.cliente_nombre || 'cliente desconocido'}? Los pagos y movimientos originales se conservarán y cualquier dinero cobrado se revertirá.`);
     if (!confirmed) return;
 
-    showLoading(ui.feedbackDiv, 'Eliminando reserva y pagos asociados...');
-
-    const { error: errPagos } = await state.supabase.from('pagos_reserva').delete().eq('reserva_id', reservaId);
-    if (errPagos) {
-        clearFeedback(ui.feedbackDiv);
-        throw new Error(`Error al eliminar pagos de la reserva: ${errPagos.message}. La reserva no fue eliminada.`);
-    }
-
-    const { error: deleteError } = await state.supabase.from('reservas').delete().eq('id', reservaId);
+    showLoading(ui.feedbackDiv, 'Cancelando reserva y creando reversiones...');
+    await cancelarConReversion(state.supabase, reservaId, 'Cancelación solicitada desde Reservas');
     clearFeedback(ui.feedbackDiv);
-    if (deleteError) throw new Error(`Error al eliminar la reserva: ${deleteError.message}`);
-
-    if (['activa', 'confirmada', 'reservada'].includes(reserva.estado) && reserva.habitacion_id) {
-        const { error: errHab } = await state.supabase
-            .from('habitaciones')
-            .update({ estado: 'libre' })
-            .eq('id', reserva.habitacion_id);
-        if (errHab) console.warn('Advertencia al actualizar estado de habitacion tras eliminar reserva:', errHab.message);
-    }
-
-    const successMessage = 'Reserva y sus pagos asociados eliminados exitosamente.';
+    const successMessage = 'Reserva cancelada; la evidencia financiera original fue conservada.';
     showSuccess(ui.feedbackDiv, successMessage);
     await registrarEnBitacora({
         supabase: state.supabase,
         hotel_id: state.hotelId,
         usuario_id: state.currentUser.id,
         modulo: 'Reservas',
-        accion: 'ELIMINAR_RESERVA',
+        accion: 'CANCELAR_RESERVA_CON_REVERSION',
         detalles: { reserva_id: reservaId, cliente: reserva.cliente_nombre, habitacion_id: reserva.habitacion_id }
     });
 
@@ -177,63 +171,7 @@ export async function cancelarReservaConReembolsoFlow({
     if (!ui.feedbackDiv) return;
     showLoading(ui.feedbackDiv, 'Cancelando y revirtiendo pagos...');
 
-    const { data: pagos, error: errPagos } = await state.supabase
-        .from('pagos_reserva')
-        .select('id')
-        .eq('reserva_id', reservaId);
-
-    if (errPagos) {
-        throw new Error(`Error buscando pagos para cancelar: ${errPagos.message}`);
-    }
-
-    if (pagos && pagos.length > 0) {
-        const idsDePagos = pagos.map((pago) => pago.id);
-
-        const { error: errCaja } = await state.supabase
-            .from('caja')
-            .delete()
-            .in('pago_reserva_id', idsDePagos);
-
-        if (errCaja) {
-            throw new Error(`Error revirtiendo ingresos en caja: ${errCaja.message}`);
-        }
-
-        const { error: errPagosDelete } = await state.supabase
-            .from('pagos_reserva')
-            .delete()
-            .eq('reserva_id', reservaId);
-
-        if (errPagosDelete) {
-            throw new Error(`Error eliminando el historial de pagos de la reserva: ${errPagosDelete.message}`);
-        }
-    }
-
-    const ahora = new Date().toISOString();
-    const { error: updateError } = await state.supabase
-        .from('reservas')
-        .update({
-            estado: 'cancelada',
-            monto_pagado: 0,
-            actualizado_en: ahora,
-            cancelado_por_usuario_id: state.currentUser.id,
-            fecha_cancelacion: ahora
-        })
-        .eq('id', reservaId);
-
-    if (updateError) {
-        throw new Error(`Error al actualizar el estado de la reserva: ${updateError.message}`);
-    }
-
-    if (habitacionId) {
-        const { error: errHab } = await state.supabase
-            .from('habitaciones')
-            .update({ estado: 'libre' })
-            .eq('id', habitacionId);
-
-        if (errHab) {
-            console.warn('Advertencia: Reserva cancelada, pero hubo un error al liberar la habitacion.', errHab);
-        }
-    }
+    await cancelarConReversion(state.supabase, reservaId, 'Cancelación con reembolso desde estado de reserva');
 
     const successMessage = 'Reserva cancelada y pagos revertidos exitosamente.';
     showSuccess(ui.feedbackDiv, successMessage);

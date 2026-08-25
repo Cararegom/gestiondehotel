@@ -1,6 +1,7 @@
 // js/uiUtils.js
 import { turnoService } from './services/turnoService.js';
 import { APP_CONFIG, I18N_TEXTS } from './config.js';
+import { procesarPagosReservaAtomicos } from './services/fase1OperationService.js';
 // Swal se asume global o se debe importar si se maneja como módulo.
 
 // --- FEEDBACK GLOBAL ---
@@ -463,41 +464,13 @@ export async function showConsumosYFacturarModal(roomContext, supabase, currentU
 
           // Función interna para procesar el pago una vez confirmado el método
           const procesarPagoDeuda = async (pagos) => {
-            const totalPagadoDeuda = pagos.reduce((sum, p) => sum + p.monto, 0);
-
-            // 1. Registrar los pagos en 'pagos_reserva'
-            const pagosParaInsertar = pagos.map(p => ({
-              hotel_id: hotelId,
-              reserva_id: reserva.id,
-              monto: p.monto,
-              fecha_pago: new Date().toISOString(),
-              metodo_pago_id: p.metodo_pago_id,
-              usuario_id: currentUser.id,
-              concepto: `Abono a saldo pendiente (Hab. ${roomContext.nombre})`
-            }));
-            const { data: pagosData, error: errPagos } = await supabase.from('pagos_reserva').insert(pagosParaInsertar).select('id');
-            if (errPagos) throw new Error(`Error al registrar el pago: ${errPagos.message}`);
-
-            // 2. Registrar el ingreso en 'caja'
-            const movimientosCaja = pagos.map((p, index) => ({
-              hotel_id: hotelId,
-              tipo: 'ingreso',
-              monto: p.monto,
+            await procesarPagosReservaAtomicos(supabase, {
+              reservaId: reserva.id,
+              pagos,
+              turnoId,
               concepto: `Cobro saldo Hab. ${roomContext.nombre} - ${reserva.cliente_nombre}`,
-              fecha_movimiento: new Date().toISOString(),
-              metodo_pago_id: p.metodo_pago_id,
-              usuario_id: currentUser.id,
-              reserva_id: reserva.id,
-              turno_id: turnoId,
-              pago_reserva_id: pagosData[index].id
-            }));
-            const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
-            if (errCaja) console.error("Error registrando en caja, pero el pago fue guardado:", errCaja);
-
-            // 3. Actualizar el 'monto_pagado' en la reserva principal
-            const { data: reservaActual } = await supabase.from('reservas').select('monto_pagado').eq('id', reserva.id).single();
-            const nuevoMontoPagado = (reservaActual.monto_pagado || 0) + totalPagadoDeuda;
-            await supabase.from('reservas').update({ monto_pagado: nuevoMontoPagado }).eq('id', reserva.id);
+              operationKey: `saldo:${reserva.id}`
+            });
 
             mostrarInfoModalGlobal("¡Saldo cobrado con éxito!", "Pago Registrado");
 

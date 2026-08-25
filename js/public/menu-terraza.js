@@ -1,6 +1,5 @@
 import { supabase } from '../supabaseClient.js';
 
-const DEFAULT_TERRAZA_HOTEL_ID = '38373fa5-b953-4aa9-b4e9-25b9739be5f2';
 const PUBLIC_MENU_HOTEL_NAME = 'Hotel OK Cartagena';
 
 const state = {
@@ -143,7 +142,8 @@ function renderAll() {
 }
 
 async function loadMenu() {
-  state.hotelId = getParam('hotel') || DEFAULT_TERRAZA_HOTEL_ID;
+  state.hotelId = getParam('hotel');
+  if (!state.hotelId) throw new Error('El enlace del menu debe incluir el hotel.');
 
   try {
     const { data, error } = await supabase.rpc('obtener_menu_terraza_publico', {

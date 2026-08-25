@@ -5,6 +5,7 @@ import { showClienteSelectorModal } from '../clientes/clientes.js';
 import { calcularSaldoReserva, getHorariosHotel, puedeHacerCheckIn, getTiemposEstancia, getMetodosPago } from './datos.js';
 import { updateClienteFields } from './room-card.js';
 import { buscarDescuentoParaAlquiler } from './descuentos-helper.js';
+import { procesarPagosReservaAtomicos } from '../../services/fase1OperationService.js';
 
 async function mostrarConfirmacionAlquilerExitosa() {
     const mensaje = 'La habitaci\u00f3n fue alquilada correctamente.';
@@ -422,38 +423,13 @@ export async function registrarReservaYMovimientosCaja({
         : (await turnoService.getTurnoAbierto(supabase, currentUser.id, hotelId))?.id;
 
     if (turnoActivoId && pagosLimpios.length > 0) {
-        const pagosParaInsertar = pagosLimpios.map((pago) => ({
-            hotel_id: hotelId,
-            reserva_id: nuevaReserva.id,
-            monto: pago.monto,
-            fecha_pago: new Date().toISOString(),
-            metodo_pago_id: pago.metodo_pago_id,
-            usuario_id: currentUser.id,
-            concepto: `Alquiler Inicial Hab. ${room.nombre} (${detallesEstancia?.descripcionEstancia || ''}) - Cliente: ${clienteNombre}`
-        }));
-
-        const { data: pagosData, error: errPagoRes } = await supabase
-            .from('pagos_reserva')
-            .insert(pagosParaInsertar)
-            .select('id');
-
-        if (errPagoRes) throw new Error(`Reserva creada, pero error al guardar pagos_reserva: ${errPagoRes.message}`);
-
-        const movimientosCaja = pagosLimpios.map((pago, index) => ({
-            hotel_id: hotelId,
-            tipo: 'ingreso',
-            monto: pago.monto,
+        await procesarPagosReservaAtomicos(supabase, {
+            reservaId: nuevaReserva.id,
+            pagos: pagosLimpios,
+            turnoId: turnoActivoId,
             concepto: `Alquiler Hab. ${room.nombre} (${detallesEstancia?.descripcionEstancia || ''}) - Cliente: ${clienteNombre}`,
-            fecha_movimiento: new Date().toISOString(),
-            metodo_pago_id: pago.metodo_pago_id,
-            usuario_id: currentUser.id,
-            reserva_id: nuevaReserva.id,
-            turno_id: turnoActivoId,
-            pago_reserva_id: pagosData?.[index]?.id || null
-        }));
-
-        const { error: errCaja } = await supabase.from('caja').insert(movimientosCaja);
-        if (errCaja) throw new Error(`Reserva creada, pero error al registrar movimiento en caja: ${errCaja.message}`);
+            operationKey: `alquiler:${nuevaReserva.id}`
+        });
     }
 
     const modalContainer = document.getElementById('modal-container');
@@ -1133,39 +1109,25 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             }
             
             const handlePaymentAndDBUpdate = async (pagos) => {
-                const totalPagadoExt = pagos.reduce((sum, p) => sum + p.monto, 0);
-                
-                const pagosParaInsertar = pagos.map(p => ({
-                    hotel_id: hotelId, reserva_id: reservaActiva.id, monto: p.monto,
-                    fecha_pago: new Date().toISOString(), metodo_pago_id: p.metodo_pago_id,
-                    usuario_id: currentUser?.id, concepto: `Pago por extensi\u00f3n: ${descExtraSubmit} - Cliente: ${reservaActiva.cliente_nombre || 'Cliente General'}`
-                }));
-                const { data: pagosData, error: errPagoReserva } = await supabase.from('pagos_reserva').insert(pagosParaInsertar).select('id');
-                if (errPagoReserva) throw new Error('Error registrando el pago de la extensi\u00f3n: ' + errPagoReserva.message);
+                const conceptoExtension = `Pago por extensi\u00f3n: ${descExtraSubmit} - Cliente: ${reservaActiva.cliente_nombre || 'Cliente General'}`;
+                const pagosData = await procesarPagosReservaAtomicos(supabase, {
+                    reservaId: reservaActiva.id, pagos, turnoId, concepto: conceptoExtension,
+                    operationKey: `extension:${reservaActiva.id}:${nuevaFechaFinSubmit.toISOString()}`
+                });
 
                 await supabase.from('servicios_x_reserva').insert({
                     hotel_id: hotelId, reserva_id: reservaActiva.id,
                     descripcion_manual: `Extensi\u00f3n: ${descExtraSubmit}`, cantidad: 1,
                     precio_cobrado: Math.round(precioExtraSubmit), estado_pago: 'pagado',
-                    pago_reserva_id: pagosData[0].id, fecha_servicio: new Date().toISOString()
+                    pago_reserva_id: pagosData[0].pago_reserva_id, fecha_servicio: new Date().toISOString()
                 });
 
-                const nuevoMontoPagadoReserva = (reservaActiva.monto_pagado || 0) + totalPagadoExt;
                 await supabase.from('reservas').update({
                     fecha_fin: nuevaFechaFinSubmit.toISOString(),
-                    monto_pagado: nuevoMontoPagadoReserva,
                     estado: 'activa',
                     notas: reservaActiva.notas ? `${reservaActiva.notas}\n${notasAdicionales}` : notasAdicionales
                 }).eq('id', reservaActiva.id);
 
-                const movimientosCaja = pagos.map(p => ({
-                    hotel_id: hotelId, tipo: 'ingreso', monto: p.monto,
-                    concepto: `Extensi\u00f3n Hab. ${room.nombre} (${descExtraSubmit}) - Cliente: ${reservaActiva.cliente_nombre || 'Cliente General'}`,
-                    fecha_movimiento: new Date().toISOString(), usuario_id: currentUser?.id,
-                    reserva_id: reservaActiva.id, metodo_pago_id: p.metodo_pago_id,
-                    turno_id: turnoId, pago_reserva_id: pagosData[pagos.indexOf(p)].id
-                }));
-                await supabase.from('caja').insert(movimientosCaja);
             };
 
             const finalizarExtension = async () => {

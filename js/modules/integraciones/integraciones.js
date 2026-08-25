@@ -1,5 +1,13 @@
 import { escapeHtml } from '../../security.js';
 import {
+  disconnectBankPaymentGmail,
+  getBankPaymentGmailStatus,
+  getBankPaymentPilotStatus,
+  renewBankPaymentGmailWatch,
+  startBankPaymentGmailOAuth,
+  testBankPaymentGmailConnection
+} from '../../services/bankPaymentService.js';
+import {
   ACCOUNTING_INTEGRATIONS,
   OTA_INTEGRATIONS,
   renderCatalogCards,
@@ -8,9 +16,11 @@ import {
 
 let moduleListeners = [];
 let currentHotelId = null;
+let currentProfileHotelId = null;
 let supabaseInstance = null;
 let userObject = null;
 let currentContainer = null;
+let currentMountToken = 0;
 
 function addEvt(element, type, handler) {
   if (!element) return;
@@ -452,7 +462,267 @@ async function generarFacturaPruebaAlegra(feedbackEl, buttonEl) {
   }
 }
 
-function renderModuleLayout() {
+function formatGmailDateTime(value) {
+  if (!value) return 'No disponible';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'No disponible';
+  return new Intl.DateTimeFormat('es-CO', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(parsed);
+}
+
+function normalizeCallbackCode(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  return /^[a-z0-9_-]{1,120}$/.test(normalized) ? normalized : null;
+}
+
+function takeGmailPaymentCallback() {
+  const rawHash = String(window.location.hash || '').replace(/^#/, '');
+  const separatorIndex = rawHash.indexOf('?');
+  if (separatorIndex < 0) return null;
+
+  const route = rawHash.slice(0, separatorIndex);
+  const params = new URLSearchParams(rawHash.slice(separatorIndex + 1));
+  if (route !== '/integraciones' || !params.has('gmail_payment_status')) return null;
+
+  const status = String(params.get('gmail_payment_status') || '').trim().toLowerCase();
+  const code = normalizeCallbackCode(params.get('code'));
+  params.delete('gmail_payment_status');
+  params.delete('code');
+  const remainingQuery = params.toString();
+  const cleanHash = `#${route}${remainingQuery ? `?${remainingQuery}` : ''}`;
+  window.history.replaceState(
+    {},
+    document.title,
+    `${window.location.pathname}${window.location.search}${cleanHash}`
+  );
+
+  return { status, code };
+}
+
+function showGmailFeedback(feedbackEl, message, tone = 'info', duration = 5000) {
+  if (!feedbackEl) return;
+  const toneClasses = {
+    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    error: 'border-red-200 bg-red-50 text-red-700',
+    warning: 'border-amber-200 bg-amber-50 text-amber-800',
+    info: 'border-blue-200 bg-blue-50 text-blue-700'
+  };
+  feedbackEl.textContent = message;
+  feedbackEl.className = `mt-4 rounded-xl border px-4 py-3 text-sm ${toneClasses[tone] || toneClasses.info}`;
+  feedbackEl.style.display = 'block';
+  if (feedbackEl.feedbackTimeout) window.clearTimeout(feedbackEl.feedbackTimeout);
+  if (duration > 0) {
+    feedbackEl.feedbackTimeout = window.setTimeout(() => {
+      feedbackEl.textContent = '';
+      feedbackEl.style.display = 'none';
+    }, duration);
+  }
+}
+
+function renderGmailPaymentCard() {
+  return `
+    <section id="gmail-payment-integration-card" class="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <p class="text-xs uppercase tracking-[0.25em] text-blue-600">Piloto administrativo</p>
+            <span id="gmail-payment-enabled-badge" class="rounded-full px-3 py-1 text-xs font-bold">Verificando...</span>
+          </div>
+          <h2 class="mt-2 text-2xl font-black text-slate-900">Correo de pagos</h2>
+          <p class="mt-2 max-w-3xl text-sm text-slate-600">Conecta la cuenta Gmail que recibe las notificaciones bancarias y supervisa la etiqueta y la suscripcion de Gmail Watch.</p>
+        </div>
+        <a id="gmail-payment-open-payments" href="#/pagos-bancarios" class="button button-primary" style="display:none;">Ver pagos bancarios</a>
+      </div>
+
+      <div id="gmail-payment-feedback" role="alert" aria-live="polite" style="display:none;"></div>
+
+      <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Cuenta conectada</p>
+          <p id="gmail-payment-email" class="mt-2 break-all text-sm font-bold text-slate-800">Consultando...</p>
+        </article>
+        <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Etiqueta vigilada</p>
+          <p id="gmail-payment-label" class="mt-2 text-sm font-bold text-slate-800">Consultando...</p>
+        </article>
+        <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Gmail Watch</p>
+          <p id="gmail-payment-watch" class="mt-2 text-sm font-bold text-slate-800">Consultando...</p>
+        </article>
+        <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p class="text-xs font-semibold uppercase tracking-wider text-slate-400">Expiracion</p>
+          <p id="gmail-payment-expiration" class="mt-2 text-sm font-bold text-slate-800">Consultando...</p>
+        </article>
+      </div>
+
+      <div class="mt-4 grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm md:grid-cols-3">
+        <div><span class="font-semibold text-slate-500">Ultima renovacion:</span> <span id="gmail-payment-last-renewal" class="text-slate-800">No disponible</span></div>
+        <div><span class="font-semibold text-slate-500">Fallos consecutivos:</span> <span id="gmail-payment-renewal-failures" class="text-slate-800">0</span></div>
+        <div id="gmail-payment-last-error-row" style="display:none;"><span class="font-semibold text-slate-500">Ultimo codigo:</span> <span id="gmail-payment-last-error" class="font-mono text-xs text-red-700"></span></div>
+      </div>
+
+      <div class="mt-5 flex flex-wrap gap-3">
+        <button type="button" id="gmail-payment-connect" data-idle-label="Conectar Gmail" class="button button-primary">Conectar Gmail</button>
+        <div id="gmail-payment-connected-actions" class="flex flex-wrap gap-3" style="display:none;">
+          <button type="button" id="gmail-payment-renew" data-idle-label="Renovar Gmail Watch" class="button button-secondary">Renovar Gmail Watch</button>
+          <button type="button" id="gmail-payment-test" data-idle-label="Probar conexion" class="button button-accent">Probar conexion</button>
+          <button type="button" id="gmail-payment-disconnect" data-idle-label="Desconectar" class="button button-danger">Desconectar</button>
+        </div>
+        <button type="button" id="gmail-payment-refresh" data-idle-label="Actualizar estado" class="button button-neutral">Actualizar estado</button>
+      </div>
+
+      <p class="mt-4 text-xs text-slate-500">La cuenta debe usar la etiqueta indicada. Los tokens se administran exclusivamente en el servidor y nunca se muestran en esta pantalla.</p>
+    </section>
+  `;
+}
+
+function getGmailPaymentUi() {
+  const root = currentContainer?.querySelector('#gmail-payment-integration-card');
+  if (!root) return null;
+  const ui = {
+    root,
+    enabledBadge: root.querySelector('#gmail-payment-enabled-badge'),
+    feedback: root.querySelector('#gmail-payment-feedback'),
+    email: root.querySelector('#gmail-payment-email'),
+    label: root.querySelector('#gmail-payment-label'),
+    watch: root.querySelector('#gmail-payment-watch'),
+    expiration: root.querySelector('#gmail-payment-expiration'),
+    lastRenewal: root.querySelector('#gmail-payment-last-renewal'),
+    renewalFailures: root.querySelector('#gmail-payment-renewal-failures'),
+    lastErrorRow: root.querySelector('#gmail-payment-last-error-row'),
+    lastError: root.querySelector('#gmail-payment-last-error'),
+    connectButton: root.querySelector('#gmail-payment-connect'),
+    connectedActions: root.querySelector('#gmail-payment-connected-actions'),
+    renewButton: root.querySelector('#gmail-payment-renew'),
+    testButton: root.querySelector('#gmail-payment-test'),
+    disconnectButton: root.querySelector('#gmail-payment-disconnect'),
+    refreshButton: root.querySelector('#gmail-payment-refresh'),
+    paymentsLink: root.querySelector('#gmail-payment-open-payments')
+  };
+  ui.actionButtons = [ui.connectButton, ui.renewButton, ui.testButton, ui.disconnectButton, ui.refreshButton].filter(Boolean);
+  return ui;
+}
+
+function watchStatusLabel(value) {
+  const labels = {
+    active: 'Activo',
+    pending: 'Pendiente',
+    renewal_pending: 'Renovacion pendiente',
+    label_missing: 'Falta configurar la etiqueta',
+    error: 'Con error'
+  };
+  return labels[value] || (value ? String(value) : 'No activo');
+}
+
+function renderGmailPaymentStatus(ui, status, pilotStatus) {
+  if (!ui) return;
+  const integrationEnabled = pilotStatus?.integrationEnabled === true;
+  ui.enabledBadge.textContent = integrationEnabled ? 'Procesamiento habilitado' : 'Procesamiento deshabilitado';
+  ui.enabledBadge.className = integrationEnabled
+    ? 'rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700'
+    : 'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800';
+
+  ui.email.textContent = status.connected ? (status.connectedEmail || 'Cuenta conectada') : 'Sin cuenta conectada';
+  ui.label.textContent = status.labelName
+    ? `${status.labelName}${status.labelConfigured ? ' · configurada' : ' · pendiente'}`
+    : 'No configurada';
+  ui.watch.textContent = status.connected ? watchStatusLabel(status.watchStatus) : 'No activo';
+  ui.expiration.textContent = formatGmailDateTime(status.watchExpiration);
+  ui.lastRenewal.textContent = formatGmailDateTime(status.lastWatchRenewedAt);
+  ui.renewalFailures.textContent = String(status.renewalFailures || 0);
+  ui.lastError.textContent = status.lastErrorCode || '';
+  ui.lastErrorRow.style.display = status.lastErrorCode ? 'block' : 'none';
+  ui.connectButton.style.display = status.connected ? 'none' : 'inline-flex';
+  ui.connectedActions.style.display = status.connected ? 'flex' : 'none';
+  ui.paymentsLink.style.display = integrationEnabled ? 'inline-flex' : 'none';
+}
+
+function setGmailActionLoading(ui, activeButton, loading, loadingLabel = 'Procesando...') {
+  ui?.actionButtons?.forEach((button) => {
+    button.disabled = loading;
+    if (!loading) button.textContent = button.dataset.idleLabel || button.textContent;
+  });
+  if (loading && activeButton) activeButton.textContent = loadingLabel;
+}
+
+async function loadGmailPaymentStatus(ui, pilotStatus, mountToken, { announce = false } = {}) {
+  if (!ui || !supabaseInstance) return null;
+  try {
+    const status = await getBankPaymentGmailStatus(supabaseInstance);
+    if (mountToken !== currentMountToken || !currentContainer?.contains(ui.root)) return null;
+    renderGmailPaymentStatus(ui, status, pilotStatus);
+    if (announce) showGmailFeedback(ui.feedback, 'Estado de Gmail actualizado.', 'success');
+    return status;
+  } catch (error) {
+    if (mountToken !== currentMountToken || !currentContainer?.contains(ui.root)) return null;
+    console.warn('[Integraciones] No fue posible consultar el estado de Gmail de pagos.');
+    showGmailFeedback(ui.feedback, error.message || 'No se pudo consultar el estado de Gmail.', 'error', 0);
+    return null;
+  }
+}
+
+async function runGmailPaymentAction(action, ui, pilotStatus, mountToken, button) {
+  if (!ui || !supabaseInstance || mountToken !== currentMountToken) return;
+  const loadingLabels = {
+    connect: 'Redirigiendo...',
+    renew: 'Renovando...',
+    test: 'Probando...',
+    disconnect: 'Desconectando...',
+    refresh: 'Actualizando...'
+  };
+
+  if (action === 'disconnect' && !window.confirm('Estas seguro de que deseas desconectar la cuenta Gmail de pagos?')) {
+    return;
+  }
+
+  setGmailActionLoading(ui, button, true, loadingLabels[action]);
+  try {
+    if (action === 'connect') {
+      const { authUrl } = await startBankPaymentGmailOAuth(supabaseInstance);
+      if (mountToken !== currentMountToken) return;
+      window.location.assign(authUrl);
+      return;
+    }
+    if (action === 'renew') {
+      await renewBankPaymentGmailWatch(supabaseInstance);
+      showGmailFeedback(ui.feedback, 'Gmail Watch fue renovado correctamente.', 'success');
+    } else if (action === 'test') {
+      const result = await testBankPaymentGmailConnection(supabaseInstance);
+      if (!result.ok) throw new Error('Google no confirmo la conexion de Gmail.');
+      showGmailFeedback(ui.feedback, `Conexion verificada${result.connectedEmail ? ` para ${result.connectedEmail}` : ''}.`, 'success');
+    } else if (action === 'disconnect') {
+      await disconnectBankPaymentGmail(supabaseInstance);
+      showGmailFeedback(ui.feedback, 'Cuenta Gmail desconectada.', 'success');
+    } else if (action === 'refresh') {
+      await loadGmailPaymentStatus(ui, pilotStatus, mountToken, { announce: true });
+      return;
+    }
+
+    await loadGmailPaymentStatus(ui, pilotStatus, mountToken);
+  } catch (error) {
+    if (mountToken !== currentMountToken) return;
+    console.warn(`[Integraciones] Fallo la accion Gmail '${action}'.`);
+    showGmailFeedback(ui.feedback, error.message || 'No se pudo completar la accion de Gmail.', 'error', 0);
+  } finally {
+    if (mountToken === currentMountToken) setGmailActionLoading(ui, button, false);
+  }
+}
+
+function showGmailCallbackResult(ui, callbackResult) {
+  if (!ui || !callbackResult) return;
+  const suffix = callbackResult.code ? ` Codigo: ${callbackResult.code}.` : '';
+  if (callbackResult.status === 'success') {
+    showGmailFeedback(ui.feedback, 'La cuenta Gmail quedo conectada y Gmail Watch fue activado.', 'success', 8000);
+  } else if (callbackResult.status === 'connected_watch_pending') {
+    showGmailFeedback(ui.feedback, `La cuenta quedo conectada, pero Gmail Watch requiere atencion.${suffix}`, 'warning', 0);
+  } else {
+    showGmailFeedback(ui.feedback, `No se pudo completar la conexion con Gmail.${suffix}`, 'error', 0);
+  }
+}
+
+function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
   currentContainer.innerHTML = `
     <div class="space-y-6 p-4 md:p-8">
       <section class="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
@@ -468,6 +738,8 @@ function renderModuleLayout() {
         </div>
         <div id="calendar-main-feedback" role="alert" aria-live="assertive" style="display:none;" class="mt-4"></div>
       </section>
+
+      ${showGmailPaymentCard ? renderGmailPaymentCard() : ''}
 
       <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -592,27 +864,52 @@ function renderModuleLayout() {
 export async function mount(container, sbInstance, user) {
   console.log('[Integraciones.js] Montando el modulo de integraciones...');
   unmount();
+  const mountToken = ++currentMountToken;
 
   supabaseInstance = sbInstance;
   userObject = user;
   currentContainer = container;
   currentHotelId = userObject?.user_metadata?.hotel_id || null;
+  currentProfileHotelId = null;
+  const gmailCallbackResult = takeGmailPaymentCallback();
 
-  if (!currentHotelId && userObject?.id) {
+  if (userObject?.id) {
     try {
-      const { data: perfil } = await supabaseInstance.from('usuarios').select('hotel_id').eq('id', userObject.id).single();
-      currentHotelId = perfil?.hotel_id;
+      const { data: perfil, error: perfilError } = await supabaseInstance
+        .from('usuarios')
+        .select('hotel_id')
+        .eq('id', userObject.id)
+        .single();
+      if (perfilError) throw perfilError;
+      currentProfileHotelId = perfil?.hotel_id ? String(perfil.hotel_id) : null;
+      if (currentProfileHotelId) currentHotelId = currentProfileHotelId;
     } catch (err) {
       console.error('Error fetching hotel_id:', err);
     }
   }
+
+  if (mountToken !== currentMountToken) return;
 
   if (!currentHotelId) {
     container.innerHTML = '<div class="rounded-2xl border border-red-200 bg-red-50 p-8 text-center text-red-700 shadow-sm">No se pudo identificar el hotel actual para gestionar integraciones.</div>';
     return;
   }
 
-  renderModuleLayout();
+  let bankPaymentPilotStatus = null;
+  if (currentProfileHotelId) {
+    try {
+      bankPaymentPilotStatus = await getBankPaymentPilotStatus(supabaseInstance, currentProfileHotelId);
+    } catch {
+      console.warn('[Integraciones] No fue posible verificar la tarjeta del piloto Gmail.');
+    }
+  }
+
+  if (mountToken !== currentMountToken) return;
+  const showGmailPaymentCard = Boolean(
+    bankPaymentPilotStatus?.eligible === true && bankPaymentPilotStatus?.isAdmin === true
+  );
+
+  renderModuleLayout({ showGmailPaymentCard });
 
   const calendarUiElements = {
     mainFeedback: container.querySelector('#calendar-main-feedback'),
@@ -661,6 +958,27 @@ export async function mount(container, sbInstance, user) {
   const alegraTestBtn = container.querySelector('#alegra-test-btn');
   const alegraInvoiceBtn = container.querySelector('#alegra-invoice-btn');
   const requestFeedback = container.querySelector('#integration-request-feedback');
+  const gmailPaymentUi = showGmailPaymentCard ? getGmailPaymentUi() : null;
+
+  if (gmailPaymentUi) {
+    renderGmailPaymentStatus(gmailPaymentUi, { connected: false, renewalFailures: 0 }, bankPaymentPilotStatus);
+    showGmailCallbackResult(gmailPaymentUi, gmailCallbackResult);
+    addEvt(gmailPaymentUi.connectButton, 'click', () => {
+      void runGmailPaymentAction('connect', gmailPaymentUi, bankPaymentPilotStatus, mountToken, gmailPaymentUi.connectButton);
+    });
+    addEvt(gmailPaymentUi.renewButton, 'click', () => {
+      void runGmailPaymentAction('renew', gmailPaymentUi, bankPaymentPilotStatus, mountToken, gmailPaymentUi.renewButton);
+    });
+    addEvt(gmailPaymentUi.testButton, 'click', () => {
+      void runGmailPaymentAction('test', gmailPaymentUi, bankPaymentPilotStatus, mountToken, gmailPaymentUi.testButton);
+    });
+    addEvt(gmailPaymentUi.disconnectButton, 'click', () => {
+      void runGmailPaymentAction('disconnect', gmailPaymentUi, bankPaymentPilotStatus, mountToken, gmailPaymentUi.disconnectButton);
+    });
+    addEvt(gmailPaymentUi.refreshButton, 'click', () => {
+      void runGmailPaymentAction('refresh', gmailPaymentUi, bankPaymentPilotStatus, mountToken, gmailPaymentUi.refreshButton);
+    });
+  }
 
   addEvt(alegraForm, 'submit', (event) => {
     event.preventDefault();
@@ -682,16 +1000,24 @@ export async function mount(container, sbInstance, user) {
     window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
   }
 
-  await Promise.all([
+  const initialLoads = [
     verificarEstadoCalendarios(calendarUiElements),
     loadAlegraConfig(alegraForm, alegraFeedback),
     loadIntegrationRequests()
-  ]);
+  ];
+  if (gmailPaymentUi) {
+    initialLoads.push(loadGmailPaymentStatus(gmailPaymentUi, bankPaymentPilotStatus, mountToken));
+  }
+  await Promise.all(initialLoads);
 }
 
 export function unmount() {
+  currentMountToken += 1;
+  const gmailFeedback = currentContainer?.querySelector('#gmail-payment-feedback');
+  if (gmailFeedback?.feedbackTimeout) window.clearTimeout(gmailFeedback.feedbackTimeout);
   cleanupListeners();
   currentHotelId = null;
+  currentProfileHotelId = null;
   supabaseInstance = null;
   userObject = null;
   currentContainer = null;

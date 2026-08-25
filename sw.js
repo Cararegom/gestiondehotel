@@ -1,4 +1,4 @@
-const APP_VERSION = '20260728-1';
+const APP_VERSION = '20260824-energy-control-1';
 const APP_SHELL_CACHE = `gestiondehotel-shell-${APP_VERSION}`;
 const RUNTIME_CACHE = `gestiondehotel-runtime-${APP_VERSION}`;
 const OFFLINE_URL = '/app/offline.html';
@@ -55,15 +55,30 @@ function shouldCacheAsset(request, url) {
     url.pathname === '/style.css';
 }
 
+function serviceUnavailableResponse() {
+  return new Response('', {
+    status: 503,
+    statusText: 'Service Unavailable'
+  });
+}
+
+async function cacheResponse(cache, request, response) {
+  if (!response?.ok) return;
+  try {
+    await cache.put(request, response.clone());
+  } catch {
+    // A cache write must never turn a valid network response into a failure.
+  }
+}
+
 async function networkFirst(request) {
   const cache = await caches.open(RUNTIME_CACHE);
   try {
     const networkResponse = await fetch(request);
-    if (networkResponse && networkResponse.ok) {
-      cache.put(request, networkResponse.clone());
-    }
+    if (!networkResponse) return serviceUnavailableResponse();
+    await cacheResponse(cache, request, networkResponse);
     return networkResponse;
-  } catch (error) {
+  } catch {
     const cached = await cache.match(request);
     if (cached) return cached;
 
@@ -72,30 +87,45 @@ async function networkFirst(request) {
       if (offline) return offline;
     }
 
-    throw error;
+    return serviceUnavailableResponse();
   }
 }
 
-async function staleWhileRevalidate(request) {
+async function staleWhileRevalidate(request, event) {
   const cache = await caches.open(RUNTIME_CACHE);
   const cached = await cache.match(request);
   const fetchPromise = fetch(request)
-    .then((response) => {
-      if (response && response.ok) {
-        cache.put(request, response.clone());
-      }
+    .then(async (response) => {
+      if (!response) return serviceUnavailableResponse();
+      await cacheResponse(cache, request, response);
       return response;
-    })
-    .catch(() => null);
+    });
 
-  return cached || fetchPromise || fetch(request);
+  if (cached) {
+    const updatePromise = fetchPromise.catch(() => undefined);
+    if (typeof event?.waitUntil === 'function') event.waitUntil(updatePromise);
+    return cached;
+  }
+
+  try {
+    return await fetchPromise;
+  } catch {
+    return serviceUnavailableResponse();
+  }
 }
 
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  const url = new URL(request.url);
+  let url;
+  try {
+    url = new URL(request.url);
+  } catch {
+    return;
+  }
 
   if (request.method !== 'GET') return;
+  if (!['http:', 'https:'].includes(url.protocol)) return;
+  if (url.origin !== self.location.origin) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request));
@@ -111,6 +141,6 @@ self.addEventListener('fetch', (event) => {
   }
 
   if (shouldCacheAsset(request, url)) {
-    event.respondWith(staleWhileRevalidate(request));
+    event.respondWith(staleWhileRevalidate(request, event));
   }
 });

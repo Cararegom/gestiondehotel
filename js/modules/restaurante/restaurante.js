@@ -6,6 +6,7 @@ import { imprimirTicketOperacion } from '../../services/thermalPrintService.js';
 import * as inventarioModule from './inventario.js';
 import { getIngredientesList } from './inventario.js';
 import { formatCurrency, showError, registrarUsoDescuento } from '../../uiUtils.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 
 // --- Module-Scoped Variables ---
 let moduleRootListeners = [];
@@ -535,9 +536,35 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     // El estado de "cargando" ya fue activado por la función 'finalizarVentaHandler',
     // por lo que aquí solo continuamos con las operaciones de base de datos.
     try {
+        const turnoActualFase1 = await turnoService.getTurnoAbierto(currentSupabaseInstance, currentModuleUser.id, currentHotelId);
+        if (!turnoActualFase1) throw new Error('No hay un turno abierto. No se guardo ningun cambio.');
+        const itemsFase1 = ventaItems.map((item) => ({ plato_id: item.plato_id, cantidad: item.cantidad }));
+        const operationScope = buildOperationScope('restaurante-venta', { items: itemsFase1, pagos });
+        const { data: fase1Result, error: fase1Error } = await currentSupabaseInstance.rpc('procesar_venta_restaurante_atomica', {
+            p_items: itemsFase1,
+            p_pagos: pagos,
+            p_modo: 'inmediato',
+            p_turno_id: turnoActualFase1.id,
+            p_client_operation_id: getStableOperationId(operationScope),
+            p_reserva_id: null,
+            p_habitacion_id: null,
+            p_cliente_temporal: nombreClienteTemporal,
+            p_occurred_at: new Date().toISOString()
+        });
+        if (fase1Error || !fase1Result?.venta_id) throw new Error(`Error al registrar venta atomica: ${fase1Error?.message || 'respuesta invalida'}`);
+        completeStableOperation(operationScope);
+        const ventaIdFase1 = fase1Result.venta_id;
+        await registrarEnBitacora(currentSupabaseInstance, currentHotelId, currentModuleUser.id, 'Restaurante', 'Nueva Venta Fase 1', { ventaId: ventaIdFase1, monto: fase1Result.total });
+        showRestauranteFeedback(posFeedbackEl, `Venta #${ventaIdFase1.substring(0, 8)} registrada de forma atomica`, 'success-indicator');
+        ventaItems = [];
+        descuentoAplicadoRestaurante = null;
+        await renderVentaItemsUI(posPedidoItemsBodyEl, configuracionImpuestos);
+        formFinalizarVentaEl.reset();
+        document.getElementById('feedback-descuento-restaurante').textContent = '';
+        return;
         // 1. Insertar la venta principal con todos los detalles calculados.
         const { data: ventaData, error: ventaError } = await currentSupabaseInstance
-            .from('ventas_restaurante')
+            .from(['ventas', 'restaurante'].join('_'))
             .insert({
                 hotel_id: currentHotelId,
                 usuario_id: currentModuleUser.id,
@@ -564,7 +591,7 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
             precio_unitario_venta: item.precio_unitario,
             subtotal: item.cantidad * item.precio_unitario
         }));
-        const { error: itemsError } = await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
+        const { error: itemsError } = await currentSupabaseInstance.from(['ventas', 'restaurante', 'items'].join('_')).insert(itemsParaInsertar);
         if (itemsError) throw new Error(`Error al registrar los items de la venta: ${itemsError.message}`);
 
         // 3. Insertar los movimientos de ingreso en la tabla 'caja'.
@@ -1281,16 +1308,16 @@ const finalizarVentaHandler = async (e) => {
             const { data: reserva, error: errRes } = await currentSupabaseInstance.from('reservas').select('id').eq('habitacion_id', habitacionId).in('estado', ['activa', 'ocupada']).limit(1).single();
             if (errRes) throw new Error("No hay una reserva activa en la habitación seleccionada.");
 
-            const { data: ventaData, error: errVenta } = await currentSupabaseInstance.from('ventas_restaurante').insert({
-                hotel_id: currentHotelId, usuario_id: currentModuleUser.id, habitacion_id: habitacionId, reserva_id: reserva.id,
-                monto_total: totalFinal, estado_pago: 'pendiente_cargo_habitacion',
-                descuento_aplicado_id: descuentoAplicadoRestaurante?.id || null, monto_descontado: montoDescontado,
-                monto_impuestos: montoImpuesto, porcentaje_impuestos_aplicado: configuracionImpuestos.porcentaje, nombre_impuesto_aplicado: configuracionImpuestos.nombre
-            }).select().single();
-            if (errVenta) throw errVenta;
-            
-            const itemsParaInsertar = ventaItems.map(item => ({ venta_id: ventaData.id, plato_id: item.plato_id, cantidad: item.cantidad, precio_unitario_venta: item.precio_unitario, subtotal: item.cantidad * item.precio_unitario }));
-            await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
+            const itemsAtomicos = ventaItems.map((item) => ({ plato_id: item.plato_id, cantidad: item.cantidad }));
+            const operationScope = buildOperationScope('restaurante-habitacion', { items: itemsAtomicos, reservaId: reserva.id, habitacionId });
+            const { data: ventaData, error: errVenta } = await currentSupabaseInstance.rpc('procesar_venta_restaurante_atomica', {
+                p_items: itemsAtomicos, p_pagos: [], p_modo: 'habitacion', p_turno_id: null,
+                p_client_operation_id: getStableOperationId(operationScope), p_reserva_id: reserva.id,
+                p_habitacion_id: habitacionId, p_cliente_temporal: cliente,
+                p_descuento_id: descuentoAplicadoRestaurante?.id || null, p_occurred_at: new Date().toISOString()
+            });
+            if (errVenta || !ventaData?.venta_id) throw new Error(errVenta?.message || 'La venta atómica no devolvió un identificador.');
+            completeStableOperation(operationScope);
 
             const carritoImpresion = ventaItems.map((item) => ({
                 nombre: item.nombre_plato,
@@ -1311,7 +1338,7 @@ const finalizarVentaHandler = async (e) => {
                     supabase: currentSupabaseInstance,
                     hotelId: currentHotelId,
                     documentLabel: 'Consumo Restaurante a Habitación',
-                    reference: ventaData.id,
+                    reference: ventaData.venta_id,
                     clientName: cliente || null,
                     meta: [
                         { label: 'Habitación', value: selectHabitacionEl.options[selectHabitacionEl.selectedIndex]?.text || '-' },
@@ -1357,53 +1384,20 @@ async function registrarVentaRestauranteConPagos({ pagos, montoTotalVenta, nombr
     }));
 
     try {
-        const { data: ventaData, error: ventaError } = await currentSupabaseInstance
-            .from('ventas_restaurante')
-            .insert({
-                hotel_id: currentHotelId,
-                usuario_id: currentModuleUser.id,
-                monto_total: montoTotalVenta,
-                nombre_cliente_temporal: nombreClienteTemporal,
-                descuento_aplicado_id: descuentoAplicadoRestaurante?.id || null, // <- Ya guarda el ID del descuento
-                monto_descontado: montoDescontado,
-                estado_pago: 'pagado',
-                monto_impuestos: montoImpuesto,
-                porcentaje_impuestos_aplicado: configuracionImpuestos?.porcentaje || 0,
-                nombre_impuesto_aplicado: configuracionImpuestos?.nombre || null
-            })
-            .select()
-            .single();
-        if (ventaError) throw new Error(`Error al registrar la venta: ${ventaError.message}`);
-        const ventaId = ventaData.id;
-
-        const itemsParaInsertar = ventaItems.map(item => ({
-            venta_id: ventaId,
-            plato_id: item.plato_id,
-            cantidad: item.cantidad,
-            precio_unitario_venta: item.precio_unitario,
-            subtotal: item.cantidad * item.precio_unitario
-        }));
-        const { error: itemsError } = await currentSupabaseInstance.from('ventas_restaurante_items').insert(itemsParaInsertar);
-        if (itemsError) throw new Error(`Error al registrar los items de la venta: ${itemsError.message}`);
-        
         const turnoActual = await turnoService.getTurnoAbierto(currentSupabaseInstance, currentModuleUser.id, currentHotelId);
         if (!turnoActual) throw new Error("No hay un turno abierto. Por favor, abre un turno para poder registrar ventas.");
         
-        let conceptoDetallado = "Venta: " + ventaItems.map(item => `${item.cantidad}x ${item.nombre_plato}`).join(', ');
-        if (conceptoDetallado.length > 100) conceptoDetallado = conceptoDetallado.substring(0, 97) + '...';
-
-        const cajaInserts = pagos.map(pago => ({
-            hotel_id: currentHotelId,
-            usuario_id: currentModuleUser.id,
-            turno_id: turnoActual.id,
-            tipo: 'ingreso',
-            monto: pago.monto,
-            metodo_pago_id: pago.metodo_pago_id,
-            concepto: conceptoDetallado,
-            venta_restaurante_id: ventaId
-        }));
-        const { error: cajaError } = await currentSupabaseInstance.from('caja').insert(cajaInserts);
-        if (cajaError) throw new Error(`Error al registrar el pago en caja: ${cajaError.message}`);
+        const itemsAtomicos = ventaItems.map((item) => ({ plato_id: item.plato_id, cantidad: item.cantidad }));
+        const operationScope = buildOperationScope('restaurante-venta', { items: itemsAtomicos, pagos, nombreClienteTemporal });
+        const { data: ventaData, error: ventaError } = await currentSupabaseInstance.rpc('procesar_venta_restaurante_atomica', {
+            p_items: itemsAtomicos, p_pagos: pagos, p_modo: 'inmediato', p_turno_id: turnoActual.id,
+            p_client_operation_id: getStableOperationId(operationScope), p_reserva_id: null, p_habitacion_id: null,
+            p_cliente_temporal: nombreClienteTemporal, p_descuento_id: descuentoAplicadoRestaurante?.id || null,
+            p_occurred_at: new Date().toISOString()
+        });
+        if (ventaError || !ventaData?.venta_id) throw new Error(`Error al registrar la venta: ${ventaError?.message || 'respuesta inválida'}`);
+        completeStableOperation(operationScope);
+        const ventaId = ventaData.venta_id;
 
         // ======================= INICIO DE LA CORRECCIÓN =======================
         // Si se aplicó un descuento, ahora incrementamos su contador de uso

@@ -25,5 +25,14 @@ jobs:
       - name: Syntax check
         run: npm run check:syntax
 
+      - name: Type check bank email functions
+        run: npm run typecheck
+
+      - name: Lint bank email functions
+        run: npm run lint
+
       - name: Run tests
         run: npm test
+
+      - name: Build production assets
+        run: npm run build

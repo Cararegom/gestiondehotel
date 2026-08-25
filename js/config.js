@@ -2,6 +2,11 @@
 
 export const APP_CONFIG = {
   defaultLanguage: 'es',
+  // En staging se inyecta globalThis.__HOTEL_APP_CONFIG__ antes de cargar la app.
+  // fase1LegacyRevoked=true fuerza todos los caminos seguros y hace irreversible
+  // el fallback desde frontend después de la migración 10.
+  featureFlags: globalThis.__HOTEL_APP_CONFIG__?.featureFlags || {},
+  fase1LegacyRevoked: globalThis.__HOTEL_APP_CONFIG__?.fase1LegacyRevoked === true,
   // Otras configuraciones globales de la aplicación
 };
 

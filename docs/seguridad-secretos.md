@@ -35,6 +35,19 @@ Configurar en Supabase:
 - `GOOGLE_CLIENT_SECRET`
 - `OUTLOOK_CLIENT_ID`
 - `OUTLOOK_CLIENT_SECRET`
+- `BANK_EMAIL_INTEGRATION_ENABLED`
+- `BANK_EMAIL_PILOT_HOTEL_NAME`
+- `GMAIL_OAUTH_CLIENT_ID`
+- `GMAIL_OAUTH_CLIENT_SECRET`
+- `GMAIL_OAUTH_REDIRECT_URI`
+- `GOOGLE_REDIRECT_URI`
+- `GOOGLE_PUBSUB_TOPIC`
+- `GOOGLE_PUBSUB_VERIFICATION_AUDIENCE`
+- `GOOGLE_SERVICE_ACCOUNT_EMAIL`
+- `GMAIL_PAYMENT_LABEL`
+- `BANK_TOKEN_ENCRYPTION_KEY`
+- `CRON_SECRET`
+- `BANK_EMAIL_RULES_JSON`
 
 Ejemplo:
 
@@ -85,7 +98,13 @@ npx supabase functions deploy update-overdue-rooms
 npx supabase functions deploy actualizar_permisos_usuario
 npx supabase functions deploy delete-user
 npx supabase functions deploy chatkit-session
+npx supabase functions deploy bank-email-api
+npx supabase functions deploy gmail-oauth-callback --no-verify-jwt
+npx supabase functions deploy gmail-webhook --no-verify-jwt
+npx supabase functions deploy gmail-watch-renew --no-verify-jwt
 ```
+
+La configuracion completa del piloto, incluidos OAuth, Pub/Sub OIDC, la etiqueta de Gmail, el cron diario y el kill switch, esta en `docs/gmail-bank-payments-pilot.md`. Los tokens de Google se cifran con `BANK_TOKEN_ENCRYPTION_KEY`; esa clave y `CRON_SECRET` deben ser valores distintos y no deben registrarse en logs.
 
 ## Variables para `scripts/watch.js`
 

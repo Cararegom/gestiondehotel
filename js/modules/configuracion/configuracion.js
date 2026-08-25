@@ -35,6 +35,25 @@ export async function mount(container, supabase, user, hotelId) {
 
       <form id="config-form" class="space-y-10">
 
+        <fieldset class="border-2 border-amber-200 p-6 rounded-xl shadow-md bg-amber-50/40">
+          <legend class="text-xl font-semibold text-amber-800 px-3 py-1 bg-white border-2 border-amber-200 rounded-lg shadow-sm">
+            <span class="mr-2">⚡</span>Control de Energía por QR
+          </legend>
+          <div class="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="font-bold text-slate-900">Habilitar Control de Energía</p>
+              <p id="energy-control-description" class="mt-1 text-sm text-slate-600">Al activarlo, cada habitación enviada a limpieza requerirá revisión mediante su QR físico.</p>
+            </div>
+            <label class="energy-switch relative inline-flex cursor-pointer items-center" for="energy_control_enabled">
+              <input id="energy_control_enabled" name="energy_control_enabled" type="checkbox" class="peer sr-only" role="switch" aria-describedby="energy-control-description energy-control-status">
+              <span class="h-8 w-16 rounded-full bg-slate-400 transition-colors duration-200 peer-checked:bg-emerald-500 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-200 peer-disabled:cursor-wait peer-disabled:opacity-60"></span>
+              <span class="pointer-events-none absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 peer-checked:translate-x-8"></span>
+              <span id="energy-control-status" class="ml-3 min-w-24 font-black text-slate-600">DESACTIVADO</span>
+            </label>
+          </div>
+          <p id="energy-control-feedback" class="mt-3 min-h-5 text-sm font-semibold" role="status" aria-live="polite"></p>
+        </fieldset>
+
         <fieldset class="border-2 border-blue-200 p-6 rounded-xl shadow-md bg-blue-50/30">
           <legend class="text-xl font-semibold text-blue-700 px-3 py-1 bg-white border-2 border-blue-200 rounded-lg shadow-sm">
             <span class="mr-2">🏢</span>Información Fiscal y Contacto
@@ -237,10 +256,12 @@ export async function mount(container, supabase, user, hotelId) {
       @keyframes fadeInOut { 0%, 100% { opacity: 0; } 10%, 90% { opacity: 1; } }
       @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
       #logo-preview.hidden { display: none; }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; }
     </style>
   `;
 
   await cargarConfiguracionHotel();
+  inicializarInterruptorControlEnergia();
   await cargarMetodosPago();
   renderTablaMetodosPago();
   const btnNuevoMetodo = document.getElementById('btnNuevoMetodoPago');
@@ -275,6 +296,44 @@ export async function mount(container, supabase, user, hotelId) {
       await guardarConfiguracionHotel();
     };
   }
+}
+
+function actualizarVistaInterruptorEnergia(enabled) {
+  const status = document.getElementById('energy-control-status');
+  if (!status) return;
+  status.textContent = enabled ? 'ACTIVADO' : 'DESACTIVADO';
+  status.className = `ml-3 min-w-24 font-black ${enabled ? 'text-emerald-700' : 'text-slate-600'}`;
+}
+
+function inicializarInterruptorControlEnergia() {
+  const toggle = document.getElementById('energy_control_enabled');
+  const feedback = document.getElementById('energy-control-feedback');
+  if (!toggle || !feedback) return;
+  actualizarVistaInterruptorEnergia(toggle.checked);
+  toggle.addEventListener('change', async () => {
+    const enabled = toggle.checked;
+    toggle.disabled = true;
+    feedback.textContent = enabled ? 'Activando Control de Energía…' : 'Desactivando Control de Energía…';
+    feedback.className = 'mt-3 min-h-5 text-sm font-semibold text-blue-700';
+    const { error } = await currentSupabaseInstance
+      .from('configuracion_hotel')
+      .update({ energy_control_enabled: enabled, actualizado_en: new Date().toISOString() })
+      .eq('hotel_id', currentHotelId);
+    if (error) {
+      toggle.checked = !enabled;
+      toggle.disabled = false;
+      actualizarVistaInterruptorEnergia(toggle.checked);
+      feedback.textContent = `No se pudo cambiar la función: ${error.message}`;
+      feedback.className = 'mt-3 min-h-5 text-sm font-semibold text-red-700';
+      return;
+    }
+    actualizarVistaInterruptorEnergia(enabled);
+    feedback.textContent = enabled
+      ? 'Control de Energía activado. Actualizando el menú…'
+      : 'Control de Energía desactivado. Actualizando el menú…';
+    feedback.className = 'mt-3 min-h-5 text-sm font-semibold text-emerald-700';
+    window.setTimeout(() => window.location.reload(), 700);
+  });
 }
 
 async function cargarConfiguracionHotel() {
@@ -323,6 +382,8 @@ async function cargarConfiguracionHotel() {
   const currentLogoUrlSpan = document.getElementById('current-logo-url');
 
   if (data) {
+    form.energy_control_enabled.checked = data.energy_control_enabled === true;
+    actualizarVistaInterruptorEnergia(form.energy_control_enabled.checked);
     form.nombre_hotel.value = data.nombre_hotel || '';
     form.nit_rut.value = data.nit_rut || '';
     form.razon_social.value = data.razon_social || '';
@@ -380,6 +441,8 @@ async function cargarConfiguracionHotel() {
     form.tipo_impresora.value = data.tipo_impresora || 'termica';
 
   } else { 
+    form.energy_control_enabled.checked = false;
+    actualizarVistaInterruptorEnergia(false);
     form.checkin_hora_config.value = '15:00';
     form.checkout_hora_config.value = '12:00';
     form.cobro_al_checkin.value = "true";
@@ -450,6 +513,7 @@ async function guardarConfiguracionHotel() {
     correo_reportes: form.correo_reportes.value.trim() || null,
     tienda_whatsapp_numero: form.tienda_whatsapp_numero.value.trim() || null,
     tienda_web_activa: form.tienda_web_activa.value === "true",
+    energy_control_enabled: form.energy_control_enabled.checked,
     checkin_hora_config: form.checkin_hora_config.value || null,
     checkout_hora_config: form.checkout_hora_config.value || null,
     cobro_al_checkin: form.cobro_al_checkin.value === "true",

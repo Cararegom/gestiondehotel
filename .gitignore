@@ -2,8 +2,11 @@ node_modules
 js/modules/faq/bfg-1.14.0.jar
 .env
 .env.*
+!.env.example
 *.local.env
 scripts/*.local.js
 js/runtime-config.local.js
 supabase/.env
 supabase/.temp/
+.codex-staging-deploy/
+.codex-remote-schema-audit.sql

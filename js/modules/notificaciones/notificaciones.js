@@ -7,12 +7,16 @@ import {
   resolveNotificationContext,
   subscribeToNotificationFeed
 } from '../../services/notificationCenterService.js';
+import { escapeAttribute, escapeHtml } from '../../security.js';
 
 let bellSubscription = null;
 let bellListeners = [];
 let pageListeners = [];
 let currentBellContext = null;
 let currentBellContainer = null;
+
+const BANK_PAYMENT_ENTITY_TYPES = new Set(['bank_payment_event', 'bank_payment_events']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function addBellListener(element, type, handler) {
   if (!element) return;
@@ -50,6 +54,36 @@ function getNotificationToneClass(type = '') {
   return 'bg-blue-100 text-blue-800';
 }
 
+function getBankPaymentNotificationId(notification = {}) {
+  const entityType = String(notification.entidad_tipo || '').trim().toLowerCase();
+  const entityId = String(notification.entidad_id || '').trim();
+  return BANK_PAYMENT_ENTITY_TYPES.has(entityType) && UUID_PATTERN.test(entityId) ? entityId : null;
+}
+
+function navigateToBankPayment(paymentEventId) {
+  if (!UUID_PATTERN.test(String(paymentEventId || ''))) return;
+  window.location.hash = `#/pagos-bancarios?payment=${encodeURIComponent(paymentEventId)}`;
+}
+
+function renderHistoryActions(notification) {
+  const actions = [];
+  const paymentEventId = getBankPaymentNotificationId(notification);
+
+  if (paymentEventId) {
+    actions.push(`<a class="ver-pago-bancario text-blue-700 hover:text-blue-900" href="#/pagos-bancarios?payment=${escapeAttribute(paymentEventId)}" data-payment-event-id="${escapeAttribute(paymentEventId)}" data-notification-id="${escapeAttribute(notification.id)}" data-notification-unread="${notification.leida ? 'false' : 'true'}">Ver pago</a>`);
+  }
+
+  if (!notification.leida) {
+    actions.push(`<button class="marcar-leida-historial text-indigo-600 hover:text-indigo-900" data-id="${escapeAttribute(notification.id)}">Marcar leida</button>`);
+  }
+
+  if (!actions.length) {
+    return '<span class="text-xs text-slate-400">Sin acciones</span>';
+  }
+
+  return `<div class="flex items-center gap-3">${actions.join('')}</div>`;
+}
+
 function renderDropdownList(listEl, badgeEl, notifications = []) {
   if (!listEl || !badgeEl) return;
 
@@ -62,17 +96,21 @@ function renderDropdownList(listEl, badgeEl, notifications = []) {
     return;
   }
 
-  listEl.innerHTML = notifications.map((notification) => `
-    <li class="dropdown-item block cursor-pointer px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 ${notification.leida ? '' : 'bg-indigo-50 font-medium'}" data-notificacion-id="${notification.id}">
+  listEl.innerHTML = notifications.map((notification) => {
+    const paymentEventId = getBankPaymentNotificationId(notification);
+    return `
+    <li class="dropdown-item block cursor-pointer px-4 py-3 text-sm text-gray-700 hover:bg-gray-100 ${notification.leida ? '' : 'bg-indigo-50 font-medium'}" data-notificacion-id="${escapeAttribute(notification.id)}"${paymentEventId ? ` data-bank-payment-id="${escapeAttribute(paymentEventId)}"` : ''}>
       <div class="flex items-start gap-2">
         <span class="mt-1 inline-block h-2 w-2 rounded-full ${notification.leida ? 'bg-slate-300' : 'bg-indigo-500'}"></span>
         <div class="min-w-0 flex-1">
-          <div class="leading-tight">${notification.mensaje || 'Notificacion'}</div>
-          <div class="mt-1 text-xs text-gray-400">${formatNotificationDate(notification.creado_en)}</div>
+          <div class="leading-tight">${escapeHtml(notification.mensaje || 'Notificacion')}</div>
+          <div class="mt-1 text-xs text-gray-400">${escapeHtml(formatNotificationDate(notification.creado_en))}</div>
+          ${paymentEventId ? '<div class="mt-1 text-xs font-semibold text-blue-700">Abrir pago bancario</div>' : ''}
         </div>
       </div>
     </li>
-  `).join('');
+  `;
+  }).join('');
 }
 
 async function refreshBellFeed(supabase, bellUi) {
@@ -173,11 +211,18 @@ export async function inicializarCampanitaGlobal(bellContainer, supabase, curren
     const item = event.target.closest('[data-notificacion-id]');
     if (!item) return;
     const notificationId = item.dataset.notificacionId;
+    const paymentEventId = item.dataset.bankPaymentId || null;
     try {
       await markNotificationAsRead(supabase, notificationId, currentBellContext.hotelId);
       await refreshBellFeed(supabase, bellUi);
     } catch (error) {
       console.error('Error marcando notificacion como leida:', error);
+    }
+
+    if (paymentEventId) {
+      menuEl?.classList.add('hidden');
+      buttonEl?.setAttribute('aria-expanded', 'false');
+      navigateToBankPayment(paymentEventId);
     }
   };
 
@@ -263,16 +308,14 @@ function renderHistoryTable(pageContainer, notifications = []) {
                 ? '<tr><td colspan="5" class="px-4 py-6 text-center text-sm text-gray-500">No hay notificaciones en tu historial.</td></tr>'
                 : notifications.map((notification) => `
                   <tr class="${notification.leida ? 'bg-white' : 'bg-indigo-50 font-medium'}">
-                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">${formatNotificationDate(notification.creado_en)}</td>
-                    <td class="px-4 py-3 text-sm text-gray-900">${notification.mensaje || 'Notificacion'}</td>
+                    <td class="whitespace-nowrap px-4 py-3 text-sm text-gray-500">${escapeHtml(formatNotificationDate(notification.creado_en))}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">${escapeHtml(notification.mensaje || 'Notificacion')}</td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm">
-                      <span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getNotificationToneClass(notification.tipo)}">${notification.tipo || 'General'}</span>
+                      <span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold ${getNotificationToneClass(notification.tipo)}">${escapeHtml(notification.tipo || 'General')}</span>
                     </td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm ${notification.leida ? 'text-gray-500' : 'text-indigo-600'}">${notification.leida ? 'Leida' : 'No leida'}</td>
                     <td class="whitespace-nowrap px-4 py-3 text-sm font-medium">
-                      ${notification.leida
-                        ? '<span class="text-xs text-slate-400">Sin acciones</span>'
-                        : `<button class="marcar-leida-historial text-indigo-600 hover:text-indigo-900" data-id="${notification.id}">Marcar leida</button>`}
+                      ${renderHistoryActions(notification)}
                     </td>
                   </tr>
                 `).join('')}
@@ -325,6 +368,20 @@ export async function mount(pageContainer, supabase, currentUser) {
     });
 
     addPageListener(tbody, 'click', async (event) => {
+      const paymentLink = event.target.closest('.ver-pago-bancario');
+      if (paymentLink) {
+        event.preventDefault();
+        if (paymentLink.dataset.notificationUnread === 'true') {
+          try {
+            await markNotificationAsRead(supabase, paymentLink.dataset.notificationId, context.hotelId);
+          } catch (error) {
+            console.error('Error marcando la notificacion bancaria como leida:', error);
+          }
+        }
+        navigateToBankPayment(paymentLink.dataset.paymentEventId);
+        return;
+      }
+
       const button = event.target.closest('.marcar-leida-historial');
       if (!button) return;
       button.disabled = true;
@@ -339,7 +396,7 @@ export async function mount(pageContainer, supabase, currentUser) {
     });
   } catch (error) {
     console.error('Error cargando el historial de notificaciones:', error);
-    pageContainer.innerHTML = `<p class="rounded bg-red-100 p-4 text-red-700">Error al cargar el historial: ${error.message}</p>`;
+    pageContainer.innerHTML = `<p class="rounded bg-red-100 p-4 text-red-700">Error al cargar el historial: ${escapeHtml(error.message)}</p>`;
   }
 }
 
