@@ -922,12 +922,12 @@ if (categorias?.length) {
                     savedPlatoId = data.id;
                 }
 
-                await supabaseInstance.from('platos_recetas').delete().eq('plato_id', savedPlatoId);
-                if (recetaActual.length > 0) {
-                    const recetaData = recetaActual.map(item => ({ plato_id: savedPlatoId, hotel_id: hotelId, ...item }));
-                    const { error } = await supabaseInstance.from('platos_recetas').insert(recetaData);
-                    if (error) throw error;
-                }
+                const recetaData = recetaActual.map(item => ({ ingrediente_id: item.ingrediente_id, cantidad: item.cantidad }));
+                const { error: recetaError } = await supabaseInstance.rpc('guardar_receta_plato_atomica', {
+                    p_plato_id: savedPlatoId,
+                    p_items: recetaData
+                });
+                if (recetaError) throw recetaError;
                 
                 showRestauranteFeedback(platosFeedbackEl, '¡Plato guardado!', 'success-indicator');
                 closePlatoModal();

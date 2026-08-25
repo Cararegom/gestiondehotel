@@ -23,6 +23,8 @@ Las tablas de saldos, movimientos de valoración y CMV tienen RLS por hotel. El 
 
 ## Tratamiento histórico
 
+La edición de una receta se realiza mediante `guardar_receta_plato_atomica`: valida hotel, permiso administrativo, ingredientes y cantidades, y reemplaza toda la receta en una sola transacción. Las escrituras directas a `platos_recetas` permanecen bloqueadas.
+
 Las existencias presentes al momento del corte se copian con valor cero y estado `uninitialized`, salvo ingredientes que ya tenían `costo_unitario`. El administrador debe indicar el costo promedio actual antes de considerar oficial el margen. Los reportes existentes no se sustituyen todavía.
 
 ## Validación en staging
@@ -40,6 +42,7 @@ Las existencias presentes al momento del corte se copian con valor cero y estado
 - `supabase/migrations/20260825162000_fase4_nuevos_items_costeo.sql`
 - `supabase/migrations/20260825170000_fase4_precio_compra_costeo_tienda.sql`
 - `supabase/migrations/20260825171000_fase4_restaurante_recetas_cmv.sql`
+- `supabase/migrations/20260825172000_guardar_receta_restaurante_atomica.sql`
 - `js/modules/costeo/costeo.js`
 - `tests/fase4-costeo.test.cjs`
 

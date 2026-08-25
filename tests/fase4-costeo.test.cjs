@@ -7,6 +7,7 @@ const adjustmentSql = fs.readFileSync('supabase/migrations/20260825161000_fase4_
 const newItemsSql = fs.readFileSync('supabase/migrations/20260825162000_fase4_nuevos_items_costeo.sql', 'utf8');
 const storeReferenceSql = fs.readFileSync('supabase/migrations/20260825170000_fase4_precio_compra_costeo_tienda.sql', 'utf8');
 const restaurantRecipeSql = fs.readFileSync('supabase/migrations/20260825171000_fase4_restaurante_recetas_cmv.sql', 'utf8');
+const recipeWriteSql = fs.readFileSync('supabase/migrations/20260825172000_guardar_receta_restaurante_atomica.sql', 'utf8');
 const restaurantUi = fs.readFileSync('js/modules/restaurante/restaurante.js', 'utf8');
 const ui = fs.readFileSync('js/modules/costeo/costeo.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
@@ -64,4 +65,13 @@ test('restaurant refuses recipe-less plates and supports repairing affected COGS
   assert.match(restaurantUi, /Sin receta · no vendible/);
   assert.match(restaurantUi, /Un plato activo debe tener al menos un ingrediente/);
   assert.match(ui, /reprocesar_cmv_restaurante/);
+});
+
+test('restaurant recipes are replaced atomically through an authorized RPC', () => {
+  assert.match(recipeWriteSql, /guardar_receta_plato_atomica/);
+  assert.match(recipeWriteSql, /inventario\.ajustar/);
+  assert.match(recipeWriteSql, /DELETE FROM public\.platos_recetas/);
+  assert.match(recipeWriteSql, /No repitas ingredientes/);
+  assert.match(restaurantUi, /rpc\('guardar_receta_plato_atomica'/);
+  assert.doesNotMatch(restaurantUi, /from\('platos_recetas'\)\.delete/);
 });
