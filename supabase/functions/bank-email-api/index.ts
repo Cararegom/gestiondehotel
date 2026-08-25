@@ -574,12 +574,28 @@ async function handlePilotAction(
   if (action === 'test-connection') {
     const integration = await getBankEmailIntegration(admin, pilotHotel.id);
     if (!integration) throw new HttpError(409, 'gmail_not_connected', 'No hay una cuenta Gmail conectada.');
-    const { accessToken } = await getValidGmailAccessToken(admin, integration);
-    const profile = await getGmailProfile(accessToken);
-    if (profile.emailAddress.trim().toLowerCase() !== integration.connected_email.trim().toLowerCase()) {
-      throw Object.assign(new Error('La cuenta Gmail no coincide.'), { code: 'gmail_account_mismatch' });
+    try {
+      const { accessToken } = await getValidGmailAccessToken(admin, integration);
+      const profile = await getGmailProfile(accessToken);
+      if (profile.emailAddress.trim().toLowerCase() !== integration.connected_email.trim().toLowerCase()) {
+        throw Object.assign(new Error('La cuenta Gmail no coincide.'), { code: 'gmail_account_mismatch' });
+      }
+      return { ok: true, connectedEmail: integration.connected_email };
+    } catch (error) {
+      const code = safeErrorCode(error, 'gmail_connection_test_failed');
+      await recordWatchFailure(admin, integration, code);
+      await writeAudit(admin, pilotHotel.id, context.user.id, 'gmail_connection_test_failed', {
+        error_code: code
+      });
+      if (code === 'google_invalid_grant') {
+        throw new HttpError(
+          409,
+          code,
+          'El permiso de Google vencio o fue revocado. Pulsa Conectar Gmail y autoriza nuevamente la cuenta.'
+        );
+      }
+      throw error;
     }
-    return { ok: true, connectedEmail: integration.connected_email };
   }
   if (action === 'disconnect') {
     const integration = await getBankEmailIntegration(admin, pilotHotel.id);

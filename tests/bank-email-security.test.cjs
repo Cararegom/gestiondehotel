@@ -12,6 +12,12 @@ const migrationPath = path.join(
 );
 const migration = fs.readFileSync(migrationPath, 'utf8');
 const api = fs.readFileSync(path.join(root, 'supabase', 'functions', 'bank-email-api', 'index.ts'), 'utf8');
+
+test('invalid_grant se convierte en una reconexion controlada y no en error 500', () => {
+  assert.match(api, /code === 'google_invalid_grant'/);
+  assert.match(api, /new HttpError\(\s*409,[\s\S]*Pulsa Conectar Gmail/);
+  assert.match(api, /gmail_connection_test_failed/);
+});
 const webhook = fs.readFileSync(path.join(root, 'supabase', 'functions', 'gmail-webhook', 'index.ts'), 'utf8');
 const queue = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'bank-email', 'queue.ts'), 'utf8');
 const oidc = fs.readFileSync(path.join(root, 'supabase', 'functions', '_shared', 'bank-email', 'pubsub-oidc.ts'), 'utf8');

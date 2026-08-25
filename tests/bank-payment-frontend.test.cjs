@@ -176,6 +176,31 @@ test('las acciones Gmail usan solo el contexto JWT y validan la URL OAuth de Goo
   );
 });
 
+test('los errores controlados de Gmail muestran la instruccion enviada por el servidor', async () => {
+  const service = await loadServiceModule();
+  const client = {
+    functions: {
+      async invoke() {
+        return {
+          data: null,
+          error: {
+            message: 'Edge Function returned a non-2xx status code',
+            context: new Response(JSON.stringify({
+              error: 'google_invalid_grant',
+              message: 'El permiso de Google vencio o fue revocado. Pulsa Conectar Gmail.'
+            }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+          }
+        };
+      }
+    }
+  };
+
+  await assert.rejects(
+    service.testBankPaymentGmailConnection(client),
+    /permiso de Google vencio.*Conectar Gmail/i
+  );
+});
+
 test('ruta, interfaz y notificaciones conservan las barreras del piloto', () => {
   const main = fs.readFileSync(path.join(root, 'js/main.js'), 'utf8');
   const moduleSource = fs.readFileSync(

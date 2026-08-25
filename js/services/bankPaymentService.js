@@ -41,7 +41,20 @@ async function invokeBankEmailApi(supabase, action, payload = {}) {
   });
 
   if (error) {
-    throw new Error(safeServerMessage(error.message, 'No se pudo completar la operacion bancaria.'));
+    let serverMessage = '';
+    try {
+      const response = error.context;
+      if (response && typeof response.clone === 'function') {
+        const body = await response.clone().json();
+        serverMessage = body?.message || body?.error || '';
+      }
+    } catch {
+      // Algunas versiones del cliente no exponen el cuerpo de la respuesta.
+    }
+    throw new Error(safeServerMessage(
+      serverMessage || error.message,
+      'No se pudo completar la operacion bancaria.'
+    ));
   }
 
   if (data?.error) {
