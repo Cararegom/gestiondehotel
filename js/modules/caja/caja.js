@@ -50,7 +50,7 @@ let turnoEnSupervision = null;
 let turnosAbiertosCache = new Map();
 let movementTableState = createInitialMovementTableState();
 
-const ADMIN_ROLES = ['admin', 'administrador'];
+const ADMIN_ROLES = ['admin', 'administrador', 'superadmin'];
 
 function normalizeRoleName(value = '') {
   return String(value || '')
@@ -70,7 +70,8 @@ function isMeseroUser() {
 }
 
 function isAdminUser() {
-  return !!(currentUserRole && ADMIN_ROLES.includes(String(currentUserRole).toLowerCase()));
+  return [currentUserRole, ...currentUserRoleNames]
+    .some((roleName) => ADMIN_ROLES.includes(normalizeRoleName(roleName)));
 }
 
 function setTurnoActivo(nuevoTurno) {
