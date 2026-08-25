@@ -1807,26 +1807,11 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
   }
 
   async function marcarPendientesComoPagados(pagoReservaId) {
-    await supabase
-      .from('servicios_x_reserva')
-      .update({ estado_pago: 'pagado', pago_reserva_id: pagoReservaId })
-      .eq('hotel_id', hotelId)
-      .eq('reserva_id', reserva.id)
-      .neq('estado_pago', 'pagado');
-
-    await supabase
-      .from('ventas_tienda')
-      .update({ estado_pago: 'pagado' })
-      .eq('hotel_id', hotelId)
-      .eq('reserva_id', reserva.id)
-      .neq('estado_pago', 'pagado');
-
-    await supabase
-      .from('ventas_restaurante')
-      .update({ estado_pago: 'pagado' })
-      .eq('hotel_id', hotelId)
-      .eq('reserva_id', reserva.id)
-      .neq('estado_pago', 'pagado');
+    const { error } = await supabase.rpc('liquidar_consumos_reserva_atomico', {
+      p_reserva_id: reserva.id,
+      p_pago_reserva_id: pagoReservaId
+    });
+    if (error) throw error;
   }
 
   async function cargarCuentaDetallada() {

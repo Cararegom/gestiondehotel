@@ -37,6 +37,18 @@ test('payment service normalizes the pago_id returned by the database RPC', () =
   assert.match(service, /pago_reserva_id:\s*pagoReservaId/);
 });
 
+test('reservation checkout liquidates linked consumption through an authorized RPC', () => {
+  const checkout = read('js/modules/mapa-habitaciones/modales-gestion.js');
+  const sql = read('supabase/migrations/20260825173000_liquidar_consumos_reserva_atomico.sql');
+  assert.match(checkout, /rpc\('liquidar_consumos_reserva_atomico'/);
+  assert.doesNotMatch(checkout, /from\('ventas_tienda'\)\s*\.update\(\{ estado_pago: 'pagado'/);
+  assert.doesNotMatch(checkout, /from\('ventas_restaurante'\)\s*\.update\(\{ estado_pago: 'pagado'/);
+  assert.match(sql, /fase1_actor_es_miembro_activo/);
+  assert.match(sql, /usuario_id=auth\.uid\(\)/);
+  assert.match(sql, /UPDATE public\.ventas_tienda/);
+  assert.match(sql, /UPDATE public\.ventas_restaurante/);
+});
+
 test('Bogota business dates cover evening and midnight boundaries', () => {
   const bogotaDate = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
   assert.equal(bogotaDate('2026-08-09T23:30:00-05:00'), '2026-08-09');
