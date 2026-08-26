@@ -9,6 +9,9 @@ import {
 import { escapeAttribute, escapeHtml, normalizeLegacyText } from '../../security.js';
 import { confirmAction, seleccionarMetodoPago } from './caja-turnos.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
+import { getBankPaymentCashStatuses } from '../../services/bankPaymentService.js';
+
+export const BANK_RECONCILIATION_PILOT_HOTEL_NAME = 'hotel marena san isidro';
 
 export function createInitialMovementTableState() {
   return {
@@ -18,7 +21,8 @@ export function createInitialMovementTableState() {
     pageSize: 15,
     search: '',
     type: 'todos',
-    method: 'todos'
+    method: 'todos',
+    showBankStatus: false
   };
 }
 
@@ -130,6 +134,17 @@ export function getMovementTypeBadge(movementType) {
   return `<span class="badge bg-blue-100 text-blue-800">${safeType}</span>`;
 }
 
+export function getBankStatusBadge(status) {
+  const badges = {
+    pending: ['Esperando verificacion', 'bg-amber-100 text-amber-800'],
+    verified: ['Confirmado por banco', 'bg-emerald-100 text-emerald-800'],
+    review: ['Revision administrativa', 'bg-rose-100 text-rose-800'],
+    not_applicable: ['No aplica', 'bg-slate-100 text-slate-600']
+  };
+  const [label, className] = badges[status] || badges.not_applicable;
+  return `<span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold ${className}">${label}</span>`;
+}
+
 function updateMovementMethodFilter(selectEl, movements, movementTableState) {
   if (!selectEl) return;
 
@@ -219,7 +234,7 @@ export function renderMovementRows({
   const pageMovements = filteredMovements.slice(startIndex, startIndex + movementTableState.pageSize);
 
   if (!filteredMovements.length) {
-    tBodyEl.innerHTML = '<tr><td colspan="6" class="text-center p-6 text-sm text-gray-500">No hay movimientos que coincidan con los filtros actuales.</td></tr>';
+    tBodyEl.innerHTML = `<tr><td colspan="${movementTableState.showBankStatus ? 7 : 6}" class="text-center p-6 text-sm text-gray-500">No hay movimientos que coincidan con los filtros actuales.</td></tr>`;
   } else {
     tBodyEl.innerHTML = pageMovements.map((movement) => {
       const normalizedConcept = normalizeLegacyText(movement.concepto || 'Sin concepto');
@@ -268,6 +283,7 @@ export function renderMovementRows({
               </div>
             </div>
           </td>
+          ${movementTableState.showBankStatus ? `<td class="px-4 py-3 text-sm">${getBankStatusBadge(movement.bank_status)}</td>` : ''}
         </tr>
       `;
     }).join('');
@@ -300,6 +316,7 @@ export async function handleMovementTableClick({
   isAdminUser,
   supabase,
   hotelId,
+  hotelName = '',
   currentModuleUser,
   currentContainerEl
 }) {
@@ -344,6 +361,7 @@ export async function handleMovementTableClick({
       movementTableState,
       supabase,
       hotelId,
+      hotelName,
       currentContainerEl,
       isAdminUser
     });
@@ -398,6 +416,7 @@ export async function handleMovementTableClick({
       movementTableState,
       supabase,
       hotelId,
+      hotelName,
       currentContainerEl,
       isAdminUser
     });
@@ -412,6 +431,7 @@ export async function loadAndRenderMovements({
   movementTableState,
   supabase,
   hotelId,
+  hotelName = '',
   currentContainerEl,
   isAdminUser
 }) {
@@ -439,6 +459,9 @@ export async function loadAndRenderMovements({
     if (error) throw error;
 
     const movementIds = (movements || []).map((movement) => movement.id);
+    const showBankStatus = String(hotelName || '').trim().toLowerCase() === BANK_RECONCILIATION_PILOT_HOTEL_NAME;
+    movementTableState.showBankStatus = showBankStatus;
+    if (movementRefs.bankStatusHeaderEl) movementRefs.bankStatusHeaderEl.classList.toggle('hidden', !showBankStatus);
     const storeSaleIds = [...new Set((movements || []).map((movement) => movement.venta_tienda_id).filter(Boolean))];
     const restaurantSaleIds = [...new Set((movements || []).map((movement) => movement.venta_restaurante_id).filter(Boolean))];
     const [storeResult, restaurantResult] = await Promise.all([
@@ -481,11 +504,15 @@ export async function loadAndRenderMovements({
       if (reversalsError) throw reversalsError;
       revertedIds = new Set((reversals || []).map((item) => item.original_movement_id));
     }
+    const bankStatuses = showBankStatus
+      ? await getBankPaymentCashStatuses(supabase, hotelId, movementIds)
+      : {};
     movementTableState.all = sortMovementsByDate((movements || []).map((movement) => ({
       ...movement,
       concepto_original: movement.concepto,
       concepto: getReadableSaleConcept(movement, storeDetailsBySale, restaurantDetailsBySale),
-      reverted: revertedIds.has(movement.id)
+      reverted: revertedIds.has(movement.id),
+      bank_status: bankStatuses[movement.id] || 'not_applicable'
     })));
     updateMovementMethodFilter(movementRefs.methodFilterEl, movementTableState.all, movementTableState);
     renderMovementRows({

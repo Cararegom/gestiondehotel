@@ -1,5 +1,14 @@
 # Pruebas y validación
 
+## Fase 9/24 — Caja y estado bancario
+
+- Marena: la columna bancaria se habilita por UUID exacto.
+- Otro hotel: la columna permanece oculta y no llama `cash-movement-statuses`.
+- La API exige usuario operativo activo del piloto y limita la solicitud a 200 movimientos.
+- La relación usa claves persistidas de pagos/ventas y allocations; no usa monto, fecha o concepto.
+- La consulta es de solo lectura: no inserta pagos, Caja ni ledger.
+- Efectivo, egresos y reversiones quedan como `No aplica`.
+
 ## Capas
 
 - SQL/pgTAP o transacciones de prueba para constraints, RPC, RLS y atomicidad.

@@ -12,7 +12,7 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 | 6 ✅ | Una venta podía reutilizarse | Aplicado: saldo conciliable por venta, exclusión del evento actual y bloqueo transaccional por destino | parcial conserva saldo; segunda conciliación completa rechazada; otro hotel aislado | Monitorear contención; rollback de migración y Edge v19 |
 | 7 ✅ | Candidatos poco humanos/costosos | Aplicado: DTO humano, ventana de 7 días, orden por cercanía y detalles en lotes | reserva con total/pagado/pendiente; ventas con productos, cantidades, contexto y fecha | Ventas fuera de ventana; reabrir conserva destino actual |
 | 8 ✅ | Recepción necesitaba estado, no privilegio admin | Aplicado: resumen sanitario read-only; list/detail/candidates/actions solo admin en servidor y ruta | recepción conserva alertas y resumen; URL/acciones administrativas bloqueadas; otro hotel no lee | Error de rol; rollback a Edge v21 |
-| 9 | Caja no muestra verificación persistida | Vínculo explícito allocation↔operación/caja y badges | pendiente/verificado/revisión; 0 ingresos nuevos | asociación errónea; ocultar badges |
+| 9 ✅ | Caja no mostraba verificación persistida | Aplicado: estado read-only resuelto por referencias persistidas pago/reserva/venta↔allocation; columna exclusiva del piloto | pendiente/verificado/revisión/no aplica; 0 escrituras e ingresos nuevos | asociación ambigua en varias transferencias de una reserva; ocultar columna y volver Edge v22 |
 | 10 | Cambio de método puede divergir ledger | Recuperar migraciones faltantes; RPC de una sola columna y auditoría/sync | solo cambia método, mismo hotel/turno/monto/concepto | deriva financiera; deshabilitar acción |
 | 11 | Cierre trata banco como arqueo manual | Panel informativo: registrado, confirmado, pendiente, diferencia; efectivo sigue ciego | Gmail caído no bloquea cierre | confusión operativa; ocultar panel |
 | 12 | Salidas se rechazan sin clasificar | Diseñar bandeja separada de movimientos salientes; no mezclar con ingresos | ninguna salida entra como ingreso negativo | alcance alto; mantener solo diseño |
@@ -24,4 +24,4 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 
 ## Orden inmediato
 
-Las Fases 2 a 8 están aplicadas exclusivamente sobre la infraestructura protegida del piloto. La siguiente es la Fase 9: persistir y mostrar en Caja el estado bancario de cada movimiento transferido.
+Las Fases 2 a 9 están aplicadas exclusivamente sobre la infraestructura protegida del piloto. La siguiente es la Fase 10: asegurar que el cambio de método de pago mantenga sincronizados Caja, auditoría y ledger sin alterar monto, turno ni concepto.

@@ -6,6 +6,12 @@
 
 Una relación persistida, no una coincidencia permanente por fecha/monto/concepto, debe resolver el estado bancario del movimiento. Para métodos de transferencia: pendiente, verificado o revisión; para efectivo: no aplica. El enlace puede derivarse inicialmente por entidad operativa, pero debe terminar en una clave explícita y auditable.
 
+## Fase 9 aplicada
+
+Caja consulta al backend protegido solo cuando el `hotel_id` activo es el UUID del piloto. El backend vuelve a validar usuario, rol operativo y tenant, y relaciona cada movimiento mediante sus claves persistidas (`pago_reserva_id`/`reserva_id`, `venta_tienda_id`, `venta_restaurante_id` o `venta_terraza_id`) con `bank_payment_allocations` y su evento. No compara monto, fecha ni concepto y no escribe en Caja.
+
+La columna queda completamente oculta para otros hoteles y no se invoca el backend bancario. En Marena, efectivo, egresos y reversiones muestran `No aplica`; una transferencia sin evento confirmado muestra `Esperando verificación`; `confirmed` muestra `Confirmado por banco`; `manual_review` muestra `Revisión administrativa`.
+
 ## Cierre
 
 Efectivo conserva arqueo ciego. Banco muestra registrado por sistema, confirmado, pendiente y diferencia. Es informativo y no bloquea mientras Gmail esté caído.

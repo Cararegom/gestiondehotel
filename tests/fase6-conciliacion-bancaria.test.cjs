@@ -10,6 +10,9 @@ const allocationsMigration = fs.readFileSync('supabase/migrations/20260825223000
 const bankApi = fs.readFileSync('supabase/functions/bank-email-api/index.ts', 'utf8');
 const reconcilableMigration = fs.readFileSync('supabase/migrations/20260826181130_fase5_ventas_bancarias_conciliables.sql', 'utf8');
 const capacityMigration = fs.readFileSync('supabase/migrations/20260826183106_fase6_prevenir_doble_conciliacion.sql', 'utf8');
+const cashModule = fs.readFileSync('js/modules/caja/caja-movimientos.js', 'utf8');
+const cashView = fs.readFileSync('js/modules/caja/caja.js', 'utf8');
+const bankService = fs.readFileSync('js/services/bankPaymentService.js', 'utf8');
 
 test('Fase 6 solo aparece en Reportes para el piloto administrador', () => {
   assert.match(hub, /key: 'conciliacion'.*adminOnly: true, pilotOnly: true/);
@@ -98,4 +101,30 @@ test('Fase 7 presenta candidatos humanos, cercanos y consultados por lotes', () 
   assert.match(bankApi, /humanItemSummary/);
   assert.doesNotMatch(bankApi, /Restaurante · \$\{sale\.nombre_cliente_temporal \|\| sale\.id\}/);
   assert.doesNotMatch(bankApi, /Terraza - \$\{sale\.cliente_nombre \|\| sale\.id\}/);
+});
+
+test('Fase 9 muestra estados bancarios solo en Caja del hotel piloto', () => {
+  assert.match(cashModule, /BANK_RECONCILIATION_PILOT_HOTEL_NAME = 'hotel marena san isidro'/);
+  assert.match(cashModule, /hotelName[\s\S]*BANK_RECONCILIATION_PILOT_HOTEL_NAME/);
+  assert.match(cashModule, /showBankStatus[\s\S]*getBankPaymentCashStatuses/);
+  assert.match(cashView, /id="bank-status-header" class="hidden"/);
+  assert.match(cashModule, /Esperando verificacion/);
+  assert.match(cashModule, /Confirmado por banco/);
+  assert.match(cashModule, /Revision administrativa/);
+  assert.match(cashModule, /No aplica/);
+  assert.match(bankService, /cash-movement-statuses/);
+});
+
+test('Fase 9 usa relaciones operativas persistidas y nunca crea movimientos', () => {
+  const section = bankApi.slice(
+    bankApi.indexOf("if (action === 'cash-movement-statuses')"),
+    bankApi.indexOf("if (action === 'list')")
+  );
+  assert.match(section, /bank_payment_allocations/);
+  assert.match(section, /pago_reserva_id/);
+  assert.match(section, /venta_tienda_id/);
+  assert.match(section, /venta_restaurante_id/);
+  assert.match(section, /venta_terraza_id/);
+  assert.doesNotMatch(section, /fecha_movimiento|concepto|amount_cop|\.insert\(|\.update\(|\.delete\(/);
+  assert.match(section, /operational_role_required/);
 });

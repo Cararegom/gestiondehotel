@@ -130,6 +130,18 @@ export async function getBankPaymentOperationalSummary(supabase, hotelId) {
   };
 }
 
+export async function getBankPaymentCashStatuses(supabase, hotelId, movementIds = []) {
+  requireActiveHotel(hotelId);
+  const ids = [...new Set((Array.isArray(movementIds) ? movementIds : []).filter(isUuid))].slice(0, 200);
+  if (!ids.length) return {};
+  const data = await invokeBankEmailApi(supabase, 'cash-movement-statuses', { movementIds: ids });
+  const source = data.statuses && typeof data.statuses === 'object' ? data.statuses : {};
+  return Object.fromEntries(ids.map((id) => {
+    const status = String(source[id] || '').toLowerCase();
+    return [id, ['pending', 'verified', 'review', 'not_applicable'].includes(status) ? status : 'not_applicable'];
+  }));
+}
+
 export async function getBankPaymentGmailStatus(supabase) {
   const data = await invokeBankEmailApi(supabase, 'gmail-status');
   const integration = data.integration && typeof data.integration === 'object'

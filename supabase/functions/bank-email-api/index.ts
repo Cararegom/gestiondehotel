@@ -732,6 +732,74 @@ async function handlePilotAction(
     return { summary: { ...counts, updatedAt, periodDays: 7 } };
   }
 
+  if (action === 'cash-movement-statuses') {
+    if (!(await isPilotOperationalUser(admin, context, pilotHotel.id))) {
+      throw new HttpError(403, 'operational_role_required', 'Esta consulta requiere un rol operativo autorizado.');
+    }
+    const movementIds = uniqueIds(Array.isArray(body.movementIds) ? body.movementIds : []).slice(0, 200);
+    if (!movementIds.length) return { statuses: {} };
+
+    const { data: movements, error: movementsError } = await admin
+      .from('caja')
+      .select('id, tipo, source, original_movement_id, reserva_id, pago_reserva_id, venta_tienda_id, venta_restaurante_id, venta_terraza_id, metodos_pago(nombre)')
+      .eq('hotel_id', pilotHotel.id)
+      .in('id', movementIds);
+    if (movementsError) throw Object.assign(new Error('No se pudieron verificar los movimientos de Caja.'), { code: 'cash_status_lookup_failed' });
+
+    const paymentIds = uniqueIds((movements || []).map((row) => row.pago_reserva_id));
+    const { data: reservationPayments, error: reservationPaymentsError } = paymentIds.length
+      ? await admin.from('pagos_reserva').select('id, reserva_id').eq('hotel_id', pilotHotel.id).in('id', paymentIds)
+      : { data: [], error: null };
+    if (reservationPaymentsError) throw Object.assign(new Error('No se pudieron verificar los pagos de reserva.'), { code: 'reservation_payment_lookup_failed' });
+    const reservationByPayment = new Map((reservationPayments || []).map((row) => [row.id, row.reserva_id]));
+
+    const reservationIds = uniqueIds((movements || []).flatMap((row) => [row.reserva_id, reservationByPayment.get(row.pago_reserva_id)]));
+    const saleTargets = [
+      ['tienda', uniqueIds((movements || []).map((row) => row.venta_tienda_id))],
+      ['restaurante', uniqueIds((movements || []).map((row) => row.venta_restaurante_id))],
+      ['terraza', uniqueIds((movements || []).map((row) => row.venta_terraza_id))]
+    ] as const;
+    const allocationSelect = 'reservation_id, sale_id, sale_type, payment_event:bank_payment_events!inner(status, hotel_id)';
+    const allocationResults = await Promise.all([
+      reservationIds.length
+        ? admin.from('bank_payment_allocations').select(allocationSelect).eq('hotel_id', pilotHotel.id).eq('payment_event.hotel_id', pilotHotel.id).in('reservation_id', reservationIds)
+        : Promise.resolve({ data: [], error: null }),
+      ...saleTargets.map(([saleType, ids]) => ids.length
+        ? admin.from('bank_payment_allocations').select(allocationSelect).eq('hotel_id', pilotHotel.id).eq('payment_event.hotel_id', pilotHotel.id).eq('sale_type', saleType).in('sale_id', ids)
+        : Promise.resolve({ data: [], error: null }))
+    ]);
+    if (allocationResults.some((result) => result.error)) {
+      throw Object.assign(new Error('No se pudo consultar la conciliacion de Caja.'), { code: 'cash_allocations_lookup_failed' });
+    }
+    const allocations = allocationResults.flatMap((result) => result.data || []);
+
+    const priority: Record<string, number> = { detected: 1, matched: 1, manual_review: 2, confirmed: 3 };
+    const statuses: Record<string, string> = {};
+    for (const movement of movements || []) {
+      const method = Array.isArray(movement.metodos_pago) ? movement.metodos_pago[0] : movement.metodos_pago;
+      const isBank = isBankReconciliationPaymentMethod(String(method?.nombre || ''));
+      const isReversal = movement.source === 'caja_reversal' || Boolean(movement.original_movement_id);
+      if (!isBank || isReversal || movement.tipo !== 'ingreso') {
+        statuses[movement.id] = 'not_applicable';
+        continue;
+      }
+      const reservationId = movement.reserva_id || reservationByPayment.get(movement.pago_reserva_id);
+      const eventStatuses = allocations.filter((allocation) => {
+        if (reservationId && allocation.reservation_id === reservationId) return true;
+        if (movement.venta_tienda_id && allocation.sale_type === 'tienda' && allocation.sale_id === movement.venta_tienda_id) return true;
+        if (movement.venta_restaurante_id && allocation.sale_type === 'restaurante' && allocation.sale_id === movement.venta_restaurante_id) return true;
+        return movement.venta_terraza_id && allocation.sale_type === 'terraza' && allocation.sale_id === movement.venta_terraza_id;
+      }).map((allocation) => {
+        const event = Array.isArray(allocation.payment_event) ? allocation.payment_event[0] : allocation.payment_event;
+        return String(event?.status || '');
+      }).sort((a, b) => (priority[b] || 0) - (priority[a] || 0));
+      statuses[movement.id] = eventStatuses[0] === 'confirmed'
+        ? 'verified'
+        : eventStatuses[0] === 'manual_review' ? 'review' : 'pending';
+    }
+    return { statuses };
+  }
+
   if (action === 'list') {
     await requirePilotAdministrator(admin, context, pilotHotel.id);
     const page = await listEvents(admin, pilotHotel.id, body);

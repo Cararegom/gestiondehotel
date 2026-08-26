@@ -41,6 +41,7 @@ import {
 let moduleListeners = [];
 let currentSupabaseInstance = null;
 let currentHotelId = null;
+let currentHotelName = null;
 let currentModuleUser = null;
 let currentContainerEl = null;
 let currentUserRole = null;
@@ -174,6 +175,7 @@ async function handleMovementTableClick(event, tBodyEl, summaryEls, turnoId, mov
     isAdminUser: isAdminUser(),
     supabase: currentSupabaseInstance,
     hotelId: currentHotelId,
+    hotelName: currentHotelName,
     currentModuleUser,
     currentContainerEl
   });
@@ -188,6 +190,7 @@ async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId, movementRefs
     movementTableState,
     supabase: currentSupabaseInstance,
     hotelId: currentHotelId,
+    hotelName: currentHotelName,
     currentContainerEl,
     isAdminUser: isAdminUser()
   });
@@ -407,6 +410,7 @@ async function renderizarUIAbierta() {
                         <th>Concepto</th>
                         <th>Usuario</th>
                         <th>Metodo de pago</th>
+                        <th id="bank-status-header" class="hidden">Estado bancario</th>
                       </tr>
                     </thead>
                     <tbody id="turno-movements-body"></tbody>
@@ -530,7 +534,8 @@ async function renderizarUIAbierta() {
         pageInfoEl: currentContainerEl.querySelector('#movements-page-info'),
         prevBtn: currentContainerEl.querySelector('#movements-prev-page'),
         nextBtn: currentContainerEl.querySelector('#movements-next-page'),
-        countEl: currentContainerEl.querySelector('#turno-movements-count')
+        countEl: currentContainerEl.querySelector('#turno-movements-count'),
+        bankStatusHeaderEl: currentContainerEl.querySelector('#bank-status-header')
     };
     
     await loadAndRenderMovements(tBodyEl, summaryEls, turnoParaMostrar.id, movementRefs);
@@ -728,11 +733,12 @@ export async function mount(container, supabaseInst, user) {
 
   const { data: perfil } = await supabaseInst
     .from('usuarios')
-    .select('hotel_id, rol, nombre, email, usuarios_roles(roles(nombre))')
+    .select('hotel_id, rol, nombre, email, hoteles(nombre), usuarios_roles(roles(nombre))')
     .eq('id', user.id)
     .single();
   
   currentHotelId = perfil?.hotel_id;
+  currentHotelName = perfil?.hoteles?.nombre || '';
   currentUserRole = perfil?.rol;
   currentUserRoleNames = (perfil?.usuarios_roles || [])
     .map((item) => item?.roles?.nombre)
@@ -760,6 +766,7 @@ export function unmount() {
   moduleListeners = [];
   currentSupabaseInstance = null;
   currentHotelId = null;
+  currentHotelName = null;
   currentModuleUser = null;
   currentContainerEl = null;
   currentUserRole = null;
