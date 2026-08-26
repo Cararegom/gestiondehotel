@@ -42,3 +42,7 @@ La migración productiva `20260826181130_fase5_ventas_bancarias_conciliables` cr
 ## Evidencia Fase 6 — 2026-08-26
 
 La migración productiva `20260826183106_fase6_prevenir_doble_conciliacion` incorporó saldo disponible y bloqueo transaccional por venta. Un fixture `simulation` ejecutado dentro de `BEGIN … ROLLBACK` comprobó saldo parcial de 1.500 sobre una venta de 2.500, exclusión correcta del evento actual, saldo cero tras completar la asignación y retorno nulo para otro hotel. La API v20 descuenta allocations activas y oculta candidatos sin saldo. Resultado local previo al despliegue: 129 pruebas aprobadas, sintaxis validada en 159 archivos, typecheck y lint sin errores.
+
+## Evidencia Fase 7 — 2026-08-26
+
+`bank-email-api` v21 consulta en lotes detalles y catálogos de Tienda, Restaurante y Terraza, limita ventas a siete días alrededor de la transferencia y devuelve como máximo 60 candidatos ordenados por cercanía temporal. Las reservas incluyen total, pagado, pendiente, huésped, habitación y fecha. La interfaz muestra valor disponible, fecha/hora y distancia temporal sin usar UUID como etiqueta principal. El esquema productivo confirmó una sola coincidencia del piloto, 14 hoteles no piloto y las tres tablas de detalle requeridas. Resultado local: 132 pruebas aprobadas, sintaxis validada en 160 archivos, typecheck y lint sin errores.

@@ -26,6 +26,7 @@ import { maskReference } from '../_shared/bank-email/security.ts';
 import { committedReservationTotals } from '../_shared/bank-email/allocation-totals.ts';
 import { isBankReconciliationPaymentMethod } from '../_shared/bank-email/sale-reconciliation.ts';
 import { activeSaleAllocationTotals, saleAvailableAmount } from '../_shared/bank-email/sale-capacity.ts';
+import { humanItemSummary, rankCandidatesByTime } from '../_shared/bank-email/candidate-ranking.ts';
 
 const PAYMENT_STATUSES = new Set(['detected', 'matched', 'confirmed', 'manual_review', 'rejected', 'duplicated']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -379,6 +380,8 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
     .filter((method) => isBankReconciliationPaymentMethod(method.nombre))
     .map((method) => method.id);
   const noBankSales = { data: [], error: null };
+  const candidateWindowStart = new Date(candidatePaymentTime - (7 * 86_400_000)).toISOString();
+  const candidateWindowEnd = new Date(candidatePaymentTime + (7 * 86_400_000)).toISOString();
   let expectedQuery = admin
     .from('expected_payments')
     .select('id, reservation_id, room_id, sale_id, sale_type, expected_amount_cop, payment_method, status, expires_at, created_at')
@@ -416,14 +419,14 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
       .eq('hotel_id', pilotHotelId)
       .eq('allocation_type', 'sale'),
     bankPaymentMethodIds.length
-      ? admin.from('ventas_tienda').select('id, total_venta, estado_pago, fecha, cliente_temporal, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha', { ascending: false }).limit(50)
+      ? admin.from('ventas_tienda').select('id, total_venta, estado_pago, fecha, creado_en, cliente_temporal, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).gte('fecha', candidateWindowStart).lte('fecha', candidateWindowEnd).order('fecha', { ascending: false }).limit(120)
       : Promise.resolve(noBankSales),
     bankPaymentMethodIds.length
-      ? admin.from('ventas_restaurante').select('id, monto_total, total_venta, estado_pago, fecha, nombre_cliente_temporal, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha', { ascending: false }).limit(50)
+      ? admin.from('ventas_restaurante').select('id, monto_total, total_venta, estado_pago, fecha, fecha_venta, creado_en, nombre_cliente_temporal, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).gte('fecha_venta', candidateWindowStart).lte('fecha_venta', candidateWindowEnd).order('fecha_venta', { ascending: false }).limit(120)
       : Promise.resolve(noBankSales),
-    admin.from('ventas').select('id, total, fecha_venta').eq('hotel_id', pilotHotelId).order('fecha_venta', { ascending: false }).limit(50),
+    admin.from('ventas').select('id, total, fecha_venta').eq('hotel_id', pilotHotelId).gte('fecha_venta', candidateWindowStart).lte('fecha_venta', candidateWindowEnd).order('fecha_venta', { ascending: false }).limit(120),
     bankPaymentMethodIds.length
-      ? admin.from('terraza_pedidos').select('id, total, estado, fecha_apertura, cliente_nombre, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha_apertura', { ascending: false }).limit(50)
+      ? admin.from('terraza_pedidos').select('id, total, estado, fecha_apertura, fecha_cierre, cliente_nombre, mesa_id, silla_numero, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).gte('fecha_apertura', candidateWindowStart).lte('fecha_apertura', candidateWindowEnd).order('fecha_apertura', { ascending: false }).limit(120)
       : Promise.resolve(noBankSales)
   ]);
   const results = [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, saleAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult];
@@ -461,6 +464,57 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
     storeItemsBySale.set(detail.venta_id, [...(storeItemsBySale.get(detail.venta_id) || []), item]);
   }
 
+  const restaurantSaleIds = (restaurantSalesResult.data || []).map((sale) => sale.id);
+  const { data: restaurantDetails, error: restaurantDetailsError } = restaurantSaleIds.length
+    ? await admin.from('ventas_restaurante_items')
+      .select('venta_id, plato_id, cantidad, precio_unitario_venta, subtotal')
+      .in('venta_id', restaurantSaleIds)
+    : { data: [], error: null };
+  if (restaurantDetailsError) console.error('[bank-email-api]', { code: 'restaurant_sale_details_lookup_failed' });
+  const safeRestaurantDetails = restaurantDetailsError ? [] : (restaurantDetails || []);
+  const plateIds = uniqueIds(safeRestaurantDetails.map((detail) => detail.plato_id));
+  const { data: plates, error: platesError } = plateIds.length
+    ? await admin.from('platos').select('id, nombre').eq('hotel_id', pilotHotelId).in('id', plateIds)
+    : { data: [], error: null };
+  if (platesError) console.error('[bank-email-api]', { code: 'restaurant_plates_lookup_failed' });
+  const plateNames = new Map((platesError ? [] : (plates || [])).map((plate) => [plate.id, plate.nombre]));
+  const restaurantItemsBySale = new Map<string, Record<string, unknown>[]>();
+  for (const detail of safeRestaurantDetails) {
+    const item = {
+      product_id: detail.plato_id,
+      name: plateNames.get(detail.plato_id) || 'Plato',
+      quantity: Number(detail.cantidad || 0),
+      unit_price: Number(detail.precio_unitario_venta || 0),
+      subtotal: Number(detail.subtotal || 0)
+    };
+    restaurantItemsBySale.set(detail.venta_id, [...(restaurantItemsBySale.get(detail.venta_id) || []), item]);
+  }
+
+  const terraceSaleIds = (terraceSalesResult.data || []).map((sale) => sale.id);
+  const terraceMesaIds = uniqueIds((terraceSalesResult.data || []).map((sale) => sale.mesa_id));
+  const [terraceDetailsResult, terraceTablesResult] = await Promise.all([
+    terraceSaleIds.length
+      ? admin.from('terraza_pedido_items').select('pedido_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal').eq('hotel_id', pilotHotelId).in('pedido_id', terraceSaleIds)
+      : Promise.resolve({ data: [], error: null }),
+    terraceMesaIds.length
+      ? admin.from('terraza_mesas').select('id, numero, nombre, tipo').eq('hotel_id', pilotHotelId).in('id', terraceMesaIds)
+      : Promise.resolve({ data: [], error: null })
+  ]);
+  if (terraceDetailsResult.error) console.error('[bank-email-api]', { code: 'terrace_sale_details_lookup_failed' });
+  if (terraceTablesResult.error) console.error('[bank-email-api]', { code: 'terrace_tables_lookup_failed' });
+  const terraceItemsBySale = new Map<string, Record<string, unknown>[]>();
+  for (const detail of terraceDetailsResult.error ? [] : (terraceDetailsResult.data || [])) {
+    const item = {
+      product_id: detail.producto_id,
+      name: detail.producto_nombre || 'Producto',
+      quantity: Number(detail.cantidad || 0),
+      unit_price: Number(detail.precio_unitario || 0),
+      subtotal: Number(detail.subtotal || 0)
+    };
+    terraceItemsBySale.set(detail.pedido_id, [...(terraceItemsBySale.get(detail.pedido_id) || []), item]);
+  }
+  const terraceTables = new Map((terraceTablesResult.error ? [] : (terraceTablesResult.data || [])).map((table) => [table.id, table]));
+
   const paidByReservation = new Map<string, number>();
   for (const payment of paymentsResult.data || []) {
     paidByReservation.set(
@@ -488,19 +542,19 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
     reservationAllocationsResult.data || [],
     directCommittedEventIds
   );
-  const reservations = (reservationsResult.data || []).map((reservation) => {
+  const reservations = rankCandidatesByTime((reservationsResult.data || []).map((reservation) => {
     const directCommitted = directlyCommittedByReservation.get(reservation.id) || 0;
+    const paid = Math.max(Number(reservation.monto_pagado || 0), paidByReservation.get(reservation.id) || 0);
+    const pending = Math.max(0, Math.floor(Number(reservation.monto_total || 0) - paid - (pendingExpectedByReservation.get(reservation.id) || 0) - directCommitted));
     return {
       ...reservation,
       room: roomMap.get(reservation.habitacion_id) || null,
-      outstanding_amount_cop: Math.max(0, Math.floor(
-        Number(reservation.monto_total || 0) - Math.max(
-        Number(reservation.monto_pagado || 0),
-        paidByReservation.get(reservation.id) || 0
-        ) - (pendingExpectedByReservation.get(reservation.id) || 0) - directCommitted
-      ))
+      total_amount_cop: Math.floor(Number(reservation.monto_total || 0)),
+      paid_amount_cop: Math.floor(paid),
+      outstanding_amount_cop: pending,
+      occurred_at: reservation.fecha_inicio || reservation.creado_en
     };
-  });
+  }), candidatePaymentTime, ['fecha_inicio', 'creado_en'], 60);
   const activeEventIds = new Set((committedEventsResult.data || []).map((event) => event.id));
   const allocatedBySale = activeSaleAllocationTotals(
     saleAllocationsResult.data || [],
@@ -515,18 +569,31 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
   const sales: Array<Record<string, unknown>> = [
     ...(storeSalesResult.data || []).map((sale) => {
       const items = storeItemsBySale.get(sale.id) || [];
-      const itemLabel = items.map((item) => `${item.quantity} x ${item.name}`).join(' + ');
-      return { ...withAvailableAmount(sale, 'tienda', sale.total_venta), items, label: `Tienda · ${itemLabel || sale.cliente_temporal || 'Venta sin detalle'}` };
+      const itemLabel = humanItemSummary(items, sale.cliente_temporal || 'Venta sin detalle');
+      return { ...withAvailableAmount(sale, 'tienda', sale.total_venta), items, occurred_at: sale.fecha || sale.creado_en, label: `Tienda · ${itemLabel}` };
     }),
-    ...(restaurantSalesResult.data || []).map((sale) => ({ ...withAvailableAmount(sale, 'restaurante', sale.total_venta || sale.monto_total), label: `Restaurante · ${sale.nombre_cliente_temporal || sale.id}` })),
-    ...(salesResult.data || []).map((sale) => ({ ...withAvailableAmount(sale, 'venta', sale.total), label: `Venta · ${sale.id}` }))
+    ...(restaurantSalesResult.data || []).map((sale) => {
+      const items = restaurantItemsBySale.get(sale.id) || [];
+      const context = sale.nombre_cliente_temporal ? `${sale.nombre_cliente_temporal} · ` : '';
+      return { ...withAvailableAmount(sale, 'restaurante', sale.total_venta || sale.monto_total), items, occurred_at: sale.fecha || sale.fecha_venta || sale.creado_en, label: `Restaurante · ${context}${humanItemSummary(items, 'Venta sin detalle')}` };
+    }),
+    ...(salesResult.data || []).map((sale) => ({ ...withAvailableAmount(sale, 'venta', sale.total), occurred_at: sale.fecha_venta, label: `Venta general · ${new Date(sale.fecha_venta).toLocaleString('es-CO')}` }))
   ];
 
   sales.push(
-    ...(terraceSalesResult.data || []).map((sale) => ({
-      ...withAvailableAmount(sale, 'terraza', sale.total),
-      label: `Terraza - ${sale.cliente_nombre || sale.id}`
-    }))
+    ...(terraceSalesResult.data || []).map((sale) => {
+      const table = terraceTables.get(sale.mesa_id);
+      const items = terraceItemsBySale.get(sale.id) || [];
+      const place = sale.silla_numero ? `Silla ${sale.silla_numero}` : table?.nombre || (table?.numero ? `Mesa ${table.numero}` : 'Terraza');
+      const client = sale.cliente_nombre ? ` · ${sale.cliente_nombre}` : '';
+      return {
+        ...withAvailableAmount(sale, 'terraza', sale.total),
+        table,
+        items,
+        occurred_at: sale.fecha_cierre || sale.fecha_apertura,
+        label: `Terraza · ${place}${client} · ${humanItemSummary(items, 'Pedido sin detalle')}`
+      };
+    })
   );
 
   const expectedPayments = (expectedResult.data || []).filter((item) => {
@@ -562,7 +629,12 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
   return {
     reservations,
     rooms: roomsResult.data || [],
-    sales: sales.filter((sale) => Number(sale.available_amount_cop || 0) > 0),
+    sales: rankCandidatesByTime(
+      sales.filter((sale) => Number(sale.available_amount_cop || 0) > 0),
+      candidatePaymentTime,
+      ['occurred_at', 'fecha', 'fecha_venta', 'fecha_cierre', 'fecha_apertura', 'creado_en'],
+      60
+    ),
     expectedPayments
   };
 }

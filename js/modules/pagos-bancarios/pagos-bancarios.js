@@ -561,9 +561,12 @@ function renderCandidateOptions(items, labelBuilder) {
 
 function reservationCandidateLabel(item) {
   const amount = Number(firstValue(item, ['outstanding_amount_cop', 'pending_amount_cop', 'pending', 'pendiente', 'monto_pendiente'], 0));
+  const total = Number(firstValue(item, ['total_amount_cop', 'monto_total'], 0));
+  const paid = Number(firstValue(item, ['paid_amount_cop', 'monto_pagado'], 0));
   const client = firstValue(item, ['cliente_nombre', 'guest_name', 'nombre_cliente'], 'Sin nombre');
   const room = firstValue(item?.room || item?.habitaciones, ['nombre', 'name']) || firstValue(item, ['room_name', 'habitacion_nombre']);
-  return `${client}${room ? ` · Hab. ${room}` : ''}${amount > 0 ? ` · Pendiente ${formatCop(amount)}` : ' · Registrada como pagada'}`;
+  const date = firstValue(item, ['occurred_at', 'fecha_inicio', 'creado_en']);
+  return `${client}${room ? ` · Hab. ${room}` : ''} · Total ${formatCop(total)} · Pagado ${formatCop(paid)} · Pendiente ${formatCop(amount)}${date ? ` · ${formatDateTime(date)}` : ''}`;
 }
 
 function roomCandidateLabel(item) {
@@ -592,14 +595,21 @@ function salesCandidateOptions(items) {
 }
 
 function salesCandidateCards(items) {
-  if (!items.length) return '<p class="text-sm text-slate-500">No hay ventas pendientes disponibles.</p>';
+  if (!items.length) return '<p class="text-sm text-slate-500">No hay ventas conciliables cerca de esta transferencia.</p>';
   return items.filter((item) => isUuid(item?.id)).map((item) => {
     const type = String(firstValue(item, ['sale_type', 'type'], '') || 'venta').slice(0, 80);
     const amount = Number(firstValue(item, ['amount_cop', 'total_venta', 'monto_total', 'total'], 0));
     const label = firstValue(item, ['label'], type);
+    const date = firstValue(item, ['occurred_at', 'fecha', 'fecha_venta', 'fecha_cierre', 'fecha_apertura', 'creado_en']);
+    const distance = Number(firstValue(item, ['match_distance_minutes'], -1));
+    const proximity = distance >= 0
+      ? distance < 60
+        ? `A ${distance} min de la transferencia`
+        : `A ${Math.round(distance / 60)} h de la transferencia`
+      : '';
     return `<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-blue-400">
       <input type="checkbox" class="mt-1 bank-sale-allocation" value="${escapeAttribute(item.id)}" data-sale-type="${escapeAttribute(type)}" data-amount="${amount}">
-      <span><strong class="block text-sm text-slate-800">${escapeHtml(label)}</strong><span class="text-xs text-slate-500">Valor de esta venta: ${escapeHtml(formatCop(amount))}</span></span>
+      <span><strong class="block text-sm text-slate-800">${escapeHtml(label)}</strong><span class="block text-xs text-slate-500">Valor disponible: ${escapeHtml(formatCop(amount))}${date ? ` · ${escapeHtml(formatDateTime(date))}` : ''}</span>${proximity ? `<span class="mt-1 block text-xs font-semibold text-blue-600">${escapeHtml(proximity)}</span>` : ''}</span>
     </label>`;
   }).join('');
 }

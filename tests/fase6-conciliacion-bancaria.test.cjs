@@ -42,7 +42,7 @@ test('la conciliacion muestra productos y distribuye una transferencia entre var
   assert.doesNotMatch(bankApi, /producto:productos_tienda\(nombre\)/);
   assert.match(bankApi, /store_sale_details_lookup_failed[\s\S]*safeStoreDetails/);
   assert.match(bankModule, /bank-sale-allocation/);
-  assert.match(bankModule, /Registrada como pagada/);
+  assert.match(bankModule, /Total.*Pagado.*Pendiente/);
   assert.match(allocationsMigration, /CREATE TABLE IF NOT EXISTS public\.bank_payment_allocations/);
   assert.match(allocationsMigration, /La suma distribuida debe ser exactamente igual a la transferencia/);
   assert.doesNotMatch(allocationsMigration, /INSERT INTO public\.(?:pagos_reserva|caja)/i);
@@ -86,5 +86,16 @@ test('Fase 6 impide doble conciliacion y permite corregir el evento actual', () 
   assert.match(capacityMigration, /v_amount > v_available/);
   assert.match(capacityMigration, /REVOKE ALL ON FUNCTION public\.bank_email_sale_available_amount_cop[\s\S]*FROM PUBLIC, anon, authenticated/);
   assert.match(bankApi, /activeSaleAllocationTotals/);
-  assert.match(bankApi, /sales: sales\.filter\(\(sale\) => Number\(sale\.available_amount_cop \|\| 0\) > 0\)/);
+  assert.match(bankApi, /sales\.filter\(\(sale\) => Number\(sale\.available_amount_cop \|\| 0\) > 0\)/);
+});
+
+test('Fase 7 presenta candidatos humanos, cercanos y consultados por lotes', () => {
+  assert.match(bankApi, /rankCandidatesByTime/);
+  assert.match(bankApi, /candidateWindowStart/);
+  assert.match(bankApi, /ventas_restaurante_items/);
+  assert.match(bankApi, /terraza_pedido_items/);
+  assert.match(bankApi, /terraza_mesas/);
+  assert.match(bankApi, /humanItemSummary/);
+  assert.doesNotMatch(bankApi, /Restaurante · \$\{sale\.nombre_cliente_temporal \|\| sale\.id\}/);
+  assert.doesNotMatch(bankApi, /Terraza - \$\{sale\.cliente_nombre \|\| sale\.id\}/);
 });

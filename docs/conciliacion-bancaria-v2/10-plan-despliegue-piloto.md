@@ -29,5 +29,6 @@ Registrar códigos estables para correo recibido, duplicado, candidato, relació
 - Fase 4: `bank-email-api` v18 desplegada activa con `verify_jwt=true`; cálculo de saldo de reserva basado en allocations, sin migración ni escrituras de datos.
 - Fase 5: migración `20260826181130_fase5_ventas_bancarias_conciliables` aplicada y `bank-email-api` v19 activa con `verify_jwt=true`.
 - Fase 6: migración `20260826183106_fase6_prevenir_doble_conciliacion` aplicada y `bank-email-api` v20 activa con `verify_jwt=true`.
+- Fase 7: sin migración; `bank-email-api` v21 activa con `verify_jwt=true` y presentación administrativa actualizada.
 - Sincronización histórica adicional sin reejecución: `20260826171602_grant_authenticated_insert_movimientos_inventario.sql`.
 - Sincronización histórica sin reejecución: `20260622090000_terraza_transferencias_sin_duplicados.sql`, `20260826000109_permitir_cambio_metodo_pago_caja.sql` y `20260826000318_grant_update_metodo_pago_caja.sql`.

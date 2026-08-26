@@ -10,7 +10,7 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 | 4 ✅ | Reserva tomaba monto total del evento | Aplicado en API piloto: compromiso directo por suma de `amount_cop` de allocations `reservation` | split 60/40 acredita 60; eventos no comprometidos no acreditan | Monitorear saldo de candidatos; rollback a v17 |
 | 5 ✅ | “pagado” se excluía aunque fuera conciliable | Aplicado: dominio `bank_email_sale_is_reconcilable`; candidatos bancarios de tienda/restaurante/terraza sin filtrar por cobro | venta Bancolombia pagada es conciliable; efectivo y otro hotel no | Candidatos falsos; rollback de migración y Edge v18 |
 | 6 ✅ | Una venta podía reutilizarse | Aplicado: saldo conciliable por venta, exclusión del evento actual y bloqueo transaccional por destino | parcial conserva saldo; segunda conciliación completa rechazada; otro hotel aislado | Monitorear contención; rollback de migración y Edge v19 |
-| 7 | Candidatos poco humanos/costosos | DTO agregado, orden temporal, lote de detalles, límites | nombres/cantidades/fechas; sin UUID principal ni N+1 | latencia; paginación/fallback |
+| 7 ✅ | Candidatos poco humanos/costosos | Aplicado: DTO humano, ventana de 7 días, orden por cercanía y detalles en lotes | reserva con total/pagado/pendiente; ventas con productos, cantidades, contexto y fecha | Ventas fuera de ventana; reabrir conserva destino actual |
 | 8 | Recepción necesita estado, no privilegio admin | Matriz RLS/RPC y vista read-only mínima | recepción lee estado; no redistribuye; otro hotel no lee | escalamiento; revocar vista/RPC |
 | 9 | Caja no muestra verificación persistida | Vínculo explícito allocation↔operación/caja y badges | pendiente/verificado/revisión; 0 ingresos nuevos | asociación errónea; ocultar badges |
 | 10 | Cambio de método puede divergir ledger | Recuperar migraciones faltantes; RPC de una sola columna y auditoría/sync | solo cambia método, mismo hotel/turno/monto/concepto | deriva financiera; deshabilitar acción |
@@ -24,4 +24,4 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 
 ## Orden inmediato
 
-Las Fases 2 a 6 están aplicadas exclusivamente sobre la infraestructura protegida del piloto. La siguiente es la Fase 7: presentar candidatos humanos, ordenados y eficientes sin UUID como etiqueta principal.
+Las Fases 2 a 7 están aplicadas exclusivamente sobre la infraestructura protegida del piloto. La siguiente es la Fase 8: dar a recepción visibilidad operativa de solo lectura sin privilegios administrativos.
