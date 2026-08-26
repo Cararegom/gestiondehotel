@@ -16,6 +16,8 @@
 
 Fase 5 añadió `bank_email_sale_is_reconcilable` como `SECURITY DEFINER` con `search_path` fijo, validación explícita del UUID piloto y ejecución exclusiva de `service_role`. `PUBLIC`, `anon` y `authenticated` no pueden invocarla. El helper legacy `bank_email_sale_is_payable` conserva su contrato para flujos antiguos.
 
+Fase 6 aplica el mismo perímetro a `bank_email_sale_available_amount_cop`: solo `service_role`, `search_path` fijo y retorno nulo fuera del UUID piloto. El RPC conserva validación de administrador en la API y suma exacta antes de reemplazar allocations.
+
 ## Reglas
 
 - Nunca exponer `service_role` al navegador.

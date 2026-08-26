@@ -9,6 +9,7 @@ const migration = fs.readFileSync('supabase/migrations/20260803120000_bank_email
 const allocationsMigration = fs.readFileSync('supabase/migrations/20260825223000_bank_payment_multiple_allocations.sql', 'utf8');
 const bankApi = fs.readFileSync('supabase/functions/bank-email-api/index.ts', 'utf8');
 const reconcilableMigration = fs.readFileSync('supabase/migrations/20260826181130_fase5_ventas_bancarias_conciliables.sql', 'utf8');
+const capacityMigration = fs.readFileSync('supabase/migrations/20260826183106_fase6_prevenir_doble_conciliacion.sql', 'utf8');
 
 test('Fase 6 solo aparece en Reportes para el piloto administrador', () => {
   assert.match(hub, /key: 'conciliacion'.*adminOnly: true, pilotOnly: true/);
@@ -75,4 +76,15 @@ test('Fase 5 separa venta cobrada de venta conciliable y conserva el aislamiento
   assert.doesNotMatch(bankApi, /estado_pago\.is\.null,estado_pago\.neq\.pagado/);
   assert.match(bankApi, /isBankReconciliationPaymentMethod/);
   assert.match(bankApi, /in\('metodo_pago_id', bankPaymentMethodIds\)/);
+});
+
+test('Fase 6 impide doble conciliacion y permite corregir el evento actual', () => {
+  assert.match(capacityMigration, /FUNCTION public\.bank_email_sale_available_amount_cop/);
+  assert.match(capacityMigration, /e\.status IN \('matched', 'confirmed'\)/);
+  assert.match(capacityMigration, /a\.payment_event_id <> p_exclude_payment_event_id/);
+  assert.match(capacityMigration, /pg_advisory_xact_lock/);
+  assert.match(capacityMigration, /v_amount > v_available/);
+  assert.match(capacityMigration, /REVOKE ALL ON FUNCTION public\.bank_email_sale_available_amount_cop[\s\S]*FROM PUBLIC, anon, authenticated/);
+  assert.match(bankApi, /activeSaleAllocationTotals/);
+  assert.match(bankApi, /sales: sales\.filter\(\(sale\) => Number\(sale\.available_amount_cop \|\| 0\) > 0\)/);
 });

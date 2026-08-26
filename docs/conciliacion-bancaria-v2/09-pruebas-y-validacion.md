@@ -38,3 +38,7 @@ Se ejecutó un fixture SQL dentro de `BEGIN … ROLLBACK` en producción, usando
 ## Evidencia Fase 5 — 2026-08-26
 
 La migración productiva `20260826181130_fase5_ventas_bancarias_conciliables` creó el dominio conciliable y actualizó el reemplazo atómico de allocations. Una venta real de Tienda marcada `pagado` con método Bancolombia devolvió `true`; una venta en efectivo y una venta de otro hotel devolvieron `false`. Los permisos efectivos fueron `anon=false`, `authenticated=false`, `service_role=true`. La API v19 consulta únicamente métodos bancarios del piloto y ya no filtra candidatos por `estado_pago`. Resultado local: 126 pruebas aprobadas, sintaxis validada en 158 archivos, typecheck y lint sin errores. Los advisors no atribuyeron hallazgos nuevos a los objetos de esta fase; permanecen hallazgos históricos fuera de alcance documentados en la auditoría general.
+
+## Evidencia Fase 6 — 2026-08-26
+
+La migración productiva `20260826183106_fase6_prevenir_doble_conciliacion` incorporó saldo disponible y bloqueo transaccional por venta. Un fixture `simulation` ejecutado dentro de `BEGIN … ROLLBACK` comprobó saldo parcial de 1.500 sobre una venta de 2.500, exclusión correcta del evento actual, saldo cero tras completar la asignación y retorno nulo para otro hotel. La API v20 descuenta allocations activas y oculta candidatos sin saldo. Resultado local previo al despliegue: 129 pruebas aprobadas, sintaxis validada en 159 archivos, typecheck y lint sin errores.

@@ -25,6 +25,7 @@ import { analyzeBankEmail } from '../_shared/bank-email/payment-service.ts';
 import { maskReference } from '../_shared/bank-email/security.ts';
 import { committedReservationTotals } from '../_shared/bank-email/allocation-totals.ts';
 import { isBankReconciliationPaymentMethod } from '../_shared/bank-email/sale-reconciliation.ts';
+import { activeSaleAllocationTotals, saleAvailableAmount } from '../_shared/bank-email/sale-capacity.ts';
 
 const PAYMENT_STATUSES = new Set(['detected', 'matched', 'confirmed', 'manual_review', 'rejected', 'duplicated']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -388,7 +389,7 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
   expectedQuery = matchedExpectedPaymentId
     ? expectedQuery.or(`status.eq.pending,id.eq.${matchedExpectedPaymentId}`)
     : expectedQuery.eq('status', 'pending');
-  const [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult] = await Promise.all([
+  const [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, saleAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult] = await Promise.all([
     admin.from('reservas')
       .select('id, cliente_nombre, habitacion_id, monto_total, monto_pagado, estado, fecha_inicio, creado_en')
       .eq('hotel_id', pilotHotelId)
@@ -410,6 +411,10 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
       .select('payment_event_id, reservation_id, amount_cop')
       .eq('hotel_id', pilotHotelId)
       .eq('allocation_type', 'reservation'),
+    admin.from('bank_payment_allocations')
+      .select('payment_event_id, sale_id, sale_type, amount_cop')
+      .eq('hotel_id', pilotHotelId)
+      .eq('allocation_type', 'sale'),
     bankPaymentMethodIds.length
       ? admin.from('ventas_tienda').select('id, total_venta, estado_pago, fecha, cliente_temporal, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha', { ascending: false }).limit(50)
       : Promise.resolve(noBankSales),
@@ -421,7 +426,7 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
       ? admin.from('terraza_pedidos').select('id, total, estado, fecha_apertura, cliente_nombre, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha_apertura', { ascending: false }).limit(50)
       : Promise.resolve(noBankSales)
   ]);
-  const results = [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult];
+  const results = [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, saleAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult];
   if (results.some((result) => result.error)) {
     throw Object.assign(new Error('No se pudieron consultar las opciones de relacion.'), { code: 'candidate_lookup_failed' });
   }
@@ -496,20 +501,30 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
       ))
     };
   });
+  const activeEventIds = new Set((committedEventsResult.data || []).map((event) => event.id));
+  const allocatedBySale = activeSaleAllocationTotals(
+    saleAllocationsResult.data || [],
+    activeEventIds,
+    paymentEventId
+  );
+  const withAvailableAmount = (sale: Record<string, unknown>, saleType: string, total: unknown) => {
+    const reconciled = allocatedBySale.get(`${saleType}:${sale.id}`) || 0;
+    const available = saleAvailableAmount(total, reconciled);
+    return { ...sale, sale_type: saleType, amount_cop: available, reconciled_amount_cop: reconciled, available_amount_cop: available };
+  };
   const sales: Array<Record<string, unknown>> = [
     ...(storeSalesResult.data || []).map((sale) => {
       const items = storeItemsBySale.get(sale.id) || [];
       const itemLabel = items.map((item) => `${item.quantity} x ${item.name}`).join(' + ');
-      return { ...sale, items, sale_type: 'tienda', label: `Tienda · ${itemLabel || sale.cliente_temporal || 'Venta sin detalle'}` };
+      return { ...withAvailableAmount(sale, 'tienda', sale.total_venta), items, label: `Tienda · ${itemLabel || sale.cliente_temporal || 'Venta sin detalle'}` };
     }),
-    ...(restaurantSalesResult.data || []).map((sale) => ({ ...sale, sale_type: 'restaurante', label: `Restaurante · ${sale.nombre_cliente_temporal || sale.id}` })),
-    ...(salesResult.data || []).map((sale) => ({ ...sale, sale_type: 'venta', label: `Venta · ${sale.id}` }))
+    ...(restaurantSalesResult.data || []).map((sale) => ({ ...withAvailableAmount(sale, 'restaurante', sale.total_venta || sale.monto_total), label: `Restaurante · ${sale.nombre_cliente_temporal || sale.id}` })),
+    ...(salesResult.data || []).map((sale) => ({ ...withAvailableAmount(sale, 'venta', sale.total), label: `Venta · ${sale.id}` }))
   ];
 
   sales.push(
     ...(terraceSalesResult.data || []).map((sale) => ({
-      ...sale,
-      sale_type: 'terraza',
+      ...withAvailableAmount(sale, 'terraza', sale.total),
       label: `Terraza - ${sale.cliente_nombre || sale.id}`
     }))
   );
@@ -547,7 +562,7 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
   return {
     reservations,
     rooms: roomsResult.data || [],
-    sales,
+    sales: sales.filter((sale) => Number(sale.available_amount_cop || 0) > 0),
     expectedPayments
   };
 }

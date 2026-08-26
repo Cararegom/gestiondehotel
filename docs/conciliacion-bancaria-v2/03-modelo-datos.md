@@ -27,3 +27,7 @@ Reservas/pagos: reservas y `pagos_reserva`. Ventas: `ventas_tienda` + `detalle_v
 ## Precheck obligatorio
 
 Antes de DDL: buscar eventos legacy mixtos, allocations huérfanas, sumas diferentes, destinos cross-tenant, ventas duplicadas y acciones de auditoría fuera del catálogo. La fotografía actual tiene cero allocations, pero el precheck debe vivir en el procedimiento de despliegue.
+
+## Cambios aplicados en Fase 6
+
+`bank_email_sale_available_amount_cop` calcula el importe restante de una venta descontando allocations de eventos `matched` o `confirmed`. El evento que se está editando se excluye para permitir corregir su distribución. `replace_bank_payment_allocations` serializa por hotel, tipo y venta mediante advisory lock y rechaza cualquier importe superior al saldo disponible.
