@@ -46,3 +46,7 @@ La migración productiva `20260826183106_fase6_prevenir_doble_conciliacion` inco
 ## Evidencia Fase 7 — 2026-08-26
 
 `bank-email-api` v21 consulta en lotes detalles y catálogos de Tienda, Restaurante y Terraza, limita ventas a siete días alrededor de la transferencia y devuelve como máximo 60 candidatos ordenados por cercanía temporal. Las reservas incluyen total, pagado, pendiente, huésped, habitación y fecha. La interfaz muestra valor disponible, fecha/hora y distancia temporal sin usar UUID como etiqueta principal. El esquema productivo confirmó una sola coincidencia del piloto, 14 hoteles no piloto y las tres tablas de detalle requeridas. Resultado local: 132 pruebas aprobadas, sintaxis validada en 160 archivos, typecheck y lint sin errores.
+
+## Evidencia Fase 8 — 2026-08-26
+
+`bank-email-api` v22 separa `canManageReconciliation` de `canViewOperationalStatus`. Las lecturas completas y mutaciones exigen administrador dentro de la Edge Function; recepción conserva un resumen sin información bancaria sensible. Producción confirmó 10 perfiles operativos y un administrador activo en el único hotel piloto, además de 14 hoteles no piloto. Resultado local: 135 pruebas aprobadas, sintaxis validada en 161 archivos, typecheck y lint sin errores.

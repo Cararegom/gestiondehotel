@@ -3,6 +3,7 @@ import {
   assertSamePilotHotel,
   buildAdminClient,
   isPilotAdministrator,
+  isPilotOperationalUser,
   requireAuthenticatedProfile,
   requirePilotAdministrator,
   type AuthenticatedRequestContext
@@ -688,17 +689,51 @@ async function handlePilotAction(
 
   if (action === 'pilot-status') {
     const eligible = context.profile.hotel_id === pilotHotel.id;
+    const isAdmin = eligible ? await isPilotAdministrator(admin, context, pilotHotel.id) : false;
+    const canViewOperationalStatus = eligible
+      ? await isPilotOperationalUser(admin, context, pilotHotel.id)
+      : false;
     return {
       eligible,
       integrationEnabled: config.enabled,
-      isAdmin: eligible ? await isPilotAdministrator(admin, context, pilotHotel.id) : false,
+      isAdmin,
+      canManageReconciliation: isAdmin,
+      canViewOperationalStatus,
       pilotHotelName: eligible ? pilotHotel.nombre : null
     };
   }
 
   assertSamePilotHotel(context, pilotHotel.id);
 
+  if (action === 'operational-summary') {
+    if (!(await isPilotOperationalUser(admin, context, pilotHotel.id))) {
+      throw new HttpError(403, 'operational_role_required', 'Esta consulta requiere un rol operativo autorizado.');
+    }
+    const since = new Date(Date.now() - (7 * 86_400_000)).toISOString();
+    const { data, error } = await admin
+      .from('bank_payment_events')
+      .select('status, updated_at')
+      .eq('hotel_id', pilotHotel.id)
+      .gte('detected_at', since)
+      .limit(500);
+    if (error) {
+      throw Object.assign(new Error('No se pudo consultar el resumen bancario operativo.'), {
+        code: 'operational_summary_failed'
+      });
+    }
+    const counts = { pending: 0, verified: 0, review: 0 };
+    let updatedAt: string | null = null;
+    for (const event of data || []) {
+      if (['detected', 'matched'].includes(event.status)) counts.pending += 1;
+      else if (event.status === 'confirmed') counts.verified += 1;
+      else if (event.status === 'manual_review') counts.review += 1;
+      if (event.updated_at && (!updatedAt || event.updated_at > updatedAt)) updatedAt = event.updated_at;
+    }
+    return { summary: { ...counts, updatedAt, periodDays: 7 } };
+  }
+
   if (action === 'list') {
+    await requirePilotAdministrator(admin, context, pilotHotel.id);
     const page = await listEvents(admin, pilotHotel.id, body);
     return {
       events: page.events,
@@ -706,6 +741,7 @@ async function handlePilotAction(
     };
   }
   if (action === 'detail') {
+    await requirePilotAdministrator(admin, context, pilotHotel.id);
     const paymentEventId = requireUuid(body.paymentEventId, 'invalid_payment_event_id');
     const { events: [event] } = await listEvents(admin, pilotHotel.id, body, paymentEventId);
     if (!event) throw new HttpError(404, 'payment_event_not_found', 'El pago bancario no existe.');
@@ -713,10 +749,12 @@ async function handlePilotAction(
     return { event, allocations };
   }
   if (action === 'candidates') {
+    await requirePilotAdministrator(admin, context, pilotHotel.id);
     const paymentEventId = requireUuid(body.paymentEventId, 'invalid_payment_event_id');
     return { candidates: await getCandidates(admin, pilotHotel.id, paymentEventId) };
   }
   if (action === 'manual-action') {
+    await requirePilotAdministrator(admin, context, pilotHotel.id);
     if (!config.enabled) {
       throw new HttpError(409, 'bank_email_integration_disabled', 'La integracion bancaria esta deshabilitada.');
     }
@@ -732,8 +770,7 @@ async function handlePilotAction(
     if (!databaseAction) throw new HttpError(400, 'invalid_manual_action', 'La accion manual no esta permitida.');
     const allocations = Array.isArray(body.allocations) ? body.allocations : [];
     if (allocations.length && ['link', 'confirm'].includes(databaseAction)) {
-      await requirePilotAdministrator(admin, context, pilotHotel.id);
-      const normalizedAllocations = allocations.map((allocation) => {
+        const normalizedAllocations = allocations.map((allocation) => {
         if (!allocation || typeof allocation !== 'object') throw new HttpError(400, 'invalid_allocation', 'La distribucion contiene un elemento invalido.');
         const row = allocation as Record<string, unknown>;
         const type = asString(row.type, 20).toLowerCase();

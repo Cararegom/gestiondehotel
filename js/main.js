@@ -38,7 +38,7 @@ const routes = {
   '/finanzas-cuentas': { loadModule: () => import('./modules/finanzas-cuentas/finanzas-cuentas.js'), moduleKey: 'finanzas-cuentas', adminOnly: true },
   '/gastos': { loadModule: () => import('./modules/gastos/gastos.js'), moduleKey: 'gastos', adminOnly: true },
   '/costeo': { loadModule: () => import('./modules/costeo/costeo.js'), moduleKey: 'costeo', adminOnly: true },
-  '/pagos-bancarios': { loadModule: () => import('./modules/pagos-bancarios/pagos-bancarios.js'), moduleKey: 'pagos-bancarios' },
+  '/pagos-bancarios': { loadModule: () => import('./modules/pagos-bancarios/pagos-bancarios.js'), moduleKey: 'pagos-bancarios', adminOnly: true },
   '/terraza': { loadModule: () => import('./modules/terraza/terraza.js'), moduleKey: 'terraza' },
   '/clientes': { loadModule: () => import('./modules/clientes/clientes.js'), moduleKey: 'clientes' },
   '/servicios': { loadModule: () => import('./modules/servicios/servicios.js'), moduleKey: 'servicios' },
@@ -109,6 +109,8 @@ function createClosedBankPaymentPilotStatus() {
     eligible: false,
     integrationEnabled: false,
     isAdmin: false,
+    canManageReconciliation: false,
+    canViewOperationalStatus: false,
     pilotHotelName: null,
     canAccess: false
   };
@@ -152,6 +154,8 @@ async function refreshBankPaymentPilotStatus(hotelId, userId = getCurrentUser()?
       eligible: status.eligible === true,
       integrationEnabled: status.integrationEnabled === true,
       isAdmin: status.isAdmin === true,
+      canManageReconciliation: status.canManageReconciliation === true,
+      canViewOperationalStatus: status.canViewOperationalStatus === true,
       pilotHotelName: status.pilotHotelName || null,
       canAccess: status.canAccess === true
     };

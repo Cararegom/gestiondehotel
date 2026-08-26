@@ -118,7 +118,44 @@ export async function isPilotAdministrator(
   if (context.profile.hotel_id !== pilotHotelId) return false;
   const role = String(context.profile.rol || '').trim().toLowerCase();
   if (role === 'admin' || role === 'superadmin' || role === 'administrador') return true;
+  const { data: assignments, error: assignmentsError } = await admin
+    .from('usuarios_roles')
+    .select('roles(nombre)')
+    .eq('usuario_id', context.user.id);
+  if (assignmentsError) {
+    throw Object.assign(new Error('No se pudieron validar los permisos administrativos.'), {
+      code: 'administrator_role_lookup_failed'
+    });
+  }
+  const assignedAdministrator = (assignments || []).some((assignment) => {
+    const assignedRole = Array.isArray(assignment.roles) ? assignment.roles[0] : assignment.roles;
+    return ['admin', 'administrador', 'superadmin'].includes(String(assignedRole?.nombre || '').trim().toLowerCase());
+  });
+  if (assignedAdministrator) return true;
   return await isHotelCreator(admin, pilotHotelId, context.user.id);
+}
+
+export async function isPilotOperationalUser(
+  admin: SupabaseClient,
+  context: AuthenticatedRequestContext,
+  pilotHotelId: string
+): Promise<boolean> {
+  if (context.profile.hotel_id !== pilotHotelId) return false;
+  const directRole = String(context.profile.rol || '').trim().toLowerCase();
+  if (['admin', 'administrador', 'recepcionista'].includes(directRole)) return true;
+  const { data, error } = await admin
+    .from('usuarios_roles')
+    .select('roles(nombre)')
+    .eq('usuario_id', context.user.id);
+  if (error) {
+    throw Object.assign(new Error('No se pudieron validar los permisos operativos.'), {
+      code: 'operational_role_lookup_failed'
+    });
+  }
+  return (data || []).some((assignment) => {
+    const role = Array.isArray(assignment.roles) ? assignment.roles[0] : assignment.roles;
+    return ['admin', 'administrador', 'recepcionista'].includes(String(role?.nombre || '').trim().toLowerCase());
+  });
 }
 
 export function assertSamePilotHotel(

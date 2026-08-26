@@ -110,8 +110,23 @@ export async function getBankPaymentPilotStatus(supabase, hotelId) {
     eligible: data.eligible === true,
     integrationEnabled: data.integrationEnabled === true,
     isAdmin: data.isAdmin === true,
+    canManageReconciliation: data.canManageReconciliation === true,
+    canViewOperationalStatus: data.canViewOperationalStatus === true,
     pilotHotelName: normalizeOptionalText(data.pilotHotelName, 160),
-    canAccess: data.eligible === true && data.integrationEnabled === true
+    canAccess: data.eligible === true && data.integrationEnabled === true && data.canManageReconciliation === true
+  };
+}
+
+export async function getBankPaymentOperationalSummary(supabase, hotelId) {
+  requireActiveHotel(hotelId);
+  const data = await invokeBankEmailApi(supabase, 'operational-summary');
+  const summary = data.summary && typeof data.summary === 'object' ? data.summary : {};
+  return {
+    pending: normalizeNonNegativeInteger(summary.pending),
+    verified: normalizeNonNegativeInteger(summary.verified),
+    review: normalizeNonNegativeInteger(summary.review),
+    updatedAt: normalizeOptionalText(summary.updatedAt, 80),
+    periodDays: normalizeNonNegativeInteger(summary.periodDays) || 7
   };
 }
 

@@ -71,7 +71,7 @@ function showInstantBankPaymentToast(notification = {}, supabase = null, bellUi 
   const paymentEventId = getBankPaymentNotificationId(notification);
   if (!paymentEventId || !notification.id || displayedInstantNotificationIds.has(notification.id)) return;
   displayedInstantNotificationIds.add(notification.id);
-  const canOpenBankPayment = ['admin', 'superadmin'].includes(currentBellContext?.role);
+  const canOpenBankPayment = ['admin', 'administrador', 'superadmin'].includes(currentBellContext?.role);
 
   const hostId = 'bank-payment-instant-alerts';
   let host = document.getElementById(hostId);
@@ -121,7 +121,7 @@ function renderHistoryActions(notification) {
   const actions = [];
   const paymentEventId = getBankPaymentNotificationId(notification);
 
-  if (paymentEventId) {
+  if (paymentEventId && ['admin', 'administrador', 'superadmin'].includes(currentBellContext?.role)) {
     actions.push(`<a class="ver-pago-bancario text-blue-700 hover:text-blue-900" href="#/pagos-bancarios?payment=${escapeAttribute(paymentEventId)}" data-payment-event-id="${escapeAttribute(paymentEventId)}" data-notification-id="${escapeAttribute(notification.id)}" data-notification-unread="${notification.leida ? 'false' : 'true'}">Ver pago</a>`);
   }
 

@@ -30,4 +30,4 @@
 
 ## Estado actual
 
-Fases 1 a 7 completadas. Fases 8–24 pendientes; no marcar el piloto listo para recepción hasta completar permisos, regresión y prueba controlada final.
+Fases 1 a 8 completadas. Fases 9–24 pendientes; no marcar el piloto listo para recepción hasta completar estados de Caja, regresión y prueba controlada final.

@@ -12,6 +12,10 @@ La recepcionista continúa trabajando en Reserva, Tienda, Restaurante, Terraza y
 
 No puede abrir la consola completa, redistribuir, rechazar, editar monto/referencia, borrar eventos ni ver correo. Los errores visibles deben ser humanos; códigos RPC/RLS quedan en logs seguros.
 
+## Aplicado en Fase 8
+
+La campana y el globo persistente continúan avisando que llegó una transferencia, pero solo un administrador ve el enlace para abrirla. Una recepcionista que escriba directamente `#/pagos-bancarios` es bloqueada por el router y, aunque intente invocar la Edge Function, recibe 403 para listado, detalle, candidatos y acciones. El endpoint operativo devuelve únicamente conteos sanitarios preparados para los badges de Caja de la Fase 9.
+
 ## Aceptación
 
 Probar recepción Marena y otro hotel. El primero ve solo estados de su operación; el segundo no ve menú, badges, canales Realtime ni datos del piloto. Rollback: ocultar estados y mantener intactos los módulos operativos.

@@ -18,6 +18,8 @@ Fase 5 añadió `bank_email_sale_is_reconcilable` como `SECURITY DEFINER` con `s
 
 Fase 6 aplica el mismo perímetro a `bank_email_sale_available_amount_cop`: solo `service_role`, `search_path` fijo y retorno nulo fuera del UUID piloto. El RPC conserva validación de administrador en la API y suma exacta antes de reemplazar allocations.
 
+Fase 8 exige administrador de Marena en servidor para `list`, `detail`, `candidates` y toda `manual-action`. La ruta y los enlaces de notificaciones aplican la misma restricción como defensa de UX. Recepción solo puede invocar `operational-summary`, que entrega conteos `pending`, `verified` y `review` de siete días sin montos, pagadores, referencias, IDs ni cuerpo del correo. Los roles directos y asignados mediante `usuarios_roles → roles` se validan con el perfil activo y el UUID piloto.
+
 ## Reglas
 
 - Nunca exponer `service_role` al navegador.

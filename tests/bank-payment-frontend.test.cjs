@@ -38,12 +38,15 @@ test('el servicio consulta elegibilidad autoritativa sin enviar hotelId', async 
   const mock = createFunctionClient({
     eligible: true,
     integrationEnabled: true,
-    isAdmin: false
+    isAdmin: false,
+    canManageReconciliation: false,
+    canViewOperationalStatus: true
   });
 
   const result = await service.getBankPaymentPilotStatus(mock.client, validHotelId);
 
-  assert.equal(result.canAccess, true);
+  assert.equal(result.canAccess, false);
+  assert.equal(result.canViewOperationalStatus, true);
   assert.deepEqual(mock.calls, [{
     name: 'bank-email-api',
     options: { body: { action: 'pilot-status' } }
