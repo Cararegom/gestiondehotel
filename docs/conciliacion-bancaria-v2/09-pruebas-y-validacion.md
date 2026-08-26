@@ -34,3 +34,7 @@ Se ejecutó un fixture SQL dentro de `BEGIN … ROLLBACK` en producción, usando
 ## Evidencia Fase 4 — 2026-08-25
 
 `bank-email-api` v18 dejó de acreditar a una reserva el monto completo de `bank_payment_events`. Para eventos `matched` o `confirmed` sin expectativa asociada, suma exclusivamente allocations de tipo `reservation`, filtradas por el UUID del piloto. Las pruebas de comportamiento validan un split 60.000 reserva + 40.000 ventas y descartan eventos pendientes o montos inválidos. Resultado local: 124 pruebas aprobadas, sintaxis validada en 157 archivos, `deno check` y `deno lint` sin errores. El precheck productivo encontró un solo hotel piloto, cero eventos comprometidos y cero sumas inválidas; no se modificaron datos.
+
+## Evidencia Fase 5 — 2026-08-26
+
+La migración productiva `20260826181130_fase5_ventas_bancarias_conciliables` creó el dominio conciliable y actualizó el reemplazo atómico de allocations. Una venta real de Tienda marcada `pagado` con método Bancolombia devolvió `true`; una venta en efectivo y una venta de otro hotel devolvieron `false`. Los permisos efectivos fueron `anon=false`, `authenticated=false`, `service_role=true`. La API v19 consulta únicamente métodos bancarios del piloto y ya no filtra candidatos por `estado_pago`. Resultado local: 126 pruebas aprobadas, sintaxis validada en 158 archivos, typecheck y lint sin errores. Los advisors no atribuyeron hallazgos nuevos a los objetos de esta fase; permanecen hallazgos históricos fuera de alcance documentados en la auditoría general.

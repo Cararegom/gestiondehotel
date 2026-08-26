@@ -8,6 +8,7 @@ const main = fs.readFileSync('js/main.js', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260803120000_bank_email_payments_pilot.sql', 'utf8');
 const allocationsMigration = fs.readFileSync('supabase/migrations/20260825223000_bank_payment_multiple_allocations.sql', 'utf8');
 const bankApi = fs.readFileSync('supabase/functions/bank-email-api/index.ts', 'utf8');
+const reconcilableMigration = fs.readFileSync('supabase/migrations/20260826181130_fase5_ventas_bancarias_conciliables.sql', 'utf8');
 
 test('Fase 6 solo aparece en Reportes para el piloto administrador', () => {
   assert.match(hub, /key: 'conciliacion'.*adminOnly: true, pilotOnly: true/);
@@ -63,4 +64,15 @@ test('Fase 4 calcula el credito de reserva desde allocations y no desde el event
   assert.match(bankApi, /committedReservationTotals/);
   assert.match(bankApi, /from\('bank_payment_allocations'\)[\s\S]*eq\('allocation_type', 'reservation'\)/);
   assert.doesNotMatch(bankApi, /relatesDirectly[\s\S]*event\.amount_cop/);
+});
+
+test('Fase 5 separa venta cobrada de venta conciliable y conserva el aislamiento', () => {
+  assert.match(reconcilableMigration, /FUNCTION public\.bank_email_sale_is_reconcilable/);
+  assert.match(reconcilableMigration, /resolve_bank_email_pilot_hotel\('Hotel Marena San Isidro'\)/);
+  assert.doesNotMatch(reconcilableMigration, /estado_pago[^\n]*<>[^\n]*pagado/);
+  assert.match(reconcilableMigration, /REVOKE ALL ON FUNCTION public\.bank_email_sale_is_reconcilable[\s\S]*FROM PUBLIC, anon, authenticated/);
+  assert.match(reconcilableMigration, /bank_email_sale_is_reconcilable\(v_sale_type, v_sale_id, v_hotel_id\)/);
+  assert.doesNotMatch(bankApi, /estado_pago\.is\.null,estado_pago\.neq\.pagado/);
+  assert.match(bankApi, /isBankReconciliationPaymentMethod/);
+  assert.match(bankApi, /in\('metodo_pago_id', bankPaymentMethodIds\)/);
 });

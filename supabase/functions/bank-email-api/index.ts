@@ -24,6 +24,7 @@ import { parseGmailMessage } from '../_shared/bank-email/gmail-message.ts';
 import { analyzeBankEmail } from '../_shared/bank-email/payment-service.ts';
 import { maskReference } from '../_shared/bank-email/security.ts';
 import { committedReservationTotals } from '../_shared/bank-email/allocation-totals.ts';
+import { isBankReconciliationPaymentMethod } from '../_shared/bank-email/sale-reconciliation.ts';
 
 const PAYMENT_STATUSES = new Set(['detected', 'matched', 'confirmed', 'manual_review', 'rejected', 'duplicated']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -364,6 +365,19 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
   }
 
   const activeReservationStates = ['activa', 'check_in', 'ocupada', 'pendiente', 'reservada', 'confirmada', 'tiempo agotado'];
+  const { data: paymentMethods, error: paymentMethodsError } = await admin
+    .from('metodos_pago')
+    .select('id, nombre')
+    .eq('hotel_id', pilotHotelId);
+  if (paymentMethodsError) {
+    throw Object.assign(new Error('No se pudieron consultar los metodos bancarios del piloto.'), {
+      code: 'bank_payment_methods_lookup_failed'
+    });
+  }
+  const bankPaymentMethodIds = (paymentMethods || [])
+    .filter((method) => isBankReconciliationPaymentMethod(method.nombre))
+    .map((method) => method.id);
+  const noBankSales = { data: [], error: null };
   let expectedQuery = admin
     .from('expected_payments')
     .select('id, reservation_id, room_id, sale_id, sale_type, expected_amount_cop, payment_method, status, expires_at, created_at')
@@ -396,10 +410,16 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
       .select('payment_event_id, reservation_id, amount_cop')
       .eq('hotel_id', pilotHotelId)
       .eq('allocation_type', 'reservation'),
-    admin.from('ventas_tienda').select('id, total_venta, estado_pago, fecha, cliente_temporal').eq('hotel_id', pilotHotelId).or('estado_pago.is.null,estado_pago.neq.pagado').order('fecha', { ascending: false }).limit(50),
-    admin.from('ventas_restaurante').select('id, monto_total, total_venta, estado_pago, fecha, nombre_cliente_temporal').eq('hotel_id', pilotHotelId).or('estado_pago.is.null,estado_pago.neq.pagado').order('fecha', { ascending: false }).limit(50),
+    bankPaymentMethodIds.length
+      ? admin.from('ventas_tienda').select('id, total_venta, estado_pago, fecha, cliente_temporal, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha', { ascending: false }).limit(50)
+      : Promise.resolve(noBankSales),
+    bankPaymentMethodIds.length
+      ? admin.from('ventas_restaurante').select('id, monto_total, total_venta, estado_pago, fecha, nombre_cliente_temporal, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha', { ascending: false }).limit(50)
+      : Promise.resolve(noBankSales),
     admin.from('ventas').select('id, total, fecha_venta').eq('hotel_id', pilotHotelId).order('fecha_venta', { ascending: false }).limit(50),
-    admin.from('terraza_pedidos').select('id, total, estado, fecha_apertura, cliente_nombre').eq('hotel_id', pilotHotelId).eq('estado', 'abierto').order('fecha_apertura', { ascending: false }).limit(50)
+    bankPaymentMethodIds.length
+      ? admin.from('terraza_pedidos').select('id, total, estado, fecha_apertura, cliente_nombre, metodo_pago_id').eq('hotel_id', pilotHotelId).in('metodo_pago_id', bankPaymentMethodIds).order('fecha_apertura', { ascending: false }).limit(50)
+      : Promise.resolve(noBankSales)
   ]);
   const results = [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult];
   if (results.some((result) => result.error)) {

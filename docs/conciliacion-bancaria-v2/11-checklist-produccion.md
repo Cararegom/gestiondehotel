@@ -30,4 +30,4 @@
 
 ## Estado actual
 
-Fases 1, 2, 3 y 4 completadas. Fases 5–24 pendientes; no marcar el piloto listo para recepción hasta resolver conciliabilidad, doble conciliación, permisos y regresión.
+Fases 1 a 5 completadas. Fases 6–24 pendientes; no marcar el piloto listo para recepción hasta resolver doble conciliación, permisos y regresión.

@@ -15,7 +15,7 @@ El piloto está limitado en servidor a Hotel Marena San Isidro. La autorización
 
 ## Estado desplegado
 
-- Edge Functions: `bank-email-api` v18 (`verify_jwt=true`), `gmail-webhook` v14, `gmail-watch-renew` v9 y `gmail-oauth-callback` v8. Las tres entradas externas sin JWT aplican autenticación específica en código; debe conservarse y probarse.
+- Edge Functions: `bank-email-api` v19 (`verify_jwt=true`), `gmail-webhook` v14, `gmail-watch-renew` v9 y `gmail-oauth-callback` v8. Las tres entradas externas sin JWT aplican autenticación específica en código; debe conservarse y probarse.
 - Datos al corte: 16 eventos bancarios, 0 allocations, 47 auditorías y 0 pagos esperados. No hay allocations existentes que convertir antes de endurecer el modelo.
 - `bank_payment_allocations` tiene RLS habilitado y no concede acceso directo a `anon` ni `authenticated`; `replace_bank_payment_allocations` es invocable solo por `service_role`.
 
@@ -35,6 +35,7 @@ El piloto está limitado en servidor a Hotel Marena San Isidro. La autorización
 - `bank_email_sale_is_payable` es `SECURITY DEFINER` y conserva `EXECUTE` para `anon`/`authenticated` por privilegio heredado. Aunque valida hotel, la superficie no es mínima y debe cerrarse en una migración nueva.
 - Algunas funciones antiguas conservan `EXECUTE` público pese a validaciones internas de `service_role`. Deben auditarse una por una; no se hará una revocación global que rompa clientes.
 - La deriva detectada quedó corregida en Git el 2026-08-25 sin reejecutar producción: se versionaron `terraza_transferencias_sin_duplicados`, `permitir_cambio_metodo_pago_caja` y `grant_update_metodo_pago_caja` a partir de las definiciones productivas. La comparación por nombre ya no muestra migraciones remotas ausentes localmente.
+- El 2026-08-26 se incorporó también el snapshot productivo `grant_authenticated_insert_movimientos_inventario`; no se reejecutó durante la sincronización.
 - `caja` proyecta al ledger mediante `fase2_project_caja_to_account_trg` solo `AFTER INSERT`. Un cambio posterior de `metodo_pago_id` necesita sincronización/auditoría explícita para no divergir.
 - Los Advisors marcan `bank_payment_allocations` y `bank_payment_audit_log` como “RLS sin policy”. En este caso es deliberado: son tablas internas sin grants de cliente; su escritura es de servidor. También reportan problemas históricos fuera del piloto (por ejemplo RLS deshabilitado en `tiempos_estancia`, `turnos_programados` y `usuarios_roles`). No se corrigieron aquí porque una reparación global sin regresión excedería y pondría en riesgo este piloto.
 

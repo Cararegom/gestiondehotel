@@ -14,7 +14,7 @@
 
 `bank_payment_allocations` y auditoría usan RLS y revocación de acceso directo. `replace_bank_payment_allocations` solo permite `service_role`; `bank-email-api` valida al usuario admin antes de invocarlo. El patrón es correcto y se conserva.
 
-Hallazgo: `bank_email_sale_is_payable` es `SECURITY DEFINER` con ejecución heredada para `anon`/`authenticated`. Se debe crear una migración que revoque `PUBLIC`, `anon` y roles innecesarios, mantenga `SET search_path` explícito y otorgue solo al llamador servidor. Se revisará igual cada función bancaria antigua antes de revocar.
+Fase 5 añadió `bank_email_sale_is_reconcilable` como `SECURITY DEFINER` con `search_path` fijo, validación explícita del UUID piloto y ejecución exclusiva de `service_role`. `PUBLIC`, `anon` y `authenticated` no pueden invocarla. El helper legacy `bank_email_sale_is_payable` conserva su contrato para flujos antiguos.
 
 ## Reglas
 
