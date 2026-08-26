@@ -102,6 +102,23 @@ test('el listado pagina los movimientos para no ocultar transferencias antiguas'
   });
 });
 
+test('el detalle conserva todas las allocations devueltas por el servidor', async () => {
+  const service = await loadServiceModule();
+  const allocations = [
+    { id: '33333333-3333-4333-8333-333333333331', allocation_type: 'reservation', amount_cop: 60000 },
+    { id: '33333333-3333-4333-8333-333333333332', allocation_type: 'sale', sale_type: 'tienda', amount_cop: 20000 },
+    { id: '33333333-3333-4333-8333-333333333333', allocation_type: 'sale', sale_type: 'terraza', amount_cop: 20000 }
+  ];
+  const mock = createFunctionClient({ event: { id: validEventId, amount_cop: 100000 }, allocations });
+
+  const detail = await service.getBankPaymentDetail(mock.client, validHotelId, validEventId);
+
+  assert.equal(detail.allocations.length, 3);
+  assert.deepEqual(detail.allocations, allocations);
+  assert.deepEqual(mock.calls[0].options.body, { action: 'detail', paymentEventId: validEventId });
+  assert.equal('hotelId' in mock.calls[0].options.body, false);
+});
+
 test('las mutaciones usan el contrato de la Edge Function sin confiar en el tenant del navegador', async () => {
   const service = await loadServiceModule();
   const mock = createFunctionClient({ ok: true });
@@ -228,6 +245,9 @@ test('ruta, interfaz y notificaciones conservan las barreras del piloto', () => 
   assert.match(moduleSource, /bank-expected-payment-form/);
   assert.match(moduleSource, /createBankExpectedPayment/);
   assert.match(moduleSource, /bank-payments-load-more/);
+  assert.match(moduleSource, /Distribución guardada/);
+  assert.match(moduleSource, /mergeCurrentAllocations\(candidates, allocations\)/);
+  assert.match(moduleSource, /saleAllocations[\s\S]*currentSale\.checked = true/);
   assert.match(notifications, /escapeHtml\(notification\.mensaje/);
   assert.match(notifications, /#\/pagos-bancarios\?payment=/);
   assert.match(notificationService, /filter: `hotel_id=eq\.\$\{context\.hotelId\}`/);

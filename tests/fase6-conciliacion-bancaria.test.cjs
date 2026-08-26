@@ -46,3 +46,15 @@ test('la conciliacion muestra productos y distribuye una transferencia entre var
   assert.doesNotMatch(allocationsMigration, /INSERT INTO public\.(?:pagos_reserva|caja)/i);
   assert.match(allocationsMigration, /REVOKE ALL ON FUNCTION public\.replace_bank_payment_allocations[\s\S]*FROM PUBLIC,anon,authenticated/i);
 });
+
+test('Fase 3 reconstruye allocations enriquecidas sin confiar en columnas legacy', () => {
+  assert.match(bankApi, /async function getPaymentAllocations/);
+  assert.match(bankApi, /from\('bank_payment_allocations'\)[\s\S]*eq\('hotel_id', pilotHotelId\)[\s\S]*eq\('payment_event_id', paymentEventId\)/);
+  assert.match(bankApi, /detalle_ventas_tienda/);
+  assert.match(bankApi, /ventas_restaurante_items/);
+  assert.match(bankApi, /terraza_pedido_items/);
+  assert.match(bankApi, /return \{ event, allocations \}/);
+  assert.match(bankModule, /event\?\.allocations/);
+  assert.match(bankModule, /currentSale\.dataset\.allocationAmount/);
+  assert.match(bankModule, /allocationAmount \|\| input\.dataset\.amount/);
+});

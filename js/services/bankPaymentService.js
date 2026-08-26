@@ -227,7 +227,12 @@ export async function getBankPaymentDetail(supabase, hotelId, paymentEventId) {
   if (!isUuid(paymentEventId)) throw new Error('Identificador de pago invalido.');
 
   const data = await invokeBankEmailApi(supabase, 'detail', { paymentEventId });
-  return data.event || data.paymentEvent || data.detail || null;
+  const event = data.event || data.paymentEvent || data.detail || null;
+  if (!event || typeof event !== 'object') return null;
+  return {
+    ...event,
+    allocations: Array.isArray(data.allocations) ? data.allocations : []
+  };
 }
 
 export async function getBankPaymentCandidates(supabase, hotelId, paymentEventId) {

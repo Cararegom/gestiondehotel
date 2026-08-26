@@ -152,6 +152,154 @@ async function enrichEvents(admin: SupabaseClient, pilotHotelId: string, rows: R
   }));
 }
 
+async function getPaymentAllocations(
+  admin: SupabaseClient,
+  pilotHotelId: string,
+  paymentEventId: string
+): Promise<Record<string, unknown>[]> {
+  const { data, error } = await admin
+    .from('bank_payment_allocations')
+    .select('id, payment_event_id, allocation_type, reservation_id, room_id, sale_id, sale_type, amount_cop, created_at')
+    .eq('hotel_id', pilotHotelId)
+    .eq('payment_event_id', paymentEventId)
+    .order('created_at', { ascending: true })
+    .order('id', { ascending: true });
+  if (error) {
+    throw Object.assign(new Error('No se pudo cargar la distribucion actual del pago.'), {
+      code: 'payment_allocations_lookup_failed'
+    });
+  }
+
+  const allocations = (data || []) as Record<string, unknown>[];
+  if (!allocations.length) return [];
+
+  const reservationIds = uniqueIds(allocations.map((row) => row.reservation_id));
+  const roomIds = uniqueIds(allocations.map((row) => row.room_id));
+  const saleIdsByType = new Map<string, string[]>();
+  for (const allocation of allocations) {
+    const saleId = asUuid(allocation.sale_id);
+    const saleType = asString(allocation.sale_type, 20).toLowerCase();
+    if (!saleId || !['tienda', 'restaurante', 'terraza', 'venta'].includes(saleType)) continue;
+    saleIdsByType.set(saleType, [...(saleIdsByType.get(saleType) || []), saleId]);
+  }
+
+  const storeIds = uniqueIds(saleIdsByType.get('tienda') || []);
+  const restaurantIds = uniqueIds(saleIdsByType.get('restaurante') || []);
+  const terraceIds = uniqueIds(saleIdsByType.get('terraza') || []);
+  const legacyIds = uniqueIds(saleIdsByType.get('venta') || []);
+  const [reservationsResult, roomsResult, storeResult, restaurantResult, terraceResult, legacyResult] = await Promise.all([
+    reservationIds.length
+      ? admin.from('reservas').select('id, cliente_nombre, habitacion_id, monto_total, monto_pagado, estado, fecha_inicio').eq('hotel_id', pilotHotelId).in('id', reservationIds)
+      : Promise.resolve({ data: [], error: null }),
+    roomIds.length
+      ? admin.from('habitaciones').select('id, nombre, estado').eq('hotel_id', pilotHotelId).in('id', roomIds)
+      : Promise.resolve({ data: [], error: null }),
+    storeIds.length
+      ? admin.from('ventas_tienda').select('id, total_venta, estado_pago, fecha, cliente_temporal, habitacion_id, reserva_id').eq('hotel_id', pilotHotelId).in('id', storeIds)
+      : Promise.resolve({ data: [], error: null }),
+    restaurantIds.length
+      ? admin.from('ventas_restaurante').select('id, monto_total, total_venta, estado_pago, fecha, fecha_venta, nombre_cliente_temporal, habitacion_id, reserva_id').eq('hotel_id', pilotHotelId).in('id', restaurantIds)
+      : Promise.resolve({ data: [], error: null }),
+    terraceIds.length
+      ? admin.from('terraza_pedidos').select('id, total, estado, fecha_apertura, fecha_cierre, cliente_nombre, mesa_id, silla_numero').eq('hotel_id', pilotHotelId).in('id', terraceIds)
+      : Promise.resolve({ data: [], error: null }),
+    legacyIds.length
+      ? admin.from('ventas').select('id, total, fecha_venta').eq('hotel_id', pilotHotelId).in('id', legacyIds)
+      : Promise.resolve({ data: [], error: null })
+  ]);
+  if ([reservationsResult, roomsResult, storeResult, restaurantResult, terraceResult, legacyResult].some((result) => result.error)) {
+    throw Object.assign(new Error('No se pudieron enriquecer los destinos de la distribucion.'), {
+      code: 'payment_allocation_targets_lookup_failed'
+    });
+  }
+
+  const [storeItemsResult, restaurantItemsResult, terraceItemsResult] = await Promise.all([
+    storeIds.length
+      ? admin.from('detalle_ventas_tienda').select('venta_id, producto_id, cantidad, precio_unitario_venta, subtotal').eq('hotel_id', pilotHotelId).in('venta_id', storeIds)
+      : Promise.resolve({ data: [], error: null }),
+    restaurantIds.length
+      ? admin.from('ventas_restaurante_items').select('venta_id, plato_id, cantidad, precio_unitario_venta, subtotal').in('venta_id', restaurantIds)
+      : Promise.resolve({ data: [], error: null }),
+    terraceIds.length
+      ? admin.from('terraza_pedido_items').select('pedido_id, producto_id, producto_nombre, cantidad, precio_unitario, subtotal').eq('hotel_id', pilotHotelId).in('pedido_id', terraceIds)
+      : Promise.resolve({ data: [], error: null })
+  ]);
+  if ([storeItemsResult, restaurantItemsResult, terraceItemsResult].some((result) => result.error)) {
+    throw Object.assign(new Error('No se pudieron cargar los productos de las ventas distribuidas.'), {
+      code: 'payment_allocation_items_lookup_failed'
+    });
+  }
+
+  const storeProductIds = uniqueIds((storeItemsResult.data || []).map((item) => item.producto_id));
+  const plateIds = uniqueIds((restaurantItemsResult.data || []).map((item) => item.plato_id));
+  const tableIds = uniqueIds((terraceResult.data || []).map((item) => item.mesa_id));
+  const [productsResult, platesResult, tablesResult] = await Promise.all([
+    storeProductIds.length
+      ? admin.from('productos_tienda').select('id, nombre').eq('hotel_id', pilotHotelId).in('id', storeProductIds)
+      : Promise.resolve({ data: [], error: null }),
+    plateIds.length
+      ? admin.from('platos').select('id, nombre').eq('hotel_id', pilotHotelId).in('id', plateIds)
+      : Promise.resolve({ data: [], error: null }),
+    tableIds.length
+      ? admin.from('terraza_mesas').select('id, numero, nombre').eq('hotel_id', pilotHotelId).in('id', tableIds)
+      : Promise.resolve({ data: [], error: null })
+  ]);
+  if ([productsResult, platesResult, tablesResult].some((result) => result.error)) {
+    throw Object.assign(new Error('No se pudieron cargar los nombres de los destinos distribuidos.'), {
+      code: 'payment_allocation_names_lookup_failed'
+    });
+  }
+
+  const rooms = new Map((roomsResult.data || []).map((row) => [row.id, row]));
+  const reservations = new Map((reservationsResult.data || []).map((row) => [row.id, {
+    ...row,
+    room: rooms.get(row.habitacion_id) || null
+  }]));
+  const products = new Map((productsResult.data || []).map((row) => [row.id, row.nombre]));
+  const plates = new Map((platesResult.data || []).map((row) => [row.id, row.nombre]));
+  const tables = new Map((tablesResult.data || []).map((row) => [row.id, row]));
+  const itemsByStoreSale = new Map<string, Record<string, unknown>[]>();
+  for (const item of storeItemsResult.data || []) {
+    const safeItem = { product_id: item.producto_id, name: products.get(item.producto_id) || 'Producto', quantity: Number(item.cantidad || 0), unit_price: Number(item.precio_unitario_venta || 0), subtotal: Number(item.subtotal || 0) };
+    itemsByStoreSale.set(item.venta_id, [...(itemsByStoreSale.get(item.venta_id) || []), safeItem]);
+  }
+  const itemsByRestaurantSale = new Map<string, Record<string, unknown>[]>();
+  for (const item of restaurantItemsResult.data || []) {
+    const safeItem = { product_id: item.plato_id, name: plates.get(item.plato_id) || 'Plato', quantity: Number(item.cantidad || 0), unit_price: Number(item.precio_unitario_venta || 0), subtotal: Number(item.subtotal || 0) };
+    itemsByRestaurantSale.set(item.venta_id, [...(itemsByRestaurantSale.get(item.venta_id) || []), safeItem]);
+  }
+  const itemsByTerraceSale = new Map<string, Record<string, unknown>[]>();
+  for (const item of terraceItemsResult.data || []) {
+    const safeItem = { product_id: item.producto_id, name: item.producto_nombre || 'Producto', quantity: Number(item.cantidad || 0), unit_price: Number(item.precio_unitario || 0), subtotal: Number(item.subtotal || 0) };
+    itemsByTerraceSale.set(item.pedido_id, [...(itemsByTerraceSale.get(item.pedido_id) || []), safeItem]);
+  }
+
+  const sales = new Map<string, Record<string, unknown>>();
+  for (const row of storeResult.data || []) {
+    const items = itemsByStoreSale.get(row.id) || [];
+    sales.set(`tienda:${row.id}`, { ...row, sale_type: 'tienda', items, label: `Tienda - ${items.map((item) => `${item.quantity} x ${item.name}`).join(' + ') || row.cliente_temporal || 'Venta'}` });
+  }
+  for (const row of restaurantResult.data || []) {
+    const items = itemsByRestaurantSale.get(row.id) || [];
+    sales.set(`restaurante:${row.id}`, { ...row, sale_type: 'restaurante', items, label: `Restaurante - ${items.map((item) => `${item.quantity} x ${item.name}`).join(' + ') || row.nombre_cliente_temporal || 'Venta'}` });
+  }
+  for (const row of terraceResult.data || []) {
+    const table = tables.get(row.mesa_id) || null;
+    const items = itemsByTerraceSale.get(row.id) || [];
+    sales.set(`terraza:${row.id}`, { ...row, sale_type: 'terraza', table, items, label: `Terraza - ${row.cliente_nombre || table?.nombre || (table?.numero ? `Mesa ${table.numero}` : 'Pedido')}` });
+  }
+  for (const row of legacyResult.data || []) {
+    sales.set(`venta:${row.id}`, { ...row, sale_type: 'venta', items: [], label: `Venta - ${new Date(row.fecha_venta || '').toLocaleDateString('es-CO')}` });
+  }
+
+  return allocations.map((allocation) => ({
+    ...allocation,
+    target: allocation.allocation_type === 'reservation'
+      ? reservations.get(String(allocation.reservation_id || '')) || null
+      : sales.get(`${allocation.sale_type}:${allocation.sale_id}`) || null
+  }));
+}
+
 async function listEvents(
   admin: SupabaseClient,
   pilotHotelId: string,
@@ -444,7 +592,8 @@ async function handlePilotAction(
     const paymentEventId = requireUuid(body.paymentEventId, 'invalid_payment_event_id');
     const { events: [event] } = await listEvents(admin, pilotHotel.id, body, paymentEventId);
     if (!event) throw new HttpError(404, 'payment_event_not_found', 'El pago bancario no existe.');
-    return { event };
+    const allocations = await getPaymentAllocations(admin, pilotHotel.id, paymentEventId);
+    return { event, allocations };
   }
   if (action === 'candidates') {
     const paymentEventId = requireUuid(body.paymentEventId, 'invalid_payment_event_id');

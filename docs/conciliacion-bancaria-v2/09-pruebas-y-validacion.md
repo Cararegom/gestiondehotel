@@ -26,3 +26,7 @@ Guardar comando, resultado, versión de migración/Edge Function y actor de prue
 ## Evidencia Fase 2 — 2026-08-25
 
 Se ejecutó un fixture SQL dentro de `BEGIN … ROLLBACK` en producción, usando un evento `simulation` con `metadata.is_test=true`. Validó: allocation única y resumen legacy; rechazo de 90.000 contra evento de 100.000; conservación byte a byte de la distribución anterior después del rechazo; distribución mixta 60.000 reserva + 40.000 tienda; columnas legacy nulas para el caso mixto; suma real 100.000; dos entradas `multiple_allocation_changed`. Tras el rollback quedaron 0 eventos y 0 allocations de la prueba. Se verificó además que el RPC no es ejecutable por `PUBLIC`, `anon` ni `authenticated`, y sí por `service_role`.
+
+## Evidencia Fase 3 — 2026-08-25
+
+`bank-email-api` v17 obtiene allocations filtrando simultáneamente por hotel piloto y evento, y enriquece reservas, habitaciones, ventas y sus detalles sin exponer datos de otro tenant. El servicio conserva el arreglo y la UI presenta la distribución persistida, reincorpora destinos ya pagados que no aparecen entre candidatos y restaura cada importe. Una guardia bloquea el reemplazo si un registro histórico contiene varias reservas. Resultado local: 121 pruebas aprobadas, sintaxis validada en 156 archivos, `deno check` y `deno lint` sin errores.

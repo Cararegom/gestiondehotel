@@ -605,8 +605,52 @@ function salesCandidateCards(items) {
 }
 
 function detailRelationSummary(event) {
+  const allocations = Array.isArray(event?.allocations) ? event.allocations : [];
+  if (allocations.length) return `${allocations.length} destino${allocations.length === 1 ? '' : 's'} · ${formatCop(allocations.reduce((sum, item) => sum + Number(item?.amount_cop || 0), 0))}`;
   const parts = [getReservationLabel(event), getRoomLabel(event)].filter((value) => !value.startsWith('Sin '));
   return parts.length ? parts.join(' · ') : 'Sin relacion confirmada';
+}
+
+function allocationLabel(allocation) {
+  const target = allocation?.target || {};
+  if (allocation?.allocation_type === 'reservation') {
+    const guest = firstValue(target, ['cliente_nombre'], 'Reserva');
+    const room = firstValue(target?.room, ['nombre']);
+    return `${guest}${room ? ` · Hab. ${room}` : ''}`;
+  }
+  return firstValue(target, ['label'], `${firstValue(allocation, ['sale_type'], 'Venta')} #${shortId(allocation?.sale_id)}`);
+}
+
+function renderCurrentAllocations(allocations) {
+  if (!allocations.length) return '<p class="text-sm text-slate-500">Este pago todavía no tiene una distribución guardada.</p>';
+  const total = allocations.reduce((sum, allocation) => sum + Number(allocation?.amount_cop || 0), 0);
+  return `<div class="grid gap-2">
+    ${allocations.map((allocation) => `<div class="flex items-center justify-between gap-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+      <div><span class="block text-xs font-bold uppercase tracking-wider text-emerald-700">${escapeHtml(allocation?.allocation_type === 'reservation' ? 'Reserva' : firstValue(allocation, ['sale_type'], 'Venta'))}</span><span class="text-sm font-semibold text-slate-800">${escapeHtml(allocationLabel(allocation))}</span></div>
+      <strong class="whitespace-nowrap text-emerald-800">${escapeHtml(formatCop(allocation?.amount_cop))}</strong>
+    </div>`).join('')}
+    <div class="flex justify-between border-t border-emerald-200 pt-2 text-sm font-bold text-emerald-900"><span>Total distribuido</span><span>${escapeHtml(formatCop(total))}</span></div>
+  </div>`;
+}
+
+function mergeCurrentAllocations(candidates, allocations) {
+  const merged = {
+    reservations: [...(candidates?.reservations || [])],
+    rooms: [...(candidates?.rooms || [])],
+    sales: [...(candidates?.sales || [])],
+    expectedPayments: [...(candidates?.expectedPayments || [])]
+  };
+  for (const allocation of allocations) {
+    const target = allocation?.target;
+    if (!target || !isUuid(target.id)) continue;
+    if (allocation.allocation_type === 'reservation') {
+      if (!merged.reservations.some((item) => item.id === target.id)) merged.reservations.unshift(target);
+      if (target.room && isUuid(target.room.id) && !merged.rooms.some((item) => item.id === target.room.id)) merged.rooms.unshift(target.room);
+    } else if (!merged.sales.some((item) => item.id === target.id && item.sale_type === allocation.sale_type)) {
+      merged.sales.unshift(target);
+    }
+  }
+  return merged;
 }
 
 function renderDetailModal(event, candidates) {
@@ -614,10 +658,14 @@ function renderDetailModal(event, candidates) {
   if (!modal || !state.mounted || state.currentDetailId !== event?.id) return;
   cleanupModalListeners();
   const status = getStatusMeta(event.status);
-  const reservations = candidates?.reservations || [];
-  const rooms = candidates?.rooms || [];
-  const sales = candidates?.sales || [];
-  const expectedPayments = candidates?.expectedPayments || [];
+  const allocations = Array.isArray(event?.allocations) ? event.allocations : [];
+  const reservationAllocations = allocations.filter((allocation) => allocation?.allocation_type === 'reservation');
+  const hasUnsupportedReservationSplit = reservationAllocations.length > 1;
+  const mergedCandidates = mergeCurrentAllocations(candidates, allocations);
+  const reservations = mergedCandidates.reservations;
+  const rooms = mergedCandidates.rooms;
+  const sales = mergedCandidates.sales;
+  const expectedPayments = mergedCandidates.expectedPayments;
 
   modal.innerHTML = `
     <div data-bank-payment-modal="true" class="w-full max-w-4xl overflow-hidden rounded-3xl bg-white shadow-2xl">
@@ -653,9 +701,16 @@ function renderDetailModal(event, candidates) {
           <div><span class="text-xs font-semibold uppercase text-slate-400">ID interno</span><p class="mt-1 font-mono text-xs text-slate-500">${escapeHtml(event.id)}</p></div>
         </div>
 
+        <section class="mt-6 rounded-2xl border border-emerald-200 bg-white p-5">
+          <h3 class="text-lg font-bold text-emerald-900">Distribución guardada</h3>
+          <p class="mb-3 mt-1 text-sm text-emerald-700">Estos son todos los destinos persistidos actualmente para esta transferencia.</p>
+          ${renderCurrentAllocations(allocations)}
+        </section>
+
         <section class="mt-6 rounded-2xl border border-blue-100 bg-blue-50 p-5">
           <h3 class="text-lg font-bold text-blue-900">Relacion y revision manual</h3>
           <p class="mt-1 text-sm text-blue-700">Selecciona solo datos del hotel actual. El servidor vuelve a validar cada relacion.</p>
+          ${hasUnsupportedReservationSplit ? '<p class="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm font-semibold text-amber-900">Este pago tiene varias reservas asociadas. La distribucion se muestra completa, pero no puede reemplazarse desde esta pantalla para evitar perder asociaciones.</p>' : ''}
           <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div>
               <label class="form-label" for="bank-detail-reservation">Reserva</label>
@@ -686,8 +741,8 @@ function renderDetailModal(event, candidates) {
               : ['confirmed', 'rejected'].includes(event.status)
                 ? '<button type="button" data-bank-manual-action="review" class="button button-warning">Marcar revisado</button>'
                 : `
-                  <button type="button" data-bank-manual-action="relate" class="button button-primary">Relacionar seleccion</button>
-                  <button type="button" data-bank-manual-action="confirm" class="button button-success">Confirmar</button>
+                  <button type="button" data-bank-manual-action="relate" class="button button-primary" ${hasUnsupportedReservationSplit ? 'disabled' : ''}>Relacionar seleccion</button>
+                  <button type="button" data-bank-manual-action="confirm" class="button button-success" ${hasUnsupportedReservationSplit ? 'disabled' : ''}>Confirmar</button>
                   <button type="button" data-bank-manual-action="review" class="button button-warning">Marcar revisado</button>
                   <button type="button" data-bank-manual-action="reject" class="button button-danger">Rechazar</button>
                 `}
@@ -699,9 +754,10 @@ function renderDetailModal(event, candidates) {
   `;
   modal.style.display = 'flex';
 
+  const currentReservation = reservationAllocations[0];
   const currentSelections = [
-    ['#bank-detail-reservation', event.matched_reservation_id],
-    ['#bank-detail-room', event.matched_room_id],
+    ['#bank-detail-reservation', currentReservation?.reservation_id || event.matched_reservation_id],
+    ['#bank-detail-room', currentReservation?.room_id || event.matched_room_id],
     ['#bank-detail-expected', event.matched_expected_payment_id]
   ];
   for (const [selector, value] of currentSelections) {
@@ -710,8 +766,18 @@ function renderDetailModal(event, candidates) {
       select.value = value;
     }
   }
-  const currentSale = modal.querySelector(`.bank-sale-allocation[value="${event.matched_sale_id || ''}"]`);
-  if (currentSale && currentSale.dataset.saleType === event.matched_sale_type) currentSale.checked = true;
+  const saleAllocations = allocations.filter((allocation) => allocation?.allocation_type === 'sale');
+  if (saleAllocations.length) {
+    for (const allocation of saleAllocations) {
+      const currentSale = [...modal.querySelectorAll('.bank-sale-allocation')].find((input) => input.value === allocation.sale_id && input.dataset.saleType === allocation.sale_type);
+      if (!currentSale) continue;
+      currentSale.checked = true;
+      currentSale.dataset.allocationAmount = String(Number(allocation.amount_cop || 0));
+    }
+  } else {
+    const currentSale = modal.querySelector(`.bank-sale-allocation[value="${event.matched_sale_id || ''}"]`);
+    if (currentSale && currentSale.dataset.saleType === event.matched_sale_type) currentSale.checked = true;
+  }
 
   addModalListener(modal.querySelector('[data-bank-detail-close="true"]'), 'click', () => closeDetailModal());
   addModalListener(modal, 'click', (clickEvent) => {
@@ -794,12 +860,12 @@ async function handleManualAction(paymentEventId, manualAction, modal) {
   const saleId = selectedSales[0]?.value || null;
   const saleType = selectedSales[0]?.dataset?.saleType || null;
   const reviewReason = modal.querySelector('#bank-detail-reason')?.value || null;
-  const salesTotal = selectedSales.reduce((sum, input) => sum + Number(input.dataset.amount || 0), 0);
+  const salesTotal = selectedSales.reduce((sum, input) => sum + Number(input.dataset.allocationAmount || input.dataset.amount || 0), 0);
   const transferAmount = eventAmount(state.events.find((item) => item.id === paymentEventId) || {});
   const reservationAmount = reservationId ? transferAmount - salesTotal : 0;
   const allocations = [
     ...(reservationId && reservationAmount > 0 ? [{ type: 'reservation', reservationId, amountCop: reservationAmount }] : []),
-    ...selectedSales.map((input) => ({ type: 'sale', saleId: input.value, saleType: input.dataset.saleType, amountCop: Number(input.dataset.amount || 0) }))
+    ...selectedSales.map((input) => ({ type: 'sale', saleId: input.value, saleType: input.dataset.saleType, amountCop: Number(input.dataset.allocationAmount || input.dataset.amount || 0) }))
   ];
 
   if (['relate', 'confirm'].includes(manualAction) && selectedSales.length && salesTotal > transferAmount) {

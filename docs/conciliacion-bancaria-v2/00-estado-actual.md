@@ -15,7 +15,7 @@ El piloto está limitado en servidor a Hotel Marena San Isidro. La autorización
 
 ## Estado desplegado
 
-- Edge Functions: `bank-email-api` v16 (`verify_jwt=true`), `gmail-webhook` v14, `gmail-watch-renew` v9 y `gmail-oauth-callback` v8. Las tres entradas externas sin JWT aplican autenticación específica en código; debe conservarse y probarse.
+- Edge Functions: `bank-email-api` v17 (`verify_jwt=true`), `gmail-webhook` v14, `gmail-watch-renew` v9 y `gmail-oauth-callback` v8. Las tres entradas externas sin JWT aplican autenticación específica en código; debe conservarse y probarse.
 - Datos al corte: 16 eventos bancarios, 0 allocations, 47 auditorías y 0 pagos esperados. No hay allocations existentes que convertir antes de endurecer el modelo.
 - `bank_payment_allocations` tiene RLS habilitado y no concede acceso directo a `anon` ni `authenticated`; `replace_bank_payment_allocations` es invocable solo por `service_role`.
 
