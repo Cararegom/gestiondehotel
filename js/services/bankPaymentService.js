@@ -258,10 +258,11 @@ export async function submitBankPaymentManualAction(supabase, hotelId, input = {
     saleId: normalizeOptionalUuid(input.saleId),
     saleType: normalizeOptionalText(input.saleType, 80),
     expectedPaymentId: normalizeOptionalUuid(input.expectedPaymentId),
+    allocations: Array.isArray(input.allocations) ? input.allocations : [],
     reviewReason: normalizeOptionalText(input.reviewReason, 500)
   };
 
-  if (payload.manualAction === 'relate' && !payload.reservationId && !payload.roomId && !payload.saleId && !payload.expectedPaymentId) {
+  if (payload.manualAction === 'relate' && !payload.allocations.length && !payload.reservationId && !payload.roomId && !payload.saleId && !payload.expectedPaymentId) {
     throw new Error('Selecciona una reserva, habitacion, venta o pago esperado para relacionar.');
   }
 

@@ -254,6 +254,29 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
     throw Object.assign(new Error('No se pudieron consultar las opciones de relacion.'), { code: 'candidate_lookup_failed' });
   }
 
+  const storeSaleIds = (storeSalesResult.data || []).map((sale) => sale.id);
+  const { data: storeDetails, error: storeDetailsError } = storeSaleIds.length
+    ? await admin.from('detalle_ventas_tienda')
+      .select('venta_id, producto_id, cantidad, precio_unitario_venta, subtotal, producto:productos_tienda(nombre)')
+      .eq('hotel_id', pilotHotelId)
+      .in('venta_id', storeSaleIds)
+    : { data: [], error: null };
+  if (storeDetailsError) {
+    throw Object.assign(new Error('No se pudo cargar el detalle de productos de Tienda.'), { code: 'store_sale_details_lookup_failed' });
+  }
+  const storeItemsBySale = new Map<string, Record<string, unknown>[]>();
+  for (const detail of storeDetails || []) {
+    const relatedProduct = Array.isArray(detail.producto) ? detail.producto[0] : detail.producto;
+    const item = {
+      product_id: detail.producto_id,
+      name: relatedProduct?.nombre || 'Producto',
+      quantity: Number(detail.cantidad || 0),
+      unit_price: Number(detail.precio_unitario_venta || 0),
+      subtotal: Number(detail.subtotal || 0)
+    };
+    storeItemsBySale.set(detail.venta_id, [...(storeItemsBySale.get(detail.venta_id) || []), item]);
+  }
+
   const paidByReservation = new Map<string, number>();
   for (const payment of paymentsResult.data || []) {
     paidByReservation.set(
@@ -289,7 +312,11 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
     };
   });
   const sales: Array<Record<string, unknown>> = [
-    ...(storeSalesResult.data || []).map((sale) => ({ ...sale, sale_type: 'tienda', label: `Tienda · ${sale.cliente_temporal || sale.id}` })),
+    ...(storeSalesResult.data || []).map((sale) => {
+      const items = storeItemsBySale.get(sale.id) || [];
+      const itemLabel = items.map((item) => `${item.quantity} x ${item.name}`).join(' + ');
+      return { ...sale, items, sale_type: 'tienda', label: `Tienda · ${itemLabel || sale.cliente_temporal || 'Venta sin detalle'}` };
+    }),
     ...(restaurantSalesResult.data || []).map((sale) => ({ ...sale, sale_type: 'restaurante', label: `Restaurante · ${sale.nombre_cliente_temporal || sale.id}` })),
     ...(salesResult.data || []).map((sale) => ({ ...sale, sale_type: 'venta', label: `Venta · ${sale.id}` }))
   ];
@@ -430,6 +457,35 @@ async function handlePilotAction(
     };
     const databaseAction = actionMap[requestedAction];
     if (!databaseAction) throw new HttpError(400, 'invalid_manual_action', 'La accion manual no esta permitida.');
+    const allocations = Array.isArray(body.allocations) ? body.allocations : [];
+    if (allocations.length && ['link', 'confirm'].includes(databaseAction)) {
+      await requirePilotAdministrator(admin, context, pilotHotel.id);
+      const normalizedAllocations = allocations.map((allocation) => {
+        if (!allocation || typeof allocation !== 'object') throw new HttpError(400, 'invalid_allocation', 'La distribucion contiene un elemento invalido.');
+        const row = allocation as Record<string, unknown>;
+        const type = asString(row.type, 20).toLowerCase();
+        const amountCop = Number(row.amountCop);
+        if (!Number.isSafeInteger(amountCop) || amountCop <= 0) throw new HttpError(400, 'invalid_allocation_amount', 'Cada valor distribuido debe ser mayor que cero.');
+        if (type === 'reservation') return { type, reservationId: requireUuid(row.reservationId, 'invalid_reservation_id'), amountCop };
+        if (type === 'sale') {
+          const saleType = asString(row.saleType, 20).toLowerCase();
+          if (!['venta', 'tienda', 'restaurante', 'terraza'].includes(saleType)) throw new HttpError(400, 'invalid_sale_type', 'El tipo de venta no es valido.');
+          return { type, saleId: requireUuid(row.saleId, 'invalid_sale_id'), saleType, amountCop };
+        }
+        throw new HttpError(400, 'invalid_allocation_type', 'El tipo de distribucion no es valido.');
+      });
+      const { data, error } = await admin.rpc('replace_bank_payment_allocations', {
+        p_payment_event_id: paymentEventId,
+        p_actor_id: context.user.id,
+        p_allocations: normalizedAllocations,
+        p_action: databaseAction,
+        p_review_reason: asString(body.reviewReason, 500) || null,
+        p_pilot_hotel_name: config.pilotHotelName
+      });
+      if (error) throw Object.assign(new Error(error.message || 'No se pudo distribuir el pago bancario.'), { code: 'multiple_allocation_failed' });
+      const result = data && typeof data === 'object' ? data as Record<string, unknown> : {};
+      return { result: { ...result, payment_event: result.payment_event && typeof result.payment_event === 'object' ? clientSafeEvent(result.payment_event as Record<string, unknown>) : null } };
+    }
     const reservationId = optionalUuid(body.reservationId, 'invalid_reservation_id');
     const roomId = optionalUuid(body.roomId, 'invalid_room_id');
     const saleId = optionalUuid(body.saleId, 'invalid_sale_id');

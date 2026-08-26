@@ -563,7 +563,7 @@ function reservationCandidateLabel(item) {
   const amount = Number(firstValue(item, ['outstanding_amount_cop', 'pending_amount_cop', 'pending', 'pendiente', 'monto_pendiente'], 0));
   const client = firstValue(item, ['cliente_nombre', 'guest_name', 'nombre_cliente'], 'Sin nombre');
   const room = firstValue(item?.room || item?.habitaciones, ['nombre', 'name']) || firstValue(item, ['room_name', 'habitacion_nombre']);
-  return `#${shortId(item.id)} · ${client}${room ? ` · Hab. ${room}` : ''}${amount > 0 ? ` · Pendiente ${formatCop(amount)}` : ''}`;
+  return `${client}${room ? ` · Hab. ${room}` : ''}${amount > 0 ? ` · Pendiente ${formatCop(amount)}` : ' · Registrada como pagada'}`;
 }
 
 function roomCandidateLabel(item) {
@@ -584,10 +584,24 @@ function salesCandidateOptions(items) {
     .map((item) => {
       const type = String(firstValue(item, ['sale_type', 'type', 'entity_type', 'tipo'], '') || '').slice(0, 80);
       const amount = Number(firstValue(item, ['amount_cop', 'total_venta', 'monto_total', 'total'], 0));
-      const label = `${type || 'Venta'} #${shortId(item.id)}${amount > 0 ? ` · ${formatCop(amount)}` : ''}`;
+      const descriptiveLabel = firstValue(item, ['label'], type || 'Venta');
+      const label = `${descriptiveLabel}${amount > 0 ? ` · Total ${formatCop(amount)}` : ''}`;
       return `<option value="${escapeAttribute(item.id)}" data-sale-type="${escapeAttribute(type)}">${escapeHtml(label)}</option>`;
     })
     .join('');
+}
+
+function salesCandidateCards(items) {
+  if (!items.length) return '<p class="text-sm text-slate-500">No hay ventas pendientes disponibles.</p>';
+  return items.filter((item) => isUuid(item?.id)).map((item) => {
+    const type = String(firstValue(item, ['sale_type', 'type'], '') || 'venta').slice(0, 80);
+    const amount = Number(firstValue(item, ['amount_cop', 'total_venta', 'monto_total', 'total'], 0));
+    const label = firstValue(item, ['label'], type);
+    return `<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-blue-400">
+      <input type="checkbox" class="mt-1 bank-sale-allocation" value="${escapeAttribute(item.id)}" data-sale-type="${escapeAttribute(type)}" data-amount="${amount}">
+      <span><strong class="block text-sm text-slate-800">${escapeHtml(label)}</strong><span class="text-xs text-slate-500">Valor de esta venta: ${escapeHtml(formatCop(amount))}</span></span>
+    </label>`;
+  }).join('');
 }
 
 function detailRelationSummary(event) {
@@ -655,9 +669,10 @@ function renderDetailModal(event, candidates) {
               <label class="form-label" for="bank-detail-expected">Pago esperado</label>
               <select id="bank-detail-expected" class="form-control"><option value="">Sin seleccionar</option>${renderCandidateOptions(expectedPayments, expectedPaymentCandidateLabel)}</select>
             </div>
-            <div>
-              <label class="form-label" for="bank-detail-sale">Venta</label>
-              <select id="bank-detail-sale" class="form-control"><option value="">Sin seleccionar</option>${salesCandidateOptions(sales)}</select>
+            <div class="md:col-span-2">
+              <label class="form-label">Ventas de Tienda, Restaurante o Terraza</label>
+              <p class="mb-2 text-xs text-slate-500">Puedes marcar varias ventas. En Tienda se muestran los productos y sus cantidades.</p>
+              <div id="bank-detail-sales" class="grid max-h-64 gap-2 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2 md:grid-cols-2">${salesCandidateCards(sales)}</div>
             </div>
             <div class="md:col-span-2">
               <label class="form-label" for="bank-detail-reason">Motivo u observacion</label>
@@ -695,16 +710,8 @@ function renderDetailModal(event, candidates) {
       select.value = value;
     }
   }
-  const saleSelect = modal.querySelector('#bank-detail-sale');
-  if (
-    saleSelect && event.matched_sale_id &&
-    [...saleSelect.options].some((option) =>
-      option.value === event.matched_sale_id &&
-      option.dataset.saleType === event.matched_sale_type
-    )
-  ) {
-    saleSelect.value = event.matched_sale_id;
-  }
+  const currentSale = modal.querySelector(`.bank-sale-allocation[value="${event.matched_sale_id || ''}"]`);
+  if (currentSale && currentSale.dataset.saleType === event.matched_sale_type) currentSale.checked = true;
 
   addModalListener(modal.querySelector('[data-bank-detail-close="true"]'), 'click', () => closeDetailModal());
   addModalListener(modal, 'click', (clickEvent) => {
@@ -783,11 +790,32 @@ async function handleManualAction(paymentEventId, manualAction, modal) {
   const reservationId = modal.querySelector('#bank-detail-reservation')?.value || null;
   const roomId = modal.querySelector('#bank-detail-room')?.value || null;
   const expectedPaymentId = modal.querySelector('#bank-detail-expected')?.value || null;
-  const saleSelect = modal.querySelector('#bank-detail-sale');
-  const selectedSale = saleSelect?.selectedOptions?.[0];
-  const saleId = saleSelect?.value || null;
-  const saleType = selectedSale?.dataset?.saleType || null;
+  const selectedSales = [...modal.querySelectorAll('.bank-sale-allocation:checked')];
+  const saleId = selectedSales[0]?.value || null;
+  const saleType = selectedSales[0]?.dataset?.saleType || null;
   const reviewReason = modal.querySelector('#bank-detail-reason')?.value || null;
+  const salesTotal = selectedSales.reduce((sum, input) => sum + Number(input.dataset.amount || 0), 0);
+  const transferAmount = eventAmount(state.events.find((item) => item.id === paymentEventId) || {});
+  const reservationAmount = reservationId ? transferAmount - salesTotal : 0;
+  const allocations = [
+    ...(reservationId && reservationAmount > 0 ? [{ type: 'reservation', reservationId, amountCop: reservationAmount }] : []),
+    ...selectedSales.map((input) => ({ type: 'sale', saleId: input.value, saleType: input.dataset.saleType, amountCop: Number(input.dataset.amount || 0) }))
+  ];
+
+  if (['relate', 'confirm'].includes(manualAction) && selectedSales.length && salesTotal > transferAmount) {
+    if (feedback) {
+      feedback.textContent = 'Las ventas seleccionadas superan el valor de la transferencia.';
+      feedback.className = 'mt-4 text-sm text-red-700';
+    }
+    return;
+  }
+  if (['relate', 'confirm'].includes(manualAction) && selectedSales.length && !reservationId && salesTotal !== transferAmount) {
+    if (feedback) {
+      feedback.textContent = 'Selecciona ventas cuyo total coincida con la transferencia, o selecciona también la reserva que cubre el valor restante.';
+      feedback.className = 'mt-4 text-sm text-red-700';
+    }
+    return;
+  }
 
   buttons.forEach((button) => { button.disabled = true; });
   if (feedback) {
@@ -804,6 +832,7 @@ async function handleManualAction(paymentEventId, manualAction, modal) {
       expectedPaymentId,
       saleId,
       saleType,
+      allocations: ['relate', 'confirm'].includes(manualAction) ? allocations : [],
       reviewReason
     });
     closeDetailModal();
