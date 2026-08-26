@@ -36,7 +36,9 @@ test('el piloto permanece fijado exclusivamente a Hotel Marena San Isidro', () =
 
 test('la conciliacion muestra productos y distribuye una transferencia entre varios conceptos', () => {
   assert.match(bankApi, /detalle_ventas_tienda/);
-  assert.match(bankApi, /producto:productos_tienda\(nombre\)/);
+  assert.match(bankApi, /from\('productos_tienda'\)[\s\S]*select\('id, nombre'\)/);
+  assert.doesNotMatch(bankApi, /producto:productos_tienda\(nombre\)/);
+  assert.match(bankApi, /store_sale_details_lookup_failed[\s\S]*safeStoreDetails/);
   assert.match(bankModule, /bank-sale-allocation/);
   assert.match(bankModule, /Registrada como pagada/);
   assert.match(allocationsMigration, /CREATE TABLE IF NOT EXISTS public\.bank_payment_allocations/);

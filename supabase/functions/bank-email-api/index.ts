@@ -257,19 +257,26 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
   const storeSaleIds = (storeSalesResult.data || []).map((sale) => sale.id);
   const { data: storeDetails, error: storeDetailsError } = storeSaleIds.length
     ? await admin.from('detalle_ventas_tienda')
-      .select('venta_id, producto_id, cantidad, precio_unitario_venta, subtotal, producto:productos_tienda(nombre)')
+      .select('venta_id, producto_id, cantidad, precio_unitario_venta, subtotal')
       .eq('hotel_id', pilotHotelId)
       .in('venta_id', storeSaleIds)
     : { data: [], error: null };
-  if (storeDetailsError) {
-    throw Object.assign(new Error('No se pudo cargar el detalle de productos de Tienda.'), { code: 'store_sale_details_lookup_failed' });
-  }
+  if (storeDetailsError) console.error('[bank-email-api]', { code: 'store_sale_details_lookup_failed' });
+  const safeStoreDetails = storeDetailsError ? [] : (storeDetails || []);
+  const productIds = uniqueIds(safeStoreDetails.map((detail) => detail.producto_id));
+  const { data: storeProducts, error: storeProductsError } = productIds.length
+    ? await admin.from('productos_tienda')
+      .select('id, nombre')
+      .eq('hotel_id', pilotHotelId)
+      .in('id', productIds)
+    : { data: [], error: null };
+  if (storeProductsError) console.error('[bank-email-api]', { code: 'store_products_lookup_failed' });
+  const storeProductNames = new Map((storeProductsError ? [] : (storeProducts || [])).map((product) => [product.id, product.nombre]));
   const storeItemsBySale = new Map<string, Record<string, unknown>[]>();
-  for (const detail of storeDetails || []) {
-    const relatedProduct = Array.isArray(detail.producto) ? detail.producto[0] : detail.producto;
+  for (const detail of safeStoreDetails) {
     const item = {
       product_id: detail.producto_id,
-      name: relatedProduct?.nombre || 'Producto',
+      name: storeProductNames.get(detail.producto_id) || 'Producto',
       quantity: Number(detail.cantidad || 0),
       unit_price: Number(detail.precio_unitario_venta || 0),
       subtotal: Number(detail.subtotal || 0)
