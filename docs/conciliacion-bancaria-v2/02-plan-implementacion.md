@@ -7,7 +7,7 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 | 1 | Estado supuesto y deriva producción/repositorio | Auditar código, Edge Functions, esquema y permisos; estos documentos | `HEAD=origin/main`, inventario y hallazgos reproducibles | Solo documentación; revertir carpeta |
 | 2 ✅ | Constraints legacy/auditoría bloqueaban allocations | Aplicado: constraints compatibles; RPC valida en dos pasadas, bloquea y reemplaza; índices de FK/consulta | Probado: suma exacta, relación única, split mixto, auditoría y fallo conserva distribución | Monitorear locks/errores; rollback mediante migración compensatoria |
 | 3 ✅ | Detalle y UI leían una sola relación | Aplicado: `bank-email-api`, servicio y módulo devuelven, enriquecen, muestran y restauran `allocations[]` | 121 pruebas; reabrir conserva importes y destinos; guardia ante varias reservas | Monitorear latencia; rollback de Edge Function y frontend |
-| 4 | Reserva toma monto total del evento | Reemplazar compromiso por `SUM` de allocations reservation | split 60/40 acredita 60 | Saldo incorrecto; feature flag de cálculo |
+| 4 ✅ | Reserva tomaba monto total del evento | Aplicado en API piloto: compromiso directo por suma de `amount_cop` de allocations `reservation` | split 60/40 acredita 60; eventos no comprometidos no acreditan | Monitorear saldo de candidatos; rollback a v17 |
 | 5 | “pagado” se excluye aunque sea conciliable | Crear dominio `bank_email_sale_is_reconcilable`; candidatos de tienda/restaurante/terraza/legacy | pagada por transferencia aparece sin recobro | candidatos falsos; volver filtro anterior |
 | 6 | Una venta puede reutilizarse | Validación de total conciliado activo, preparada para parciales/reversiones | segunda conciliación completa rechazada | falsos bloqueos; enviar a revisión |
 | 7 | Candidatos poco humanos/costosos | DTO agregado, orden temporal, lote de detalles, límites | nombres/cantidades/fechas; sin UUID principal ni N+1 | latencia; paginación/fallback |
@@ -24,4 +24,4 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 
 ## Orden inmediato
 
-Las Fases 2 y 3 están aplicadas exclusivamente sobre la infraestructura protegida del piloto. La siguiente es la Fase 4: los importes acreditados a reservas deben calcularse desde la suma de sus allocations y nunca desde el monto total del evento.
+Las Fases 2, 3 y 4 están aplicadas exclusivamente sobre la infraestructura protegida del piloto. La siguiente es la Fase 5: separar si una venta está pendiente de cobro de si todavía puede verificarse mediante conciliación bancaria.

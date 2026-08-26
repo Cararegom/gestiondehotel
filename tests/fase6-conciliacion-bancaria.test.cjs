@@ -58,3 +58,9 @@ test('Fase 3 reconstruye allocations enriquecidas sin confiar en columnas legacy
   assert.match(bankModule, /currentSale\.dataset\.allocationAmount/);
   assert.match(bankModule, /allocationAmount \|\| input\.dataset\.amount/);
 });
+
+test('Fase 4 calcula el credito de reserva desde allocations y no desde el evento completo', () => {
+  assert.match(bankApi, /committedReservationTotals/);
+  assert.match(bankApi, /from\('bank_payment_allocations'\)[\s\S]*eq\('allocation_type', 'reservation'\)/);
+  assert.doesNotMatch(bankApi, /relatesDirectly[\s\S]*event\.amount_cop/);
+});

@@ -30,3 +30,7 @@ Se ejecutó un fixture SQL dentro de `BEGIN … ROLLBACK` en producción, usando
 ## Evidencia Fase 3 — 2026-08-25
 
 `bank-email-api` v17 obtiene allocations filtrando simultáneamente por hotel piloto y evento, y enriquece reservas, habitaciones, ventas y sus detalles sin exponer datos de otro tenant. El servicio conserva el arreglo y la UI presenta la distribución persistida, reincorpora destinos ya pagados que no aparecen entre candidatos y restaura cada importe. Una guardia bloquea el reemplazo si un registro histórico contiene varias reservas. Resultado local: 121 pruebas aprobadas, sintaxis validada en 156 archivos, `deno check` y `deno lint` sin errores.
+
+## Evidencia Fase 4 — 2026-08-25
+
+`bank-email-api` v18 dejó de acreditar a una reserva el monto completo de `bank_payment_events`. Para eventos `matched` o `confirmed` sin expectativa asociada, suma exclusivamente allocations de tipo `reservation`, filtradas por el UUID del piloto. Las pruebas de comportamiento validan un split 60.000 reserva + 40.000 ventas y descartan eventos pendientes o montos inválidos. Resultado local: 124 pruebas aprobadas, sintaxis validada en 157 archivos, `deno check` y `deno lint` sin errores. El precheck productivo encontró un solo hotel piloto, cero eventos comprometidos y cero sumas inválidas; no se modificaron datos.

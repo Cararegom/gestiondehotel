@@ -23,6 +23,7 @@ import { decryptToken, getTokenEncryptionKey } from '../_shared/bank-email/token
 import { parseGmailMessage } from '../_shared/bank-email/gmail-message.ts';
 import { analyzeBankEmail } from '../_shared/bank-email/payment-service.ts';
 import { maskReference } from '../_shared/bank-email/security.ts';
+import { committedReservationTotals } from '../_shared/bank-email/allocation-totals.ts';
 
 const PAYMENT_STATUSES = new Set(['detected', 'matched', 'confirmed', 'manual_review', 'rejected', 'duplicated']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -373,7 +374,7 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
   expectedQuery = matchedExpectedPaymentId
     ? expectedQuery.or(`status.eq.pending,id.eq.${matchedExpectedPaymentId}`)
     : expectedQuery.eq('status', 'pending');
-  const [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, directCommittedResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult] = await Promise.all([
+  const [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult] = await Promise.all([
     admin.from('reservas')
       .select('id, cliente_nombre, habitacion_id, monto_total, monto_pagado, estado, fecha_inicio, creado_en')
       .eq('hotel_id', pilotHotelId)
@@ -388,16 +389,19 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
       .eq('hotel_id', pilotHotelId)
       .in('status', ['pending', 'matched', 'confirmed']),
     admin.from('bank_payment_events')
-      .select('matched_reservation_id, amount_cop')
+      .select('id, matched_expected_payment_id')
       .eq('hotel_id', pilotHotelId)
-      .in('status', ['matched', 'confirmed'])
-      .is('matched_expected_payment_id', null),
+      .in('status', ['matched', 'confirmed']),
+    admin.from('bank_payment_allocations')
+      .select('payment_event_id, reservation_id, amount_cop')
+      .eq('hotel_id', pilotHotelId)
+      .eq('allocation_type', 'reservation'),
     admin.from('ventas_tienda').select('id, total_venta, estado_pago, fecha, cliente_temporal').eq('hotel_id', pilotHotelId).or('estado_pago.is.null,estado_pago.neq.pagado').order('fecha', { ascending: false }).limit(50),
     admin.from('ventas_restaurante').select('id, monto_total, total_venta, estado_pago, fecha, nombre_cliente_temporal').eq('hotel_id', pilotHotelId).or('estado_pago.is.null,estado_pago.neq.pagado').order('fecha', { ascending: false }).limit(50),
     admin.from('ventas').select('id, total, fecha_venta').eq('hotel_id', pilotHotelId).order('fecha_venta', { ascending: false }).limit(50),
     admin.from('terraza_pedidos').select('id, total, estado, fecha_apertura, cliente_nombre').eq('hotel_id', pilotHotelId).eq('estado', 'abierto').order('fecha_apertura', { ascending: false }).limit(50)
   ]);
-  const results = [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, directCommittedResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult];
+  const results = [reservationsResult, paymentsResult, roomsResult, expectedResult, pendingExpectedResult, committedEventsResult, reservationAllocationsResult, storeSalesResult, restaurantSalesResult, salesResult, terraceSalesResult];
   if (results.some((result) => result.error)) {
     throw Object.assign(new Error('No se pudieron consultar las opciones de relacion.'), { code: 'candidate_lookup_failed' });
   }
@@ -450,11 +454,17 @@ async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymen
     );
   }
   const roomMap = new Map((roomsResult.data || []).map((room) => [room.id, room]));
+  const directCommittedEventIds = new Set(
+    (committedEventsResult.data || [])
+      .filter((event) => event.matched_expected_payment_id == null)
+      .map((event) => event.id)
+  );
+  const directlyCommittedByReservation = committedReservationTotals(
+    reservationAllocationsResult.data || [],
+    directCommittedEventIds
+  );
   const reservations = (reservationsResult.data || []).map((reservation) => {
-    const directCommitted = (directCommittedResult.data || []).reduce((total, event) => {
-      const relatesDirectly = event.matched_reservation_id === reservation.id;
-      return total + (relatesDirectly ? Number(event.amount_cop || 0) : 0);
-    }, 0);
+    const directCommitted = directlyCommittedByReservation.get(reservation.id) || 0;
     return {
       ...reservation,
       room: roomMap.get(reservation.habitacion_id) || null,

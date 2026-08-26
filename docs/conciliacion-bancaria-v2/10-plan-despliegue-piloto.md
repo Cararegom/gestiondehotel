@@ -26,4 +26,5 @@ Registrar códigos estables para correo recibido, duplicado, candidato, relació
 - Índices de Fase 2: `fase2_indices_bank_payment_allocations`, aplicada como versión `20260826014049`.
 - Edge Functions: sin cambios ni despliegues en Fase 2.
 - Fase 3: `bank-email-api` v17 desplegada activa con `verify_jwt=true`; no requirió migraciones ni cambios en Caja/ledger.
+- Fase 4: `bank-email-api` v18 desplegada activa con `verify_jwt=true`; cálculo de saldo de reserva basado en allocations, sin migración ni escrituras de datos.
 - Sincronización histórica sin reejecución: `20260622090000_terraza_transferencias_sin_duplicados.sql`, `20260826000109_permitir_cambio_metodo_pago_caja.sql` y `20260826000318_grant_update_metodo_pago_caja.sql`.
