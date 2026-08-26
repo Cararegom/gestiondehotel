@@ -1,0 +1,28 @@
+# Pruebas y validación
+
+## Capas
+
+- SQL/pgTAP o transacciones de prueba para constraints, RPC, RLS y atomicidad.
+- Backend para parser, idempotencia, DTO y códigos de error.
+- Frontend para restauración, sumas, permisos y mensajes humanos.
+- Regresión de reservas/liberación, pagos, Caja/cierre, Tienda, Restaurante, Terraza, inventarios, gastos, cuentas, reportes, auth y roles.
+
+## Casos financieros obligatorios
+
+1. 60.000→reserva; 40.000→tienda; 100.000→60.000 reserva+20.000 tienda+20.000 terraza.
+2. Sumas 90.000 y 110.000 para evento 100.000: rechazo sin cambios.
+3. Destino de otro hotel, recepción redistribuyendo y admin de otro hotel: rechazo.
+4. Admin Marena: aceptación y auditoría.
+5. Reabrir tres allocations: aparecen tres; reserva usa solo su allocation.
+6. Venta pagada por transferencia: candidata sin segundo cobro.
+7. Venta totalmente conciliada: segunda relación rechazada/revisión.
+8. Falla de auditoría o allocation: estado y distribución anteriores intactos.
+9. Correo duplicado: un evento; Gmail caído: operación/Caja continúan.
+
+## Evidencias por fase
+
+Guardar comando, resultado, versión de migración/Edge Function y actor de prueba. Usar `metadata.is_test=true`; no usar transferencias reales arbitrarias. Ejecutar advisors de seguridad/rendimiento después de DDL. Ninguna fase se acepta solo por regex sobre archivos.
+
+## Evidencia Fase 2 — 2026-08-25
+
+Se ejecutó un fixture SQL dentro de `BEGIN … ROLLBACK` en producción, usando un evento `simulation` con `metadata.is_test=true`. Validó: allocation única y resumen legacy; rechazo de 90.000 contra evento de 100.000; conservación byte a byte de la distribución anterior después del rechazo; distribución mixta 60.000 reserva + 40.000 tienda; columnas legacy nulas para el caso mixto; suma real 100.000; dos entradas `multiple_allocation_changed`. Tras el rollback quedaron 0 eventos y 0 allocations de la prueba. Se verificó además que el RPC no es ejecutable por `PUBLIC`, `anon` ni `authenticated`, y sí por `service_role`.
