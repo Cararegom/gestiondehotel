@@ -381,11 +381,8 @@ grant execute on function public.get_my_claim(text) to authenticated;
 grant execute on function public.get_my_hotel_id() to authenticated;
 grant execute on function public.pre_fase14_can_bootstrap_admin_role(uuid,uuid,uuid) to authenticated;
 grant execute on function public.pre_fase14_can_bootstrap_profile(uuid,uuid,text) to authenticated;
-grant execute on function public.role() to authenticated;
-grant execute on function public.uid() to authenticated;
 grant execute on function public.usuario_actual_es_admin_hotel(uuid) to authenticated;
 grant execute on function public.fase1_business_date(timestamp with time zone) to authenticated;
-grant execute on function public.uuid_generate_v4() to authenticated;
 
 -- The only intentional anonymous RPCs. They are also available to an already
 -- authenticated browser visiting the public storefront/menu.

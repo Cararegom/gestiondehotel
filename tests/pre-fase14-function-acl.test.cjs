@@ -3,10 +3,37 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 
+const migration5 = fs.readFileSync(
+  path.resolve(__dirname, '../supabase/migrations/20260827070530_pre_fase14_close_public_function_defaults.sql'),
+  'utf8'
+);
+
 const migration = fs.readFileSync(
   path.resolve(__dirname, '../supabase/migrations/20260827174036_pre_fase14_function_acl_and_cross_tenant_hardening.sql'),
   'utf8'
 );
+
+test('la migracion 5 cierra defaults y funciones existentes antes de reconstruir la allowlist', () => {
+  assert.match(migration5, /alter default privileges for role postgres in schema public[\s\S]*revoke execute on functions from public, anon, authenticated/i);
+  assert.match(migration5, /grant execute on functions to service_role/i);
+  assert.match(migration5, /pg_get_userbyid\(p\.proowner\) = 'postgres'/i);
+  assert.match(migration5, /revoke all on function %s from public, anon, authenticated/i);
+  assert.doesNotMatch(migration5, /grant execute on all functions in schema public to authenticated/i);
+});
+
+test('la migracion 5 no reabre RPC vulnerables antes de que la migracion 10 los reemplace', () => {
+  const allowlist = migration5.match(/foreach v_signature[\s\S]*?\]\s*loop/i)?.[0] || '';
+  assert.doesNotMatch(allowlist, /actualizar_compra_y_detalles/i);
+  assert.doesNotMatch(allowlist, /cambiar_habitacion_transaccion/i);
+  assert.match(migration5, /to_regprocedure\(v_signature\)/i);
+  assert.match(migration5, /allowlist drift/i);
+});
+
+test('el paquete no depende de wrappers exclusivos del staging anterior', () => {
+  for (const sql of [migration5, migration]) {
+    assert.doesNotMatch(sql, /public\.(?:role|uid|uuid_generate_v4)\s*\(\s*\)/i);
+  }
+});
 
 test('la migracion 10 cierra defaults y reconstruye ACL por firma', () => {
   assert.match(migration, /alter default privileges for role postgres in schema public[\s\S]*revoke execute on functions from public, anon, authenticated/i);
