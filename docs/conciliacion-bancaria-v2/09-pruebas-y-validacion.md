@@ -1,5 +1,15 @@
 # Pruebas y validación
 
+## Fase 10/24 — Método de pago y ledger
+
+- Migración aplicada: `20260827015126_fase10_sincronizar_metodo_pago_caja_ledger`.
+- Precheck: 5 métodos y 6 cuentas divergentes entre Caja y 309 asientos observados.
+- Postcheck: 0 métodos y 0 cuentas divergentes entre 382 asientos vinculados al momento de verificar.
+- `authenticated`: sin UPDATE directo de `caja.metodo_pago_id`, con EXECUTE sobre el RPC.
+- `anon`: sin EXECUTE sobre el RPC.
+- El frontend usa exclusivamente el RPC y exige confirmación de sincronización.
+- La reparación solo actualiza asientos con `caja_id` explícito y no inserta movimientos.
+
 ## Fase 9/24 — Caja y estado bancario
 
 - Marena: la columna bancaria se habilita por UUID exacto.

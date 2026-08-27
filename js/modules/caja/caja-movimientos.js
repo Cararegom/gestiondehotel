@@ -342,17 +342,23 @@ export async function handleMovementTableClick({
     const nuevoMetodoId = await seleccionarMetodoPago(metodos, metodoActualId);
     if (!nuevoMetodoId || nuevoMetodoId === metodoActualId) return;
 
-    const { error: updateError } = await supabase
-      .from('caja')
-      .update({ metodo_pago_id: nuevoMetodoId })
-      .eq('id', movimientoId);
+    const { data: updateResult, error: updateError } = await supabase
+      .rpc('actualizar_metodo_pago_caja', {
+        p_movimiento_id: movimientoId,
+        p_metodo_pago_id: nuevoMetodoId
+      });
 
     if (updateError) {
       showError(currentContainerEl.querySelector('#turno-global-feedback'), `No se pudo actualizar el metodo de pago: ${updateError.message}`);
       return;
     }
 
-    showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Metodo de pago actualizado.');
+    if (updateResult?.ledger_sincronizado !== true) {
+      showError(currentContainerEl.querySelector('#turno-global-feedback'), 'El metodo cambio, pero no se pudo verificar la cuenta financiera asociada.');
+      return;
+    }
+
+    showSuccess(currentContainerEl.querySelector('#turno-global-feedback'), 'Metodo de pago y cuenta financiera actualizados.');
     await loadAndRenderMovements({
       tBodyEl,
       summaryEls,

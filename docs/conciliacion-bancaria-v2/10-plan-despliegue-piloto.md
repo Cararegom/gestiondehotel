@@ -32,5 +32,6 @@ Registrar códigos estables para correo recibido, duplicado, candidato, relació
 - Fase 7: sin migración; `bank-email-api` v21 activa con `verify_jwt=true` y presentación administrativa actualizada.
 - Fase 8: sin migración; `bank-email-api` v22 activa con `verify_jwt=true`, permisos administrativos endurecidos y resumen operativo sanitario.
 - Fase 9: sin migración; `bank-email-api` v23 activa con `verify_jwt=true`, estados read-only en Caja y columna frontend exclusiva del piloto.
+- Fase 10: migración `20260827015126_fase10_sincronizar_metodo_pago_caja_ledger` aplicada; RPC y frontend atómicos, UPDATE directo revocado y divergencias reparadas.
 - Sincronización histórica adicional sin reejecución: `20260826171602_grant_authenticated_insert_movimientos_inventario.sql`.
 - Sincronización histórica sin reejecución: `20260622090000_terraza_transferencias_sin_duplicados.sql`, `20260826000109_permitir_cambio_metodo_pago_caja.sql` y `20260826000318_grant_update_metodo_pago_caja.sql`.

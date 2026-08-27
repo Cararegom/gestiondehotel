@@ -18,7 +18,9 @@ Efectivo conserva arqueo ciego. Banco muestra registrado por sistema, confirmado
 
 ## Método de pago
 
-Las migraciones productivas de cambio de método ya están representadas localmente. Existe `actualizar_metodo_pago_caja`, que limita actor/tenant y audita, y también un grant de columna usado por el frontend legacy. Como la proyección actual a cuenta es `AFTER INSERT`, la Fase 10 deberá eliminar la escritura directa y comprobar/sincronizar el asiento asociado sin alterar el comportamiento permitido de otros hoteles.
+La Fase 10 reemplazó la escritura directa por `actualizar_metodo_pago_caja`. El RPC bloquea el movimiento, valida actor, rol, tenant y método activo, resuelve la cuenta financiera y actualiza Caja y `account_movements` en la misma transacción. Registra before/after de ambos registros en auditoría. El grant directo `UPDATE (metodo_pago_id)` fue revocado.
+
+La reparación productiva se limitó a asientos con relación explícita `account_movements.caja_id`: pasó de 5 métodos y 6 cuentas divergentes a cero. No cambió montos, direcciones, fechas, conceptos, turnos, autores ni creó movimientos.
 
 ## Pruebas
 
