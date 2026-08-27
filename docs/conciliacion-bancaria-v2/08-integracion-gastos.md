@@ -4,4 +4,4 @@ Las transferencias salientes detectadas (`sent` / `outgoing_transfer_detected`) 
 
 Destinos posibles: gasto existente, nuevo gasto, cuenta por pagar, transferencia entre cuentas, retiro propietario, devolución u otro. La clasificación enlazará evidencia bancaria con las tablas de gastos/cuentas de las migraciones `fase3_gastos_cuentas_por_pagar` y con ledger; no creará un segundo gasto si ya existe.
 
-En esta iteración queda solo el diseño porque mezclar salida e ingreso aumenta el riesgo del piloto. Aceptación futura: salida nunca aparece como ingreso negativo a recepción, clasificación es admin-only, idempotente y auditada. Rollback: desactivar la bandeja y conservar el evento sin clasificar.
+La especificación completa quedó cerrada en `12-diseno-movimientos-salientes.md`. En esta iteración queda solo el diseño porque mezclar salida e ingreso aumenta el riesgo del piloto. Aceptación futura: una salida nunca aparece como ingreso negativo a recepción, la clasificación es admin-only, idempotente y auditada. Rollback: desactivar la bandeja y conservar el evento sin clasificar.
