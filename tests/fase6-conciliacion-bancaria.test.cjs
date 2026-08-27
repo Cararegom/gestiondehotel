@@ -11,6 +11,7 @@ const bankApi = fs.readFileSync('supabase/functions/bank-email-api/index.ts', 'u
 const reconcilableMigration = fs.readFileSync('supabase/migrations/20260826181130_fase5_ventas_bancarias_conciliables.sql', 'utf8');
 const capacityMigration = fs.readFileSync('supabase/migrations/20260826183106_fase6_prevenir_doble_conciliacion.sql', 'utf8');
 const cashModule = fs.readFileSync('js/modules/caja/caja-movimientos.js', 'utf8');
+const cashClose = fs.readFileSync('js/modules/caja/caja-cierre.js', 'utf8');
 const cashView = fs.readFileSync('js/modules/caja/caja.js', 'utf8');
 const bankService = fs.readFileSync('js/services/bankPaymentService.js', 'utf8');
 
@@ -127,4 +128,16 @@ test('Fase 9 usa relaciones operativas persistidas y nunca crea movimientos', ()
   assert.match(section, /venta_terraza_id/);
   assert.doesNotMatch(section, /fecha_movimiento|concepto|amount_cop|\.insert\(|\.update\(|\.delete\(/);
   assert.match(section, /operational_role_required/);
+});
+
+test('Fase 11 separa banco del arqueo manual y no bloquea el cierre si falla la consulta', () => {
+  assert.match(cashClose, /calcularResumenBancarioCierre/);
+  assert.match(cashClose, /Registrado en Caja/);
+  assert.match(cashClose, /Confirmado por banco/);
+  assert.match(cashClose, /Pendiente \/ revision/);
+  assert.match(cashClose, /Diferencia por confirmar/);
+  assert.match(cashClose, /valoresBancariosAutomaticos/);
+  assert.match(cashClose, /estadoBancarioDisponible = false/);
+  assert.match(cashClose, /Puedes cerrar el turno normalmente/);
+  assert.match(cashClose, /BANK_RECONCILIATION_PILOT_HOTEL_NAME/);
 });

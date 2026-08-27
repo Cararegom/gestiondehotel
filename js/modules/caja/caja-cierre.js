@@ -11,6 +11,32 @@ import {
   getMovementTimeLabel,
   sortMovementsByDate
 } from './caja-movimientos.js';
+import { getBankPaymentCashStatuses } from '../../services/bankPaymentService.js';
+
+const BANK_RECONCILIATION_PILOT_HOTEL_NAME = 'hotel marena san isidro';
+const BANK_PAYMENT_METHOD_NAMES = new Set(['bancolombia', 'transferencia', 'transferencia bancaria', 'llave']);
+
+function normalizeHotelName(value = '') {
+  return String(value).trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+export function esMetodoBancarioConciliable(nombreMetodo = '') {
+  return BANK_PAYMENT_METHOD_NAMES.has(normalizeHotelName(nombreMetodo));
+}
+
+export function calcularResumenBancarioCierre(movimientos = [], estados = {}) {
+  return (Array.isArray(movimientos) ? movimientos : []).reduce((resumen, movimiento) => {
+    const estado = estados[movimiento?.id] || 'not_applicable';
+    if (estado === 'not_applicable' || movimiento?.tipo !== 'ingreso') return resumen;
+    const monto = Number(movimiento?.monto) || 0;
+    resumen.registrado += monto;
+    if (estado === 'verified') resumen.confirmado += monto;
+    else resumen.pendiente += monto;
+    if (estado === 'review') resumen.enRevision += monto;
+    resumen.diferencia = resumen.registrado - resumen.confirmado;
+    return resumen;
+  }, { registrado: 0, confirmado: 0, pendiente: 0, enRevision: 0, diferencia: 0 });
+}
 
 export function procesarMovimientosParaReporte(movimientos) {
   const crearCategoria = () => ({ pagos: {}, ventas: 0, transacciones: 0 });
@@ -197,11 +223,12 @@ export function construirResumenOperativoCierre({
   };
 }
 
-export function renderizarModalArqueo(metodosDePago, onConfirm) {
+export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomaticos = {}) {
   const metodoEfectivo = metodosDePago.find((metodo) => esMetodoEfectivo(metodo.nombre));
   const idEfectivo = metodoEfectivo ? metodoEfectivo.id : null;
 
   const inputsHtml = metodosDePago.map((metodo) => {
+    if (Object.prototype.hasOwnProperty.call(valoresAutomaticos, metodo.nombre)) return '';
     const esEfectivo = metodo.id === idEfectivo;
     const botonCalc = esEfectivo
       ? '<button type="button" id="btn-abrir-calc" class="absolute inset-y-0 right-0 px-3 flex items-center bg-gray-100 hover:bg-gray-200 border-l text-gray-600 rounded-r-md transition" title="Abrir calculadora de billetes">Contar</button>'
@@ -330,7 +357,7 @@ export function renderizarModalArqueo(metodosDePago, onConfirm) {
     const valoresReales = {};
     metodosDePago.forEach((metodo) => {
       const input = document.getElementById(`arqueo-input-${metodo.id}`);
-      const valor = parseFloat(input.value) || 0;
+      const valor = input ? (parseFloat(input.value) || 0) : (Number(valoresAutomaticos[metodo.nombre]) || 0);
       valoresReales[metodo.nombre] = valor;
     });
     modalContainer.remove();
@@ -393,6 +420,23 @@ export async function mostrarResumenCorteDeCaja({
 
     const movimientosOrdenados = sortMovementsByDate(movimientos, true);
 
+    const reporte = procesarMovimientosParaReporte(movimientosOrdenados);
+    const {
+      totalesPorMetodo,
+      totalIngresos,
+      totalGastos,
+      balanceFinal
+    } = calcularTotalesSistemaCierre(reporte, metodosDePago);
+
+    const { data: hotel } = await supabase.from('hoteles').select('nombre').eq('id', hotelId).maybeSingle();
+    const esPilotoBancario = normalizeHotelName(hotel?.nombre) === BANK_RECONCILIATION_PILOT_HOTEL_NAME;
+    const metodosBancarios = esPilotoBancario
+      ? metodosDePago.filter((metodo) => esMetodoBancarioConciliable(metodo.nombre))
+      : [];
+    const valoresBancariosAutomaticos = Object.fromEntries(
+      metodosBancarios.map((metodo) => [metodo.nombre, totalesPorMetodo[metodo.nombre]?.esperadoArqueo || 0])
+    );
+
     if (!valoresRealesArqueo) {
       renderizarModalArqueo(metodosDePago, (valoresCapturados) => {
         mostrarResumenCorteDeCaja({
@@ -405,19 +449,27 @@ export async function mostrarResumenCorteDeCaja({
           currentContainerEl,
           handleCerrarTurno
         });
-      });
+      }, valoresBancariosAutomaticos);
       return;
     }
 
-    const reporte = procesarMovimientosParaReporte(movimientosOrdenados);
-    const {
-      totalesPorMetodo,
-      totalIngresos,
-      totalGastos,
-      balanceFinal
-    } = calcularTotalesSistemaCierre(reporte, metodosDePago);
+    let estadosBancarios = {};
+    let estadoBancarioDisponible = true;
+    if (esPilotoBancario) {
+      try {
+        estadosBancarios = await getBankPaymentCashStatuses(
+          supabase,
+          hotelId,
+          movimientosOrdenados.map((movimiento) => movimiento.id)
+        );
+      } catch (error) {
+        estadoBancarioDisponible = false;
+        console.warn('Cierre: estado bancario temporalmente no disponible; el cierre continua.', error);
+      }
+    }
+    const resumenBancario = calcularResumenBancarioCierre(movimientosOrdenados, estadosBancarios);
 
-    const filasComparativas = metodosDePago.map((metodo) => {
+    const filasComparativas = metodosDePago.filter((metodo) => !esPilotoBancario || !esMetodoBancarioConciliable(metodo.nombre)).map((metodo) => {
       const sistema = totalesPorMetodo[metodo.nombre].esperadoArqueo;
       const real = valoresRealesArqueo[metodo.nombre] || 0;
       const diferencia = real - sistema;
@@ -444,6 +496,24 @@ export async function mostrarResumenCorteDeCaja({
       `;
     }).join('');
 
+    const panelBancario = esPilotoBancario ? `
+      <section class="mb-6 rounded-xl border border-blue-200 bg-blue-50 p-4" data-bank-close-summary>
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="font-bold text-blue-950">Transferencias bancarias del turno</h3>
+            <p class="mt-1 text-xs text-blue-700">Es informativo: no se cuenta como efectivo y nunca bloquea el cierre.</p>
+          </div>
+          <span class="rounded-full px-3 py-1 text-xs font-bold ${estadoBancarioDisponible ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${estadoBancarioDisponible ? 'Verificacion disponible' : 'Verificacion temporalmente no disponible'}</span>
+        </div>
+        ${estadoBancarioDisponible ? `
+          <div class="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div class="rounded-lg bg-white p-3"><div class="text-xs text-slate-500">Registrado en Caja</div><div class="mt-1 font-black text-slate-900">${formatCurrency(resumenBancario.registrado)}</div></div>
+            <div class="rounded-lg bg-white p-3"><div class="text-xs text-slate-500">Confirmado por banco</div><div class="mt-1 font-black text-emerald-700">${formatCurrency(resumenBancario.confirmado)}</div></div>
+            <div class="rounded-lg bg-white p-3"><div class="text-xs text-slate-500">Pendiente / revision</div><div class="mt-1 font-black text-amber-700">${formatCurrency(resumenBancario.pendiente)}</div></div>
+            <div class="rounded-lg bg-white p-3"><div class="text-xs text-slate-500">Diferencia por confirmar</div><div class="mt-1 font-black text-blue-800">${formatCurrency(resumenBancario.diferencia)}</div></div>
+          </div>` : '<p class="mt-4 rounded-lg bg-white p-3 text-sm text-amber-800">Puedes cerrar el turno normalmente. La conciliacion se actualizara cuando el servicio vuelva a estar disponible.</p>'}
+      </section>` : '';
+
     const modalHtml = `
       <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-4xl mx-auto border border-slate-200 relative animate-fade-in-down max-h-[90vh] flex flex-col">
         <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-blue-100 to-green-100 flex items-center justify-between">
@@ -453,6 +523,7 @@ export async function mostrarResumenCorteDeCaja({
           </div>
         </div>
         <div class="p-6 overflow-y-auto custom-scrollbar">
+          ${panelBancario}
           <div class="mb-6 border rounded-lg overflow-hidden shadow-sm">
             <div class="bg-gray-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-wider">Cuadre de Caja</div>
             <table class="w-full text-sm">

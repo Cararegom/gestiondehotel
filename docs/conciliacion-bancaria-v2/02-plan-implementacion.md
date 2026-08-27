@@ -14,7 +14,7 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 | 8 ✅ | Recepción necesitaba estado, no privilegio admin | Aplicado: resumen sanitario read-only; list/detail/candidates/actions solo admin en servidor y ruta | recepción conserva alertas y resumen; URL/acciones administrativas bloqueadas; otro hotel no lee | Error de rol; rollback a Edge v21 |
 | 9 ✅ | Caja no mostraba verificación persistida | Aplicado: estado read-only resuelto por referencias persistidas pago/reserva/venta↔allocation; columna exclusiva del piloto | pendiente/verificado/revisión/no aplica; 0 escrituras e ingresos nuevos | asociación ambigua en varias transferencias de una reserva; ocultar columna y volver Edge v22 |
 | 10 ✅ | Cambio de método divergía del ledger | Aplicado: RPC atómico actualiza solo método/cuenta, audita before/after y elimina UPDATE directo | 0 divergencias método/cuenta; mismo hotel/turno/monto/concepto; anon bloqueado | error al mapear cuenta; migración compensatoria restaura RPC anterior y grant puntual |
-| 11 | Cierre trata banco como arqueo manual | Panel informativo: registrado, confirmado, pendiente, diferencia; efectivo sigue ciego | Gmail caído no bloquea cierre | confusión operativa; ocultar panel |
+| 11 ✅ | Cierre trataba banco como arqueo manual | Aplicado en Marena: panel informativo de registrado, confirmado, pendiente y diferencia; banco sale del conteo manual y efectivo sigue ciego | Gmail caído no bloquea cierre; regresión completa | confusión operativa; ocultar panel |
 | 12 | Salidas se rechazan sin clasificar | Diseñar bandeja separada de movimientos salientes; no mezclar con ingresos | ninguna salida entra como ingreso negativo | alcance alto; mantener solo diseño |
 | 13 | Riesgo de segundo sistema financiero | Mapear operación→Caja→ledger→conciliación; no duplicar asientos | trazabilidad de punta a punta | doble contabilización; apagar proyección piloto |
 | 14–15 | Auditoría/permisos incompletos | before/after, motivo, actor; mínimos privilegios; cerrar `SECURITY DEFINER` | matriz admin/recepción/otro hotel/anon | romper acceso; migración de restauración puntual |
@@ -24,4 +24,4 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 
 ## Orden inmediato
 
-Las Fases 2 a 10 están aplicadas. Las superficies bancarias siguen limitadas al piloto; la Fase 10 endurece el flujo compartido de Caja sin cambiar su comportamiento funcional. La siguiente es la Fase 11: separar en el cierre el efectivo arqueable de los valores bancarios registrados, confirmados y pendientes.
+Las Fases 2 a 11 están aplicadas. Las superficies bancarias siguen limitadas al piloto. La Fase 11 separa en el cierre el efectivo arqueable de los valores bancarios registrados, confirmados y pendientes, y conserva el cierre disponible cuando el servicio bancario no responde. La siguiente es la Fase 12: diseñar una bandeja separada para movimientos bancarios salientes sin mezclarlos con ingresos.
