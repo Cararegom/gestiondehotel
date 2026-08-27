@@ -688,7 +688,16 @@ async function handlePilotAction(
   const action = asString(body.action, 80);
 
   if (action === 'pilot-status') {
-    const eligible = context.profile.hotel_id === pilotHotel.id;
+    const { data: feature, error: featureError } = await admin
+      .from('hotel_features')
+      .select('enabled')
+      .eq('hotel_id', context.profile.hotel_id)
+      .eq('feature_key', 'bank_reconciliation_v2')
+      .maybeSingle();
+    if (featureError) {
+      throw new HttpError(503, 'pilot_feature_lookup_failed', 'No se pudo validar la disponibilidad de la conciliacion bancaria.');
+    }
+    const eligible = context.profile.hotel_id === pilotHotel.id && feature?.enabled === true;
     const isAdmin = eligible ? await isPilotAdministrator(admin, context, pilotHotel.id) : false;
     const canViewOperationalStatus = eligible
       ? await isPilotOperationalUser(admin, context, pilotHotel.id)
@@ -704,6 +713,15 @@ async function handlePilotAction(
   }
 
   assertSamePilotHotel(context, pilotHotel.id);
+  const { data: enabledFeature, error: enabledFeatureError } = await admin
+    .from('hotel_features')
+    .select('enabled')
+    .eq('hotel_id', pilotHotel.id)
+    .eq('feature_key', 'bank_reconciliation_v2')
+    .maybeSingle();
+  if (enabledFeatureError || enabledFeature?.enabled !== true) {
+    throw new HttpError(403, 'pilot_feature_disabled', 'La conciliacion bancaria no esta habilitada para este hotel.');
+  }
 
   if (action === 'operational-summary') {
     if (!(await isPilotOperationalUser(admin, context, pilotHotel.id))) {

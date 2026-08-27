@@ -3,12 +3,28 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const migration = fs.readFileSync('supabase/migrations/20260827015126_fase10_sincronizar_metodo_pago_caja_ledger.sql', 'utf8');
+const hardening = fs.readFileSync('supabase/migrations/20260827052344_premerge_bank_feature_hardening.sql', 'utf8');
 const cashModule = fs.readFileSync('js/modules/caja/caja-movimientos.js', 'utf8');
 
 test('Fase 10 cambia el metodo exclusivamente mediante el RPC atomico', () => {
   assert.match(cashModule, /rpc\('actualizar_metodo_pago_caja'/);
   assert.doesNotMatch(cashModule, /from\('caja'\)[\s\S]{0,120}\.update\(\{ metodo_pago_id/);
   assert.match(migration, /REVOKE UPDATE \(metodo_pago_id\) ON public\.caja FROM authenticated/);
+});
+
+test('checkpoint bloquea turnos cerrados y exige motivo de efectivo a banco por tipo contable', () => {
+  assert.match(hardening, /v_turno_estado='cerrado'/);
+  assert.match(hardening, /v_old_account_type='cash' AND v_new_account_type='bank'/);
+  assert.match(hardening, /El motivo es obligatorio/);
+  assert.match(hardening, /char_length\(v_reason\)>500/);
+  assert.match(hardening, /financial_accounts/);
+});
+
+test('checkpoint conserva idempotencia, auditoria y notificacion no bloqueante', () => {
+  assert.match(hardening, /IS NOT DISTINCT FROM p_metodo_pago_id/);
+  assert.match(hardening, /auditoria_operaciones/);
+  assert.match(hardening, /financial_account_id.*account_type.*ledger/s);
+  assert.match(hardening, /EXCEPTION WHEN OTHERS THEN\s+NULL/);
 });
 
 test('Fase 10 sincroniza Caja y ledger sin modificar datos financieros restantes', () => {

@@ -176,9 +176,9 @@ async function loadExpectedCandidates(
 async function findExistingDuplicate(
   admin: SupabaseClient,
   hotelId: string,
-  provider: 'gmail' | 'simulation',
+  _provider: 'gmail' | 'simulation',
   gmailMessageId: string,
-  fingerprint: string | null
+  _fingerprint: string | null
 ) {
   const query = admin
     .from('bank_payment_events')
@@ -186,17 +186,7 @@ async function findExistingDuplicate(
     .eq('hotel_id', hotelId)
     .eq('gmail_message_id', gmailMessageId)
     .limit(1);
-  let { data, error } = await query;
-  if (error) throw error;
-  if (data?.[0]) return data[0];
-  if (!fingerprint) return null;
-  ({ data, error } = await admin
-    .from('bank_payment_events')
-    .select('*')
-    .eq('hotel_id', hotelId)
-    .eq('provider', provider)
-    .eq('transaction_fingerprint', fingerprint)
-    .limit(1));
+  const { data, error } = await query;
   if (error) throw error;
   return data?.[0] || null;
 }

@@ -7,11 +7,9 @@ import {
   showSuccess
 } from '../../uiUtils.js';
 import { escapeAttribute, escapeHtml, normalizeLegacyText } from '../../security.js';
-import { confirmAction, seleccionarMetodoPago } from './caja-turnos.js';
+import { confirmAction, seleccionarMetodoPago, solicitarMotivoCambioMetodo } from './caja-turnos.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
-import { getBankPaymentCashStatuses } from '../../services/bankPaymentService.js';
-
-export const BANK_RECONCILIATION_PILOT_HOTEL_NAME = 'hotel marena san isidro';
+import { getBankPaymentCashStatuses, getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
 
 export function createInitialMovementTableState() {
   return {
@@ -22,7 +20,8 @@ export function createInitialMovementTableState() {
     search: '',
     type: 'todos',
     method: 'todos',
-    showBankStatus: false
+    showBankStatus: false,
+    bankFeatureEnabled: false
   };
 }
 
@@ -328,7 +327,7 @@ export async function handleMovementTableClick({
     showGlobalLoading('Cargando metodos de pago...');
     const { data: metodos, error: errMetodos } = await supabase
       .from('metodos_pago')
-      .select('id, nombre')
+      .select('id, nombre, financial_accounts(account_type)')
       .eq('hotel_id', hotelId)
       .eq('activo', true)
       .order('nombre');
@@ -342,10 +341,19 @@ export async function handleMovementTableClick({
     const nuevoMetodoId = await seleccionarMetodoPago(metodos, metodoActualId);
     if (!nuevoMetodoId || nuevoMetodoId === metodoActualId) return;
 
+    const metodoAnterior = metodos.find((metodo) => metodo.id === metodoActualId);
+    const metodoNuevo = metodos.find((metodo) => metodo.id === nuevoMetodoId);
+    const esEfectivoABanco = movementTableState.bankFeatureEnabled
+      && metodoAnterior?.financial_accounts?.account_type === 'cash'
+      && metodoNuevo?.financial_accounts?.account_type === 'bank';
+    const motivo = esEfectivoABanco ? await solicitarMotivoCambioMetodo() : null;
+    if (esEfectivoABanco && !motivo) return;
+
     const { data: updateResult, error: updateError } = await supabase
       .rpc('actualizar_metodo_pago_caja', {
         p_movimiento_id: movimientoId,
-        p_metodo_pago_id: nuevoMetodoId
+        p_metodo_pago_id: nuevoMetodoId,
+        p_motivo: motivo
       });
 
     if (updateError) {
@@ -465,8 +473,15 @@ export async function loadAndRenderMovements({
     if (error) throw error;
 
     const movementIds = (movements || []).map((movement) => movement.id);
-    const showBankStatus = String(hotelName || '').trim().toLowerCase() === BANK_RECONCILIATION_PILOT_HOTEL_NAME;
+    let showBankStatus = false;
+    try {
+      const pilotStatus = await getBankPaymentPilotStatus(supabase, hotelId);
+      showBankStatus = pilotStatus.eligible === true && pilotStatus.canViewOperationalStatus === true;
+    } catch (statusError) {
+      console.warn('Caja: no se pudo validar la funcion bancaria; se oculta de forma segura.', statusError);
+    }
     movementTableState.showBankStatus = showBankStatus;
+    movementTableState.bankFeatureEnabled = showBankStatus;
     if (movementRefs.bankStatusHeaderEl) movementRefs.bankStatusHeaderEl.classList.toggle('hidden', !showBankStatus);
     const storeSaleIds = [...new Set((movements || []).map((movement) => movement.venta_tienda_id).filter(Boolean))];
     const restaurantSaleIds = [...new Set((movements || []).map((movement) => movement.venta_restaurante_id).filter(Boolean))];

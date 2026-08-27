@@ -154,6 +154,26 @@ export async function seleccionarMetodoPago(metodos, metodoActualId = '') {
   return metodos[indice]?.id || null;
 }
 
+export async function solicitarMotivoCambioMetodo() {
+  if (typeof Swal !== 'undefined') {
+    const result = await Swal.fire({
+      title: 'Justifica el cambio a cuenta bancaria',
+      text: 'Indica por que este movimiento registrado en efectivo debe pasar a una cuenta bancaria.',
+      input: 'textarea',
+      inputPlaceholder: 'Ejemplo: El cliente pago por transferencia y se registro inicialmente como efectivo.',
+      inputAttributes: { maxlength: '500', 'aria-label': 'Motivo del cambio de efectivo a banco' },
+      inputValidator: (value) => String(value || '').trim() ? undefined : 'El motivo es obligatorio.',
+      showCancelButton: true,
+      confirmButtonText: 'Continuar con el cambio',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#2563eb'
+    });
+    return result.isConfirmed ? String(result.value || '').trim() : null;
+  }
+  const value = window.prompt('Motivo obligatorio para cambiar de efectivo a banco (maximo 500 caracteres):');
+  return String(value || '').trim().slice(0, 500) || null;
+}
+
 export async function confirmAction(options) {
   if (typeof Swal !== 'undefined') {
     return showConfirmationModal(options);

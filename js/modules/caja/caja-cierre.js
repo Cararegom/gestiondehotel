@@ -11,9 +11,7 @@ import {
   getMovementTimeLabel,
   sortMovementsByDate
 } from './caja-movimientos.js';
-import { getBankPaymentCashStatuses } from '../../services/bankPaymentService.js';
-
-const BANK_RECONCILIATION_PILOT_HOTEL_NAME = 'hotel marena san isidro';
+import { getBankPaymentCashStatuses, getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
 const BANK_PAYMENT_METHOD_NAMES = new Set(['bancolombia', 'transferencia', 'transferencia bancaria', 'llave']);
 
 function normalizeHotelName(value = '') {
@@ -428,8 +426,13 @@ export async function mostrarResumenCorteDeCaja({
       balanceFinal
     } = calcularTotalesSistemaCierre(reporte, metodosDePago);
 
-    const { data: hotel } = await supabase.from('hoteles').select('nombre').eq('id', hotelId).maybeSingle();
-    const esPilotoBancario = normalizeHotelName(hotel?.nombre) === BANK_RECONCILIATION_PILOT_HOTEL_NAME;
+    let esPilotoBancario = false;
+    try {
+      const pilotStatus = await getBankPaymentPilotStatus(supabase, hotelId);
+      esPilotoBancario = pilotStatus.eligible === true && pilotStatus.canViewOperationalStatus === true;
+    } catch (statusError) {
+      console.warn('Cierre: no se pudo validar la funcion bancaria; se continua sin el panel.', statusError);
+    }
     const metodosBancarios = esPilotoBancario
       ? metodosDePago.filter((metodo) => esMetodoBancarioConciliable(metodo.nombre))
       : [];

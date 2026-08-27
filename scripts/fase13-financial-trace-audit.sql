@@ -31,3 +31,20 @@ SELECT
   count(*) FILTER (WHERE a.amount_cop <= 0) AS monto_invalido
 FROM public.bank_payment_allocations a
 JOIN public.bank_payment_events e ON e.id = a.payment_event_id;
+
+-- La identidad canonica de Gmail es la unica llave de idempotencia entre reintentos.
+SELECT hotel_id, gmail_message_id, count(*) AS duplicados
+FROM public.bank_payment_events
+GROUP BY hotel_id, gmail_message_id
+HAVING count(*) > 1;
+
+-- Ninguna relacion financiera puede cruzar hoteles.
+SELECT count(*) AS cuentas_metodos_otro_hotel
+FROM public.metodos_pago mp
+JOIN public.financial_accounts fa ON fa.id = mp.financial_account_id
+WHERE mp.hotel_id IS DISTINCT FROM fa.hotel_id;
+
+SELECT count(*) AS ledger_caja_otro_hotel
+FROM public.account_movements am
+JOIN public.caja c ON c.id = am.caja_id
+WHERE am.hotel_id IS DISTINCT FROM c.hotel_id;

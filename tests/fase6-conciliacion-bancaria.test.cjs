@@ -105,8 +105,9 @@ test('Fase 7 presenta candidatos humanos, cercanos y consultados por lotes', () 
 });
 
 test('Fase 9 muestra estados bancarios solo en Caja del hotel piloto', () => {
-  assert.match(cashModule, /BANK_RECONCILIATION_PILOT_HOTEL_NAME = 'hotel marena san isidro'/);
-  assert.match(cashModule, /hotelName[\s\S]*BANK_RECONCILIATION_PILOT_HOTEL_NAME/);
+  assert.doesNotMatch(cashModule, /BANK_RECONCILIATION_PILOT_HOTEL_NAME/);
+  assert.match(cashModule, /getBankPaymentPilotStatus/);
+  assert.match(cashModule, /pilotStatus\.eligible === true/);
   assert.match(cashModule, /showBankStatus[\s\S]*getBankPaymentCashStatuses/);
   assert.match(cashView, /id="bank-status-header" class="hidden"/);
   assert.match(cashModule, /Esperando verificacion/);
@@ -139,5 +140,6 @@ test('Fase 11 separa banco del arqueo manual y no bloquea el cierre si falla la 
   assert.match(cashClose, /valoresBancariosAutomaticos/);
   assert.match(cashClose, /estadoBancarioDisponible = false/);
   assert.match(cashClose, /Puedes cerrar el turno normalmente/);
-  assert.match(cashClose, /BANK_RECONCILIATION_PILOT_HOTEL_NAME/);
+  assert.doesNotMatch(cashClose, /BANK_RECONCILIATION_PILOT_HOTEL_NAME/);
+  assert.match(cashClose, /getBankPaymentPilotStatus/);
 });
