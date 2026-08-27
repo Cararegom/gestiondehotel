@@ -181,7 +181,7 @@ export async function syncReservasConGoogleCalendar({
         .single();
 
       if (insertError) {
-        console.error('[Sync] ERROR AL INSERTAR EN SUPABASE:', insertError.message, '--> Objeto:', reservaParaInsertar);
+        console.error('[Sync] No fue posible registrar la reserva:', insertError.message);
       } else {
         nuevasReservasInsertadas += 1;
         reservasActuales.push({ google_event_id: insertData.google_event_id });

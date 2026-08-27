@@ -831,21 +831,6 @@ export async function initInternalSupportChat(user, hotel) {
   supportChatState.currentUser = user;
   supportChatState.currentHotel = hotel;
   resetSupportSessionForUser(getSupportChatUserKey(user, hotel));
-
-  const warmUpChat = () => {
-    ensureChatKitScript().catch((error) => {
-      console.warn('No se pudo precargar ChatKit:', error);
-    });
-    ensureClientSecret().catch((error) => {
-      console.warn('No se pudo precalentar la sesion de soporte:', error);
-    });
-  };
-
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(() => warmUpChat(), { timeout: 3000 });
-  } else {
-    window.setTimeout(warmUpChat, 1200);
-  }
 }
 
 export async function openInternalSupportChat() {

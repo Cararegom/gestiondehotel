@@ -1322,7 +1322,7 @@ container.innerHTML = `
 
   if(formTiempoEstanciaEl && formTiempoEstanciaEl.elements.nombreTiempo) formTiempoEstanciaEl.elements.nombreTiempo.focus();
   console.log("[Habitaciones/mount] Montaje completado.");
-  console.log("[Habitaciones/mount] Detalles del plan recibidos:", activePlanDetails);
+  console.info('[Habitaciones] Configuracion del modulo cargada.');
 }
 
 export function unmount() {

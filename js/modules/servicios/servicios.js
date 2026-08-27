@@ -345,7 +345,7 @@ export async function mount(container, sbInstance, user) {
     if (!idEdit) payload.activo = true;
     try {
       let bitacoraAccion = '';
-       console.log('Usuario autenticado:', currentModuleUser);
+       console.info('[Servicios] Usuario autenticado.');
 console.log('Payload a insertar:', {
   hotel_id: currentHotelId,
   nombre: nombreTipo

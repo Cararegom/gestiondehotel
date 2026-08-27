@@ -808,12 +808,6 @@ document.addEventListener('DOMContentLoaded', () => {
     launcher.addEventListener('touchstart', onceWarm, { once: true, passive: true });
   }
 
-  function warmUpChatInBackground() {
-    ensureChatKitScript().catch((error) => {
-      console.warn('No se pudo precargar ChatKit para Laura:', error);
-    });
-  }
-
   launcher?.addEventListener('click', async () => {
     const shouldOpen = panel?.hidden ?? true;
 
@@ -841,16 +835,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   bindSalesChatIntentWarmup();
-
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(() => {
-      warmUpChatInBackground();
-    }, { timeout: 1200 });
-  } else {
-    window.setTimeout(() => {
-      warmUpChatInBackground();
-    }, 450);
-  }
 
   bindLandingConversionTracking();
 });

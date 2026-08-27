@@ -28,6 +28,7 @@ let currentProfileHotelId = null;
 let isSubscriptionFueraDeGracia = false;
 let currentBankPaymentPilotStatus = createClosedBankPaymentPilotStatus();
 let currentEnergyControlEnabled = false;
+let authInitializationUserId = null;
 
 const routes = {
   '/dashboard': { loadModule: () => import('./modules/dashboard/dashboard.js'), moduleKey: 'dashboard' },
@@ -379,7 +380,7 @@ async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
     if (!planData) throw new Error(`Detalles del plan '${currentActiveHotel.plan}' no encontrados en tabla 'planes'.`);
 
     currentActivePlanDetails = planData;
-    console.log(`[PlanManager] Detalles del plan activo '${currentActivePlanDetails.nombre}' cargados:`, currentActivePlanDetails.funcionalidades);
+    console.info('[PlanManager] Plan operativo cargado.');
 
   } catch (error) {
     console.error("Error crítico cargando detalles del hotel y/o plan:", error.message);
@@ -480,7 +481,7 @@ function updateUserInfo(user) {
       ? (currentUserRole === 'superadmin'
           ? 'Superadmin SaaS'
           : (currentUserRole.charAt(0).toUpperCase() + currentUserRole.slice(1)))
-      : (user.app_metadata?.rol || user.user_metadata?.rol || 'Usuario');
+      : 'Usuario';
     /* Legacy template removed during security hardening.
       <div class="user-profile text-sm p-2 border-t border-gray-700 mt-auto">
         <span class="user-email block font-medium text-white truncate" title="${userEmail}">${userEmail}</span>
@@ -526,8 +527,8 @@ function updateUserInfo(user) {
       userInfoNav.querySelector('#logout-button').addEventListener('click', async () => {
         showGlobalLoading("Verificando caja...");
         const user = getCurrentUser();
-        let hotelId = user?.user_metadata?.hotel_id || user?.app_metadata?.hotel_id;
-        if (!hotelId && user?.id) {
+        let hotelId = null;
+        if (user?.id) {
           const { data: perfil } = await supabase.from('usuarios').select('hotel_id').eq('id', user.id).single();
           hotelId = perfil?.hotel_id;
         }
@@ -767,7 +768,6 @@ async function router() {
       } else {
         try {
           console.log(`[Router] Montando módulo para: ${baseRoute}`);
-          console.log("DEBUG main.js: Valor de 'supabase' antes de pasarlo al módulo:", supabase);
           await moduleDefinition.mount(appContainer, supabase, userForModuleWithRole, hotelIdForModule, currentActivePlanDetails);
           currentModuleUnmount = moduleDefinition.unmount || null;
           currentPathLoaded = baseRoute;
@@ -843,9 +843,11 @@ async function initializeApp() {
 
   showGlobalLoading("Inicializando aplicación...");
 
-  onAuthStateChange(async (event, session) => {
-    const appUser = session?.user;
-    console.log("[Auth] Estado cambiado. Evento:", event, "Usuario actual:", appUser ? appUser.email : "Ninguno");
+  onAuthStateChange(async ({ event, session, user: appUser }) => {
+    if (appUser && authInitializationUserId === appUser.id && ['INITIAL_SESSION', 'SIGNED_IN', 'TOKEN_REFRESHED'].includes(event)) {
+      return;
+    }
+    authInitializationUserId = appUser?.id || null;
 
     if (session && session.user && session.user.aud === 'authenticated' && session.expires_in === 3600) {
       const urlParams = new URLSearchParams(window.location.hash.substring(1));
@@ -862,7 +864,8 @@ async function initializeApp() {
     if (appUser) {
       currentProfileHotelId = null;
       currentBankPaymentPilotStatus = createClosedBankPaymentPilotStatus();
-      let hotelIdToLoad = appUser.user_metadata?.hotel_id || appUser.app_metadata?.hotel_id;
+      // La pertenencia al hotel se obtiene del perfil protegido, nunca de metadata editable.
+      let hotelIdToLoad = null;
 
       const { data: perfil, error: perfilError } = await supabase
         .from('usuarios')
@@ -877,7 +880,7 @@ async function initializeApp() {
         console.error("onAuthStateChange: Error obteniendo perfil (hotel_id, rol):", perfilError.message);
         currentUserRole = "Usuario";
       } else if (perfil || esSuperadminWhitelisted) {
-        if (!hotelIdToLoad) hotelIdToLoad = perfil?.hotel_id || null;
+        hotelIdToLoad = perfil?.hotel_id || null;
         currentUserRole = resolveOperationalRole(perfil, esSuperadminWhitelisted);
       } else {
         console.warn("onAuthStateChange: No se encontró perfil de usuario en la tabla 'usuarios'.");

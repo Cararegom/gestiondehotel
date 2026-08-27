@@ -1039,9 +1039,9 @@ async function syncReservasConGoogleCalendarLegacy(state) {
         .from('reservas').insert(reservaParaInsertar).select().single();
       
       if (insertError) {
-        console.error("[Sync] ERROR AL INSERTAR EN SUPABASE:", insertError.message, "--> Objeto:", reservaParaInsertar);
+        console.error('[Sync] No fue posible registrar la reserva:', insertError.message);
       } else {
-        console.log("%c[Sync] ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â°XITO! Reserva insertada:", "color: green; font-weight: bold;", insertData);
+        console.info('[Sync] Reserva insertada correctamente.');
         nuevasReservasInsertadas++;
         reservasActuales.push({ google_event_id: insertData.google_event_id });
       }
@@ -1864,7 +1864,7 @@ async function createBooking(payload) {
         .single();
 
     if (errInsert) {
-        console.error("Error detallado Supabase (Insert Reserva):", errInsert);
+        console.error('No fue posible insertar la reserva:', errInsert?.message || 'Error de base de datos');
         throw new Error(`Error al guardar reserva en BD: ${errInsert.message}`);
     }
 
@@ -2471,7 +2471,7 @@ function getTextColorForEstado(e) {
 
 async function handleExternalUpdate(event) {
     // Opcional: verificar event.detail.origen si necesitas lÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³gica diferente
-    console.log("[Reservas] Evento 'datosActualizados' recibido. Refrescando lista de reservas.", event.detail);
+    console.info("[Reservas] Evento 'datosActualizados' recibido. Refrescando lista de reservas.");
     await renderReservas();
 }
 

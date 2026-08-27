@@ -1,60 +1,55 @@
-import { serve } from 'https://deno.land/std/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js';
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, apikey, x-client-info, content-type'
+};
+
+function json(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+}
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', {
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'content-type',
-      },
-    });
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ error: 'Metodo no permitido.' }, 405);
 
   try {
-    const { email, ref } = await req.json();
-
-    console.log('📩 Email recibido:', email);
-    console.log('🔗 Ref recibido:', ref);
-
-    // Validación de formato UUID básico
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!email || !ref || !uuidRegex.test(ref)) {
-      throw new Error('El email o el ref no son válidos.');
-    }
+    const authorization = req.headers.get('Authorization') || '';
+    const token = authorization.replace(/^Bearer\s+/i, '');
+    if (!token) return json({ error: 'Autenticacion requerida.' }, 401);
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const supabase = createClient(supabaseUrl!, serviceRoleKey!);
+    if (!supabaseUrl || !serviceRoleKey) return json({ error: 'Servicio no configurado.' }, 503);
 
-    const { error } = await supabase.from('referidos').insert({
-      referidor_id: ref,
-      nombre_hotel_referido: email,
-      estado: 'pre-registro',
-      recompensa_otorgada: false,
-    });
+    const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+    const { data: authData, error: authError } = await admin.auth.getUser(token);
+    if (authError || !authData.user) return json({ error: 'Sesion invalida.' }, 401);
 
-    if (error) {
-      console.error('❌ Error en Supabase insert:', error.message);
-      throw error;
+    const { ref, nombre_hotel: nombreHotel } = await req.json();
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const cleanName = String(nombreHotel || '').trim().slice(0, 160);
+    if (!uuidRegex.test(String(ref || '')) || cleanName.length < 2 || ref === authData.user.id) {
+      return json({ error: 'Datos de referido invalidos.' }, 400);
     }
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    const { data: referrer } = await admin.from('usuarios').select('id').eq('id', ref).maybeSingle();
+    if (!referrer) return json({ error: 'Referido no valido.' }, 400);
 
-  } catch (err) {
-    console.error('❌ Error general:', err.message);
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
+    const { error } = await admin.from('referidos').insert({
+      referidor_id: ref,
+      nombre_hotel_referido: cleanName,
+      estado: 'trial',
+      recompensa_otorgada: false
     });
+    if (error) return json({ error: 'No fue posible registrar el referido.' }, 500);
+    return json({ success: true });
+  } catch {
+    return json({ error: 'Solicitud invalida.' }, 400);
   }
 });

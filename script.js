@@ -227,7 +227,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (hotelError) throw hotelError;
                 
-                if (idDeReferido) { await supabase.from('referidos').insert({ referidor_id: idDeReferido, nombre_hotel_referido: hotelName, estado: 'trial', recompensa_otorgada: false }); }
+                if (idDeReferido) {
+                    const { error: referidoError } = await supabase.functions.invoke('registrar-pre-referido', {
+                        body: { ref: idDeReferido, nombre_hotel: hotelName }
+                    });
+                    if (referidoError) console.warn('No fue posible registrar el referido en este momento.');
+                }
                 await supabase.from('usuarios').insert({ id: supabaseUserId, nombre: adminName, hotel_id: hotelData.id, correo: email, rol: 'admin' });
                 await supabase.from('usuarios_roles').insert({ usuario_id: supabaseUserId, rol_id: ADMIN_ROL_ID, hotel_id: hotelData.id });
 
@@ -249,7 +254,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             } catch (error) {
                 // Mantenemos nuestro "chivato" para futuras revisiones
-                console.log("El error COMPLETO de Supabase es:", error);
+                console.error('No fue posible completar el registro.');
 
                 let userMessage = "Ocurrió un error inesperado. Por favor, revisa tus datos o inténtalo de nuevo más tarde.";
 

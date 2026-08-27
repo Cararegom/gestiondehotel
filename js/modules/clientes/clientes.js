@@ -312,8 +312,6 @@ export async function mount(container, supabase, user, hotelId, opts = {}) {
     hotelIdActual = hotelId;
     supabaseInstance = supabase;
     currentClientesUser = user || null;
-    console.log("DEBUG: supabaseInstance en clientes.js mount:", supabaseInstance); 
-
     // Limpia el contenedor y renderiza la estructura base del módulo
     container.innerHTML = `
         <div class="card bg-white shadow-lg rounded-lg overflow-hidden">

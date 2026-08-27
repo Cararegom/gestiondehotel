@@ -2234,7 +2234,7 @@ export async function mount(container, sbInstance, user) {
     if (hotelError) throw new Error(`No se pudo obtener la información del plan del hotel: ${hotelError.message}`);
     
     planActivo = (hotelData?.plan || 'lite').toLowerCase();
-    console.log(`Plan del hotel ${currentHotelId} es: ${planActivo}`);
+    console.info('[Reportes] Plan operativo validado.');
 
   } catch (err) {
       console.error("Error al inicializar el módulo de reportes:", err);

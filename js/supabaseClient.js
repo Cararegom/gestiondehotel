@@ -1,4 +1,5 @@
 // js/supabaseClient.js
+import './safeLogger.js';
 
 // CAMBIO IMPORTANTE: Usamos una versión específica (@2.39.7) para evitar el error de 'AuthClient'
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/+esm';
