@@ -16,7 +16,7 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 | 10 ✅ | Cambio de método divergía del ledger | Aplicado: RPC atómico actualiza solo método/cuenta, audita before/after y elimina UPDATE directo | 0 divergencias método/cuenta; mismo hotel/turno/monto/concepto; anon bloqueado | error al mapear cuenta; migración compensatoria restaura RPC anterior y grant puntual |
 | 11 ✅ | Cierre trataba banco como arqueo manual | Aplicado en Marena: panel informativo de registrado, confirmado, pendiente y diferencia; banco sale del conteo manual y efectivo sigue ciego | Gmail caído no bloquea cierre; regresión completa | confusión operativa; ocultar panel |
 | 12 ✅ | Salidas se rechazan sin clasificar | Diseño cerrado de bandeja admin separada, modelo, estados, asignaciones, seguridad y migración histórica; no mezclar con ingresos | ninguna salida entra como ingreso negativo; parser actual conserva el bloqueo | alcance alto; implementación posterior con kill switch |
-| 13 | Riesgo de segundo sistema financiero | Mapear operación→Caja→ledger→conciliación; no duplicar asientos | trazabilidad de punta a punta | doble contabilización; apagar proyección piloto |
+| 13 ✅ | Riesgo de segundo sistema financiero | Mapa canónico operación→Caja→ledger→conciliación, cardinalidades y auditoría productiva repetible | 402 movimientos shadow: 0 sin ledger y 0 divergencias; conciliación no escribe dinero | doble contabilización; ocultar conciliación sin tocar Caja/ledger |
 | 14–15 | Auditoría/permisos incompletos | before/after, motivo, actor; mínimos privilegios; cerrar `SECURITY DEFINER` | matriz admin/recepción/otro hotel/anon | romper acceso; migración de restauración puntual |
 | 16–17 | Regex no prueba comportamiento | pgTAP/SQL, backend, frontend y regresión completa | 18 casos obligatorios + módulos existentes | datos de prueba; transacciones/fixtures aislados |
 | 18–20 | Piloto y UX operativa | Gate UUID; estados simples para recepción; consola completa admin | ninguna evidencia en otro hotel | filtración tenant; kill switch |
@@ -24,4 +24,4 @@ Cada cambio de esquema se hará en una migración nueva, con precheck de datos y
 
 ## Orden inmediato
 
-Las Fases 2 a 12 están cerradas. Las superficies bancarias siguen limitadas al piloto. La Fase 12 define una bandeja administrativa separada para movimientos salientes, sin activar egresos automáticos ni mezclar correos de salida con pagos recibidos. La siguiente es la Fase 13: documentar y validar la trazabilidad operación → Caja → ledger → conciliación para evitar un segundo sistema financiero.
+Las Fases 2 a 13 están cerradas. Las superficies bancarias siguen limitadas al piloto. La Fase 13 confirmó que Caja es la única fuente de movimientos operativos, el ledger es su proyección única y la conciliación solo enlaza evidencia. La siguiente es la Fase 14/24: completar auditoría before/after, motivo y actor en las acciones administrativas de conciliación.
