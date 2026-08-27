@@ -1,5 +1,7 @@
 # Auditoría de seguridad previa a Fase 14/24
 
+> Actualización 2026-08-27: una décima migración cerró los ACL generales de funciones, reforzó las RPC multi-tenant y dejó solo tres endpoints públicos intencionales. El inventario, pruebas y riesgos posteriores están en `pre-fase14-function-acl-release-gate.md`.
+
 Fecha del corte: 2026-08-27. Alcance: frontend, autenticación, CSP, ChatKit y esquema `public` de Supabase. No contiene filas de clientes, correos, teléfonos, referencias bancarias ni tokens.
 
 ## Estado del despliegue

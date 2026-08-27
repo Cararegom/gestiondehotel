@@ -1,5 +1,7 @@
 # Release gate de seguridad previo a producción
 
+> Actualización 2026-08-27: el bloqueo documentado abajo fue corregido en staging por la migración 10 de ACL y aislamiento multi-tenant. El resultado posterior está en `pre-fase14-function-acl-release-gate.md`. Producción continúa sin autorización y Fase 14/24 no se ha iniciado.
+
 Fecha: 2026-08-27. Rama: `security/pre-fase14-hotfix`. Base: `a6727b0e384bfe6b1c9e2821d455563ad8a4020e`.
 
 ## Decisión
