@@ -7,6 +7,7 @@ const service = fs.readFileSync('js/services/notificationCenterService.js', 'utf
 const migration = fs.readFileSync('supabase/migrations/20260825214500_notificacion_instantanea_pago_llave.sql', 'utf8');
 const recipientFix = fs.readFileSync('supabase/migrations/20260825220000_corregir_destinatarios_alertas_bancarias.sql', 'utf8');
 const receptionistFix = fs.readFileSync('supabase/migrations/20260827033138_alertas_transferencias_recepcionistas.sql', 'utf8');
+const metadataHelpers = fs.readFileSync('supabase/migrations/20260827071537_pre_fase14_fix_metadata_helpers.sql', 'utf8');
 
 test('muestra un globo global cuando llega una transferencia bancaria', () => {
   assert.match(notifications, /showInstantBankPaymentToast/);
@@ -28,6 +29,17 @@ test('recepcionistas ven la alerta sin acceso a la conciliacion administrativa',
   assert.match(receptionistFix, /JOIN public\.roles r ON r\.id = ur\.rol_id/);
   assert.match(receptionistFix, /'admin', 'administrador', 'superadmin', 'recepcionista', 'recepcion'/);
   assert.doesNotMatch(receptionistFix, /'usuario', 'recepcionista'/);
+});
+
+test('RLS resuelve recepcionista desde usuarios_roles cuando el rol directo es usuario', () => {
+  assert.match(metadataHelpers, /create or replace function public\.get_current_user_rol_from_profile\(\)/i);
+  assert.match(metadataHelpers, /join public\.usuarios_roles ur/i);
+  assert.match(metadataHelpers, /join public\.roles r/i);
+  assert.match(metadataHelpers, /when 'recepcionista' then 'recepcionista'::public\.rol_usuario_enum/i);
+  assert.match(metadataHelpers, /when 'mesero\/a' then 'mesero'::public\.rol_usuario_enum/i);
+  assert.match(metadataHelpers, /where candidate\.role_value is not null/i);
+  assert.doesNotMatch(metadataHelpers, /coalesce\([^;]*'recepcionista'::public\.rol_usuario_enum/is);
+  assert.doesNotMatch(metadataHelpers, /coalesce\([^;]*u\.rol[^;]*\)::public\.rol_usuario_enum/is);
 });
 
 test('evita avisos ajenos o repetidos para el usuario conectado', () => {
