@@ -23,18 +23,25 @@ export async function resolveNotificationContext(supabase, currentUser = null, p
     return null;
   }
 
-  let hotelId = providedHotelId || user.user_metadata?.hotel_id || user.app_metadata?.hotel_id || null;
-  let role = user.app_metadata?.rol || user.user_metadata?.rol || null;
+  // El perfil de public.usuarios y sus roles asignados son la fuente autoritativa.
+  // user_metadata puede ser modificado por el propio usuario y no debe decidir permisos.
+  const { data: perfil, error: perfilError } = await supabase
+    .from('usuarios')
+    .select('hotel_id, rol, usuarios_roles(roles(nombre))')
+    .eq('id', user.id)
+    .maybeSingle();
 
-  if (!hotelId || !role) {
-    const { data: perfil } = await supabase
-      .from('usuarios')
-      .select('hotel_id, rol')
-      .eq('id', user.id)
-      .maybeSingle();
-    hotelId = hotelId || perfil?.hotel_id || null;
-    role = role || perfil?.rol || null;
+  if (perfilError || !perfil) {
+    if (perfilError) console.error('No se pudo resolver el perfil para notificaciones:', perfilError);
+    return null;
   }
+
+  const assignedRoles = (perfil.usuarios_roles || [])
+    .map((item) => normalizeRoleValue(item?.roles?.nombre))
+    .filter(Boolean);
+  const role = assignedRoles.find((item) => ['superadmin', 'admin', 'recepcionista'].includes(item))
+    || normalizeRoleValue(perfil.rol);
+  const hotelId = providedHotelId || perfil.hotel_id || null;
 
   return {
     user,

@@ -67,11 +67,15 @@ function navigateToBankPayment(paymentEventId) {
   window.location.hash = `#/pagos-bancarios?payment=${encodeURIComponent(paymentEventId)}`;
 }
 
+function canOpenBankPaymentDetails() {
+  return ['admin', 'administrador', 'superadmin'].includes(currentBellContext?.role);
+}
+
 function showInstantBankPaymentToast(notification = {}, supabase = null, bellUi = null) {
   const paymentEventId = getBankPaymentNotificationId(notification);
   if (!paymentEventId || !notification.id || displayedInstantNotificationIds.has(notification.id)) return;
   displayedInstantNotificationIds.add(notification.id);
-  const canOpenBankPayment = ['admin', 'administrador', 'superadmin'].includes(currentBellContext?.role);
+  const canOpenBankPayment = canOpenBankPaymentDetails();
 
   const hostId = 'bank-payment-instant-alerts';
   let host = document.getElementById(hostId);
@@ -157,7 +161,7 @@ function renderDropdownList(listEl, badgeEl, notifications = []) {
         <div class="min-w-0 flex-1">
           <div class="leading-tight">${escapeHtml(notification.mensaje || 'Notificacion')}</div>
           <div class="mt-1 text-xs text-gray-400">${escapeHtml(formatNotificationDate(notification.creado_en))}</div>
-          ${paymentEventId ? '<div class="mt-1 text-xs font-semibold text-blue-700">Abrir pago bancario</div>' : ''}
+          ${paymentEventId && canOpenBankPaymentDetails() ? '<div class="mt-1 text-xs font-semibold text-blue-700">Abrir pago bancario</div>' : ''}
         </div>
       </div>
     </li>
@@ -279,7 +283,7 @@ export async function inicializarCampanitaGlobal(bellContainer, supabase, curren
       console.error('Error marcando notificacion como leida:', error);
     }
 
-    if (paymentEventId) {
+    if (paymentEventId && canOpenBankPaymentDetails()) {
       menuEl?.classList.add('hidden');
       buttonEl?.setAttribute('aria-expanded', 'false');
       navigateToBankPayment(paymentEventId);

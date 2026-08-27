@@ -6,18 +6,28 @@ const notifications = fs.readFileSync('js/modules/notificaciones/notificaciones.
 const service = fs.readFileSync('js/services/notificationCenterService.js', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260825214500_notificacion_instantanea_pago_llave.sql', 'utf8');
 const recipientFix = fs.readFileSync('supabase/migrations/20260825220000_corregir_destinatarios_alertas_bancarias.sql', 'utf8');
+const receptionistFix = fs.readFileSync('supabase/migrations/20260827033138_alertas_transferencias_recepcionistas.sql', 'utf8');
 
 test('muestra un globo global cuando llega una transferencia bancaria', () => {
   assert.match(notifications, /showInstantBankPaymentToast/);
   assert.match(notifications, /Nueva transferencia bancaria/);
   assert.match(notifications, /data-open-bank-payment/);
-  assert.match(notifications, /canOpenBankPayment = \['admin', 'administrador', 'superadmin'\]/);
+  assert.match(notifications, /canOpenBankPaymentDetails/);
   assert.match(notifications, /z-\[10000\]/);
   assert.doesNotMatch(notifications, /setTimeout\(removeToast/);
   assert.doesNotMatch(notifications, />Entendido</);
   assert.match(notifications, /showUnreadBankAlerts: true/);
   assert.match(notifications, /markNotificationAsRead\(supabase, notification\.id/);
   assert.match(notifications, /bellPollTimer = window\.setInterval/);
+});
+
+test('recepcionistas ven la alerta sin acceso a la conciliacion administrativa', () => {
+  assert.match(service, /usuarios_roles\(roles\(nombre\)\)/);
+  assert.match(service, /\['superadmin', 'admin', 'recepcionista'\]/);
+  assert.match(notifications, /paymentEventId && canOpenBankPaymentDetails\(\)/);
+  assert.match(receptionistFix, /JOIN public\.roles r ON r\.id = ur\.rol_id/);
+  assert.match(receptionistFix, /'admin', 'administrador', 'superadmin', 'recepcionista', 'recepcion'/);
+  assert.doesNotMatch(receptionistFix, /'usuario', 'recepcionista'/);
 });
 
 test('evita avisos ajenos o repetidos para el usuario conectado', () => {
