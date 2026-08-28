@@ -3,11 +3,14 @@ import { supabase } from './supabaseClient.js';
 const FUNCTION_NAME = 'bank-payment-relation-api';
 const PANEL_ID = 'bank-reception-relation-panel';
 const MODAL_ID = 'bank-reception-relation-modal';
+const SHORTCUT_CLASS = 'bank-reception-reconcile-shortcut';
 let eligibility = null;
 let eligibilityPromise = null;
 let injectionBusy = false;
+let shortcutInjectionTimer = null;
 let currentTransfer = null;
 let currentMovements = [];
+let shortcutMovement = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -16,6 +19,15 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+function normalizeUiText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function formatCop(value) {
@@ -111,10 +123,57 @@ async function injectPanel() {
         </button>
       </div>`;
     caja.prepend(panel);
-    panel.querySelector('#bank-reception-open')?.addEventListener('click', () => openRelationModal());
+    panel.querySelector('#bank-reception-open')?.addEventListener('click', () => {
+      shortcutMovement = null;
+      openRelationModal();
+    });
+    scheduleShortcutInjection();
   } finally {
     injectionBusy = false;
   }
+}
+
+async function injectMovementShortcuts() {
+  if (!isCajaRoute() || !(await canUseRelationFlow())) return;
+
+  document.querySelectorAll('.caja-module tbody tr').forEach((row) => {
+    if (row.querySelector(`.${SHORTCUT_CLASS}`)) return;
+
+    const editButton = row.querySelector('button[data-edit-metodo]');
+    const actionHost = editButton?.parentElement;
+    const statusCell = row.lastElementChild;
+    if (!editButton || !actionHost || !statusCell) return;
+
+    const bankStatus = normalizeUiText(statusCell.textContent);
+    const isPending = bankStatus.includes('esperando verificacion') || bankStatus.includes('revision administrativa');
+    const isVerified = bankStatus.includes('confirmado por banco');
+    if (!isPending && !isVerified) return;
+
+    if (isVerified) {
+      const reconciled = document.createElement('span');
+      reconciled.className = `${SHORTCUT_CLASS} text-xs font-semibold text-emerald-700 whitespace-nowrap`;
+      reconciled.textContent = 'Conciliado';
+      actionHost.insertBefore(reconciled, editButton);
+      return;
+    }
+
+    const movementId = String(editButton.getAttribute('data-edit-metodo') || '').trim();
+    if (!movementId) return;
+    const concept = String(row.querySelector('td:nth-child(4) .font-medium')?.textContent || 'Movimiento de Caja').trim();
+
+    const shortcut = document.createElement('button');
+    shortcut.type = 'button';
+    shortcut.className = `${SHORTCUT_CLASS} text-sky-700 hover:text-sky-900 font-semibold whitespace-nowrap`;
+    shortcut.textContent = 'Conciliar pago';
+    shortcut.title = 'Abrir conciliacion bancaria con este movimiento de Caja preseleccionado';
+    shortcut.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      shortcutMovement = { id: movementId, concept };
+      openRelationModal();
+    });
+    actionHost.insertBefore(shortcut, editButton);
+  });
 }
 
 function getModalHost() {
@@ -131,6 +190,7 @@ function closeModal() {
   }
   currentTransfer = null;
   currentMovements = [];
+  shortcutMovement = null;
 }
 
 function mountModalShell() {
@@ -178,14 +238,23 @@ async function openRelationModal() {
 function renderTransferList(transfers) {
   const content = modalContent();
   if (!content) return;
+  const shortcutBanner = shortcutMovement
+    ? `<div class="rounded-2xl bg-sky-50 border border-sky-200 p-4 mb-4 text-sky-900">
+        <span class="text-xs uppercase tracking-widest font-semibold text-sky-700">Atajo desde Caja</span>
+        <strong class="block mt-1">Movimiento de Caja seleccionado</strong>
+        <span class="block text-sm mt-1">${escapeHtml(shortcutMovement.concept || 'Movimiento de Caja')}. Elige la transferencia bancaria que corresponde; este movimiento quedara marcado automaticamente.</span>
+      </div>`
+    : '';
   if (!transfers.length) {
     content.innerHTML = `
+      ${shortcutBanner}
       <div class="rounded-2xl bg-emerald-50 border border-emerald-200 p-5 text-emerald-800">
         No hay transferencias pendientes para relacionar en este momento.
       </div>`;
     return;
   }
   content.innerHTML = `
+    ${shortcutBanner}
     <p class="text-sm text-slate-600 mb-4">Elige el monto que te reporto el cliente. Por seguridad no veras nombre del pagador, referencia ni contenido del correo.</p>
     <div class="space-y-3">
       ${transfers.map((transfer) => `
@@ -239,6 +308,12 @@ function refreshSelectionSummary() {
 function renderCashCandidates() {
   const content = modalContent();
   if (!content || !currentTransfer) return;
+  const shortcutAvailable = Boolean(shortcutMovement?.id && currentMovements.some((movement) => movement.id === shortcutMovement.id));
+  const shortcutNotice = shortcutMovement
+    ? shortcutAvailable
+      ? `<div class="rounded-2xl bg-sky-50 border border-sky-200 p-3 mb-3 text-sm text-sky-900">El movimiento abierto desde Caja ya esta seleccionado. Agrega otros movimientos si esta transferencia cubre mas de uno.</div>`
+      : `<div class="rounded-2xl bg-amber-50 border border-amber-200 p-3 mb-3 text-sm text-amber-900">El movimiento abierto desde Caja no aparece entre los candidatos de esta transferencia. Puedes volver y elegir otra transferencia o seleccionar los movimientos disponibles manualmente.</div>`
+    : '';
   content.innerHTML = `
     <button id="bank-reception-back" type="button" class="text-sm text-sky-700 font-semibold mb-4">&larr; Cambiar transferencia</button>
     <div class="rounded-2xl bg-slate-900 text-white p-4 mb-4">
@@ -247,10 +322,11 @@ function renderCashCandidates() {
       <div class="text-sm text-slate-300 mt-1">${escapeHtml(formatDate(currentTransfer.receivedAt))}</div>
     </div>
     <p class="text-sm text-slate-600 mb-3">Marca los movimientos de Caja que componen exactamente ese valor.</p>
+    ${shortcutNotice}
     <div class="space-y-2 max-h-72 overflow-y-auto pr-1">
       ${currentMovements.length ? currentMovements.map((movement) => `
         <label class="flex items-start gap-3 rounded-2xl border border-slate-200 p-3 cursor-pointer hover:bg-slate-50">
-          <input type="checkbox" class="bank-reception-movement mt-1 h-5 w-5" value="${escapeHtml(movement.id)}" data-amount="${Number(movement.amountCop || 0)}">
+          <input type="checkbox" class="bank-reception-movement mt-1 h-5 w-5" value="${escapeHtml(movement.id)}" data-amount="${Number(movement.amountCop || 0)}"${shortcutMovement?.id === movement.id ? ' checked' : ''}>
           <span class="min-w-0 flex-1">
             <span class="flex flex-wrap items-center justify-between gap-2">
               <strong class="text-slate-900">${formatCop(movement.amountCop)}</strong>
@@ -278,7 +354,7 @@ function renderCashCandidates() {
     <button id="bank-reception-submit" type="button" disabled class="mt-4 w-full button bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold py-3 rounded-2xl">Guardar relacion</button>
     <p class="text-xs text-slate-500 mt-3">Relacionar no confirma manualmente el banco y no crea un nuevo ingreso en Caja.</p>`;
 
-  document.getElementById('bank-reception-back')?.addEventListener('click', openRelationModal);
+  document.getElementById('bank-reception-back')?.addEventListener('click', () => openRelationModal());
   content.querySelectorAll('.bank-reception-movement').forEach((input) => input.addEventListener('change', refreshSelectionSummary));
   document.getElementById('bank-reception-submit')?.addEventListener('click', submitRelation);
   refreshSelectionSummary();
@@ -321,20 +397,34 @@ async function submitRelation() {
   }
 }
 
+function scheduleShortcutInjection() {
+  if (shortcutInjectionTimer !== null) return;
+  shortcutInjectionTimer = window.setTimeout(() => {
+    shortcutInjectionTimer = null;
+    injectMovementShortcuts();
+  }, 100);
+}
+
 function scheduleInjection() {
-  window.setTimeout(() => injectPanel(), 120);
+  window.setTimeout(() => {
+    injectPanel();
+    scheduleShortcutInjection();
+  }, 120);
 }
 
 window.addEventListener('hashchange', () => {
   if (!isCajaRoute()) {
     document.getElementById(PANEL_ID)?.remove();
+    shortcutMovement = null;
     return;
   }
   scheduleInjection();
 });
 
 const observer = new MutationObserver(() => {
-  if (isCajaRoute() && !document.getElementById(PANEL_ID)) scheduleInjection();
+  if (!isCajaRoute()) return;
+  if (!document.getElementById(PANEL_ID)) scheduleInjection();
+  scheduleShortcutInjection();
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
