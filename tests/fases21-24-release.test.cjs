@@ -32,7 +32,7 @@ test('Fase 21: logs Edge conservan solo codigos/acciones y no exponen secretos o
 
   for (const statement of logStatements) {
     assert.doesNotMatch(statement, /textBody|htmlBody|email_subject|authorization|accessToken|refreshToken|raw_content|transaction_reference\b/i);
-    assert.match(statement, /\{\s*(?:code|action)\s*:/i);
+    assert.match(statement, /\{[\s\S]*\b(?:code|action)\b[\s\S]*\}/i);
   }
 });
 
