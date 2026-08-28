@@ -387,17 +387,26 @@ test('11. sin pago esperado compatible queda detectado y sin relación', async (
   assert.deepEqual(result.candidateIds, []);
 });
 
-test('12. BANK_EMAIL_INTEGRATION_ENABLED solo habilita con el valor estricto true', async () => {
+test('12. BANK_EMAIL_INTEGRATION_ENABLED solo habilita con true y un UUID de piloto valido', async () => {
   const core = await corePromise;
+  const pilotHotelId = '11111111-1111-4111-8111-111111111111';
   const disabled = core.readBankEmailConfig({
     BANK_EMAIL_INTEGRATION_ENABLED: 'false',
+    BANK_EMAIL_PILOT_HOTEL_ID: pilotHotelId,
     BANK_EMAIL_PILOT_HOTEL_NAME: 'Hotel Marena San Isidro',
   });
   assert.equal(disabled.enabled, false);
   assert.equal(core.isBankEmailProcessingEnabled(disabled), false);
 
+  const missingPilotId = core.readBankEmailConfig({
+    BANK_EMAIL_INTEGRATION_ENABLED: 'true',
+    BANK_EMAIL_PILOT_HOTEL_NAME: 'Hotel Marena San Isidro',
+  });
+  assert.equal(core.isBankEmailProcessingEnabled(missingPilotId), false);
+
   const enabled = core.readBankEmailConfig({
     BANK_EMAIL_INTEGRATION_ENABLED: 'true',
+    BANK_EMAIL_PILOT_HOTEL_ID: pilotHotelId,
     BANK_EMAIL_PILOT_HOTEL_NAME: 'Hotel Marena San Isidro',
   });
   assert.equal(core.isBankEmailProcessingEnabled(enabled), true);
