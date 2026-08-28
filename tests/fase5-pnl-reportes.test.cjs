@@ -2,9 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const sql = fs.readFileSync('supabase/migrations/20260825200000_fase5_pnl_presupuestos_periodos.sql', 'utf8');
-const indexSql = fs.readFileSync('supabase/migrations/20260825201000_fase5_indices_auditoria.sql', 'utf8');
-const closingSql = fs.readFileSync('supabase/migrations/20260825202000_fase5_bloqueo_cierre_calidad.sql', 'utf8');
+const sql = fs.readFileSync('supabase/migrations/20260825180845_fase5_pnl_presupuestos_periodos.sql', 'utf8');
+const indexSql = fs.readFileSync('supabase/migrations/20260825180939_fase5_indices_auditoria.sql', 'utf8');
+const closingSql = fs.readFileSync('supabase/migrations/20260825182301_fase5_bloqueo_cierre_calidad.sql', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 const hub = fs.readFileSync('js/modules/reportes/reportes-centro.js', 'utf8');
 const pnl = fs.readFileSync('js/modules/reportes/finanzas-pnl.js', 'utf8');
