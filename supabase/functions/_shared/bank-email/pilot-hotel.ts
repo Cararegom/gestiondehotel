@@ -67,7 +67,7 @@ function edgeRuntimePilotHotelId(): { strict: boolean; value: string } {
 }
 
 async function resolvePilotById(
-  supabase: PilotHotelSupabaseClient,
+  supabase: unknown,
   configuredName: string,
   configuredId: string,
 ): Promise<PilotHotel> {
@@ -84,7 +84,8 @@ async function resolvePilotById(
     );
   }
 
-  const { data, error } = await supabase
+  const client = supabase as PilotHotelSupabaseClient;
+  const { data, error } = await client
     .from("hoteles")
     .select("id,nombre")
     .eq("id", configuredId);
@@ -124,7 +125,7 @@ async function resolvePilotById(
 }
 
 export async function getPilotHotel(
-  supabase: PilotHotelSupabaseClient,
+  supabase: unknown,
   configuredName: string,
   configuredId?: string,
 ): Promise<PilotHotel> {
@@ -148,7 +149,8 @@ export async function getPilotHotel(
     );
   }
 
-  const { data, error } = await supabase
+  const client = supabase as PilotHotelSupabaseClient;
+  const { data, error } = await client
     .from("hoteles")
     .select("id,nombre")
     .ilike("nombre", `%${requestedName}%`);
