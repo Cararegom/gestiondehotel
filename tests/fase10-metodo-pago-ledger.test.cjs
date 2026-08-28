@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const migration = fs.readFileSync('supabase/migrations/20260827015126_fase10_sincronizar_metodo_pago_caja_ledger.sql', 'utf8');
-const hardening = fs.readFileSync('supabase/migrations/20260827052344_premerge_bank_feature_hardening.sql', 'utf8');
+const hardening = fs.readFileSync('supabase/migrations/20260827052742_premerge_bank_feature_hardening.sql', 'utf8');
 const cashModule = fs.readFileSync('js/modules/caja/caja-movimientos.js', 'utf8');
 
 test('Fase 10 cambia el metodo exclusivamente mediante el RPC atomico', () => {
