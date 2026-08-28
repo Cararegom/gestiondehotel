@@ -9,6 +9,7 @@ const DEFAULT_MAX_AMOUNT_COP = 100_000_000;
 const DEFAULT_MATCH_WINDOW_MINUTES = 30;
 const HARD_MAX_AMOUNT_COP = 100_000_000;
 const HARD_MAX_MATCH_WINDOW_MINUTES = 1_440;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 function runtimeEnvironment(): EnvironmentSource {
   const runtime = globalThis as typeof globalThis & {
@@ -58,6 +59,7 @@ export function readBankEmailConfig(source: EnvironmentSource = runtimeEnvironme
 
   return {
     enabled: parseStrictBoolean(readEnvironmentValue(source, "BANK_EMAIL_INTEGRATION_ENABLED")),
+    pilotHotelId: (readEnvironmentValue(source, "BANK_EMAIL_PILOT_HOTEL_ID") ?? "").trim().toLowerCase(),
     pilotHotelName: (readEnvironmentValue(source, "BANK_EMAIL_PILOT_HOTEL_NAME") ?? "").trim(),
     gmailPaymentLabel: (readEnvironmentValue(source, "GMAIL_PAYMENT_LABEL") ?? "PAGOS HOTEL MARENA").trim(),
     minAmountCop,
@@ -82,8 +84,11 @@ export function readBankEmailConfig(source: EnvironmentSource = runtimeEnvironme
 }
 
 export function assertBankEmailConfig(config: BankEmailConfig): void {
+  if (!UUID_PATTERN.test(config.pilotHotelId || "")) {
+    throw new Error("BANK_EMAIL_PILOT_HOTEL_ID must be a valid UUID.");
+  }
   if (!config.pilotHotelName) {
-    throw new Error("BANK_EMAIL_PILOT_HOTEL_NAME is required.");
+    throw new Error("BANK_EMAIL_PILOT_HOTEL_NAME is required as a descriptive cross-check.");
   }
   if (!config.gmailPaymentLabel) {
     throw new Error("GMAIL_PAYMENT_LABEL is required.");
@@ -97,7 +102,7 @@ export function assertBankEmailConfig(config: BankEmailConfig): void {
 }
 
 export function isBankEmailProcessingEnabled(config: BankEmailConfig): boolean {
-  return config.enabled && Boolean(config.pilotHotelName);
+  return config.enabled && UUID_PATTERN.test(config.pilotHotelId || "") && Boolean(config.pilotHotelName);
 }
 
 function assertPresent(value: string, environmentName: string): void {
