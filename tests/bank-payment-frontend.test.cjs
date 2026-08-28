@@ -74,7 +74,7 @@ test('el servicio falla cerrado con hotel local invalido y valida acciones manua
       paymentEventId: validEventId,
       manualAction: 'reject'
     }),
-    /motivo del rechazo/i
+    /motivo de la accion administrativa/i
   );
   assert.equal(mock.calls.length, 0);
 });
@@ -128,13 +128,15 @@ test('las mutaciones usan el contrato de la Edge Function sin confiar en el tena
 
   await service.submitBankPaymentManualAction(mock.client, validHotelId, {
     paymentEventId: validEventId,
-    manualAction: 'confirm'
+    manualAction: 'confirm',
+    reviewReason: 'Confirmacion operativa validada'
   });
 
   assert.equal(mock.calls[0].name, 'bank-email-api');
   assert.equal(mock.calls[0].options.body.action, 'manual-action');
   assert.equal(mock.calls[0].options.body.paymentEventId, validEventId);
   assert.equal(mock.calls[0].options.body.manualAction, 'confirm');
+  assert.equal(mock.calls[0].options.body.reviewReason, 'Confirmacion operativa validada');
   assert.equal('hotelId' in mock.calls[0].options.body, false);
 
   await service.createBankExpectedPayment(mock.client, validHotelId, {
