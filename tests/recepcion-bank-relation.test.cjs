@@ -68,6 +68,21 @@ test('la interfaz limitada vive en Caja, exige motivo y no abre la consola banca
   assert.doesNotMatch(bootstrap, /sender_name|sender_email|transaction_reference|gmail_message_id|email_subject|raw_content_hash/);
 });
 
+test('Caja ofrece atajo de conciliacion por movimiento bancario sin crear una segunda via de permisos', () => {
+  assert.match(bootstrap, /Conciliar pago/);
+  assert.match(bootstrap, /button\[data-edit-metodo\]/);
+  assert.match(bootstrap, /esperando verificacion/);
+  assert.match(bootstrap, /revision administrativa/);
+  assert.match(bootstrap, /confirmado por banco/);
+  assert.match(bootstrap, /shortcutMovement = \{ id: movementId, concept \}/);
+  assert.match(bootstrap, /Movimiento de Caja seleccionado/);
+  assert.match(bootstrap, /shortcutMovement\?\.id === movement\.id \? ' checked' : ''/);
+  assert.match(bootstrap, /invoke\('list'\)/);
+  assert.match(bootstrap, /invoke\('cash-candidates'/);
+  assert.match(bootstrap, /invoke\('relate'/);
+  assert.doesNotMatch(bootstrap, /manual-action|p_action:\s*'confirm'|p_action:\s*'reject'/);
+});
+
 test('CI incluye la nueva Edge Function en typecheck y lint', () => {
   assert.match(packageJson, /supabase\/functions\/bank-payment-relation-api\/index\.ts/);
   assert.match(packageJson, /supabase\/functions\/bank-payment-relation-api/);
