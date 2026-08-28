@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const service = fs.readFileSync('supabase/functions/_shared/bank-email/payment-service.ts', 'utf8');
-const hardening = fs.readFileSync('supabase/migrations/20260827052344_premerge_bank_feature_hardening.sql', 'utf8');
+const hardening = fs.readFileSync('supabase/migrations/20260827052742_premerge_bank_feature_hardening.sql', 'utf8');
 
 test('deduplicacion usa hotel + identidad Gmail y no huella heuristica', () => {
   const duplicateLookup = service.slice(service.indexOf('async function findExistingDuplicate'), service.indexOf('function hasCompletedMatching'));

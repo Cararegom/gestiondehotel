@@ -20,6 +20,7 @@ export type AuthenticationVerdict =
 
 export interface BankEmailConfig {
   enabled: boolean;
+  pilotHotelId: string;
   pilotHotelName: string;
   gmailPaymentLabel: string;
   minAmountCop: number;

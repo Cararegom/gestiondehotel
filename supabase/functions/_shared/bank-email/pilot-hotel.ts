@@ -1,5 +1,7 @@
 import type { PilotHotel } from "./types.ts";
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
 interface HotelQueryResult {
   data: unknown;
   error?: { message?: string } | null;
@@ -7,6 +9,7 @@ interface HotelQueryResult {
 
 interface HotelQueryBuilder extends PromiseLike<HotelQueryResult> {
   ilike(column: string, pattern: string): HotelQueryBuilder;
+  eq(column: string, value: string): HotelQueryBuilder;
 }
 
 export interface PilotHotelSupabaseClient {
@@ -16,7 +19,13 @@ export interface PilotHotelSupabaseClient {
 }
 
 export class PilotHotelResolutionError extends Error {
-  readonly code: "PILOT_HOTEL_NOT_FOUND" | "PILOT_HOTEL_AMBIGUOUS" | "PILOT_HOTEL_QUERY_FAILED";
+  readonly code:
+    | "PILOT_HOTEL_NOT_FOUND"
+    | "PILOT_HOTEL_AMBIGUOUS"
+    | "PILOT_HOTEL_QUERY_FAILED"
+    | "PILOT_HOTEL_ID_REQUIRED"
+    | "PILOT_HOTEL_ID_INVALID"
+    | "PILOT_HOTEL_ID_NAME_MISMATCH";
   readonly matchCount: number;
 
   constructor(
@@ -43,10 +52,94 @@ function isPilotHotelRow(value: unknown): value is PilotHotel {
   return typeof row.id === "string" && row.id.length > 0 && typeof row.nombre === "string";
 }
 
-export async function getPilotHotel(
-  supabase: PilotHotelSupabaseClient,
+function edgeRuntimePilotHotelId(): { strict: boolean; value: string } {
+  const runtime = globalThis as typeof globalThis & {
+    Deno?: { env?: { get(name: string): string | undefined } };
+  };
+  const environment = runtime.Deno?.env;
+  if (!environment || typeof environment.get !== "function") {
+    return { strict: false, value: "" };
+  }
+  return {
+    strict: true,
+    value: (environment.get("BANK_EMAIL_PILOT_HOTEL_ID") ?? "").trim(),
+  };
+}
+
+async function resolvePilotById(
+  supabase: unknown,
   configuredName: string,
+  configuredId: string,
 ): Promise<PilotHotel> {
+  if (!configuredId) {
+    throw new PilotHotelResolutionError(
+      "PILOT_HOTEL_ID_REQUIRED",
+      "BANK_EMAIL_PILOT_HOTEL_ID is required in the Edge Function runtime.",
+    );
+  }
+  if (!UUID_PATTERN.test(configuredId)) {
+    throw new PilotHotelResolutionError(
+      "PILOT_HOTEL_ID_INVALID",
+      "BANK_EMAIL_PILOT_HOTEL_ID must be a valid UUID.",
+    );
+  }
+
+  const client = supabase as PilotHotelSupabaseClient;
+  const { data, error } = await client
+    .from("hoteles")
+    .select("id,nombre")
+    .eq("id", configuredId);
+
+  if (error) {
+    throw new PilotHotelResolutionError(
+      "PILOT_HOTEL_QUERY_FAILED",
+      `Could not resolve the pilot hotel by UUID: ${error.message ?? "unknown query error"}`,
+    );
+  }
+
+  const rows = Array.isArray(data) ? data.filter(isPilotHotelRow) : [];
+  const matches = rows.filter((row) => row.id === configuredId);
+  if (matches.length === 0) {
+    throw new PilotHotelResolutionError(
+      "PILOT_HOTEL_NOT_FOUND",
+      "No hotel matches BANK_EMAIL_PILOT_HOTEL_ID.",
+    );
+  }
+  if (matches.length !== 1) {
+    throw new PilotHotelResolutionError(
+      "PILOT_HOTEL_AMBIGUOUS",
+      `BANK_EMAIL_PILOT_HOTEL_ID matched ${matches.length} hotels.`,
+      matches.length,
+    );
+  }
+
+  const requestedName = normalizeHotelName(configuredName);
+  if (requestedName && normalizeHotelName(matches[0].nombre) !== requestedName) {
+    throw new PilotHotelResolutionError(
+      "PILOT_HOTEL_ID_NAME_MISMATCH",
+      "BANK_EMAIL_PILOT_HOTEL_ID does not match BANK_EMAIL_PILOT_HOTEL_NAME.",
+    );
+  }
+
+  return { id: matches[0].id, nombre: matches[0].nombre.trim() };
+}
+
+export async function getPilotHotel(
+  supabase: unknown,
+  configuredName: string,
+  configuredId?: string,
+): Promise<PilotHotel> {
+  const runtimeGate = edgeRuntimePilotHotelId();
+  if (configuredId !== undefined || runtimeGate.strict) {
+    return resolvePilotById(
+      supabase,
+      configuredName,
+      (configuredId ?? runtimeGate.value).trim(),
+    );
+  }
+
+  // Legacy resolver retained only for non-Edge tooling/tests. Supabase Edge Functions
+  // always enter the strict UUID branch above and therefore fail closed without ID.
   const requestedName = configuredName.trim();
   const normalizedRequestedName = normalizeHotelName(requestedName);
   if (!normalizedRequestedName) {
@@ -56,9 +149,8 @@ export async function getPilotHotel(
     );
   }
 
-  // The surrounding wildcards tolerate legacy leading/trailing spaces. The exact,
-  // normalized comparison below remains authoritative and detects ambiguity.
-  const { data, error } = await supabase
+  const client = supabase as PilotHotelSupabaseClient;
+  const { data, error } = await client
     .from("hoteles")
     .select("id,nombre")
     .ilike("nombre", `%${requestedName}%`);

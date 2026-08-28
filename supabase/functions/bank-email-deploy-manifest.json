@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "scope": "bank-email-pilot",
+  "requiredEnvironment": [
+    "BANK_EMAIL_INTEGRATION_ENABLED",
+    "BANK_EMAIL_PILOT_HOTEL_ID",
+    "BANK_EMAIL_PILOT_HOTEL_NAME"
+  ],
+  "functions": [
+    {
+      "name": "bank-email-api",
+      "entrypoint": "supabase/functions/bank-email-api/index.ts",
+      "verifyJwt": true,
+      "authentication": "supabase-jwt"
+    },
+    {
+      "name": "gmail-oauth-callback",
+      "entrypoint": "supabase/functions/gmail-oauth-callback/index.ts",
+      "verifyJwt": false,
+      "authentication": "oauth-state"
+    },
+    {
+      "name": "gmail-webhook",
+      "entrypoint": "supabase/functions/gmail-webhook/index.ts",
+      "verifyJwt": false,
+      "authentication": "google-pubsub-oidc"
+    },
+    {
+      "name": "gmail-watch-renew",
+      "entrypoint": "supabase/functions/gmail-watch-renew/index.ts",
+      "verifyJwt": false,
+      "authentication": "cron-secret"
+    }
+  ]
+}

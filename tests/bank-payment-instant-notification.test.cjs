@@ -4,8 +4,8 @@ const fs = require('node:fs');
 
 const notifications = fs.readFileSync('js/modules/notificaciones/notificaciones.js', 'utf8');
 const service = fs.readFileSync('js/services/notificationCenterService.js', 'utf8');
-const migration = fs.readFileSync('supabase/migrations/20260825214500_notificacion_instantanea_pago_llave.sql', 'utf8');
-const recipientFix = fs.readFileSync('supabase/migrations/20260825220000_corregir_destinatarios_alertas_bancarias.sql', 'utf8');
+const migration = fs.readFileSync('supabase/migrations/20260825202808_notificacion_instantanea_pago_llave.sql', 'utf8');
+const recipientFix = fs.readFileSync('supabase/migrations/20260825204909_corregir_destinatarios_alertas_bancarias.sql', 'utf8');
 const receptionistFix = fs.readFileSync('supabase/migrations/20260827033138_alertas_transferencias_recepcionistas.sql', 'utf8');
 const metadataHelpers = fs.readFileSync('supabase/migrations/20260827071537_pre_fase14_fix_metadata_helpers.sql', 'utf8');
 

@@ -5,7 +5,7 @@ const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
 const cajaSource = fs.readFileSync(path.join(root, 'js/modules/caja/caja-movimientos.js'), 'utf8');
-const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260825175000_conceptos_ventas_caja_legibles.sql'), 'utf8');
+const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260825164448_conceptos_ventas_caja_legibles.sql'), 'utf8');
 
 test('Caja consulta el detalle real de tienda y restaurante para conceptos históricos', () => {
   assert.match(cajaSource, /detalle_ventas_tienda/);
