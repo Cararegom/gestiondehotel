@@ -101,7 +101,7 @@ test('Fase 19 mantiene para recepcion solo estados bancarios simples y sin conso
   assert.match(caja, /review:\s*\['Revision administrativa'/);
   assert.match(caja, /not_applicable:\s*\['No aplica'/);
   assert.match(flow, /No puede abrir la consola completa/);
-  assert.match(flow, /sin detalles tecnicos/i);
+  assert.match(flow, /sin detalles t[eé]cnicos/i);
 });
 
 test('Fase 20 conserva consola completa solo para administrador y bloquea otro hotel', () => {
