@@ -22,8 +22,21 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Dependency audit report
-        run: npm audit --json || true
+      - name: Fix dependency audit in lockfile
+        run: npm audit fix --package-lock-only
+
+      - name: Reinstall fixed dependencies
+        run: npm install
+
+      - name: Require clean dependency audit
+        run: npm audit --audit-level=high
+
+      - name: Upload fixed package lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock-audit-fixed
+          path: package-lock.json
+          if-no-files-found: error
 
       - name: Syntax check
         run: npm run check:syntax
