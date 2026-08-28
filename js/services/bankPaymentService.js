@@ -298,8 +298,8 @@ export async function submitBankPaymentManualAction(supabase, hotelId, input = {
     throw new Error('Selecciona una reserva, habitacion, venta o pago esperado para relacionar.');
   }
 
-  if (payload.manualAction === 'reject' && !payload.reviewReason) {
-    throw new Error('Indica el motivo del rechazo.');
+  if (!payload.reviewReason) {
+    throw new Error('Indica el motivo de la accion administrativa.');
   }
 
   return invokeBankEmailApi(supabase, 'manual-action', payload);
