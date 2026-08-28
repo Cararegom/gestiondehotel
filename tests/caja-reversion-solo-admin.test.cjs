@@ -4,7 +4,7 @@ const path = require('node:path');
 const test = require('node:test');
 
 const root = path.resolve(__dirname, '..');
-const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260825183000_restringir_reversiones_caja_a_admin.sql'), 'utf8');
+const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260825165408_restringir_reversiones_caja_a_admin.sql'), 'utf8');
 const caja = fs.readFileSync(path.join(root, 'js/modules/caja/caja.js'), 'utf8');
 const movements = fs.readFileSync(path.join(root, 'js/modules/caja/caja-movimientos.js'), 'utf8');
 
