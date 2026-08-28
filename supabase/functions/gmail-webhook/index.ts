@@ -3,7 +3,7 @@ import { getPilotHotel } from '../_shared/bank-email/pilot-hotel.ts';
 import { verifyPubSubOidc } from '../_shared/bank-email/pubsub-oidc.ts';
 import { emptyResponse, jsonResponse, readJsonBody, safeErrorCode } from '../_shared/bank-email/http.ts';
 import { processPendingPubSubInbox } from '../_shared/bank-email/queue.ts';
-import { readBankEmailConfig } from '../_shared/bank-email/config.ts';
+import { isBankEmailProcessingEnabled, readBankEmailConfig } from '../_shared/bank-email/config.ts';
 
 interface PubSubEnvelope {
   message?: {
@@ -20,10 +20,6 @@ interface GmailPushData {
   historyId?: string;
 }
 
-function integrationEnabled(): boolean {
-  return (Deno.env.get('BANK_EMAIL_INTEGRATION_ENABLED') || '').trim().toLowerCase() === 'true';
-}
-
 function decodeBase64Json(value: string): GmailPushData | null {
   try {
     const decoded = atob(value.replaceAll('-', '+').replaceAll('_', '/'));
@@ -37,7 +33,8 @@ function decodeBase64Json(value: string): GmailPushData | null {
 
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return jsonResponse({ error: 'method_not_allowed' }, 405);
-  if (!integrationEnabled()) return emptyResponse(204);
+  const config = readBankEmailConfig();
+  if (!isBankEmailProcessingEnabled(config)) return emptyResponse(204);
 
   try {
     await verifyPubSubOidc(req);
@@ -63,7 +60,6 @@ Deno.serve(async (req) => {
 
   const admin = buildAdminClient();
   try {
-    const config = readBankEmailConfig();
     const pilotHotel = await getPilotHotel(admin, config.pilotHotelName);
     const { data: integration, error: integrationError } = await admin
       .from('bank_email_integrations')
