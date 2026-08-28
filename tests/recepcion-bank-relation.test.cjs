@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const migration = fs.readFileSync('supabase/migrations/20260828063000_recepcion_relacion_pagos_bancarios.sql', 'utf8');
 const relationApi = fs.readFileSync('supabase/functions/bank-payment-relation-api/index.ts', 'utf8');
 const adminApi = fs.readFileSync('supabase/functions/bank-email-api/index.ts', 'utf8');
+const bankServer = fs.readFileSync('supabase/functions/_shared/bank-email/server.ts', 'utf8');
 const bootstrap = fs.readFileSync('js/bank-payment-reception-bootstrap.js', 'utf8');
 const appIndex = fs.readFileSync('app/index.html', 'utf8');
 const packageJson = fs.readFileSync('package.json', 'utf8');
@@ -21,6 +22,14 @@ test('recepcion solo obtiene una via operativa para relacionar, no permisos admi
     const pattern = new RegExp(`action === '${action.replace('-', '\\-')}'[\\s\\S]{0,180}requirePilotAdministrator`);
     assert.match(adminApi, pattern);
   }
+});
+
+test('roles asignados de banco quedan estrictamente limitados al hotel piloto', () => {
+  const tenantFilters = bankServer.match(/\.eq\('hotel_id', pilotHotelId\)/g) || [];
+  assert.ok(tenantFilters.length >= 2, 'admin y operativo deben filtrar usuarios_roles por hotel_id');
+  assert.match(bankServer, /isPilotAdministrator[\s\S]*\.eq\('usuario_id', context\.user\.id\)[\s\S]*\.eq\('hotel_id', pilotHotelId\)/);
+  assert.match(bankServer, /isPilotOperationalUser[\s\S]*\.eq\('usuario_id', context\.user\.id\)[\s\S]*\.eq\('hotel_id', pilotHotelId\)/);
+  assert.match(bankServer, /\['admin', 'administrador', 'superadmin', 'recepcionista'\]/);
 });
 
 test('API de recepcion falla cerrada por hotel/rol y nunca expone evidencia bancaria sensible', () => {
