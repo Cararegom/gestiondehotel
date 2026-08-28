@@ -127,7 +127,7 @@ test('14. la migracion aplica aislamiento piloto y RLS de solo lectura', () => {
 });
 
 test('15. Pub/Sub autentica, persiste, deduplica y recupera reintentos', () => {
-  assert.match(webhook, /if \(!integrationEnabled\(\)\) return emptyResponse\(204\)/);
+  assert.match(webhook, /if \(!isBankEmailProcessingEnabled\(config\)\) return emptyResponse\(204\)/);
   assert.match(webhook, /await verifyPubSubOidc\(req\)/);
   assert.match(webhook, /onConflict: 'pubsub_message_id'/);
   assert.match(webhook, /processPendingPubSubInbox/);
