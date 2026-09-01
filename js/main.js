@@ -77,7 +77,7 @@ const navLinksConfig = [
   { path: '#/tienda', text: 'Tienda', icon: '\u{1F6CD}\uFE0F', moduleKey: 'tienda' },
   { path: '#/restaurante', text: 'Restaurante', icon: '\u{1F37D}\uFE0F', moduleKey: 'restaurante' },
   { path: '#/limpieza', text: 'Limpieza', icon: '\u{1F9F9}', moduleKey: 'limpieza' },
-  { path: '#/control-energia', text: 'Escanear Control de Energía', icon: '📷', moduleKey: 'control-energia', energyOnly: true },
+  { path: '#/control-energia', text: 'Control de Energía', icon: '⚡', moduleKey: 'control-energia', energyOnly: true },
   { path: '#/reportes', text: 'Reportes', icon: '\u{1F4C8}', moduleKey: 'reportes' },
   { path: '#/soporte', text: 'Soporte', icon: '\u{1F6DF}\uFE0F', moduleKey: 'soporte' },
   { path: '#/mantenimiento', text: 'Mantenimiento', icon: '\u{1F6E0}\uFE0F', moduleKey: 'mantenimiento' },
@@ -186,6 +186,16 @@ function isMeseroRole(value) {
 
 function isRecepcionistaRole(value) {
   return normalizeRoleKey(value) === 'recepcionista';
+}
+
+function canCurrentUserPrepareEnergy(user = getCurrentUser()) {
+  if (!user || !currentActiveHotel) return false;
+  return Boolean(
+    currentUserRole === 'admin' ||
+    currentUserRole === 'administrador' ||
+    isRecepcionistaRole(currentUserRole) ||
+    user.id === currentActiveHotel.creado_por
+  );
 }
 
 function roleNamesFromPerfil(perfil = null) {
@@ -448,7 +458,7 @@ function renderNavigation(user) {
     const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos', 'costeo'];
 
     navLinksConfig.forEach(linkConfig => {
-      if (linkConfig.energyOnly && !currentEnergyControlEnabled) return;
+      if (linkConfig.energyOnly && !currentEnergyControlEnabled && !canCurrentUserPrepareEnergy(user)) return;
       if (linkConfig.adminOnly && !esAdminNavegacion) {
         return;
       }
@@ -680,8 +690,13 @@ async function router() {
       routerBusy = false;
       return;
     }
-    if (userForModule && moduleKeyFromRoute === 'control-energia' && !currentEnergyControlEnabled) {
-      appContainer.innerHTML = '<div class="p-8 text-center"><h2 class="text-2xl font-semibold text-amber-700">Control de Energía no habilitado</h2><p class="mt-2">Esta función no está activa para este hotel.</p></div>';
+    if (
+      userForModule &&
+      moduleKeyFromRoute === 'control-energia' &&
+      !currentEnergyControlEnabled &&
+      !canCurrentUserPrepareEnergy(userForModule)
+    ) {
+      appContainer.innerHTML = '<div class="p-8 text-center"><h2 class="text-2xl font-semibold text-amber-700">Control de Energía no habilitado</h2><p class="mt-2">Esta función todavía no está activa para este hotel.</p></div>';
       hideGlobalLoading(); routerBusy = false; return;
     }
 

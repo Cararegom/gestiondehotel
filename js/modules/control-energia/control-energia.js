@@ -45,7 +45,7 @@ async function stopScanner() {
 async function readCapabilities() {
   const { data, error } = await db.rpc('energy_capabilities');
   if (error) throw error;
-  return data || { can_control: false, can_admin: false, enabled: false };
+  return data || { can_control: false, can_admin: false, can_print_qr: false, enabled: false };
 }
 
 async function readConfig() {
@@ -102,9 +102,14 @@ function clearTokenFromAddressBar() {
 }
 
 function renderShell(config) {
-  const disabledNotice = !config.energy_control_enabled && capabilities?.can_admin
+  const canPrepareQr = capabilities?.can_admin || capabilities?.can_print_qr;
+  const preparationDetail = capabilities?.can_admin
+    ? 'Puedes generar, imprimir y organizar los QR sin bloquear habitaciones. Cuando estén instalados, actívalo desde Configuración.'
+    : 'Puedes imprimir los QR ya preparados por el administrador. Mientras el sistema esté apagado no se generan controles ni se bloquean habitaciones.';
+  const disabledNotice = !config.energy_control_enabled && canPrepareQr
     ? `<div class="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950">
-        <b>Modo preparación.</b> El Control de Energía está apagado. Puedes generar e imprimir los QR sin bloquear habitaciones. Cuando estén instalados, actívalo desde <a class="font-bold underline" href="#/configuracion">Configuración</a>.
+        <b>Modo preparación.</b> ${preparationDetail}
+        ${capabilities?.can_admin ? '<a class="ml-1 font-bold underline" href="#/configuracion">Ir a Configuración</a>.' : ''}
       </div>`
     : '';
 
@@ -119,7 +124,8 @@ function renderShell(config) {
       <div id="energy-feedback" class="hidden rounded-xl p-4" role="status" aria-live="polite"></div>
       <nav class="flex flex-wrap gap-2">
         ${config.energy_control_enabled && capabilities?.can_control ? '<button data-tab="scan" class="energy-tab rounded-xl bg-orange-600 px-5 py-3 font-bold text-white">📷 Escanear</button>' : ''}
-        ${capabilities?.can_admin ? '<button data-tab="history" class="energy-tab rounded-xl bg-slate-200 px-5 py-3 font-bold">Historial</button><button data-tab="settings" class="energy-tab rounded-xl bg-slate-200 px-5 py-3 font-bold">Configuración y QR</button>' : ''}
+        ${capabilities?.can_admin ? '<button data-tab="history" class="energy-tab rounded-xl bg-slate-200 px-5 py-3 font-bold">Historial</button>' : ''}
+        ${canPrepareQr ? `<button data-tab="settings" class="energy-tab rounded-xl bg-slate-200 px-5 py-3 font-bold">${capabilities?.can_admin ? 'Configuración y QR' : 'QR e impresión'}</button>` : ''}
       </nav>
       <div id="energy-view"></div>
     </section>`;
@@ -375,25 +381,38 @@ function openEnergyQrPrintWindow(items) {
 
 async function renderSettings(config) {
   const view = root.querySelector('#energy-view');
-  if (!capabilities?.can_admin) return;
+  if (!capabilities?.can_admin && !capabilities?.can_print_qr) return;
 
   const { data: rooms, error } = await db.rpc('energy_list_qr_tokens');
   if (error) { feedback(friendlyError(error)); return; }
 
   const roomList = rooms || [];
   const prepared = roomList.filter((room) => room.token).length;
+  const adminSettings = capabilities?.can_admin
+    ? `<form id="energy-settings" class="mb-5 grid gap-4 rounded-2xl bg-white p-5 shadow md:grid-cols-3">
+        <label class="font-semibold">Tiempo máximo (min)<input name="timeout" type="number" min="1" max="1440" value="${Number(config.energy_check_timeout_minutes || 10)}" class="mt-1 w-full rounded border p-2"></label>
+        <label class="font-semibold">Alertas por correo<select name="emails_on" class="mt-1 w-full rounded border p-2"><option value="true" ${config.energy_email_notifications_enabled ? 'selected' : ''}>Activadas</option><option value="false" ${!config.energy_email_notifications_enabled ? 'selected' : ''}>Desactivadas</option></select></label>
+        <label class="font-semibold">Correos adicionales<input name="emails" value="${escapeHtml(config.energy_alert_emails || '')}" class="mt-1 w-full rounded border p-2" placeholder="admin@hotel.com"></label>
+        <button class="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white md:col-span-3">Guardar configuración</button>
+      </form>`
+    : `<div class="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-950">
+        <b>Acceso de recepción:</b> puedes imprimir los QR ya generados. Crear o regenerar códigos y cambiar la configuración sigue siendo exclusivo del administrador.
+      </div>`;
+  const generateAllButton = capabilities?.can_admin
+    ? '<button id="energy-generate-all" class="rounded-xl bg-orange-600 px-4 py-3 font-bold text-white">Generar QR faltantes</button>'
+    : '';
+
   view.innerHTML = `
     <div class="mb-5 rounded-2xl ${config.energy_control_enabled ? 'bg-emerald-50 text-emerald-950' : 'bg-amber-50 text-amber-950'} p-4">
       <b>${config.energy_control_enabled ? 'Control activado.' : 'Control desactivado / preparación.'}</b>
       ${prepared} de ${roomList.length} habitaciones activas tienen QR preparado.
-      ${config.energy_control_enabled ? 'Solo las habitaciones con QR preparado generan un control obligatorio al entrar a limpieza.' : 'Puedes preparar e imprimir todos los QR antes de activar el sistema.'}
+      ${config.energy_control_enabled
+        ? 'Solo las habitaciones con QR preparado generan un control obligatorio al entrar a limpieza.'
+        : capabilities?.can_admin
+          ? 'Puedes preparar e imprimir todos los QR antes de activar el sistema.'
+          : 'Puedes imprimir los QR ya preparados sin activar el sistema.'}
     </div>
-    <form id="energy-settings" class="mb-5 grid gap-4 rounded-2xl bg-white p-5 shadow md:grid-cols-3">
-      <label class="font-semibold">Tiempo máximo (min)<input name="timeout" type="number" min="1" max="1440" value="${Number(config.energy_check_timeout_minutes || 10)}" class="mt-1 w-full rounded border p-2"></label>
-      <label class="font-semibold">Alertas por correo<select name="emails_on" class="mt-1 w-full rounded border p-2"><option value="true" ${config.energy_email_notifications_enabled ? 'selected' : ''}>Activadas</option><option value="false" ${!config.energy_email_notifications_enabled ? 'selected' : ''}>Desactivadas</option></select></label>
-      <label class="font-semibold">Correos adicionales<input name="emails" value="${escapeHtml(config.energy_alert_emails || '')}" class="mt-1 w-full rounded border p-2" placeholder="admin@hotel.com"></label>
-      <button class="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white md:col-span-3">Guardar configuración</button>
-    </form>
+    ${adminSettings}
     <div class="mb-5 rounded-2xl bg-white p-5 shadow">
       <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -403,7 +422,7 @@ async function renderSettings(config) {
         <span id="energy-selection-count" class="text-sm font-bold text-slate-600">0 seleccionadas</span>
       </div>
       <div class="mt-4 flex flex-wrap gap-2">
-        <button id="energy-generate-all" class="rounded-xl bg-orange-600 px-4 py-3 font-bold text-white">Generar QR faltantes</button>
+        ${generateAllButton}
         <button id="energy-select-all" type="button" class="rounded-xl bg-slate-200 px-4 py-3 font-bold text-slate-800">Seleccionar todas con QR</button>
         <button id="energy-clear-selection" type="button" class="rounded-xl bg-slate-200 px-4 py-3 font-bold text-slate-800">Limpiar selección</button>
         <button id="energy-print-selected" type="button" disabled class="rounded-xl bg-slate-700 px-4 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Imprimir seleccionadas (0)</button>
@@ -423,7 +442,7 @@ async function renderSettings(config) {
       </div>
       <div id="qr-${room.room_id}" class="my-3"></div>
       <div class="flex flex-wrap gap-2">
-        <button data-generate="${room.room_id}" class="rounded-lg bg-orange-600 px-4 py-2 font-bold text-white">${room.token ? 'Regenerar QR' : 'Generar QR'}</button>
+        ${capabilities?.can_admin ? `<button data-generate="${room.room_id}" class="rounded-lg bg-orange-600 px-4 py-2 font-bold text-white">${room.token ? 'Regenerar QR' : 'Generar QR'}</button>` : ''}
         ${room.token ? `<button data-print="${room.room_id}" class="rounded-lg bg-slate-700 px-4 py-2 font-bold text-white">Imprimir este QR</button>` : ''}
       </div>
     </article>`).join('')}</div>`;
@@ -566,7 +585,10 @@ async function renderSettings(config) {
     const ready = roomList.filter((room) => room.token);
     const missingCount = roomList.length - ready.length;
     if (missingCount > 0) {
-      feedback(`Faltan ${missingCount} QR por generar. Usa “Generar QR faltantes” antes de imprimir todas las habitaciones.`, 'info');
+      const instruction = capabilities?.can_admin
+        ? 'Usa “Generar QR faltantes” antes de imprimir todas las habitaciones.'
+        : 'Pide al administrador que genere los QR faltantes y vuelve a intentarlo.';
+      feedback(`Faltan ${missingCount} QR por generar. ${instruction}`, 'info');
       return;
     }
     printRoomIds(ready.map((room) => room.room_id));
@@ -582,7 +604,7 @@ export async function mount(container, supabase, _user, currentHotelId) {
   try {
     capabilities = await readCapabilities();
     if (String(capabilities?.hotel_id || '') !== String(hotelId || '')) throw new Error('NO_AUTORIZADO');
-    if (!capabilities?.can_control && !capabilities?.can_admin) throw new Error('NO_AUTORIZADO');
+    if (!capabilities?.can_control && !capabilities?.can_admin && !capabilities?.can_print_qr) throw new Error('NO_AUTORIZADO');
     const config = await readConfig();
     capabilities.enabled = config.energy_control_enabled === true;
     renderShell(config);
@@ -594,7 +616,7 @@ export async function mount(container, supabase, _user, currentHotelId) {
     }
 
     if (config.energy_control_enabled && capabilities.can_control) await openTab('scan', config);
-    else if (capabilities.can_admin) await openTab('settings', config);
+    else if (capabilities.can_admin || capabilities.can_print_qr) await openTab('settings', config);
   } catch (error) {
     const unauthorized = String(error?.message || error).includes('NO_AUTORIZADO');
     root.innerHTML = `<p class="m-6 rounded p-4 ${unauthorized ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'}">${unauthorized ? 'No tienes permiso para usar Control de Energía.' : 'No fue posible cargar Control de Energía.'}</p>`;
