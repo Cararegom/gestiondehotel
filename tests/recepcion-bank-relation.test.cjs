@@ -32,13 +32,14 @@ test('roles asignados de banco quedan estrictamente limitados al hotel piloto', 
   assert.match(bankServer, /\['admin', 'administrador', 'superadmin', 'recepcionista'\]/);
 });
 
-test('API de recepcion falla cerrada por hotel/rol y nunca expone evidencia bancaria sensible', () => {
+test('API de recepcion falla cerrada por hotel/rol y solo expone nombre seguro del pagador', () => {
   assert.match(relationApi, /isBankEmailProcessingEnabled/);
   assert.match(relationApi, /context\.profile\.hotel_id !== pilot\.id/);
   assert.match(relationApi, /isPilotOperationalUser/);
   assert.match(relationApi, /operational_role_required/);
-  assert.match(relationApi, /select\('id,amount_cop,status,email_received_at,created_at,updated_at'\)/);
-  assert.doesNotMatch(relationApi, /transaction_reference|sender_name|sender_email|gmail_message_id|gmail_thread_id|email_subject|raw_content_hash/);
+  assert.match(relationApi, /select\('id,amount_cop,status,sender_name,email_received_at,created_at,updated_at'\)/);
+  assert.match(relationApi, /senderName:\s*safeSenderName\((?:data|row)\.sender_name\)/);
+  assert.doesNotMatch(relationApi, /transaction_reference|sender_email|gmail_message_id|gmail_thread_id|email_subject|raw_content_hash/);
   assert.doesNotMatch(relationApi, /manualAction|p_action:\s*'confirm'|p_action:\s*'reject'|p_action:\s*'mark_reviewed'/);
 });
 
@@ -60,7 +61,8 @@ test('la interfaz limitada vive en Caja, exige motivo y no abre la consola banca
   assert.match(appIndex, /bank-payment-reception-bootstrap\.js/);
   assert.match(bootstrap, /isCajaRoute/);
   assert.match(bootstrap, /Relacionar pago con Caja/);
-  assert.match(bootstrap, /No se muestran datos sensibles del correo bancario/);
+  assert.match(bootstrap, /Se muestra el nombre del pagador, pero no referencias ni contenido del correo bancario/);
+  assert.match(bootstrap, /A nombre de:/);
   assert.match(bootstrap, /bank-reception-movement/);
   assert.match(bootstrap, /Motivo de la relacion/);
   assert.match(bootstrap, /movementIds/);

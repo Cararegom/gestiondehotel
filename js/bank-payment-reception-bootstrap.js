@@ -116,7 +116,7 @@ async function injectPanel() {
         <div>
           <p class="text-xs uppercase tracking-widest font-semibold text-sky-700">Transferencias</p>
           <h3 class="text-lg font-bold text-slate-900 mt-1">Relacionar pago con Caja</h3>
-          <p class="text-sm text-slate-600 mt-1">Selecciona la transferencia y los movimientos que ya registraste. No se muestran datos sensibles del correo bancario.</p>
+          <p class="text-sm text-slate-600 mt-1">Selecciona la transferencia y los movimientos que ya registraste. Se muestra el nombre del pagador, pero no referencias ni contenido del correo bancario.</p>
         </div>
         <button id="bank-reception-open" type="button" class="button bg-sky-600 hover:bg-sky-700 text-white font-bold px-5 py-3 rounded-2xl whitespace-nowrap">
           Relacionar transferencia
@@ -292,7 +292,7 @@ function renderTransferList(transfers) {
   }
   content.innerHTML = `
     ${shortcutBanner}
-    <p class="text-sm text-slate-600 mb-4">Elige el monto que te reporto el cliente. Por seguridad no veras nombre del pagador, referencia ni contenido del correo.</p>
+    <p class="text-sm text-slate-600 mb-4">Elige la transferencia por monto y nombre de quien realizo el pago. La referencia y el contenido del correo siguen ocultos.</p>
     <div class="space-y-3">
       ${transfers.map((transfer) => `
         <button type="button" data-transfer-id="${escapeHtml(transfer.id)}" class="bank-reception-transfer w-full text-left rounded-2xl border border-slate-200 p-4 hover:border-sky-400 hover:bg-sky-50 transition">
@@ -300,7 +300,8 @@ function renderTransferList(transfers) {
             <strong class="text-xl text-slate-900">${formatCop(transfer.amountCop)}</strong>
             <span class="text-xs font-semibold rounded-full bg-amber-100 text-amber-800 px-3 py-1">${escapeHtml(statusLabel(transfer.status))}</span>
           </div>
-          <div class="text-sm text-slate-500 mt-2">Recibida: ${escapeHtml(formatDate(transfer.receivedAt))}</div>
+          <div class="text-sm font-semibold text-slate-700 mt-2">A nombre de: ${escapeHtml(transfer.senderName || 'Nombre no disponible')}</div>
+          <div class="text-sm text-slate-500 mt-1">Recibida: ${escapeHtml(formatDate(transfer.receivedAt))}</div>
         </button>`).join('')}
     </div>`;
   content.querySelectorAll('.bank-reception-transfer').forEach((button) => {
@@ -356,6 +357,7 @@ function renderCashCandidates() {
     <div class="rounded-2xl bg-slate-900 text-white p-4 mb-4">
       <span class="text-xs uppercase tracking-widest text-slate-300">Transferencia a relacionar</span>
       <div class="text-2xl font-bold mt-1">${formatCop(currentTransfer.amountCop)}</div>
+      <div class="text-sm font-semibold text-white mt-2">A nombre de: ${escapeHtml(currentTransfer.senderName || 'Nombre no disponible')}</div>
       <div class="text-sm text-slate-300 mt-1">${escapeHtml(formatDate(currentTransfer.receivedAt))}</div>
     </div>
     <p class="text-sm text-slate-600 mb-3">Marca los movimientos de Caja que componen exactamente ese valor.</p>
