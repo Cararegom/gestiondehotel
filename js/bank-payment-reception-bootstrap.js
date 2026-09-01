@@ -133,12 +133,27 @@ async function injectPanel() {
   }
 }
 
+function renderLinkedMovementState(statusCell, actionHost, editButton, state) {
+  const eventStatus = String(state?.status || '').toLowerCase();
+  const label = eventStatus === 'confirmed'
+    ? 'Confirmado por banco'
+    : eventStatus === 'manual_review' ? 'Conciliado · revisar' : 'Conciliado';
+  const badgeClass = eventStatus === 'confirmed'
+    ? 'bg-emerald-100 text-emerald-800'
+    : eventStatus === 'manual_review' ? 'bg-rose-100 text-rose-800' : 'bg-sky-100 text-sky-800';
+  statusCell.innerHTML = `<span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold ${badgeClass}">${escapeHtml(label)}</span>`;
+  const reconciled = document.createElement('span');
+  reconciled.className = `${SHORTCUT_CLASS} text-xs font-semibold ${eventStatus === 'manual_review' ? 'text-rose-700' : 'text-emerald-700'} whitespace-nowrap`;
+  reconciled.textContent = eventStatus === 'manual_review' ? 'Revisar' : 'Conciliado';
+  actionHost.insertBefore(reconciled, editButton);
+}
+
 async function injectMovementShortcuts() {
   if (!isCajaRoute() || !(await canUseRelationFlow())) return;
 
+  const candidates = [];
   document.querySelectorAll('.caja-module tbody tr').forEach((row) => {
     if (row.querySelector(`.${SHORTCUT_CLASS}`)) return;
-
     const editButton = row.querySelector('button[data-edit-metodo]');
     const actionHost = editButton?.parentElement;
     const statusCell = row.lastElementChild;
@@ -149,6 +164,30 @@ async function injectMovementShortcuts() {
     const isVerified = bankStatus.includes('confirmado por banco');
     if (!isPending && !isVerified) return;
 
+    const movementId = String(editButton.getAttribute('data-edit-metodo') || '').trim();
+    if (!movementId) return;
+    candidates.push({ row, editButton, actionHost, statusCell, bankStatus, isPending, isVerified, movementId });
+  });
+  if (!candidates.length) return;
+
+  let linkedStates = {};
+  try {
+    const data = await invoke('movement-statuses', { movementIds: candidates.map((item) => item.movementId) });
+    linkedStates = data.statuses && typeof data.statuses === 'object' ? data.statuses : {};
+  } catch {
+    // Fail closed: si no podemos verificar el vinculo exacto con Caja, no ofrecemos
+    // un atajo que podria duplicar una conciliacion ya guardada.
+    return;
+  }
+
+  candidates.forEach(({ row, editButton, actionHost, statusCell, isPending, isVerified, movementId }) => {
+    if (!row.isConnected || row.querySelector(`.${SHORTCUT_CLASS}`)) return;
+    const linkedState = linkedStates[movementId];
+    if (linkedState?.linked === true) {
+      renderLinkedMovementState(statusCell, actionHost, editButton, linkedState);
+      return;
+    }
+
     if (isVerified) {
       const reconciled = document.createElement('span');
       reconciled.className = `${SHORTCUT_CLASS} text-xs font-semibold text-emerald-700 whitespace-nowrap`;
@@ -156,11 +195,9 @@ async function injectMovementShortcuts() {
       actionHost.insertBefore(reconciled, editButton);
       return;
     }
+    if (!isPending) return;
 
-    const movementId = String(editButton.getAttribute('data-edit-metodo') || '').trim();
-    if (!movementId) return;
     const concept = String(row.querySelector('td:nth-child(4) .font-medium')?.textContent || 'Movimiento de Caja').trim();
-
     const shortcut = document.createElement('button');
     shortcut.type = 'button';
     shortcut.className = `${SHORTCUT_CLASS} text-sky-700 hover:text-sky-900 font-semibold whitespace-nowrap`;
@@ -312,7 +349,7 @@ function renderCashCandidates() {
   const shortcutNotice = shortcutMovement
     ? shortcutAvailable
       ? `<div class="rounded-2xl bg-sky-50 border border-sky-200 p-3 mb-3 text-sm text-sky-900">El movimiento abierto desde Caja ya esta seleccionado. Agrega otros movimientos si esta transferencia cubre mas de uno.</div>`
-      : `<div class="rounded-2xl bg-amber-50 border border-amber-200 p-3 mb-3 text-sm text-amber-900">El movimiento abierto desde Caja no aparece entre los candidatos de esta transferencia. Puedes volver y elegir otra transferencia o seleccionar los movimientos disponibles manualmente.</div>`
+      : `<div class="rounded-2xl bg-amber-50 border border-amber-200 p-3 mb-3 text-sm text-amber-900">El movimiento abierto desde Caja no aparece entre los candidatos de esta transferencia. Puede que ya este conciliado; vuelve y actualiza Caja antes de intentar otra relacion.</div>`
     : '';
   content.innerHTML = `
     <button id="bank-reception-back" type="button" class="text-sm text-sky-700 font-semibold mb-4">&larr; Cambiar transferencia</button>
@@ -335,7 +372,7 @@ function renderCashCandidates() {
             <span class="block text-sm text-slate-700 mt-1">${escapeHtml(movement.concept || 'Movimiento de Caja')}</span>
             <span class="block text-xs text-slate-400 mt-1">${escapeHtml(formatDate(movement.occurredAt))}</span>
           </span>
-        </label>`).join('') : '<div class="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-amber-800">No encontre movimientos bancarios de Caja cercanos a esta transferencia.</div>'}
+        </label>`).join('') : '<div class="rounded-2xl bg-amber-50 border border-amber-200 p-4 text-amber-800">No encontre movimientos bancarios de Caja disponibles para esta transferencia.</div>'}
     </div>
     <div class="grid grid-cols-2 gap-3 mt-4">
       <div class="rounded-2xl bg-slate-50 border border-slate-200 p-3">
@@ -372,17 +409,13 @@ async function submitRelation() {
   button.disabled = true;
   button.textContent = 'Guardando...';
   try {
-    await invoke('relate', {
-      paymentEventId: currentTransfer.id,
-      movementIds,
-      reason
-    });
+    await invoke('relate', { paymentEventId: currentTransfer.id, movementIds, reason });
     const content = modalContent();
     if (content) {
       content.innerHTML = `
         <div class="rounded-2xl bg-emerald-50 border border-emerald-200 p-5 text-emerald-800">
           <strong class="block text-lg">Relacion guardada</strong>
-          <span class="block mt-1">La transferencia de ${formatCop(currentTransfer.amountCop)} quedo distribuida entre los movimientos seleccionados.</span>
+          <span class="block mt-1">La transferencia de ${formatCop(currentTransfer.amountCop)} quedo conciliada con los movimientos seleccionados. Al volver a Caja ya no podran reutilizarse para otra transferencia.</span>
         </div>
         <button id="bank-reception-done" class="mt-4 w-full button bg-slate-900 text-white font-bold py-3 rounded-2xl">Cerrar</button>`;
       document.getElementById('bank-reception-done')?.addEventListener('click', () => {
