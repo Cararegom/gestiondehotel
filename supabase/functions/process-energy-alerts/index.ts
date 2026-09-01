@@ -3,46 +3,185 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const url = Deno.env.get('SUPABASE_URL') ?? '';
 const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const webhook = Deno.env.get('MAKE_CASH_CLOSE_WEBHOOK_URL') ?? '';
-const cronSecret = Deno.env.get('ENERGY_ALERT_CRON_SECRET') ?? '';
+const cronSecret = Deno.env.get('CRON_SECRET') ?? '';
 
-function emails(value: unknown) {
-  return String(value || '').split(',').map((item) => item.trim().toLowerCase())
+interface EnergyAlertClaim {
+  id: string;
+  hotel_id: string;
+  room_id: string;
+  created_at: string;
+  due_at: string;
+  source_user_id: string | null;
+  room_name: string | null;
+  hotel_name: string | null;
+  hotel_email: string | null;
+  source_user_name: string | null;
+  energy_email_notifications_enabled: boolean;
+  energy_alert_emails: string | null;
+  report_email: string | null;
+  attempt: number;
+}
+
+function constantTimeEqual(left: string, right: string): boolean {
+  const maxLength = Math.max(left.length, right.length);
+  let difference = left.length ^ right.length;
+  for (let index = 0; index < maxLength; index += 1) {
+    difference |= (left.charCodeAt(index) || 0) ^ (right.charCodeAt(index) || 0);
+  }
+  return difference === 0;
+}
+
+function cronAuthorized(request: Request): boolean {
+  if (cronSecret.length < 24) return false;
+  const explicit = request.headers.get('x-cron-secret') || '';
+  const bearer = /^Bearer\s+([^\s]+)$/iu.exec(request.headers.get('authorization') || '')?.[1] || '';
+  return constantTimeEqual(explicit || bearer, cronSecret);
+}
+
+function emails(value: unknown): string[] {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
     .filter((item, index, all) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item) && all.indexOf(item) === index);
 }
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function formatBogota(value: string): string {
+  return new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    dateStyle: 'short',
+    timeStyle: 'short'
+  }).format(new Date(value));
+}
+
 Deno.serve(async (request) => {
-  if (request.method !== 'POST') return new Response('Method not allowed', { status: 405 });
-  if (!cronSecret || request.headers.get('x-cron-secret') !== cronSecret) return new Response('Unauthorized', { status: 401 });
-  if (!url || !key) return new Response('Server configuration missing', { status: 500 });
-  const admin = createClient(url, key, { auth: { persistSession: false } });
-  const now = new Date().toISOString();
-  const { data: checks, error } = await admin.from('room_energy_checks')
-    .select('id,hotel_id,room_id,created_at,due_at,source_user_id,habitaciones(nombre),hoteles(nombre,correo),usuarios!room_energy_checks_source_user_id_fkey(nombre)')
-    .in('status', ['pending','overdue']).lt('due_at', now).is('admin_alert_sent_at', null)
-    ;
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  let sent = 0;
-  for (const check of checks || []) {
-    const { data: cfg } = await admin.from('configuracion_hotel')
-      .select('energy_control_enabled,energy_email_notifications_enabled,energy_alert_emails,correo_reportes')
-      .eq('hotel_id', check.hotel_id).maybeSingle();
-    if (!cfg?.energy_control_enabled) continue;
-    const room = Array.isArray(check.habitaciones) ? check.habitaciones[0] : check.habitaciones;
-    const hotel = Array.isArray(check.hoteles) ? check.hoteles[0] : check.hoteles;
-    const source = Array.isArray(check.usuarios) ? check.usuarios[0] : check.usuarios;
-    const minutes = Math.max(1, Math.floor((Date.now() - new Date(check.created_at).getTime()) / 60000));
-    await admin.from('room_energy_checks').update({ status: 'overdue', overdue_at: now }).eq('id', check.id).in('status', ['pending','overdue']);
-    await admin.from('notificaciones').insert({ hotel_id: check.hotel_id, rol_destino: 'admin', tipo: 'sistema_alerta', entidad_tipo: 'energy_check', entidad_id: check.id, mensaje: `Habitación ${room?.nombre || ''} tiene pendiente el Control de Energía desde hace ${minutes} minutos.` });
-    const recipients = emails([cfg?.energy_alert_emails, cfg?.correo_reportes, hotel?.correo].filter(Boolean).join(','));
-    let alertStatus = 'email_disabled';
-    if (cfg?.energy_email_notifications_enabled && recipients.length && webhook) {
-      const response = await fetch(webhook, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
-        to: recipients.join(','), from: 'no-reply@gestiondehotel.com', subject: `⚡ Control de energía pendiente — Habitación ${room?.nombre || ''}`,
-        html: `<h2>Control de energía pendiente</h2><p><b>Hotel:</b> ${hotel?.nombre || ''}</p><p><b>Habitación:</b> ${room?.nombre || ''}</p><p><b>Enviada a limpieza:</b> ${new Date(check.created_at).toLocaleString('es-CO')}</p><p><b>Tiempo transcurrido:</b> ${minutes} minutos</p><p><b>Movimiento realizado por:</b> ${source?.nombre || 'Sin identificar'}</p><p><b>Estado actual:</b> Sin revisión de energía</p>`
-      }) });
-      alertStatus = response.ok ? 'sent' : 'failed'; if (response.ok) sent += 1;
-    }
-    await admin.from('room_energy_checks').update({ admin_alert_sent_at: now, admin_alert_status: alertStatus }).eq('id', check.id).is('admin_alert_sent_at', null);
+  if (request.method !== 'POST') {
+    return Response.json({ error: 'method_not_allowed' }, { status: 405 });
   }
-  return Response.json({ processed: checks?.length || 0, sent });
+  if (!cronAuthorized(request)) {
+    return Response.json({ error: 'unauthorized' }, { status: 401 });
+  }
+  if (!url || !key) {
+    return Response.json({ error: 'server_configuration_missing' }, { status: 500 });
+  }
+
+  const admin = createClient(url, key, { auth: { persistSession: false } });
+  const { data, error } = await admin.rpc('energy_claim_overdue_alerts', { p_limit: 50 });
+  if (error) {
+    console.error('[process-energy-alerts] claim_failed', { code: error.code });
+    return Response.json({ error: 'claim_failed' }, { status: 500 });
+  }
+
+  const claims = (data || []) as EnergyAlertClaim[];
+  let notifications = 0;
+  let emailsSent = 0;
+  let retryableFailures = 0;
+  let permanentFailures = 0;
+
+  const finish = async (
+    claim: EnergyAlertClaim,
+    status: string,
+    completed: boolean
+  ) => {
+    const payload: Record<string, unknown> = {
+      admin_alert_status: status,
+      admin_alert_claimed_at: null
+    };
+    if (completed) payload.admin_alert_sent_at = new Date().toISOString();
+    const { error: finishError } = await admin
+      .from('room_energy_checks')
+      .update(payload)
+      .eq('id', claim.id)
+      .eq('admin_alert_status', 'processing');
+    if (finishError) console.error('[process-energy-alerts] finish_failed', { id: claim.id, code: finishError.code });
+  };
+
+  for (const claim of claims) {
+    const minutes = Math.max(1, Math.floor((Date.now() - new Date(claim.created_at).getTime()) / 60000));
+    const message = `Habitación ${claim.room_name || ''} tiene pendiente el Control de Energía desde hace ${minutes} minutos.`;
+
+    const { data: inserted, error: notificationError } = await admin.rpc('energy_notify_recipients', {
+      p_check_id: claim.id,
+      p_audience: 'admin',
+      p_type: 'sistema_alerta',
+      p_message: message
+    });
+
+    if (notificationError) {
+      const permanent = Number(claim.attempt || 0) >= 5;
+      if (permanent) permanentFailures += 1;
+      else retryableFailures += 1;
+      await finish(claim, permanent ? 'failed_permanent' : 'failed', permanent);
+      continue;
+    }
+    notifications += Number(inserted || 0);
+
+    if (!claim.energy_email_notifications_enabled) {
+      await finish(claim, 'email_disabled', true);
+      continue;
+    }
+
+    const recipients = emails([
+      claim.energy_alert_emails,
+      claim.report_email,
+      claim.hotel_email
+    ].filter(Boolean).join(','));
+
+    if (!recipients.length) {
+      await finish(claim, 'no_recipients', true);
+      continue;
+    }
+
+    if (!webhook) {
+      const permanent = Number(claim.attempt || 0) >= 5;
+      if (permanent) permanentFailures += 1;
+      else retryableFailures += 1;
+      await finish(claim, permanent ? 'failed_permanent' : 'webhook_missing', permanent);
+      continue;
+    }
+
+    try {
+      const response = await fetch(webhook, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: recipients.join(','),
+          from: 'no-reply@gestiondehotel.com',
+          subject: `⚡ Control de energía pendiente — Habitación ${claim.room_name || ''}`,
+          html: `<h2>Control de energía pendiente</h2><p><b>Hotel:</b> ${escapeHtml(claim.hotel_name)}</p><p><b>Habitación:</b> ${escapeHtml(claim.room_name)}</p><p><b>Enviada a limpieza:</b> ${escapeHtml(formatBogota(claim.created_at))}</p><p><b>Tiempo transcurrido:</b> ${minutes} minutos</p><p><b>Movimiento realizado por:</b> ${escapeHtml(claim.source_user_name || 'Sin identificar')}</p><p><b>Estado actual:</b> Sin revisión de energía</p>`
+        })
+      });
+
+      if (response.ok) {
+        emailsSent += 1;
+        await finish(claim, 'sent', true);
+      } else {
+        const permanent = Number(claim.attempt || 0) >= 5;
+        if (permanent) permanentFailures += 1;
+        else retryableFailures += 1;
+        await finish(claim, permanent ? 'failed_permanent' : 'failed', permanent);
+      }
+    } catch {
+      const permanent = Number(claim.attempt || 0) >= 5;
+      if (permanent) permanentFailures += 1;
+      else retryableFailures += 1;
+      await finish(claim, permanent ? 'failed_permanent' : 'failed', permanent);
+    }
+  }
+
+  return Response.json({
+    processed: claims.length,
+    notifications,
+    emailsSent,
+    retryableFailures,
+    permanentFailures
+  });
 });
