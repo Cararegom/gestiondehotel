@@ -77,6 +77,11 @@ function safeDate(value: unknown): string | null {
   return Number.isFinite(time) ? new Date(time).toISOString() : null;
 }
 
+function safeSenderName(value: unknown): string | null {
+  const name = String(value || '').replace(/\s+/g, ' ').trim();
+  return name ? name.slice(0, 160) : null;
+}
+
 function targetForMovement(row: CajaRow): { type: 'reservation'; reservationId: string; amountCop: number } | { type: 'sale'; saleId: string; saleType: string; amountCop: number } | null {
   const amountCop = safeAmount(row.monto);
   if (!amountCop) return null;
@@ -146,7 +151,7 @@ async function eventHasCashLink(admin: ReturnType<typeof buildAdminClient>, hote
 async function getSafeEvent(admin: ReturnType<typeof buildAdminClient>, hotelId: string, paymentEventId: string) {
   const { data, error } = await admin
     .from('bank_payment_events')
-    .select('id,amount_cop,status,email_received_at,created_at,updated_at')
+    .select('id,amount_cop,status,sender_name,email_received_at,created_at,updated_at')
     .eq('hotel_id', hotelId)
     .eq('id', paymentEventId)
     .maybeSingle();
@@ -159,13 +164,20 @@ async function getSafeEvent(admin: ReturnType<typeof buildAdminClient>, hotelId:
   }
   const amountCop = safeAmount(data.amount_cop);
   if (!amountCop) throw new HttpError(409, 'payment_amount_invalid', 'El valor de la transferencia no es valido.');
-  return { id: String(data.id), amountCop, status: String(data.status), receivedAt: safeDate(data.email_received_at || data.created_at), updatedAt: safeDate(data.updated_at) };
+  return {
+    id: String(data.id),
+    amountCop,
+    status: String(data.status),
+    senderName: safeSenderName(data.sender_name),
+    receivedAt: safeDate(data.email_received_at || data.created_at),
+    updatedAt: safeDate(data.updated_at)
+  };
 }
 
 async function listTransfers(admin: ReturnType<typeof buildAdminClient>, hotelId: string) {
   const { data, error } = await admin
     .from('bank_payment_events')
-    .select('id,amount_cop,status,email_received_at,created_at,updated_at')
+    .select('id,amount_cop,status,sender_name,email_received_at,created_at,updated_at')
     .eq('hotel_id', hotelId)
     .in('status', RELATABLE_STATUSES)
     .order('email_received_at', { ascending: false, nullsFirst: false })
@@ -178,8 +190,12 @@ async function listTransfers(admin: ReturnType<typeof buildAdminClient>, hotelId
   if (linksError) throw Object.assign(new Error('No se pudieron validar las transferencias ya conciliadas.'), { code: 'relation_cash_links_failed' });
   const linkedEvents = new Set((links || []).map((row) => String(row.payment_event_id)));
   return (data || []).filter((row) => !linkedEvents.has(String(row.id))).map((row) => ({
-    id: String(row.id), amountCop: safeAmount(row.amount_cop), status: String(row.status),
-    receivedAt: safeDate(row.email_received_at || row.created_at), updatedAt: safeDate(row.updated_at)
+    id: String(row.id),
+    amountCop: safeAmount(row.amount_cop),
+    status: String(row.status),
+    senderName: safeSenderName(row.sender_name),
+    receivedAt: safeDate(row.email_received_at || row.created_at),
+    updatedAt: safeDate(row.updated_at)
   })).filter((row) => row.amountCop > 0);
 }
 
