@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const pilotMigration = fs.readFileSync('supabase/migrations/20260824120000_energy_control_pilot.sql', 'utf8');
 const hardening = fs.readFileSync('supabase/migrations/20260901213000_energy_control_hardening.sql', 'utf8');
 const overdueTypeFix = fs.readFileSync('supabase/migrations/20260901214500_energy_control_overdue_email_type_fix.sql', 'utf8');
+const qrHotelIndex = fs.readFileSync('supabase/migrations/20260901215000_energy_qr_hotel_index.sql', 'utf8');
 const moduleSource = fs.readFileSync('js/modules/control-energia/control-energia.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 const alertFn = fs.readFileSync('supabase/functions/process-energy-alerts/index.ts', 'utf8');
@@ -35,6 +36,11 @@ test('QR secrets are removed from the exposed habitaciones table', () => {
   assert.match(hardening, /energy_list_qr_tokens/);
   assert.doesNotMatch(moduleSource, /from\('habitaciones'\)[\s\S]{0,200}energy_qr_token/);
   assert.match(moduleSource, /db\.rpc\('energy_list_qr_tokens'\)/);
+});
+
+test('private QR secrets have a covering hotel index', () => {
+  assert.match(qrHotelIndex, /room_energy_qr_secrets_hotel_id_idx/);
+  assert.match(qrHotelIndex, /private\.room_energy_qr_secrets\(hotel_id\)/);
 });
 
 test('cleaning creates a check only for prepared rooms and blocks release while open', () => {
