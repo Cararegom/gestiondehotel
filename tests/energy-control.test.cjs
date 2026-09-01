@@ -79,6 +79,32 @@ test('admin can prepare QR while feature is disabled and worker cannot list secr
   assert.match(hardening, /grant execute on function public\.energy_list_qr_tokens\(\) to authenticated/);
 });
 
+test('QR printing supports one, selected or all rooms on compact letter sheets', () => {
+  assert.match(moduleSource, /ENERGY_QR_PRINT_SIZE_IN = 1\.5/);
+  assert.match(moduleSource, /ENERGY_QR_PRINT_PER_PAGE = 20/);
+  assert.match(moduleSource, /@page \{ size: Letter portrait; margin: 0\.25in; \}/);
+  assert.match(moduleSource, /grid-template-columns: repeat\(4, 2in\)/);
+  assert.match(moduleSource, /grid-template-rows: repeat\(5, 2\.05in\)/);
+  assert.match(moduleSource, /data-print="\$\{room\.room_id\}"/);
+  assert.match(moduleSource, /energy-print-selected/);
+  assert.match(moduleSource, /energy-print-all/);
+  assert.match(moduleSource, /energy-select-all/);
+  assert.match(moduleSource, /energy-clear-selection/);
+  assert.match(moduleSource, /printableRoomLabel/);
+  assert.match(moduleSource, /Hab\. \$\{number/);
+  assert.match(moduleSource, /Faltan \$\{missingCount\} QR por generar/);
+  assert.doesNotMatch(moduleSource, /<h1>CONTROL DE ENERGÍA<\/h1>/);
+});
+
+test('printed QR keeps a white safety margin and uses higher resolution source', () => {
+  assert.match(moduleSource, /width: 256, height: 256/);
+  assert.match(moduleSource, /qr-safe-zone/);
+  assert.match(moduleSource, /padding: 0\.06in/);
+  assert.match(moduleSource, /image-rendering: pixelated/);
+  assert.match(moduleSource, /qrImageSource/);
+  assert.match(moduleSource, /toDataURL\('image\/png'\)/);
+});
+
 test('disabling energy cancels open checks so stale controls cannot return later', () => {
   assert.match(hardening, /energy_cancel_open_checks_when_disabled/);
   assert.match(hardening, /old\.energy_control_enabled = true and new\.energy_control_enabled = false/);
