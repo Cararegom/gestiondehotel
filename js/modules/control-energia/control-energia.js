@@ -8,6 +8,9 @@ let hotelId = null;
 let capabilities = null;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ENERGY_QR_PRINT_SIZE_IN = 1.5;
+const ENERGY_QR_PRINT_PER_PAGE = 20;
+
 const friendlyError = (error) => {
   const value = String(error?.message || error || '');
   if (value.includes('QR_INVALIDO')) return 'El QR es inválido, antiguo o pertenece a otro hotel.';
@@ -267,6 +270,109 @@ function qrText(token) {
   return `${location.origin}${location.pathname}#/control-energia?token=${encodeURIComponent(token)}`;
 }
 
+function printableRoomLabel(value) {
+  const raw = String(value || '').trim();
+  const number = raw
+    .replace(/^habitaci[oó]n\s*/i, '')
+    .replace(/^hab\.?\s*/i, '')
+    .trim();
+  return `Hab. ${number || raw || '—'}`;
+}
+
+function qrImageSource(card) {
+  const image = card?.querySelector('img');
+  if (image?.src?.startsWith('data:image/')) return image.src;
+  const canvas = card?.querySelector('canvas');
+  try {
+    return canvas?.toDataURL('image/png') || '';
+  } catch {
+    return '';
+  }
+}
+
+function openEnergyQrPrintWindow(items) {
+  const printable = (items || []).filter((item) => item?.imageSrc && item?.label);
+  if (!printable.length) return { ok: false, reason: 'empty', count: 0 };
+
+  const win = window.open('', '_blank');
+  if (!win) return { ok: false, reason: 'popup', count: 0 };
+
+  const pages = [];
+  for (let index = 0; index < printable.length; index += ENERGY_QR_PRINT_PER_PAGE) {
+    const pageItems = printable.slice(index, index + ENERGY_QR_PRINT_PER_PAGE);
+    pages.push(`<main class="sheet">${pageItems.map((item) => `
+      <section class="qr-cut-card">
+        <div class="qr-safe-zone"><img class="qr-image" src="${escapeHtml(item.imageSrc)}" alt=""></div>
+        <div class="room-label">${escapeHtml(item.label)}</div>
+      </section>`).join('')}</main>`);
+  }
+
+  win.document.write(`<!doctype html>
+    <html lang="es"><head><meta charset="utf-8"><title>QR Control de Energía</title>
+    <style>
+      @page { size: Letter portrait; margin: 0.25in; }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: #fff; font-family: Arial, sans-serif; }
+      .sheet {
+        width: 8in;
+        height: 10.5in;
+        display: grid;
+        grid-template-columns: repeat(4, 2in);
+        grid-template-rows: repeat(5, 2.05in);
+        align-content: start;
+        page-break-after: always;
+        break-after: page;
+      }
+      .sheet:last-child { page-break-after: auto; break-after: auto; }
+      .qr-cut-card {
+        width: 2in;
+        height: 2.05in;
+        border: 0.5pt dashed #aaa;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 0.10in 0.10in 0.06in;
+        overflow: hidden;
+      }
+      .qr-safe-zone {
+        width: ${ENERGY_QR_PRINT_SIZE_IN}in;
+        height: ${ENERGY_QR_PRINT_SIZE_IN}in;
+        padding: 0.06in;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+      }
+      .qr-image {
+        width: ${ENERGY_QR_PRINT_SIZE_IN - 0.12}in;
+        height: ${ENERGY_QR_PRINT_SIZE_IN - 0.12}in;
+        display: block;
+        object-fit: contain;
+        image-rendering: pixelated;
+      }
+      .room-label {
+        margin-top: 0.05in;
+        font-size: 9pt;
+        line-height: 1.05;
+        font-weight: 700;
+        color: #111;
+        white-space: nowrap;
+      }
+    </style></head><body>${pages.join('')}</body></html>`);
+  win.document.close();
+
+  const triggerPrint = () => window.setTimeout(() => {
+    try { win.focus(); } catch {}
+    win.print();
+  }, 180);
+
+  if (win.document.readyState === 'complete') triggerPrint();
+  else win.addEventListener('load', triggerPrint, { once: true });
+
+  return { ok: true, count: printable.length };
+}
+
 async function renderSettings(config) {
   const view = root.querySelector('#energy-view');
   if (!capabilities?.can_admin) return;
@@ -274,11 +380,12 @@ async function renderSettings(config) {
   const { data: rooms, error } = await db.rpc('energy_list_qr_tokens');
   if (error) { feedback(friendlyError(error)); return; }
 
-  const prepared = (rooms || []).filter((room) => room.token).length;
+  const roomList = rooms || [];
+  const prepared = roomList.filter((room) => room.token).length;
   view.innerHTML = `
     <div class="mb-5 rounded-2xl ${config.energy_control_enabled ? 'bg-emerald-50 text-emerald-950' : 'bg-amber-50 text-amber-950'} p-4">
       <b>${config.energy_control_enabled ? 'Control activado.' : 'Control desactivado / preparación.'}</b>
-      ${prepared} de ${(rooms || []).length} habitaciones activas tienen QR preparado.
+      ${prepared} de ${roomList.length} habitaciones activas tienen QR preparado.
       ${config.energy_control_enabled ? 'Solo las habitaciones con QR preparado generan un control obligatorio al entrar a limpieza.' : 'Puedes preparar e imprimir todos los QR antes de activar el sistema.'}
     </div>
     <form id="energy-settings" class="mb-5 grid gap-4 rounded-2xl bg-white p-5 shadow md:grid-cols-3">
@@ -287,16 +394,38 @@ async function renderSettings(config) {
       <label class="font-semibold">Correos adicionales<input name="emails" value="${escapeHtml(config.energy_alert_emails || '')}" class="mt-1 w-full rounded border p-2" placeholder="admin@hotel.com"></label>
       <button class="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white md:col-span-3">Guardar configuración</button>
     </form>
-    <div class="mb-5 flex flex-wrap gap-2">
-      <button id="energy-generate-all" class="rounded-xl bg-orange-600 px-4 py-3 font-bold text-white">Generar QR faltantes</button>
-      <button id="energy-print-all" class="rounded-xl bg-slate-700 px-4 py-3 font-bold text-white">Imprimir todos los QR</button>
+    <div class="mb-5 rounded-2xl bg-white p-5 shadow">
+      <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 class="text-lg font-black text-slate-900">Impresión de QR</h2>
+          <p class="text-sm text-slate-600">Cada bloque QR mide 1.5 × 1.5 pulgadas, con el número de habitación debajo. Se acomodan hasta 20 por hoja carta (4 × 5) para recortar.</p>
+        </div>
+        <span id="energy-selection-count" class="text-sm font-bold text-slate-600">0 seleccionadas</span>
+      </div>
+      <div class="mt-4 flex flex-wrap gap-2">
+        <button id="energy-generate-all" class="rounded-xl bg-orange-600 px-4 py-3 font-bold text-white">Generar QR faltantes</button>
+        <button id="energy-select-all" type="button" class="rounded-xl bg-slate-200 px-4 py-3 font-bold text-slate-800">Seleccionar todas con QR</button>
+        <button id="energy-clear-selection" type="button" class="rounded-xl bg-slate-200 px-4 py-3 font-bold text-slate-800">Limpiar selección</button>
+        <button id="energy-print-selected" type="button" disabled class="rounded-xl bg-slate-700 px-4 py-3 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Imprimir seleccionadas (0)</button>
+        <button id="energy-print-all" type="button" class="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white">Imprimir todos los QR</button>
+      </div>
     </div>
-    <div class="grid gap-4 md:grid-cols-2">${(rooms || []).map((room) => `<article class="rounded-2xl bg-white p-5 shadow" data-room-card="${room.room_id}">
-      <h3 class="text-xl font-black">Habitación ${escapeHtml(room.room_name)}</h3>
-      <p class="my-2 text-sm">${room.token ? `QR generado ${formatDate(room.generated_at)}` : 'Sin QR'}</p>
+    <div class="grid gap-4 md:grid-cols-2">${roomList.map((room) => `<article class="rounded-2xl bg-white p-5 shadow" data-room-card="${room.room_id}">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-xl font-black">Habitación ${escapeHtml(room.room_name)}</h3>
+          <p class="my-2 text-sm">${room.token ? `QR generado ${formatDate(room.generated_at)}` : 'Sin QR'}</p>
+        </div>
+        <label class="flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <input type="checkbox" data-select-room="${room.room_id}" ${room.token ? '' : 'disabled'} class="h-5 w-5 rounded border-slate-300">
+          Seleccionar
+        </label>
+      </div>
       <div id="qr-${room.room_id}" class="my-3"></div>
-      <button data-generate="${room.room_id}" class="rounded-lg bg-orange-600 px-4 py-2 font-bold text-white">${room.token ? 'Regenerar QR' : 'Generar QR'}</button>
-      ${room.token ? `<button data-print="${room.room_id}" class="rounded-lg bg-slate-700 px-4 py-2 font-bold text-white">Imprimir</button>` : ''}
+      <div class="flex flex-wrap gap-2">
+        <button data-generate="${room.room_id}" class="rounded-lg bg-orange-600 px-4 py-2 font-bold text-white">${room.token ? 'Regenerar QR' : 'Generar QR'}</button>
+        ${room.token ? `<button data-print="${room.room_id}" class="rounded-lg bg-slate-700 px-4 py-2 font-bold text-white">Imprimir este QR</button>` : ''}
+      </div>
     </article>`).join('')}</div>`;
 
   const renderQr = async (room) => {
@@ -305,9 +434,14 @@ async function renderSettings(config) {
     const holder = view.querySelector(`#qr-${room.room_id}`);
     if (!holder) return;
     holder.innerHTML = '';
-    new window.QRCode(holder, { text: qrText(room.token), width: 180, height: 180 });
+    new window.QRCode(holder, { text: qrText(room.token), width: 256, height: 256 });
+    holder.querySelectorAll('canvas, img').forEach((element) => {
+      element.style.width = '180px';
+      element.style.height = '180px';
+      element.style.maxWidth = '100%';
+    });
   };
-  for (const room of rooms || []) await renderQr(room);
+  for (const room of roomList) await renderQr(room);
 
   view.querySelector('#energy-settings')?.addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -328,7 +462,7 @@ async function renderSettings(config) {
   });
 
   view.querySelectorAll('[data-generate]').forEach((button) => button.addEventListener('click', async () => {
-    const current = (rooms || []).find((room) => room.room_id === button.dataset.generate);
+    const current = roomList.find((room) => room.room_id === button.dataset.generate);
     const prompt = current?.token
       ? 'El QR anterior dejará de funcionar inmediatamente. ¿Regenerar?'
       : 'Se generará un QR privado para esta habitación. ¿Continuar?';
@@ -344,23 +478,80 @@ async function renderSettings(config) {
     }
   }));
 
-  const printCard = (card) => {
-    const copy = card.cloneNode(true);
-    copy.querySelectorAll('button').forEach((button) => button.remove());
-    const win = window.open('', '_blank');
-    if (!win) { feedback('El navegador bloqueó la ventana de impresión.'); return; }
-    win.document.write(`<title>Control de Energía</title><style>body{font-family:Arial;text-align:center;padding:40px}img{margin:auto}h1{font-size:24px}li{text-align:left;max-width:360px;margin:12px auto}</style><h1>CONTROL DE ENERGÍA</h1>${copy.innerHTML}<ul><li>Aire acondicionado apagado</li><li>Televisor apagado</li><li>Luces apagadas</li></ul><b>Escanea este código dentro de la habitación para registrar la revisión.</b>`);
-    win.document.close();
-    win.print();
+  const selectedRoomIds = new Set();
+  const updateSelectionUi = () => {
+    const count = selectedRoomIds.size;
+    const countLabel = view.querySelector('#energy-selection-count');
+    const printSelected = view.querySelector('#energy-print-selected');
+    if (countLabel) countLabel.textContent = `${count} seleccionada${count === 1 ? '' : 's'}`;
+    if (printSelected) {
+      printSelected.disabled = count === 0;
+      printSelected.textContent = `Imprimir seleccionadas (${count})`;
+    }
+  };
+
+  view.querySelectorAll('[data-select-room]').forEach((checkbox) => checkbox.addEventListener('change', () => {
+    const id = checkbox.dataset.selectRoom;
+    if (!id) return;
+    if (checkbox.checked) selectedRoomIds.add(id);
+    else selectedRoomIds.delete(id);
+    updateSelectionUi();
+  }));
+
+  view.querySelector('#energy-select-all')?.addEventListener('click', () => {
+    selectedRoomIds.clear();
+    view.querySelectorAll('[data-select-room]').forEach((checkbox) => {
+      if (checkbox.disabled) return;
+      checkbox.checked = true;
+      selectedRoomIds.add(checkbox.dataset.selectRoom);
+    });
+    updateSelectionUi();
+  });
+
+  view.querySelector('#energy-clear-selection')?.addEventListener('click', () => {
+    selectedRoomIds.clear();
+    view.querySelectorAll('[data-select-room]').forEach((checkbox) => { checkbox.checked = false; });
+    updateSelectionUi();
+  });
+
+  const printRoomIds = (roomIds) => {
+    const wanted = new Set(roomIds || []);
+    const items = roomList
+      .filter((room) => room.token && wanted.has(room.room_id))
+      .map((room) => {
+        const card = view.querySelector(`[data-room-card="${room.room_id}"]`);
+        return {
+          label: printableRoomLabel(room.room_name),
+          imageSrc: qrImageSource(card)
+        };
+      })
+      .filter((item) => item.imageSrc);
+
+    if (!items.length) {
+      feedback('No hay QR listos para imprimir en esa selección.');
+      return;
+    }
+
+    const result = openEnergyQrPrintWindow(items);
+    if (!result.ok) {
+      feedback(result.reason === 'popup'
+        ? 'El navegador bloqueó la ventana de impresión. Permite ventanas emergentes e inténtalo de nuevo.'
+        : 'No fue posible preparar los QR para imprimir.');
+      return;
+    }
+    feedback(`Vista de impresión preparada con ${result.count} QR.`, 'success');
   };
 
   view.querySelectorAll('[data-print]').forEach((button) => button.addEventListener('click', () => {
-    const card = button.closest('[data-room-card]');
-    if (card) printCard(card);
+    printRoomIds([button.dataset.print]);
   }));
 
+  view.querySelector('#energy-print-selected')?.addEventListener('click', () => {
+    printRoomIds([...selectedRoomIds]);
+  });
+
   view.querySelector('#energy-generate-all')?.addEventListener('click', async () => {
-    const missing = (rooms || []).filter((room) => !room.token);
+    const missing = roomList.filter((room) => !room.token);
     if (!missing.length) { feedback('Todas las habitaciones activas ya tienen QR.', 'info'); return; }
     if (!window.confirm(`Se generarán ${missing.length} QR. Después debes imprimirlos e instalarlos dentro de las habitaciones. ¿Continuar?`)) return;
     for (const room of missing) {
@@ -372,20 +563,16 @@ async function renderSettings(config) {
   }));
 
   view.querySelector('#energy-print-all')?.addEventListener('click', () => {
-    const cards = [...view.querySelectorAll('[data-room-card]')]
-      .filter((card) => card.querySelector('img'))
-      .map((card) => {
-        const copy = card.cloneNode(true);
-        copy.querySelectorAll('button').forEach((button) => button.remove());
-        return `<section>${copy.innerHTML}<ul><li>Aire acondicionado apagado</li><li>Televisor apagado</li><li>Luces apagadas</li></ul><b>Escanea este código dentro de la habitación para registrar la revisión.</b></section>`;
-      }).join('');
-    if (!cards) { feedback('Primero genera al menos un QR.'); return; }
-    const win = window.open('', '_blank');
-    if (!win) { feedback('El navegador bloqueó la ventana de impresión.'); return; }
-    win.document.write(`<title>QR Control de Energía</title><style>body{font-family:Arial;text-align:center}section{page-break-after:always;padding:35px}img{margin:auto}li{text-align:left;max-width:360px;margin:10px auto}</style>${cards}`);
-    win.document.close();
-    win.print();
+    const ready = roomList.filter((room) => room.token);
+    const missingCount = roomList.length - ready.length;
+    if (missingCount > 0) {
+      feedback(`Faltan ${missingCount} QR por generar. Usa “Generar QR faltantes” antes de imprimir todas las habitaciones.`, 'info');
+      return;
+    }
+    printRoomIds(ready.map((room) => room.room_id));
   });
+
+  updateSelectionUi();
 }
 
 export async function mount(container, supabase, _user, currentHotelId) {
