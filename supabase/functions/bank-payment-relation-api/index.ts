@@ -24,6 +24,34 @@ type CajaRow = {
   venta_terraza_id: string | null;
 };
 
+type LegacyPaymentEvent = {
+  status?: string | null;
+  amount_cop?: number | string | null;
+  email_received_at?: string | null;
+  transaction_occurred_at?: string | null;
+  created_at?: string | null;
+  hotel_id?: string | null;
+};
+
+type LegacyAllocationRow = {
+  payment_event_id?: string | null;
+  allocation_type?: string | null;
+  reservation_id?: string | null;
+  sale_id?: string | null;
+  sale_type?: string | null;
+  amount_cop?: number | string | null;
+  payment_event?: LegacyPaymentEvent | LegacyPaymentEvent[] | null;
+};
+
+type MovementRelationStatus = {
+  linked: true;
+  status: string;
+  paymentEventId: string | null;
+  amountCop: number;
+  legacy: boolean;
+  ambiguous?: boolean;
+};
+
 function requireUuid(value: unknown, label: string): string {
   const normalized = String(value || '').trim().toLowerCase();
   if (!UUID_PATTERN.test(normalized)) throw new HttpError(400, 'invalid_uuid', `${label} no es valido.`);
@@ -62,20 +90,20 @@ function targetForMovement(row: CajaRow): { type: 'reservation'; reservationId: 
   return { type: 'sale', saleId: targets[0].id, saleType: targets[0].kind, amountCop };
 }
 
-function legacyAllocationMatchesMovement(allocation: any, movement: CajaRow): boolean {
+function legacyAllocationMatchesMovement(allocation: LegacyAllocationRow, movement: CajaRow): boolean {
   const target = targetForMovement(movement);
-  if (!target || safeAmount(allocation?.amount_cop) !== target.amountCop) return false;
+  if (!target || safeAmount(allocation.amount_cop) !== target.amountCop) return false;
   if (target.type === 'reservation') {
-    if (String(allocation?.allocation_type || '') !== 'reservation' || String(allocation?.reservation_id || '') !== target.reservationId) return false;
+    if (String(allocation.allocation_type || '') !== 'reservation' || String(allocation.reservation_id || '') !== target.reservationId) return false;
   } else if (
-    String(allocation?.allocation_type || '') !== 'sale'
-    || String(allocation?.sale_id || '') !== target.saleId
-    || String(allocation?.sale_type || '') !== target.saleType
+    String(allocation.allocation_type || '') !== 'sale'
+    || String(allocation.sale_id || '') !== target.saleId
+    || String(allocation.sale_type || '') !== target.saleType
   ) {
     return false;
   }
 
-  const event = Array.isArray(allocation?.payment_event) ? allocation.payment_event[0] : allocation?.payment_event;
+  const event = Array.isArray(allocation.payment_event) ? allocation.payment_event[0] : allocation.payment_event;
   const eventStatus = String(event?.status || '');
   if (!event || !LEGACY_LINKED_STATUSES.has(eventStatus)) return false;
   const movementAt = new Date(String(movement.fecha_movimiento || movement.creado_en || '')).getTime();
@@ -165,7 +193,7 @@ async function listMovementStatuses(admin: ReturnType<typeof buildAdminClient>, 
     .in('caja_id', movementIds);
   if (error) throw Object.assign(new Error('No se pudo consultar el estado de conciliacion de Caja.'), { code: 'movement_status_lookup_failed' });
 
-  const statuses: Record<string, any> = {};
+  const statuses: Record<string, MovementRelationStatus> = {};
   for (const row of data || []) {
     const event = Array.isArray(row.payment_event) ? row.payment_event[0] : row.payment_event;
     if (!row.caja_id || !event) continue;
@@ -196,9 +224,10 @@ async function listMovementStatuses(admin: ReturnType<typeof buildAdminClient>, 
   ]);
   if (movementError || legacyError) throw Object.assign(new Error('No se pudo proteger la conciliacion historica de Caja.'), { code: 'legacy_cash_link_lookup_failed' });
 
+  const legacyRows = (legacyAllocations || []) as LegacyAllocationRow[];
   for (const raw of movementRows || []) {
     const movement = raw as CajaRow;
-    const matches = (legacyAllocations || []).filter((allocation) => legacyAllocationMatchesMovement(allocation, movement));
+    const matches = legacyRows.filter((allocation) => legacyAllocationMatchesMovement(allocation, movement));
     if (!matches.length) continue;
     const firstEvent = Array.isArray(matches[0].payment_event) ? matches[0].payment_event[0] : matches[0].payment_event;
     statuses[movement.id] = {
