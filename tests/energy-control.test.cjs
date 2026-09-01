@@ -61,9 +61,13 @@ test('native-camera hash deep links are consumed instead of opening a second sca
 });
 
 test('admin can prepare QR while feature is disabled and worker cannot list secrets', () => {
-  assert.match(hardening, /energy_regenerate_qr/);
-  assert.match(hardening, /energy_actor_allowed\(true\)/);
-  assert.doesNotMatch(hardening, /energy_regenerate_qr[\s\S]{0,1600}energy_control_enabled/i);
+  const regenerateBody = hardening.match(
+    /create or replace function public\.energy_regenerate_qr\(p_room_id uuid\)[\s\S]*?\$function\$;/i
+  )?.[0] || '';
+  assert.ok(regenerateBody, 'energy_regenerate_qr definition must exist');
+  assert.match(regenerateBody, /energy_actor_allowed\(true\)/);
+  assert.match(regenerateBody, /private\.room_energy_qr_secrets/);
+  assert.doesNotMatch(regenerateBody, /energy_control_enabled/i);
   assert.match(hardening, /revoke all on function public\.energy_list_qr_tokens\(\) from authenticated/);
   assert.match(hardening, /grant execute on function public\.energy_list_qr_tokens\(\) to authenticated/);
 });
