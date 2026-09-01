@@ -4,6 +4,7 @@ const fs = require('node:fs');
 
 const pilotMigration = fs.readFileSync('supabase/migrations/20260824120000_energy_control_pilot.sql', 'utf8');
 const hardening = fs.readFileSync('supabase/migrations/20260901213000_energy_control_hardening.sql', 'utf8');
+const overdueTypeFix = fs.readFileSync('supabase/migrations/20260901214500_energy_control_overdue_email_type_fix.sql', 'utf8');
 const moduleSource = fs.readFileSync('js/modules/control-energia/control-energia.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 const alertFn = fs.readFileSync('supabase/functions/process-energy-alerts/index.ts', 'utf8');
@@ -90,6 +91,12 @@ test('overdue alerts use atomic claims, recipient idempotency and retries', () =
   assert.match(alertFn, /energy_notify_recipients/);
   assert.match(alertFn, /failed_permanent/);
   assert.match(alertFn, /MAKE_CASH_CLOSE_WEBHOOK_URL/);
+});
+
+test('overdue queue casts hotel citext email to its declared text contract', () => {
+  assert.match(overdueTypeFix, /energy_claim_overdue_alerts/);
+  assert.match(overdueTypeFix, /h\.correo::text/);
+  assert.match(overdueTypeFix, /hotel_email text/);
 });
 
 test('energy alert worker is covered by CI typecheck and lint', () => {
