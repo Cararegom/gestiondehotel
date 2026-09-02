@@ -8,6 +8,7 @@ function normalizeRoleValue(value) {
   if (role === 'administrador') return 'admin';
   if (['limpieza', 'camarero', 'camarera'].includes(role)) return 'camarera';
   if (role === 'recepcion') return 'recepcionista';
+  if (role.includes('mantenimiento') || role.includes('conserje')) return 'mantenimiento';
   return role || 'recepcionista';
 }
 
@@ -39,7 +40,7 @@ export async function resolveNotificationContext(supabase, currentUser = null, p
   const assignedRoles = (perfil.usuarios_roles || [])
     .map((item) => normalizeRoleValue(item?.roles?.nombre))
     .filter(Boolean);
-  const role = assignedRoles.find((item) => ['superadmin', 'admin', 'recepcionista'].includes(item))
+  const role = assignedRoles.find((item) => ['superadmin', 'admin', 'recepcionista', 'mantenimiento'].includes(item))
     || normalizeRoleValue(perfil.rol);
   const hotelId = providedHotelId || perfil.hotel_id || null;
 
