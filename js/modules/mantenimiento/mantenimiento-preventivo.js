@@ -1,7 +1,9 @@
 import {
+  TASK_STATES,
   calculateNextScheduledDate,
   createRequestId,
-  normalizeTaskFrequency
+  normalizeTaskFrequency,
+  normalizeTaskState
 } from './mantenimiento-domain.js';
 import {
   createNextPreventiveTask,
@@ -11,7 +13,7 @@ import {
 export async function ensureNextPreventiveTask({ supabase, task }) {
   const frecuencia = normalizeTaskFrequency(task?.frecuencia);
   if (!['diaria', 'semanal', 'mensual'].includes(frecuencia)) return null;
-  if (task?.estado !== 'completada') return null;
+  if (normalizeTaskState(task?.estado) !== TASK_STATES.cerrado) return null;
 
   const nextDate = calculateNextScheduledDate(task);
   if (!nextDate) return null;
@@ -23,13 +25,13 @@ export async function ensureNextPreventiveTask({ supabase, task }) {
     hotel_id: task.hotel_id,
     titulo: task.titulo,
     descripcion: task.descripcion || null,
-    estado: 'pendiente',
+    estado: TASK_STATES.pendiente,
     tipo: task.tipo,
     categoria_mantenimiento: task.categoria_mantenimiento || 'general',
     frecuencia,
     fecha_programada: nextDate,
     fecha_completada: null,
-    ultima_realizacion: task.fecha_completada || new Date().toISOString(),
+    ultima_realizacion: task.fecha_completada || task.cerrada_en || new Date().toISOString(),
     creada_por: task.realizada_por || task.creada_por || task.asignada_a || null,
     asignada_a: task.asignada_a || null,
     realizada_por: null,
