@@ -1,3 +1,5 @@
+import '../modules/usuarios/horarios-profesionales.js';
+
 function normalize(value) {
   return String(value || '')
     .normalize('NFD')
