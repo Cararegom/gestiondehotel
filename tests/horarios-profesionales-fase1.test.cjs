@@ -8,7 +8,8 @@ const engine = fs.readFileSync('supabase/functions/horario-engine/index.ts', 'ut
 
 test('el creador soporta hoteles de 8 y 12 horas sin mezclar modalidades', () => {
   assert.match(schema, /modalidad smallint NOT NULL DEFAULT 12 CHECK \(modalidad IN \(8, 12\)\)/);
-  assert.match(engine, /typedConfig\.modalidad === 8/);
+  assert.match(engine, /function defaultTemplates\(modalidad: 8 \| 12\)/);
+  assert.match(engine, /if \(modalidad === 8\)/);
   assert.match(engine, /codigo: "manana"/);
   assert.match(engine, /codigo: "tarde"/);
   assert.match(engine, /codigo: "noche"/);
@@ -21,20 +22,21 @@ test('las horas reales viven en plantillas configurables y no en nombres de turn
   assert.match(schema, /duracion_minutos integer NOT NULL/);
   assert.match(engine, /timeMinutes\(shift\.hora_inicio\)/);
   assert.match(engine, /shift\.duracion_minutos/);
+  assert.match(engine, /action === "save_templates"/);
 });
 
 test('Noche a Día al día siguiente es un conflicto duro', () => {
   assert.match(engine, /stat\.ultimoTrabajo\.nocturno/);
-  assert.match(engine, /daysBetween\(stat\.ultimoTrabajo\.fecha, date\) === 1 && !shift\.es_nocturno/);
+  assert.match(engine, /daysBetween\(stat\.ultimoTrabajo\.fecha, date\) === 1/);
   assert.match(engine, /codigo: "NOCHE_A_DIA"/);
-  assert.match(engine, /no puede pasar a turno de día al día siguiente/);
+  assert.match(engine, /no puede pasar de noche a día al día siguiente/);
 });
 
 test('el motor exige descanso mínimo y limita secuencias de trabajo y noches', () => {
   assert.match(schema, /descanso_minimo_horas numeric\(4,1\) NOT NULL DEFAULT 11/);
   assert.match(schema, /max_turnos_consecutivos smallint NOT NULL DEFAULT 6/);
   assert.match(schema, /max_noches_consecutivas smallint NOT NULL DEFAULT 3/);
-  assert.match(engine, /restMinutes < Number\(config\.descanso_minimo_horas\) \* 60/);
+  assert.match(engine, /rest < Number\(config\.descanso_minimo_horas\) \* 60/);
   assert.match(engine, /MAX_CONSECUTIVOS/);
   assert.match(engine, /MAX_NOCHES/);
 });
@@ -44,14 +46,14 @@ test('generar y reorganizar trabajan sobre borradores, nunca directamente sobre 
   assert.match(schema, /CREATE TABLE IF NOT EXISTS public\.horario_borrador_asignaciones/);
   assert.match(engine, /action === "generate"/);
   assert.match(engine, /action === "reorganize"/);
-  assert.doesNotMatch(engine, /\.from\("turnos_programados"\)\.insert/);
-  assert.doesNotMatch(engine, /\.from\("turnos_programados"\)\.delete/);
+  assert.doesNotMatch(engine, /\.from\("turnos_programados"\)\s*\.insert/);
+  assert.doesNotMatch(engine, /\.from\("turnos_programados"\)\s*\.delete/);
 });
 
 test('reorganizar conserva las asignaciones bloqueadas y reemplaza solo las libres', () => {
   assert.match(engine, /locked = bundle\.assignments\.filter\(\(item\) => item\.bloqueado === true\)/);
   assert.match(engine, /\.eq\("bloqueado", false\)/);
-  assert.match(engine, /const unlockedGenerated = assignments\.filter\(\(item\) => !item\.id\)/);
+  assert.match(engine, /const toInsert = generated\.filter\(\(item\) => !item\.id\)/);
 });
 
 test('la edición manual bloquea por defecto la asignación para protegerla de Reorganizar', () => {
