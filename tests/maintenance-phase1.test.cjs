@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const entry = fs.readFileSync('js/modules/mantenimiento/mantenimiento.js', 'utf8');
-const ui = fs.readFileSync('js/modules/mantenimiento/mantenimiento-ui.js', 'utf8');
+const ui = fs.readFileSync('js/modules/mantenimiento/mantenimiento-mobile-ui.js', 'utf8');
 const domain = fs.readFileSync('js/modules/mantenimiento/mantenimiento-domain.js', 'utf8');
 const repository = fs.readFileSync('js/modules/mantenimiento/mantenimiento-repository.js', 'utf8');
 const preventive = fs.readFileSync('js/modules/mantenimiento/mantenimiento-preventivo.js', 'utf8');
@@ -12,9 +12,9 @@ const enumMigration = fs.readFileSync('supabase/migrations/20260902032000_manten
 const hardening = fs.readFileSync('supabase/migrations/20260902032500_mantenimiento_fase1_hardening.sql', 'utf8');
 const roomStateHardening = fs.readFileSync('supabase/migrations/20260902033500_mantenimiento_fase1_estado_habitacion.sql', 'utf8');
 
-test('maintenance entrypoint is a small stable facade after monolith split', () => {
+test('maintenance entrypoint remains a small stable facade after the mobile UI evolution', () => {
   assert.ok(entry.split(/\r?\n/).length < 15);
-  assert.match(entry, /mantenimiento-ui\.js/);
+  assert.match(entry, /mantenimiento-mobile-ui\.js/);
   assert.match(ui, /mantenimiento-domain\.js/);
   assert.match(ui, /mantenimiento-repository\.js/);
   assert.match(ui, /mantenimiento-preventivo\.js/);
@@ -31,7 +31,7 @@ test('maintenance professional types are persisted directly and legacy marker is
   assert.match(domain, /LEGACY_PROGRAMMED_MARKER/);
 });
 
-test('frontend no longer cancels reservations or timers when maintenance is created', () => {
+test('active frontend no longer cancels reservations or timers when maintenance is created', () => {
   assert.doesNotMatch(ui, /cancelada_mantenimiento/);
   assert.doesNotMatch(ui, /from\(['"]reservas['"]\)/);
   assert.doesNotMatch(ui, /from\(['"]cronometros['"]\)/);
@@ -39,10 +39,10 @@ test('frontend no longer cancels reservations or timers when maintenance is crea
   assert.match(hardening, /impedir_activar_reserva_en_mantenimiento/);
 });
 
-test('task creation is idempotent and guards repeated submit', () => {
+test('task creation remains idempotent and guards repeated submit', () => {
   assert.match(hardening, /solicitud_id uuid/);
   assert.match(hardening, /ux_tareas_mantenimiento_solicitud_id/);
-  assert.match(ui, /submitButton\.disabled = true/);
+  assert.match(ui, /submit\.disabled = true/);
   assert.match(ui, /solicitud_id: requestId/);
 });
 

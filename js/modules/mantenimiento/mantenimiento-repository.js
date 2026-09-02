@@ -17,7 +17,7 @@ export async function loadMaintenanceReferenceData(supabase, hotelId) {
       .order('nombre'),
     supabase
       .from('usuarios')
-      .select('id, nombre, correo')
+      .select('id, nombre, correo, email, rol, activo')
       .eq('hotel_id', hotelId)
       .order('nombre')
   ]);
