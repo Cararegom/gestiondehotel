@@ -10,6 +10,7 @@ const preventive = fs.readFileSync('js/modules/mantenimiento/mantenimiento-preve
 const evidence = fs.readFileSync('js/modules/mantenimiento/mantenimiento-evidencias.js', 'utf8');
 const enumMigration = fs.readFileSync('supabase/migrations/20260902032000_mantenimiento_tipo_profesional.sql', 'utf8');
 const hardening = fs.readFileSync('supabase/migrations/20260902032500_mantenimiento_fase1_hardening.sql', 'utf8');
+const roomStateHardening = fs.readFileSync('supabase/migrations/20260902033500_mantenimiento_fase1_estado_habitacion.sql', 'utf8');
 
 test('maintenance entrypoint is a small stable facade after monolith split', () => {
   assert.ok(entry.split(/\r?\n/).length < 15);
@@ -66,6 +67,12 @@ test('maintenance queries are indexed and tenant scoped', () => {
   assert.match(hardening, /ix_tareas_mantenimiento_hotel_asignada_estado/);
   assert.match(repository, /\.eq\('hotel_id', hotelId\)/);
   assert.match(hardening, /FOR UPDATE TO authenticated[\s\S]*WITH CHECK/);
+});
+
+test('blocked room cannot escape maintenance state before its blocking task is resolved', () => {
+  assert.match(roomStateHardening, /mantenimiento_habitacion_tiene_bloqueo\(NEW\.id\)/);
+  assert.match(roomStateHardening, /NEW\.estado := 'mantenimiento'/);
+  assert.match(roomStateHardening, /HABITACION_BLOQUEADA_MANTENIMIENTO/);
 });
 
 test('realtime subscription is filtered by hotel', () => {
