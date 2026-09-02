@@ -1,5 +1,5 @@
 const { spawnSync } = require('node:child_process');
-const { readFileSync, readdirSync, statSync } = require('node:fs');
+const { readdirSync, statSync } = require('node:fs');
 const { join, extname } = require('node:path');
 
 const ROOT = process.cwd();
@@ -41,13 +41,7 @@ if (!files.length) {
 const failures = [];
 
 for (const file of files) {
-  const extension = extname(file);
-  const source = readFileSync(file, 'utf8');
-  const isEsm = extension === '.mjs' || (extension === '.js' && /(^|\n)\s*(?:import\s|export\s)/m.test(source));
-  const args = isEsm ? ['--input-type=module', '--check'] : ['--check', file];
-  const options = { stdio: 'pipe', encoding: 'utf8' };
-  if (isEsm) options.input = source;
-  const result = spawnSync(process.execPath, args, options);
+  const result = spawnSync(process.execPath, ['--check', file], { stdio: 'pipe', encoding: 'utf8' });
   if (result.status !== 0) {
     failures.push({ file, stderr: result.stderr || result.stdout || 'Error de sintaxis' });
   }
