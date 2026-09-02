@@ -123,8 +123,16 @@
   <script src="https://unpkg.com/jspdf-autotable@latest/dist/jspdf.plugin.autotable.js" defer></script>
   <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js" defer></script>
 
-  <script type="module" src="/js/main.js"></script>
-  <script type="module" src="/js/energy-activation-guard.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "/js/modules/control-energia/control-energia.js": "/js/modules/control-energia/control-energia-20260902.js"
+      }
+    }
+  </script>
+  <script src="/js/energy-module-recovery.js?v=20260902-1"></script>
+  <script type="module" src="/js/main.js?v=20260902-energy-loader-1"></script>
+  <script type="module" src="/js/energy-activation-guard.js?v=20260902-energy-loader-1"></script>
   <script type="module" src="/js/bank-payment-reception-bootstrap.js"></script>
 </body>
 

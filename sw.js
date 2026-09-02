@@ -1,4 +1,4 @@
-const APP_VERSION = '20260825-ingredientes-unidades-1';
+const APP_VERSION = '20260902-energy-loader-1';
 const APP_SHELL_CACHE = `gestiondehotel-shell-${APP_VERSION}`;
 const RUNTIME_CACHE = `gestiondehotel-runtime-${APP_VERSION}`;
 const OFFLINE_URL = '/app/offline.html';
@@ -11,6 +11,7 @@ const APP_SHELL_ASSETS = [
   '/style.css',
   '/js/main.js',
   '/js/manifest.json',
+  '/js/modules/control-energia/control-energia-20260902.js',
   '/favicon.ico',
   '/icons/logo.jpeg',
   '/icons/192x192.png',
@@ -79,7 +80,7 @@ async function networkFirst(request) {
     await cacheResponse(cache, request, networkResponse);
     return networkResponse;
   } catch {
-    const cached = await cache.match(request);
+    const cached = await cache.match(request) || await caches.match(request);
     if (cached) return cached;
 
     if (request.mode === 'navigate') {
@@ -133,8 +134,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Los modulos JS y estilos deben reflejar inmediatamente la version actual.
-  // Esto evita que Live Server (y una publicacion nueva) ejecute primero una
-  // copia antigua guardada por stale-while-revalidate.
+  // Si la red falla, networkFirst puede usar la copia fresca precargada del shell.
   if (request.destination === 'script' || request.destination === 'style') {
     event.respondWith(networkFirst(request));
     return;
