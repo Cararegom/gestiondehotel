@@ -32,7 +32,7 @@ test('permite proteger y desbloquear asignaciones de manera explícita', () => {
 test('Reorganizar conserva las asignaciones bloqueadas y recalcula solo las libres', () => {
   assert.match(ui, /data-action="reorganize"/);
   assert.match(ui, /invokeEngine\('reorganize'/);
-  assert.match(ui, /asignaciones protegida\(s\) se conservarán sin cambios/);
+  assert.match(ui, /asignación\(es\) protegida\(s\) se conservarán sin cambios/);
   assert.match(engine, /bundle\.assignments\.filter\(\(item\) => item\.bloqueado === true\)/);
   assert.match(engine, /\.eq\("bloqueado", false\)/);
   assert.match(engine, /locked,/);
