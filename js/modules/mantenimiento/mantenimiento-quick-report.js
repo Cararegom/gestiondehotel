@@ -13,6 +13,27 @@ export const QUICK_MAINTENANCE_CATEGORIES = Object.freeze([
 
 const OCCUPIED_ROOM_STATES = new Set(['ocupada', 'activa', 'tiempo agotado']);
 
+function normalizeRoleName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+export function isMaintenanceAssigneeUser(user) {
+  if (!user) return false;
+  const roleNames = [user.role, user.rol];
+  (user.usuarios_roles || []).forEach((item) => roleNames.push(item?.roles?.nombre));
+
+  return roleNames.some((value) => {
+    const role = normalizeRoleName(value);
+    return role === 'mantenimiento'
+      || role.includes('mantenimiento')
+      || role.includes('conserje');
+  });
+}
+
 export function getQuickMaintenanceCategory(categoryId) {
   return QUICK_MAINTENANCE_CATEGORIES.find((item) => item.id === categoryId)
     || QUICK_MAINTENANCE_CATEGORIES[QUICK_MAINTENANCE_CATEGORIES.length - 1];
@@ -34,14 +55,13 @@ export function normalizeQuickImpact(requestedType, roomOrState) {
 export function resolveDefaultMaintenanceAssignee(users = [], currentUser = null) {
   const activeUsers = (users || []).filter((user) => user && user.activo !== false);
   const currentId = currentUser?.id ? String(currentUser.id) : '';
-  const currentRole = String(currentUser?.rol || '').toLowerCase();
 
-  if (currentId && currentRole === 'mantenimiento') {
+  if (currentId && isMaintenanceAssigneeUser(currentUser)) {
     const currentInHotel = activeUsers.find((user) => String(user.id) === currentId);
     if (currentInHotel) return currentInHotel.id;
   }
 
-  const maintenanceUsers = activeUsers.filter((user) => String(user.rol || '').toLowerCase() === 'mantenimiento');
+  const maintenanceUsers = activeUsers.filter(isMaintenanceAssigneeUser);
   return maintenanceUsers.length === 1 ? maintenanceUsers[0].id : null;
 }
 
