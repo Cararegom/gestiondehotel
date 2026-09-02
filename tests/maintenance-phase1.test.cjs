@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const entry = fs.readFileSync('js/modules/mantenimiento/mantenimiento.js', 'utf8');
+const analyticsUi = fs.readFileSync('js/modules/mantenimiento/mantenimiento-analytics-ui.js', 'utf8');
 const workflowUi = fs.readFileSync('js/modules/mantenimiento/mantenimiento-workflow-ui.js', 'utf8');
 const ui = fs.readFileSync('js/modules/mantenimiento/mantenimiento-mobile-ui.js', 'utf8');
 const domain = fs.readFileSync('js/modules/mantenimiento/mantenimiento-domain.js', 'utf8');
@@ -13,9 +14,10 @@ const enumMigration = fs.readFileSync('supabase/migrations/20260902032000_manten
 const hardening = fs.readFileSync('supabase/migrations/20260902032500_mantenimiento_fase1_hardening.sql', 'utf8');
 const roomStateHardening = fs.readFileSync('supabase/migrations/20260902033500_mantenimiento_fase1_estado_habitacion.sql', 'utf8');
 
-test('maintenance entrypoint remains a small stable facade after the workflow evolution', () => {
+test('maintenance entrypoint remains a small stable facade after the analytics evolution', () => {
   assert.ok(entry.split(/\r?\n/).length < 15);
-  assert.match(entry, /mantenimiento-workflow-ui\.js/);
+  assert.match(entry, /mantenimiento-analytics-ui\.js/);
+  assert.match(analyticsUi, /mantenimiento-workflow-ui\.js/);
   assert.match(workflowUi, /mantenimiento-mobile-ui\.js/);
   assert.match(ui, /mantenimiento-domain\.js/);
   assert.match(ui, /mantenimiento-repository\.js/);
