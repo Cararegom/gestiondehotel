@@ -6,7 +6,9 @@ archive
 docs
 node_modules
 prueba-google-watch
-scripts
+scripts/*
+!scripts/build-sentry.js
+AGENTS.md
 supabase
 tests
 .env*

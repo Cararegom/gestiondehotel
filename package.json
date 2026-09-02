@@ -1,7 +1,12 @@
 {
   "scripts": {
     "build:tailwind": "tailwindcss -i ./css/tailwind-source.css -o ./tailwind.css --minify",
-    "build": "npm run build:tailwind",
+    "build:sentry": "node scripts/build-sentry.js",
+    "build": "npm run build:tailwind && npm run build:sentry",
+    "sentry:status": "powershell -NoProfile -File scripts/sentry.ps1 -Action status",
+    "sentry:verify": "powershell -NoProfile -File scripts/sentry.ps1 -Action verify",
+    "sentry:issues": "powershell -NoProfile -File scripts/sentry.ps1 -Action issues",
+    "sentry:test": "node scripts/test-sentry.mjs",
     "schema:snapshot": "node scripts/fetch-supabase-schema-snapshot.js",
     "schema:baseline": "node scripts/build-supabase-baseline.js",
     "rls:audit": "node scripts/generate-rls-audit.js",
@@ -12,10 +17,12 @@
     "test": "node --test \"tests/**/*.test.cjs\""
   },
   "dependencies": {
+    "@sentry/browser": "10.73.0",
     "@tailwindcss/vite": "^4.1.10",
     "tailwindcss": "^4.1.10"
   },
   "devDependencies": {
+    "esbuild": "0.25.5",
     "tailwindcss3": "npm:tailwindcss@3.4.17"
   },
   "name": "gestiondehotel",
