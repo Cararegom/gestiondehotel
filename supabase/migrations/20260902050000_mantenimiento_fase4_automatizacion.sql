@@ -68,6 +68,12 @@ CREATE INDEX IF NOT EXISTS ix_mantenimiento_alertas_hotel_fecha
 
 ALTER TABLE public.mantenimiento_alertas_emitidas ENABLE ROW LEVEL SECURITY;
 -- Tabla interna de deduplicacion: ningun cliente necesita leerla o escribirla.
+DROP POLICY IF EXISTS "Mantenimiento alertas sin acceso cliente" ON public.mantenimiento_alertas_emitidas;
+CREATE POLICY "Mantenimiento alertas sin acceso cliente"
+ON public.mantenimiento_alertas_emitidas
+FOR ALL TO authenticated
+USING (false)
+WITH CHECK (false);
 REVOKE ALL ON public.mantenimiento_alertas_emitidas FROM anon, authenticated;
 
 CREATE OR REPLACE FUNCTION public.mantenimiento_emitir_alertas(
