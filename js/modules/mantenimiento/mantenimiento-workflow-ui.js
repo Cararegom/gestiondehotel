@@ -108,13 +108,17 @@ function scheduleEnhance() {
 function renderWorkflowSummary() {
   const target = activeContainer?.querySelector('#mant-resumen');
   const tasks = activeContainer?.__mantAllTasks || [];
-  if (!target || !tasks.length) return;
+  if (!target) return;
 
   const open = tasks.filter((task) => isOpenTaskState(task.estado));
   const pending = open.filter((task) => normalizeTaskState(task.estado) === TASK_STATES.pendiente).length;
   const working = open.filter((task) => [TASK_STATES.enRevision, TASK_STATES.asignado, TASK_STATES.enProceso].includes(normalizeTaskState(task.estado))).length;
   const resolved = open.filter((task) => normalizeTaskState(task.estado) === TASK_STATES.resuelto).length;
   const overdue = open.filter((task) => getSlaMeta(task).overdue).length;
+  const signature = `${tasks.length}|${pending}|${working}|${resolved}|${overdue}`;
+
+  if (target.dataset.f3SummarySignature === signature && target.querySelector('[data-f3-summary]')) return;
+  target.dataset.f3SummarySignature = signature;
 
   target.innerHTML = `
     <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
@@ -269,7 +273,9 @@ function renderModalWorkflowSection(task) {
 
   const sla = getSlaMeta(task || {});
   const action = task?.id ? getWorkflowAction(task, activeUser?.id) : null;
-  const canAssign = task?.id && [TASK_STATES.enRevision, TASK_STATES.asignado].includes(normalizeTaskState(task.estado));
+  const taskState = normalizeTaskState(task?.estado);
+  const canAssign = task?.id && [TASK_STATES.enRevision, TASK_STATES.asignado].includes(taskState);
+  const canCancel = task?.id && [TASK_STATES.pendiente, TASK_STATES.enRevision, TASK_STATES.asignado, TASK_STATES.enProceso].includes(taskState);
 
   section.innerHTML = `
     <div class="flex flex-wrap items-center justify-between gap-2">
@@ -283,7 +289,8 @@ function renderModalWorkflowSection(task) {
       <div class="mt-3 flex flex-wrap gap-2">
         ${action ? `<button type="button" id="mant-f3-modal-action" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white">${escapeHtml(action.label)}</button>` : ''}
         ${canAssign ? '<button type="button" id="mant-f3-assign" class="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-black text-indigo-700">Asignar responsable</button>' : ''}
-        ${normalizeTaskState(task.estado) === TASK_STATES.cerrado ? '<button type="button" id="mant-f3-reopen" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-black text-amber-800">Reabrir</button>' : ''}
+        ${canCancel ? '<button type="button" id="mant-f3-cancel" class="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-black text-red-700">Cancelar tarea</button>' : ''}
+        ${taskState === TASK_STATES.cerrado ? '<button type="button" id="mant-f3-reopen" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-black text-amber-800">Reabrir</button>' : ''}
       </div>
       <div class="mt-4 border-t border-slate-100 pt-4">
         <form id="mant-f3-comment-form" class="flex gap-2">
@@ -309,6 +316,20 @@ function renderModalWorkflowSection(task) {
       assigneeId: task.asignada_a || activeUser?.id || null
     });
     document.dispatchEvent(new CustomEvent('maintenanceChanged', { detail: { taskId: updated.id, action: 'reopened' } }));
+    activeContainer.querySelector('#mant-full-close')?.click();
+  });
+
+  section.querySelector('#mant-f3-cancel')?.addEventListener('click', async () => {
+    const reason = window.prompt('Motivo de cancelación:');
+    if (reason === null) return;
+    if (!String(reason).trim()) {
+      alert('Escribe el motivo de la cancelación.');
+      return;
+    }
+    const updated = await transitionMaintenanceTask(activeSupabase, task.id, TASK_STATES.cancelado, {
+      comment: String(reason).trim()
+    });
+    document.dispatchEvent(new CustomEvent('maintenanceChanged', { detail: { taskId: updated.id, action: 'cancelado' } }));
     activeContainer.querySelector('#mant-full-close')?.click();
   });
 
