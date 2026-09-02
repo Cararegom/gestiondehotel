@@ -151,7 +151,9 @@ function addSlaToCard(card, task) {
   if (!card || card.querySelector('[data-f3-sla]')) return;
   const sla = getSlaMeta(task);
   if (!sla.text) return;
-  const statusRow = card.querySelector('.mb-2.flex.flex-wrap.items-center.gap-1\.5');
+  // No incluir clases Tailwind con decimales (p. ej. gap-1.5) en querySelector:
+  // el punto tiene semántica CSS y puede convertir el selector en inválido.
+  const statusRow = card.querySelector('.mb-2.flex.flex-wrap.items-center');
   if (!statusRow) return;
   const span = document.createElement('span');
   span.dataset.f3Sla = '1';
