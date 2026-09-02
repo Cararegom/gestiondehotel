@@ -81,6 +81,57 @@ export async function deleteMaintenanceTask(supabase, hotelId, taskId) {
   throwIfError(error);
 }
 
+export async function transitionMaintenanceTask(
+  supabase,
+  taskId,
+  nextState,
+  { comment = null, assigneeId = null } = {}
+) {
+  const { data, error } = await supabase.rpc('mantenimiento_transicionar_tarea', {
+    p_tarea_id: taskId,
+    p_estado_nuevo: nextState,
+    p_comentario: comment || null,
+    p_asignada_a: assigneeId || null
+  });
+
+  throwIfError(error);
+  return normalizeTaskRecord(data);
+}
+
+export async function addMaintenanceComment(supabase, taskId, comment) {
+  const { data, error } = await supabase.rpc('mantenimiento_agregar_comentario', {
+    p_tarea_id: taskId,
+    p_comentario: String(comment || '').trim()
+  });
+
+  throwIfError(error);
+  return data;
+}
+
+export async function listMaintenanceHistory(supabase, hotelId, taskId) {
+  const { data, error } = await supabase
+    .from('mantenimiento_historial')
+    .select(`
+      id,
+      hotel_id,
+      tarea_id,
+      actor_id,
+      evento,
+      estado_anterior,
+      estado_nuevo,
+      comentario,
+      metadata,
+      creado_en,
+      actor:usuarios!mantenimiento_historial_actor_id_fkey(id,nombre,correo,email)
+    `)
+    .eq('hotel_id', hotelId)
+    .eq('tarea_id', taskId)
+    .order('creado_en', { ascending: false });
+
+  throwIfError(error);
+  return data || [];
+}
+
 export async function findOpenPreventiveTask(supabase, task, nextDate) {
   let query = supabase
     .from('tareas_mantenimiento')
