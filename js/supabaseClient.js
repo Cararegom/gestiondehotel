@@ -1,5 +1,6 @@
 // js/supabaseClient.js
 import './safeLogger.js';
+import { installClienteIdentityGuard } from './services/clienteIdentityGuard.js';
 
 // CAMBIO IMPORTANTE: Usamos una versión específica (@2.39.7) para evitar el error de 'AuthClient'
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/+esm';
@@ -52,5 +53,7 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     }
   }
 });
+
+installClienteIdentityGuard(supabase);
 
 console.log(`Supabase Client cargado correctamente (v2.39.7, ${activeBackend})`);
