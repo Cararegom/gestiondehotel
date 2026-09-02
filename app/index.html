@@ -24,25 +24,16 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <style>
-    /* Asegura que el sidebar y la barra superior móvil tengan un z-index menor que los modales */
     #sidebar,
     #mobile-topbar {
       z-index: 40;
     }
   </style>
-  <!-- Link al Manifest -->
   <link rel="manifest" href="../js/manifest.json">
-
-  <!-- Color de barra superior para Android -->
   <meta name="theme-color" content="#1d4ed8">
-
-  <!-- Apple Touch Icon -->
-
-  <!-- Web App Settings -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <!-- Google Tag Manager -->
   <script>
       (function (w, d, s, l, i) {
         w[l] = w[l] || []; w[l].push({
@@ -53,18 +44,14 @@
             'https://www.googletagmanager.com/gtm.js?id=GTM-NDC7DNLK' + dl; f.parentNode.insertBefore(j, f);
       })(window, document, 'script', 'dataLayer', 'GTM-NDC7DNLK');
   </script>
-  <!-- End Google Tag Manager -->
-
 </head>
 
 <body>
   <a class="skip-link" href="#app-container">Saltar al contenido principal</a>
-  <!-- Google Tag Manager (noscript) -->
   <noscript>
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK" height="0" width="0"
       style="display:none;visibility:hidden"></iframe>
   </noscript>
-  <!-- End Google Tag Manager (noscript) -->
 
   <div id="main-wrapper" class="flex min-h-screen">
     <div id="mobile-topbar"
@@ -131,7 +118,21 @@
     }
   </script>
   <script src="/js/energy-module-recovery.js?v=20260902-1"></script>
-  <script type="module" src="/js/main.js?v=20260902-energy-loader-1"></script>
+  <script type="module">
+    import { initializeMaintenanceConciergeAccess } from '/js/maintenance-concierge-access.js?v=20260902-1';
+
+    try {
+      await initializeMaintenanceConciergeAccess();
+      await import('/js/main.js?v=20260902-energy-loader-1');
+    } catch (error) {
+      console.error('[Bootstrap] No fue posible validar el perfil operativo:', error);
+      const container = document.getElementById('app-container');
+      if (container) {
+        container.innerHTML = '<div class="m-4 rounded-xl border border-red-200 bg-red-50 p-5 text-center font-semibold text-red-700">No fue posible validar los permisos del usuario. Recarga la aplicación o vuelve a iniciar sesión.</div>';
+      }
+      document.getElementById('app-global-loading-overlay')?.classList.add('hidden');
+    }
+  </script>
   <script type="module" src="/js/energy-activation-guard.js?v=20260902-energy-loader-1"></script>
   <script type="module" src="/js/bank-payment-reception-bootstrap.js"></script>
 </body>
