@@ -8,6 +8,7 @@ const root = path.join(__dirname, '..');
 const quickPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-quick-report.js');
 const uiPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-mobile-ui.js');
 const workflowPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-workflow-ui.js');
+const analyticsPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-analytics-ui.js');
 const facadePath = path.join(root, 'js/modules/mantenimiento/mantenimiento.js');
 const repositoryPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-repository.js');
 
@@ -77,10 +78,12 @@ test('Fase 2 evita duplicar archivos seleccionados desde cámara y adjuntos', ()
   assert.equal(merged.length, 2);
 });
 
-test('La fachada conserva la experiencia mobile-first bajo la capa de flujo', () => {
+test('La fachada conserva la experiencia mobile-first bajo flujo y analitica', () => {
   const facade = fs.readFileSync(facadePath, 'utf8');
   const workflow = fs.readFileSync(workflowPath, 'utf8');
-  assert.match(facade, /mantenimiento-workflow-ui\.js/);
+  const analytics = fs.readFileSync(analyticsPath, 'utf8');
+  assert.match(facade, /mantenimiento-analytics-ui\.js/);
+  assert.match(analytics, /mantenimiento-workflow-ui\.js/);
   assert.match(workflow, /mantenimiento-mobile-ui\.js/);
   assert.match(facade, /mount, unmount, showModalTarea/);
 });
