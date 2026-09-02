@@ -3,8 +3,32 @@ export const TASK_TYPES = Object.freeze({
   programado: 'programado'
 });
 
-export const OPEN_TASK_STATES = Object.freeze(['pendiente', 'en_progreso']);
-export const CLOSED_TASK_STATES = Object.freeze(['completada', 'cancelada']);
+export const TASK_STATES = Object.freeze({
+  pendiente: 'pendiente',
+  enRevision: 'en_revision',
+  asignado: 'asignado',
+  enProceso: 'en_proceso',
+  resuelto: 'resuelto',
+  cerrado: 'cerrado',
+  cancelado: 'cancelado'
+});
+
+export const OPEN_TASK_STATES = Object.freeze([
+  TASK_STATES.pendiente,
+  TASK_STATES.enRevision,
+  TASK_STATES.asignado,
+  TASK_STATES.enProceso,
+  TASK_STATES.resuelto,
+  'en_progreso'
+]);
+
+export const CLOSED_TASK_STATES = Object.freeze([
+  TASK_STATES.cerrado,
+  TASK_STATES.cancelado,
+  'completada',
+  'cancelada'
+]);
+
 export const LEGACY_PROGRAMMED_MARKER = '[PROGRAMADO]';
 
 export const TASK_FREQUENCY_LABELS = Object.freeze({
@@ -35,7 +59,16 @@ export const TASK_SELECT_COLUMNS = [
   'adjuntos',
   'frecuencia',
   'ultima_realizacion',
-  'solicitud_id'
+  'solicitud_id',
+  'revisada_en',
+  'asignada_en',
+  'iniciada_en',
+  'resuelta_en',
+  'cerrada_en',
+  'cancelada_en',
+  'sla_objetivo_minutos',
+  'vencimiento_at',
+  'ultimo_cambio_por'
 ].join(', ');
 
 export function stripLegacyProgrammedMarker(value) {
@@ -54,6 +87,14 @@ export function normalizeTaskType(tipo, task = null) {
   return TASK_TYPES.bloqueante;
 }
 
+export function normalizeTaskState(estado) {
+  const value = String(estado || TASK_STATES.pendiente).trim().toLowerCase();
+  if (value === 'en_progreso') return TASK_STATES.enProceso;
+  if (value === 'completada') return TASK_STATES.cerrado;
+  if (value === 'cancelada') return TASK_STATES.cancelado;
+  return value;
+}
+
 export function normalizeTaskFrequency(frecuencia) {
   const normalized = String(frecuencia || 'unica');
   return Object.prototype.hasOwnProperty.call(TASK_FREQUENCY_LABELS, normalized)
@@ -66,6 +107,7 @@ export function normalizeTaskRecord(task) {
 
   return {
     ...task,
+    estado: normalizeTaskState(task.estado),
     tipo: normalizeTaskType(task.tipo, task),
     frecuencia: normalizeTaskFrequency(task.frecuencia),
     titulo: stripLegacyProgrammedMarker(task.titulo),
@@ -82,11 +124,11 @@ export function isBlockingTask(taskOrType) {
 }
 
 export function isOpenTaskState(estado) {
-  return OPEN_TASK_STATES.includes(estado);
+  return OPEN_TASK_STATES.map(normalizeTaskState).includes(normalizeTaskState(estado));
 }
 
 export function isClosedTaskState(estado) {
-  return CLOSED_TASK_STATES.includes(estado);
+  return CLOSED_TASK_STATES.map(normalizeTaskState).includes(normalizeTaskState(estado));
 }
 
 export function getTaskFrequencyLabel(frecuencia) {
@@ -104,13 +146,17 @@ export function getPriorityMeta(prioridad) {
 }
 
 export function getStatusMeta(estado) {
+  const normalized = normalizeTaskState(estado);
   const map = {
     pendiente: { text: 'Pendiente', classes: 'bg-orange-100 text-orange-700' },
-    en_progreso: { text: 'En progreso', classes: 'bg-blue-100 text-blue-700' },
-    completada: { text: 'Completada', classes: 'bg-green-100 text-green-700' },
-    cancelada: { text: 'Cancelada', classes: 'bg-slate-200 text-slate-600' }
+    en_revision: { text: 'En revisión', classes: 'bg-cyan-100 text-cyan-800' },
+    asignado: { text: 'Asignado', classes: 'bg-indigo-100 text-indigo-800' },
+    en_proceso: { text: 'En proceso', classes: 'bg-blue-100 text-blue-700' },
+    resuelto: { text: 'Resuelto', classes: 'bg-emerald-100 text-emerald-800' },
+    cerrado: { text: 'Cerrado', classes: 'bg-green-100 text-green-700' },
+    cancelado: { text: 'Cancelado', classes: 'bg-slate-200 text-slate-600' }
   };
-  return map[estado] || { text: estado || '-', classes: 'bg-slate-100 text-slate-700' };
+  return map[normalized] || { text: normalized || '-', classes: 'bg-slate-100 text-slate-700' };
 }
 
 export function getTypeMeta(tipo, task = null) {
@@ -119,15 +165,67 @@ export function getTypeMeta(tipo, task = null) {
     : { text: 'Bloquea habitacion', classes: 'bg-red-100 text-red-700' };
 }
 
+export function getWorkflowAction(task, currentUserId = null) {
+  const estado = normalizeTaskState(task?.estado);
+  if (estado === TASK_STATES.pendiente) {
+    return { nextState: TASK_STATES.enRevision, label: 'Revisar', comment: 'Reporte tomado para revisión.' };
+  }
+  if (estado === TASK_STATES.enRevision) {
+    return {
+      nextState: TASK_STATES.enProceso,
+      label: task?.asignada_a ? 'Iniciar' : 'Tomar e iniciar',
+      claim: !task?.asignada_a && Boolean(currentUserId),
+      comment: 'Mantenimiento iniciado.'
+    };
+  }
+  if (estado === TASK_STATES.asignado) {
+    return { nextState: TASK_STATES.enProceso, label: 'Iniciar', comment: 'Mantenimiento iniciado.' };
+  }
+  if (estado === TASK_STATES.enProceso) {
+    return { nextState: TASK_STATES.resuelto, label: 'Marcar resuelto', comment: 'Trabajo marcado como resuelto.' };
+  }
+  if (estado === TASK_STATES.resuelto) {
+    return { nextState: TASK_STATES.cerrado, label: 'Cerrar', comment: 'Trabajo verificado y cerrado.' };
+  }
+  return null;
+}
+
+export function getSlaMeta(task, now = Date.now()) {
+  if (!task?.vencimiento_at || !isOpenTaskState(task?.estado)) {
+    return { text: '', overdue: false, remainingMinutes: null, classes: 'bg-slate-100 text-slate-600' };
+  }
+
+  const due = new Date(task.vencimiento_at).getTime();
+  if (!Number.isFinite(due)) {
+    return { text: '', overdue: false, remainingMinutes: null, classes: 'bg-slate-100 text-slate-600' };
+  }
+
+  const diffMinutes = Math.round((due - Number(now)) / 60000);
+  const overdue = diffMinutes < 0;
+  const abs = Math.abs(diffMinutes);
+  const hours = Math.floor(abs / 60);
+  const minutes = abs % 60;
+  const duration = hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+
+  if (overdue) {
+    return { text: `Vencida ${duration}`, overdue: true, remainingMinutes: diffMinutes, classes: 'bg-red-100 text-red-700' };
+  }
+  if (diffMinutes <= 60) {
+    return { text: `Vence en ${duration}`, overdue: false, remainingMinutes: diffMinutes, classes: 'bg-amber-100 text-amber-800' };
+  }
+  return { text: `SLA ${duration}`, overdue: false, remainingMinutes: diffMinutes, classes: 'bg-slate-100 text-slate-700' };
+}
+
 function getTaskSortValue(task) {
   const fechaProgramada = task?.fecha_programada
     ? new Date(`${String(task.fecha_programada).slice(0, 10)}T00:00:00`).getTime()
     : Number.MAX_SAFE_INTEGER;
+  const vencimiento = task?.vencimiento_at ? new Date(task.vencimiento_at).getTime() : Number.MAX_SAFE_INTEGER;
   const creadoEn = task?.creado_en ? new Date(task.creado_en).getTime() : 0;
   const openWeight = isOpenTaskState(task?.estado) ? 0 : 1;
   const typeWeight = isBlockingTask(task) ? 0 : 1;
   const priorityWeight = -Number(task?.prioridad || 0);
-  return [openWeight, typeWeight, priorityWeight, fechaProgramada, -creadoEn];
+  return [openWeight, typeWeight, priorityWeight, vencimiento, fechaProgramada, -creadoEn];
 }
 
 export function sortTasks(tasks) {
@@ -146,8 +244,9 @@ export function calculateNextScheduledDate(task) {
   const frecuencia = normalizeTaskFrequency(task?.frecuencia);
   if (!['diaria', 'semanal', 'mensual'].includes(frecuencia)) return null;
 
-  const baseDate = task?.fecha_completada
-    ? new Date(task.fecha_completada)
+  const completionDate = task?.fecha_completada || task?.cerrada_en;
+  const baseDate = completionDate
+    ? new Date(completionDate)
     : (task?.fecha_programada ? new Date(`${String(task.fecha_programada).slice(0, 10)}T12:00:00`) : new Date());
 
   if (Number.isNaN(baseDate.getTime())) return null;
