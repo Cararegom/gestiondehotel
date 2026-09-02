@@ -1,4 +1,4 @@
 // Fachada estable del módulo de mantenimiento.
-// Fase 2: la experiencia principal es mobile-first y conserva la misma API pública
-// para que el mapa de habitaciones y el cargador de módulos no cambien su contrato.
-export { mount, unmount, showModalTarea } from './mantenimiento-mobile-ui.js';
+// Fase 3 agrega flujo trazable, SLA e historial sin cambiar el contrato público
+// usado por el mapa de habitaciones ni por el cargador de módulos.
+export { mount, unmount, showModalTarea } from './mantenimiento-workflow-ui.js';
