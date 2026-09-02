@@ -5,8 +5,8 @@ const fs = require('node:fs');
 const ui = fs.readFileSync('js/modules/usuarios/horarios-profesionales.js', 'utf8');
 const hook = fs.readFileSync('js/services/permissionTemplateService.js', 'utf8');
 
-test('la interfaz profesional se monta con Usuarios sin tocar el router principal', () => {
-  assert.match(hook, /import '\.\.\/modules\/usuarios\/horarios-profesionales\.js';/);
+test('la interfaz profesional base permanece disponible y el punto activo pertenece a horarios profesionales', () => {
+  assert.match(hook, /import '\.\.\/modules\/usuarios\/horarios-profesionales(?:-fase\d+)?\.js';/);
   assert.match(ui, /horarios-profesionales-root/);
   assert.match(ui, /MutationObserver/);
 });
@@ -51,7 +51,7 @@ test('solo genera con el equipo seleccionado y exige mínimo dos recepcionistas'
   assert.match(ui, /usuario_ids: \[\.\.\.state\.selectedUsers\]/);
 });
 
-test('el calendario de Fase 2 es de revisión, no de edición o publicación', () => {
+test('el calendario de Fase 2 es de revisión y el archivo base no publica directamente', () => {
   assert.match(ui, /Borrador de horario/);
   assert.match(ui, /no está publicado/);
   assert.match(ui, /La edición, bloqueo y botón Reorganizar se habilitan en la siguiente fase/);
