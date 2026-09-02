@@ -94,7 +94,16 @@ test('La interfaz Fase 3 agrega SLA, historial y evita cambiar estado directo en
   assert.match(ui, /addMaintenanceComment/);
   assert.match(ui, /transitionMaintenanceTask/);
   assert.match(ui, /stateSelect\.disabled = true/);
-  assert.match(ui, /data-task-action = 'workflow'|dataset\.taskAction = 'workflow'/);
+  assert.match(ui, /dataset\.taskAction = 'workflow'/);
+});
+
+test('El resumen no entra en ciclo de render y las tareas abiertas pueden cancelarse con motivo', () => {
+  const ui = fs.readFileSync(workflowUiPath, 'utf8');
+  assert.match(ui, /f3SummarySignature/);
+  assert.match(ui, /target\.dataset\.f3SummarySignature === signature/);
+  assert.match(ui, /mant-f3-cancel/);
+  assert.match(ui, /Motivo de cancelación/);
+  assert.match(ui, /TASK_STATES\.cancelado/);
 });
 
 test('Los preventivos se regeneran al cierre canonico', () => {
