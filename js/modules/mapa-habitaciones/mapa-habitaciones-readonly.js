@@ -1,9 +1,8 @@
 import { clearTodosLosCronometros, startCronometro } from './cronometro-habitacion.js';
-import { escapeHtml } from '../../security.js';
+import { escapeAttribute, escapeHtml } from '../../security.js';
 
 let root = null;
 let db = null;
-let currentHotelId = null;
 let pollTimer = null;
 let visibilityHandler = null;
 let rendering = false;
@@ -39,7 +38,7 @@ function floorKey(room) {
     : `Piso ${String(raw).trim()}`;
 }
 
-function buildRoomCard(room, listEl) {
+function buildRoomCard(room) {
   const state = normalizeState(room.estado);
   const meta = getStateMeta(state);
   const card = document.createElement('article');
@@ -59,22 +58,24 @@ function buildRoomCard(room, listEl) {
     <p class="mt-3 text-sm font-semibold ${state === 'ocupada' || state === 'tiempo agotado' ? 'text-amber-800' : 'text-slate-600'}">${escapeHtml(meta.note)}</p>
     <div class="mt-4 border-t border-slate-100 pt-3">
       <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">${state === 'ocupada' || state === 'tiempo agotado' ? 'Tiempo de estadía' : 'Estado de habitación'}</p>
-      <div id="cronometro-${escapeHtml(room.id)}" class="cronometro-display min-h-[28px] font-mono text-base font-bold text-slate-700">
+      <div id="cronometro-${escapeAttribute(room.id)}" class="cronometro-display min-h-[28px] font-mono text-base font-bold text-slate-700">
         ${state === 'ocupada' || state === 'tiempo agotado' ? '<span class="text-sm text-slate-400">Cargando reloj…</span>' : `<span class="text-sm font-semibold text-slate-500">${escapeHtml(meta.label)}</span>`}
       </div>
     </div>`;
 
-  if ((state === 'ocupada' || state === 'tiempo agotado') && room.reserva) {
-    const timerRoom = {
-      id: room.id,
-      nombre: room.nombre,
-      estado: state,
-      reservas: [room.reserva]
-    };
-    startCronometro(timerRoom, room.reserva, listEl, null);
-  }
-
   return card;
+}
+
+function startRoomTimer(room, listEl) {
+  const state = normalizeState(room.estado);
+  if (!['ocupada', 'tiempo agotado'].includes(state) || !room.reserva) return;
+
+  startCronometro({
+    id: room.id,
+    nombre: room.nombre,
+    estado: state,
+    reservas: [room.reserva]
+  }, room.reserva, listEl, null);
 }
 
 function renderControls(rooms) {
@@ -89,13 +90,13 @@ function renderControls(rooms) {
       <label class="text-xs font-bold uppercase tracking-wide text-slate-500">Piso
         <select id="readonly-floor" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
           <option value="">Todos</option>
-          ${floors.map((floor) => `<option value="${escapeHtml(floor)}">${escapeHtml(floor)}</option>`).join('')}
+          ${floors.map((floor) => `<option value="${escapeAttribute(floor)}">${escapeHtml(floor)}</option>`).join('')}
         </select>
       </label>
       <label class="text-xs font-bold uppercase tracking-wide text-slate-500">Estado
         <select id="readonly-state" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700">
           <option value="">Todos</option>
-          ${states.map((state) => `<option value="${escapeHtml(state)}">${escapeHtml(getStateMeta(state).label)}</option>`).join('')}
+          ${states.map((state) => `<option value="${escapeAttribute(state)}">${escapeHtml(getStateMeta(state).label)}</option>`).join('')}
         </select>
       </label>
     </div>`;
@@ -129,7 +130,11 @@ function renderRooms(rooms) {
       return;
     }
 
-    filtered.forEach((room) => list.appendChild(buildRoomCard(room, list)));
+    filtered.forEach((room) => {
+      const card = buildRoomCard(room);
+      list.appendChild(card);
+      startRoomTimer(room, list);
+    });
   };
 
   root.querySelector('#readonly-floor')?.addEventListener('change', paint);
@@ -148,8 +153,7 @@ async function loadRooms() {
   try {
     const { data, error } = await db.rpc('mapa_mantenimiento_conserje');
     if (error) throw error;
-    const rooms = Array.isArray(data) ? data : [];
-    renderRooms(rooms);
+    renderRooms(Array.isArray(data) ? data : []);
   } catch (error) {
     console.error('[Mapa solo lectura] Error:', error);
     if (list) {
@@ -160,10 +164,9 @@ async function loadRooms() {
   }
 }
 
-export async function mount(container, supabase, _currentUser, hotelId) {
+export async function mount(container, supabase) {
   root = container;
   db = supabase;
-  currentHotelId = hotelId;
 
   root.innerHTML = `
     <section class="mx-auto max-w-7xl space-y-4 px-1 py-2 sm:px-2">
@@ -204,6 +207,5 @@ export function unmount(container) {
   if (container) container.innerHTML = '';
   root = null;
   db = null;
-  currentHotelId = null;
   rendering = false;
 }
