@@ -579,7 +579,7 @@ async function renderSettings(config) {
     }
     feedback(`${missing.length} QR generados.`, 'success');
     await renderSettings(config);
-  }));
+  });
 
   view.querySelector('#energy-print-all')?.addEventListener('click', () => {
     const ready = roomList.filter((room) => room.token);
