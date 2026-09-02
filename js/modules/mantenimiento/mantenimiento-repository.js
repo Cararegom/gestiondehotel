@@ -132,6 +132,23 @@ export async function listMaintenanceHistory(supabase, hotelId, taskId) {
   return data || [];
 }
 
+export async function getMaintenanceMetrics(supabase, days = 30) {
+  const normalizedDays = Math.max(7, Math.min(Number(days) || 30, 365));
+  const { data, error } = await supabase.rpc('mantenimiento_metricas', {
+    p_dias: normalizedDays
+  });
+
+  throwIfError(error);
+  return data || {
+    periodo_dias: normalizedDays,
+    resumen: {},
+    reincidencias: [],
+    categorias: [],
+    responsables: [],
+    preventivos: []
+  };
+}
+
 export async function findOpenPreventiveTask(supabase, task, nextDate) {
   let query = supabase
     .from('tareas_mantenimiento')
