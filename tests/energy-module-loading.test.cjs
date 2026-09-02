@@ -10,7 +10,7 @@ const energy = fs.readFileSync('js/modules/control-energia/control-energia-20260
 
 test('Control de Energia usa una URL nueva para evitar JS cacheado', () => {
   assert.match(index, /type="importmap"/);
-  assert.match(index, /"\/js\/modules\/control-energia\/control-energia\.js"\s*:\s*"\/js\/modules\/control-energia\/control-energia-20260902\.js"/);
+  assert.match(index, /"\/js\/modules\/control-energia\/control-energia\.js"\s*:\s*"\/js\/modules\/control-energia\/control-energia-20260902\.js\?v=2"/);
   assert.match(index, /\/js\/main\.js\?v=20260902-energy-loader-1/);
   assert.match(main, /import\('\.\/modules\/control-energia\/control-energia\.js'\)/);
   assert.match(energy, /export async function mount/);
