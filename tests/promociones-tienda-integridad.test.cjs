@@ -79,3 +79,14 @@ test('el POS valida cupones con el servicio común y no con una consulta paralel
   assert.doesNotMatch(source, /\.from\(['"]descuentos['"]\)/);
   assert.doesNotMatch(source, /aplicabilidad === 'categorias_restaurante'/);
 });
+
+test('restaurante conserva la implementación y evita el segundo incremento tras el RPC atómico', () => {
+  const guard = fs.readFileSync('js/modules/restaurante/restaurante.js', 'utf8');
+  const legacy = fs.readFileSync('js/modules/restaurante/restaurante-legacy.js', 'utf8');
+  assert.match(guard, /import \* as restauranteLegacy from '\.\/restaurante-legacy\.js'/);
+  assert.match(guard, /target\.rpc\('procesar_venta_restaurante_atomica'/);
+  assert.match(guard, /functionName === 'incrementar_uso_descuento'/);
+  assert.match(guard, /esMismoDescuento/);
+  assert.match(guard, /return \{ data: null, error: null \}/);
+  assert.match(legacy, /rpc\('incrementar_uso_descuento'/);
+});
