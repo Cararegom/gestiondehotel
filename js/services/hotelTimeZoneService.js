@@ -30,6 +30,10 @@ const FALLBACK_TIME_ZONES = [
   'UTC'
 ];
 
+const UTC_DAY_START_RE = /^(\d{4}-\d{2}-\d{2})T00:00:00\.000Z$/;
+const UTC_DAY_END_RE = /^(\d{4}-\d{2}-\d{2})T23:59:59\.999Z$/;
+let runtimeHotelTimeZone = DEFAULT_HOTEL_TIME_ZONE;
+
 export function isValidTimeZone(value) {
   const candidate = String(value || '').trim();
   if (!candidate) return false;
@@ -50,12 +54,49 @@ export function detectBrowserTimeZone() {
   }
 }
 
-export function normalizeTimeZone(value, fallback = detectBrowserTimeZone()) {
+// La zona del navegador nunca es la autoridad operativa. Solo Configuración puede
+// usar detectBrowserTimeZone() como sugerencia inicial explícita.
+export function normalizeTimeZone(value, fallback = DEFAULT_HOTEL_TIME_ZONE) {
   const candidates = [value, fallback, DEFAULT_HOTEL_TIME_ZONE, 'UTC'];
   for (const candidate of candidates) {
     if (isValidTimeZone(candidate)) return String(candidate).trim();
   }
   return 'UTC';
+}
+
+export function getRuntimeHotelTimeZone() {
+  return normalizeTimeZone(runtimeHotelTimeZone, DEFAULT_HOTEL_TIME_ZONE);
+}
+
+export function setRuntimeHotelTimeZone(value) {
+  const nextZone = normalizeTimeZone(value, DEFAULT_HOTEL_TIME_ZONE);
+  const changed = nextZone !== runtimeHotelTimeZone;
+  runtimeHotelTimeZone = nextZone;
+
+  if (typeof window !== 'undefined') {
+    window.hotelConfigGlobal = {
+      ...(window.hotelConfigGlobal || {}),
+      zona_horaria: nextZone
+    };
+    if (changed && typeof window.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hotel:timezone-changed', {
+        detail: { timeZone: nextZone }
+      }));
+    }
+  }
+
+  return nextZone;
+}
+
+export async function loadHotelTimeZone(supabase, hotelId) {
+  if (!supabase || !hotelId) return setRuntimeHotelTimeZone(DEFAULT_HOTEL_TIME_ZONE);
+  const { data, error } = await supabase
+    .from('configuracion_hotel')
+    .select('zona_horaria')
+    .eq('hotel_id', hotelId)
+    .maybeSingle();
+  if (error) throw error;
+  return setRuntimeHotelTimeZone(data?.zona_horaria || DEFAULT_HOTEL_TIME_ZONE);
 }
 
 export function getSupportedTimeZones() {
@@ -174,6 +215,96 @@ export function getUtcRangeForHotelDates(startDate, endDate, timeZone = DEFAULT_
     startIso: start.toISOString(),
     endExclusiveIso: endExclusive.toISOString()
   };
+}
+
+export function adjustLegacyHotelDayBoundary(method, value, timeZone = getRuntimeHotelTimeZone()) {
+  if (typeof value !== 'string') return value;
+  const zone = normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE);
+
+  if (method === 'gte') {
+    const match = UTC_DAY_START_RE.exec(value);
+    if (!match) return value;
+    return getUtcRangeForHotelDates(match[1], match[1], zone).startIso;
+  }
+
+  if (method === 'lte') {
+    const match = UTC_DAY_END_RE.exec(value);
+    if (!match) return value;
+    const range = getUtcRangeForHotelDates(match[1], match[1], zone);
+    return new Date(Date.parse(range.endExclusiveIso) - 1).toISOString();
+  }
+
+  return value;
+}
+
+function ensureTimeZoneSelected(columns) {
+  if (typeof columns !== 'string') return columns;
+  const trimmed = columns.trim();
+  if (!trimmed || trimmed === '*' || /(^|[,\s])zona_horaria([,\s]|$)/.test(trimmed)) return columns;
+  return `${columns}, zona_horaria`;
+}
+
+function syncRuntimeFromResult(table, result) {
+  if (table !== 'configuracion_hotel') return result;
+  const data = result?.data;
+  if (data && !Array.isArray(data) && Object.prototype.hasOwnProperty.call(data, 'zona_horaria')) {
+    setRuntimeHotelTimeZone(data.zona_horaria);
+  }
+  return result;
+}
+
+function wrapHotelTimeZoneQuery(builder, table) {
+  if (!builder || typeof builder !== 'object') return builder;
+
+  return new Proxy(builder, {
+    get(target, property) {
+      const value = target[property];
+      if (typeof value !== 'function') return value;
+
+      if (property === 'then') {
+        return (onFulfilled, onRejected) => value.call(
+          target,
+          (result) => {
+            const synced = syncRuntimeFromResult(table, result);
+            return typeof onFulfilled === 'function' ? onFulfilled(synced) : synced;
+          },
+          onRejected
+        );
+      }
+
+      if (property === 'catch' || property === 'finally') return value.bind(target);
+
+      if (property === 'select' && table === 'configuracion_hotel') {
+        return (...args) => {
+          if (args.length > 0) args[0] = ensureTimeZoneSelected(args[0]);
+          return wrapHotelTimeZoneQuery(value.apply(target, args), table);
+        };
+      }
+
+      if (property === 'gte' || property === 'lte') {
+        return (column, boundary) => wrapHotelTimeZoneQuery(
+          value.call(target, column, adjustLegacyHotelDayBoundary(String(property), boundary)),
+          table
+        );
+      }
+
+      return (...args) => wrapHotelTimeZoneQuery(value.apply(target, args), table);
+    }
+  });
+}
+
+export function createHotelTimeZoneAwareSupabaseClient(supabase) {
+  if (!supabase || typeof supabase !== 'object' || typeof supabase.from !== 'function') return supabase;
+
+  return new Proxy(supabase, {
+    get(target, property) {
+      const value = target[property];
+      if (property === 'from') {
+        return (table) => wrapHotelTimeZoneQuery(target.from(table), String(table || ''));
+      }
+      return typeof value === 'function' ? value.bind(target) : value;
+    }
+  });
 }
 
 export function getDateKeyInTimeZone(value, timeZone = DEFAULT_HOTEL_TIME_ZONE) {
