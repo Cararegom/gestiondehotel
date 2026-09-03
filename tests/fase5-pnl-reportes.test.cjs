@@ -6,7 +6,8 @@ const sql = fs.readFileSync('supabase/migrations/20260825180845_fase5_pnl_presup
 const indexSql = fs.readFileSync('supabase/migrations/20260825180939_fase5_indices_auditoria.sql', 'utf8');
 const closingSql = fs.readFileSync('supabase/migrations/20260825182301_fase5_bloqueo_cierre_calidad.sql', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
-const hub = fs.readFileSync('js/modules/reportes/reportes-centro.js', 'utf8');
+const hubFacade = fs.readFileSync('js/modules/reportes/reportes-centro.js', 'utf8');
+const hub = fs.readFileSync('js/modules/reportes/reportes-centro-core.js', 'utf8');
 const pnl = fs.readFileSync('js/modules/reportes/finanzas-pnl.js', 'utf8');
 
 test('Fase 5 builds a traceable shadow P&L with budgets and periods', () => {
@@ -39,6 +40,7 @@ test('Reportes is the visible hub while legacy finance routes remain protected',
   assert.doesNotMatch(main, /path: '#\/costeo'/);
   assert.match(main, /'\/finanzas-cuentas':[^{]*\{[^}]*adminOnly: true/);
   assert.match(main, /routeConfig = navLinksConfig[^;]+\|\| routeEntry/);
+  assert.match(hubFacade, /reportes-centro-core\.js/);
   assert.match(hub, /Reportes operativos/);
   assert.match(hub, /Estado de resultados/);
   assert.match(hub, /adminOnly: true/);
