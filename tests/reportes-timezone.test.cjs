@@ -30,21 +30,23 @@ test('los rangos soportan zonas con horario de verano', async () => {
   assert.equal((Date.parse(fall.endExclusiveIso) - Date.parse(fall.startIso)) / 3600000, 25);
 });
 
-test('Reportes usa zona horaria del hotel y rangos semiabiertos', () => {
-  const source = fs.readFileSync(path.join(root, 'js/modules/reportes/reportes.js'), 'utf8');
+test('el centro de Reportes corrige los límites UTC legacy usando la zona del hotel', () => {
+  const source = fs.readFileSync(path.join(root, 'js/modules/reportes/reportes-centro.js'), 'utf8');
   assert.match(source, /hotelTimeZoneService\.js/);
   assert.match(source, /select\('zona_horaria'\)/);
+  assert.match(source, /adjustLegacyReportBoundary/);
   assert.match(source, /getUtcRangeForHotelDates/);
-  assert.match(source, /fechaFinExclusivoQuery/);
-  assert.doesNotMatch(source, /T00:00:00\.000Z/);
-  assert.doesNotMatch(source, /T23:59:59\.999Z/);
+  assert.match(source, /createTimeZoneAwareReportClient/);
+  assert.match(source, /UTC_DAY_START_RE/);
+  assert.match(source, /UTC_DAY_END_RE/);
 });
 
-test('Configuracion permite guardar una zona IANA por hotel', () => {
-  const source = fs.readFileSync(path.join(root, 'js/modules/configuracion/configuracion.js'), 'utf8');
+test('un administrador puede configurar la zona IANA del hotel desde Reportes', () => {
+  const source = fs.readFileSync(path.join(root, 'js/modules/reportes/reportes-centro.js'), 'utf8');
   const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260903042000_hotel_timezone_reportes.sql'), 'utf8');
-  assert.match(source, /id="zona_horaria"/);
-  assert.match(source, /zona_horaria: normalizeTimeZone/);
+  assert.match(source, /id="reportes-zona-horaria"/);
+  assert.match(source, /update\(\{ zona_horaria: nextZone/);
+  assert.match(source, /Corte diario según zona horaria del hotel/);
   assert.match(migration, /ADD COLUMN IF NOT EXISTS zona_horaria text/);
   assert.match(migration, /hotel_business_date/);
 });
