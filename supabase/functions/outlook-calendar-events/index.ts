@@ -2,35 +2,27 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// === Variables CORS ===
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
 
-// === Función de DESCIFRADO (CORREGIDA) ===
 async function decrypt(ciphertextB64, password) {
     const { iv, ct } = JSON.parse(atob(ciphertextB64));
     const pwUtf8 = new TextEncoder().encode(password);
     const pwHash = await crypto.subtle.digest('SHA-256', pwUtf8);
-    const alg = {
-        name: 'AES-GCM',
-        iv: new Uint8Array(iv)
-    };
+    const ivBytes = new Uint8Array(iv);
+    const alg = { name: 'AES-GCM', iv: ivBytes };
     const key = await crypto.subtle.importKey('raw', pwHash, alg, false, ['decrypt']);
-    const ptBuffer = await crypto.subtle.decrypt(alg, key, new Uint8Array(ct)); 
+    const ptBuffer = await crypto.subtle.decrypt(alg, key, new Uint8Array(ct));
     return new TextDecoder().decode(ptBuffer);
 }
 
-// === Función de CIFRADO ===
 async function encrypt(text, password) {
     const pwUtf8 = new TextEncoder().encode(password);
     const pwHash = await crypto.subtle.digest('SHA-256', pwUtf8);
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const alg = {
-        name: 'AES-GCM',
-        iv: iv
-    };
+    const alg = { name: 'AES-GCM', iv };
     const key = await crypto.subtle.importKey('raw', pwHash, alg, false, ['encrypt']);
     const ptUint8 = new TextEncoder().encode(text);
     const ctBuffer = await crypto.subtle.encrypt(alg, key, ptUint8);
@@ -40,6 +32,15 @@ async function encrypt(text, password) {
     }));
 }
 
+async function resolveHotelTimeZone(supabaseAdmin, hotelId) {
+    const { data, error } = await supabaseAdmin.rpc('hotel_time_zone', { p_hotel_id: hotelId });
+    if (error || !data) {
+        console.error('[outlook-calendar-events] No se pudo resolver la zona horaria.', { code: error?.code });
+        throw new Error('No se pudo resolver la zona horaria configurada para el hotel.');
+    }
+    return String(data);
+}
+
 serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders });
@@ -47,8 +48,6 @@ serve(async (req) => {
 
     try {
         const { hotelId, action, eventDetails, eventId } = await req.json();
-
-        // 1. Log al inicio de la función para ver los datos de entrada
         console.log("Edge Function received request.");
         console.log("Input: hotelId =", hotelId, ", action =", action, ", eventDetails =", eventDetails, ", eventId =", eventId, "");
 
@@ -58,8 +57,8 @@ serve(async (req) => {
             Deno.env.get("SUPABASE_URL") ?? "",
             Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
         );
+        const hotelTimeZone = await resolveHotelTimeZone(supabaseAdmin, hotelId);
 
-        // 2. Log antes de la consulta a la tabla oauth_tokens
         console.log("Attempting to fetch token from oauth_tokens for hotelId:", hotelId, "and provider: outlook", "");
 
         const { data: dbTokenData, error: tokenError } = await supabaseAdmin
@@ -69,7 +68,6 @@ serve(async (req) => {
             .eq("provider", "outlook")
             .single();
 
-        // 3. Log después de la consulta a la tabla oauth_tokens
         if (tokenError) {
             console.error("Error fetching token from oauth_tokens:", tokenError, "");
             throw new Error("No hay token de Outlook registrado para este hotel. " + tokenError?.message);
@@ -84,18 +82,17 @@ serve(async (req) => {
         console.log("Attempting to decrypt tokens.");
         let accessToken = await decrypt(dbTokenData.access_token_encrypted, ENCRYPTION_KEY);
         let refreshToken = await decrypt(dbTokenData.refresh_token_encrypted, ENCRYPTION_KEY);
-        console.log("Tokens decrypted successfully. AccessToken starts with:", accessToken.substring(0, 10), ""); 
+        console.log("Tokens decrypted successfully.");
 
         let responseData;
         let attemptCount = 0;
-        const MAX_ATTEMPTS = 2; 
+        const MAX_ATTEMPTS = 2;
 
         while (attemptCount < MAX_ATTEMPTS) {
             try {
                 let msGraphUrl;
                 let graphResponse;
 
-                // Definimos la URL y el método según la acción
                 switch (action) {
                     case 'list': {
                         msGraphUrl = 'https://graph.microsoft.com/v1.0/me/calendar/events?' +
@@ -116,8 +113,8 @@ serve(async (req) => {
                         const newEventPayload = {
                             subject: eventDetails.summary,
                             body: { contentType: 'HTML', content: eventDetails.description },
-                            start: { dateTime: eventDetails.start, timeZone: 'America/Bogota' }, // Usar zona horaria local
-                            end: { dateTime: eventDetails.end, timeZone: 'America/Bogota' },     // Usar zona horaria local
+                            start: { dateTime: eventDetails.start, timeZone: hotelTimeZone },
+                            end: { dateTime: eventDetails.end, timeZone: hotelTimeZone },
                             isAllDay: eventDetails.isAllDay || false
                         };
                         graphResponse = await fetch(msGraphUrl, {
@@ -142,7 +139,6 @@ serve(async (req) => {
                 console.log(`Received response from MS Graph for action '${action}'. Status:`, graphResponse.status, "");
 
                 if (!graphResponse.ok) {
-                    // Si el token es inválido/expirado, intentar refrescar
                     if (graphResponse.status === 401 && refreshToken && attemptCount === 0) {
                         console.log("Access token expired (401). Attempting to refresh token...", "");
                         const refreshResponse = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
@@ -164,11 +160,8 @@ serve(async (req) => {
 
                         const newTokens = await refreshResponse.json();
                         accessToken = newTokens.access_token;
-                        if (newTokens.refresh_token) { // El refresh token también puede cambiar
-                            refreshToken = newTokens.refresh_token;
-                        }
+                        if (newTokens.refresh_token) refreshToken = newTokens.refresh_token;
 
-                        // Cifrar y guardar el nuevo token
                         const newAccessEncrypted = await encrypt(accessToken, ENCRYPTION_KEY);
                         const newRefreshEncrypted = await encrypt(refreshToken, ENCRYPTION_KEY);
                         console.log("Updating refreshed tokens in DB...", "");
@@ -179,21 +172,18 @@ serve(async (req) => {
                         }).eq("hotel_id", hotelId).eq("provider", "outlook");
                         console.log("Tokens refreshed and updated in DB. Retrying request...", "");
 
-                        attemptCount++; // Incrementar el contador e intentar de nuevo la petición principal
-                        continue; // Ir al inicio del bucle while para reintentar con el nuevo token
+                        attemptCount++;
+                        continue;
                     } else {
-                        // Si no es 401, o ya intentamos refrescar, es un error fatal
                         const errorBody = await graphResponse.json();
                         console.error(`MS Graph API (${action}) returned non-ok status:`, graphResponse.status, "Error Body:", errorBody, "");
                         throw new Error(`Error de MS Graph (${action}): ${graphResponse.status} - ${errorBody.error?.message || JSON.stringify(errorBody)}`);
                     }
                 }
 
-                // Procesar la respuesta exitosa
                 switch (action) {
                     case 'list': {
                         const graphData = await graphResponse.json();
-                        console.log("Raw Graph Data (list):", JSON.stringify(graphData, null, 2), "");
                         responseData = {
                             items: graphData.value.map((event: any) => ({
                                 id: event.id,
@@ -208,43 +198,34 @@ serve(async (req) => {
                                 }
                             }))
                         };
-                        console.log("Normalized responseData (list):", responseData, "");
                         break;
                     }
                     case 'create': {
                         const createdEvent = await graphResponse.json();
-                        console.log("Created event response:", createdEvent, "");
                         responseData = { message: "Evento creado", id: createdEvent.id, ok: true };
                         break;
                     }
                     case 'delete': {
-                        console.log("Event deleted successfully.", "");
                         responseData = { message: "Evento eliminado", ok: true };
                         break;
                     }
                     default:
-                        // Esto ya debería haber sido capturado al inicio del bucle
                         throw new Error("Acción no reconocida después de una respuesta exitosa.");
                 }
-                // Si llegamos aquí, la operación fue exitosa, salimos del bucle
                 break;
 
             } catch (error) {
-                // Captura errores específicos de la llamada a la API o del refresco
                 console.error("Error during MS Graph API call or token refresh (inside while loop):", error, "");
-                throw error; // Relanza el error para que el catch global lo maneje y devuelva 400
+                throw error;
             }
-        } // Fin del bucle while
+        }
 
-        // 8. Log antes de devolver la respuesta final exitosa
-        console.log("Returning successful response.", "");
         return new Response(JSON.stringify(responseData), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 200
         });
 
     } catch (error) {
-        // 9. Log completo en el catch para cualquier error
         console.error("Global catch error in Edge Function:", error, "");
         return new Response(JSON.stringify({ error: error.message }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
