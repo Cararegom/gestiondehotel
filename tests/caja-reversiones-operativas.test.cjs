@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const test = require('node:test');
 
 const migration = fs.readFileSync(
   'supabase/migrations/20260903033000_excluir_reversiones_de_reportes_y_cierres.sql',
