@@ -7,7 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type'
 };
 
-// Función de descifrado en JS (AES-GCM)
 async function decrypt(ciphertextB64, password) {
   try {
     const {iv, ct} = JSON.parse(atob(ciphertextB64));
@@ -25,13 +24,21 @@ async function decrypt(ciphertextB64, password) {
   }
 }
 
+async function resolveHotelTimeZone(supabaseAdmin, hotelId) {
+  const { data, error } = await supabaseAdmin.rpc('hotel_time_zone', { p_hotel_id: hotelId });
+  if (error || !data) {
+    console.error('[calendar-create-event] No se pudo resolver la zona horaria del hotel.', { code: error?.code });
+    throw new Error('No se pudo resolver la zona horaria configurada para el hotel.');
+  }
+  return String(data);
+}
+
 serve(async (req) => {
   console.log("---- Nueva petición recibida ----");
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
   try {
-    // Leer body
     let body;
     try {
       body = await req.json();
@@ -45,13 +52,13 @@ serve(async (req) => {
       console.error("[calendar-create-event] Faltan datos:", { hotelId, provider, eventDetails });
       throw new Error("hotelId, provider y eventDetails son requeridos.");
     }
-    // Crear instancia de Supabase
+
     const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "", 
+      Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
+    const hotelTimeZone = await resolveHotelTimeZone(supabaseAdmin, hotelId);
 
-    // Buscar el token en BD
     const { data: dbTokenData, error: dbError } = await supabaseAdmin
       .from("oauth_tokens")
       .select("access_token_encrypted, expires_at")
@@ -64,7 +71,6 @@ serve(async (req) => {
       throw new Error("No se encontró un token de autorización para este hotel y proveedor.");
     }
 
-    // Descifrar token
     const ENCRYPTION_KEY = Deno.env.get("MY_ENCRYPTION_SECRET");
     let accessToken;
     try {
@@ -75,7 +81,6 @@ serve(async (req) => {
       throw new Error("Error al descifrar el token: " + e.message);
     }
 
-    // Crear evento en Google Calendar
     let eventResult;
     if (provider === 'google') {
       try {
@@ -91,8 +96,8 @@ serve(async (req) => {
           requestBody: {
             summary: eventDetails.summary,
             description: eventDetails.description,
-            start: { dateTime: eventDetails.start, timeZone: 'America/Bogota' },
-            end: { dateTime: eventDetails.end, timeZone: 'America/Bogota' }
+            start: { dateTime: eventDetails.start, timeZone: hotelTimeZone },
+            end: { dateTime: eventDetails.end, timeZone: hotelTimeZone }
           }
         });
         eventResult = data;
@@ -102,7 +107,7 @@ serve(async (req) => {
         throw new Error("Error con Google Calendar API: " + (googleError?.message || googleError));
       }
     } else if (provider === 'outlook') {
-      // (Aquí pon tu lógica Outlook si lo necesitas)
+      // La integración Outlook usa su función dedicada.
     }
 
     return new Response(JSON.stringify({
