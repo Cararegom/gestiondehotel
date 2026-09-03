@@ -34,82 +34,25 @@ jobs:
                   raise SystemExit(f'{label}: expected 1 occurrence, found {count}')
               source = source.replace(old, new, 1)
 
-          replace_once(
-              "        let { data, error } = await supabaseInstance.from('clientes').select('*').eq('id', clienteId).single();",
-              """        let { data, error } = await supabaseInstance
-            .from('clientes')
-            .select('*')
-            .eq('id', clienteId)
-            .eq('hotel_id', hotelIdActual)
-            .maybeSingle();""",
-              'scope getClienteById by hotel'
-          )
+          old = "        let { data, error } = await supabaseInstance.from('clientes').select('*').eq('id', clienteId).single();"
+          new = "        let { data, error } = await supabaseInstance\n            .from('clientes')\n            .select('*')\n            .eq('id', clienteId)\n            .eq('hotel_id', hotelIdActual)\n            .maybeSingle();"
+          replace_once(old, new, 'scope getClienteById by hotel')
 
-          replace_once(
-              """    if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;
+          old = "    if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;\n\n    try {\n        const results = await Promise.all(["
+          new = "    if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;\n\n    try {\n        let totalClientesHotel = clientesData.length;\n        const { count: totalClientesCount, error: totalClientesError } = await supabaseInstance\n            .from('clientes')\n            .select('id', { count: 'exact', head: true })\n            .eq('hotel_id', hotelIdActual);\n\n        if (totalClientesError) {\n            logError('No se pudo obtener el total exacto de clientes del hotel:', totalClientesError);\n        } else if (Number.isFinite(totalClientesCount)) {\n            totalClientesHotel = totalClientesCount;\n        }\n\n        const results = await Promise.all(["
+          replace_once(old, new, 'load exact client count')
 
-    try {
-        const results = await Promise.all([""",
-              """    if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;
+          old = "        crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);\n        crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);"
+          new = "        crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);\n        crmPortfolioSummary.total = totalClientesHotel;\n        crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);"
+          replace_once(old, new, 'apply exact client count to header')
 
-    try {
-        let totalClientesHotel = clientesData.length;
-        const { count: totalClientesCount, error: totalClientesError } = await supabaseInstance
-            .from('clientes')
-            .select('id', { count: 'exact', head: true })
-            .eq('hotel_id', hotelIdActual);
+          old = "        const filteredClients = await getClientes({ hotelId: hotelIdActual, search: texto, dateRange: dateRange });\n        renderTablaClientes(filteredClients);"
+          new = "        const filteredClients = await getClientes({ hotelId: hotelIdActual, search: texto, dateRange: dateRange });\n\n        // Los resultados filtrados pueden incluir clientes que no estaban en la carga inicial.\n        // Se guardan en la cache para que Ver y Editar resuelvan siempre el ID seleccionado.\n        const clientesById = new Map(clientesData.map((cliente) => [String(cliente.id), cliente]));\n        filteredClients.forEach((cliente) => clientesById.set(String(cliente.id), cliente));\n        clientesData = Array.from(clientesById.values());\n\n        renderTablaClientes(filteredClients);"
+          replace_once(old, new, 'cache filtered clients')
 
-        if (totalClientesError) {
-            logError('No se pudo obtener el total exacto de clientes del hotel:', totalClientesError);
-        } else if (Number.isFinite(totalClientesCount)) {
-            totalClientesHotel = totalClientesCount;
-        }
-
-        const results = await Promise.all([""",
-              'load exact client count'
-          )
-
-          replace_once(
-              """        crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);
-        crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);""",
-              """        crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);
-        crmPortfolioSummary.total = totalClientesHotel;
-        crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);""",
-              'apply exact client count to header'
-          )
-
-          replace_once(
-              """        const filteredClients = await getClientes({ hotelId: hotelIdActual, search: texto, dateRange: dateRange });
-        renderTablaClientes(filteredClients);""",
-              """        const filteredClients = await getClientes({ hotelId: hotelIdActual, search: texto, dateRange: dateRange });
-
-        // Los resultados filtrados pueden incluir clientes que no estaban en la carga inicial.
-        // Se guardan en la cache para que Ver y Editar resuelvan siempre el ID seleccionado.
-        const clientesById = new Map(clientesData.map((cliente) => [String(cliente.id), cliente]));
-        filteredClients.forEach((cliente) => clientesById.set(String(cliente.id), cliente));
-        clientesData = Array.from(clientesById.values());
-
-        renderTablaClientes(filteredClients);""",
-              'cache filtered clients'
-          )
-
-          replace_once(
-              """    const cliente = clientesData.find(c => c.id === clienteId);
-    if (!cliente) {
-        showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');
-        return;
-    }""",
-              """    let cliente = clientesData.find(c => String(c.id) === String(clienteId));
-    if (!cliente) {
-        cliente = await getClienteById(clienteId);
-        if (!cliente) {
-            showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');
-            return;
-        }
-        clientesData = [...clientesData, cliente];
-    }""",
-              'fallback client lookup for details'
-          )
+          old = "    const cliente = clientesData.find(c => c.id === clienteId);\n    if (!cliente) {\n        showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');\n        return;\n    }"
+          new = "    let cliente = clientesData.find(c => String(c.id) === String(clienteId));\n    if (!cliente) {\n        cliente = await getClienteById(clienteId);\n        if (!cliente) {\n            showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');\n            return;\n        }\n        clientesData = [...clientesData, cliente];\n    }"
+          replace_once(old, new, 'fallback client lookup for details')
 
           path.write_text(source, encoding='utf-8')
           PY
