@@ -118,9 +118,11 @@ export async function loadMiCuentaData(supabase, user, hotelId) {
 
   const promoBienvenida = getPromoBienvenidaStatus(hotel, pagos);
   const { fechaFin, diasRestantes, enGracia } = calcularEstadoDeVencimiento(hotel);
+  const rolNormalizado = String(userProfile?.rol || '').trim().toLowerCase();
   const esSuperAdmin = (
-    userProfile?.rol === 'admin' ||
-    userProfile?.rol === 'superadmin' ||
+    rolNormalizado === 'admin' ||
+    rolNormalizado === 'administrador' ||
+    rolNormalizado === 'superadmin' ||
     (hotel?.creado_por && userProfile?.id === hotel.creado_por)
   );
 
