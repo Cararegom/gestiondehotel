@@ -1,5 +1,6 @@
+import { formatInTimeZone, getRuntimeHotelTimeZone } from './services/hotelTimeZoneService.js';
+
 const ACTIVE_RESERVATION_STATES = ['activa', 'ocupada', 'tiempo agotado'];
-const COLOMBIA_TIME_ZONE = 'America/Bogota';
 const PATCH_VERSION = 'v4';
 const ROW_MARKER = 'paymentDateInlineReady';
 const RETRY_MS = 1200;
@@ -26,15 +27,14 @@ function formatPaymentDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
 
-  return new Intl.DateTimeFormat('es-CO', {
-    timeZone: COLOMBIA_TIME_ZONE,
+  return formatInTimeZone(date, getRuntimeHotelTimeZone(), 'es-CO', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
-  }).format(date);
+  });
 }
 
 function getVisibleAccountModal() {
