@@ -195,10 +195,17 @@ export async function logMonitoringEvent({
   eventType = 'custom',
   message,
   details = {},
+  exception = null,
   scope = 'hotel',
   route = null,
   dedupeKey = null
 }) {
+  if (level === 'error' || level === 'fatal') {
+    globalThis.HotelTelemetry?.captureException(
+      exception instanceof Error ? exception : details?.error instanceof Error ? details.error : new Error(message || 'Error de aplicacion'),
+      { source, eventType }
+    );
+  }
   return sendEvent({
     source,
     level,

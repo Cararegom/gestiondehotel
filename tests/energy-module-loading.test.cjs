@@ -17,7 +17,7 @@ test('Control de Energia usa una URL nueva para evitar JS cacheado', () => {
 });
 
 test('service worker renueva caches y precarga el modulo versionado', () => {
-  assert.match(serviceWorker, /APP_VERSION = '20260902-sentry-1'/);
+  assert.match(serviceWorker, /APP_VERSION = '20260903-sentry-tracing-1'/);
   assert.match(serviceWorker, /control-energia-20260902\.js/);
   assert.match(serviceWorker, /cache\.match\(request\) \|\| await caches\.match\(request\)/);
   assert.match(serviceWorker, /self\.skipWaiting\(\)/);

@@ -600,6 +600,7 @@ async function router() {
     return;
   }
   routerBusy = true;
+  let finishRouteTrace = null;
   try {
     if (!appContainer) {
       console.error("Router: appContainer no está definido.");
@@ -626,6 +627,7 @@ async function router() {
       return;
     }
 
+    finishRouteTrace = globalThis.HotelTelemetry?.startRoute(baseRoute);
     console.log(`[Router] Navegando a: ${baseRoute}. Módulo anterior: ${currentPathLoaded}`);
     showGlobalLoading(`Cargando ${baseRoute}...`);
 
@@ -634,6 +636,7 @@ async function router() {
         console.log(`[Router] Desmontando módulo para: ${currentPathLoaded}`);
         currentModuleUnmount(appContainer);
       } catch (e) {
+        globalThis.HotelTelemetry?.captureException(e, { source: 'router', eventType: 'module_unmount_failed' });
         console.error("[Router] Error al desmontar el módulo anterior:", currentPathLoaded, e);
       }
     }
@@ -794,6 +797,7 @@ async function router() {
             level: 'error',
             eventType: 'module_mount_failed',
             message: `Fallo montando la ruta ${baseRoute}.`,
+            exception: error,
             details: {
               baseRoute,
               moduleKeyFromRoute,
@@ -811,6 +815,7 @@ async function router() {
     updateActiveNavLink(baseRoute);
 
   } finally {
+    finishRouteTrace?.();
     routerBusy = false;
   }
 }
@@ -1180,6 +1185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return;
   }
   initializeApp().catch(error => {
+    globalThis.HotelTelemetry?.captureException(error, { source: 'bootstrap', eventType: 'initialization_failed' });
     console.error("Error fatal durante la inicialización:", error);
     const appContainerError = document.getElementById('app-container');
     if (appContainerError) {

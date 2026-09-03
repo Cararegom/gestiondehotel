@@ -1,31 +1,32 @@
 import {
-  init, captureException, captureMessage, flush,
-  inboundFiltersIntegration, browserApiErrorsIntegration,
-  globalHandlersIntegration, linkedErrorsIntegration, dedupeIntegration,
+  init, captureException, captureMessage, getCurrentScope, setTag, getActiveSpan, spanToJSON,
+  startBrowserTracingNavigationSpan, startInactiveSpan, startNewTrace, startSpan,
+  flush, breadcrumbsIntegration, browserTracingIntegration,
+  inboundFiltersIntegration, browserApiErrorsIntegration, globalHandlersIntegration,
+  linkedErrorsIntegration, dedupeIntegration,
 } from '@sentry/browser';
 import config from '../../sentry.config.json';
-import { sanitizeSentryEvent, sentryEnvironment } from './sentry-policy.mjs';
+import { sanitizeSentryEvent } from './sentry-policy.mjs';
+import { installTelemetry } from '../telemetry/sentry-client.js';
 
-try {
-  if (config.enabled && config.dsn && globalThis.__HOTEL_APP_CONFIG__?.sentry?.enabled !== false) {
-    init({
-      dsn: config.dsn,
-      environment: sentryEnvironment(location.hostname),
-      release: __SENTRY_RELEASE__,
-      sendDefaultPii: false,
-      sendClientReports: false,
-      enableLogs: false,
-      tracesSampleRate: 0,
-      maxBreadcrumbs: 0,
-      defaultIntegrations: false,
-      integrations: [
-        inboundFiltersIntegration(), browserApiErrorsIntegration(),
-        globalHandlersIntegration(), linkedErrorsIntegration(), dedupeIntegration(),
-      ],
-      beforeSend: sanitizeSentryEvent,
-    });
-    globalThis.HotelMonitoring = Object.freeze({ captureException, captureMessage, flush });
-  }
-} catch {
-  console.warn('[Sentry] No se pudo iniciar la captura de errores.');
+const telemetry = installTelemetry({
+  init, captureException, getCurrentScope, setTag, getActiveSpan, spanToJSON,
+  startBrowserTracingNavigationSpan, startInactiveSpan, startNewTrace, startSpan,
+  flush, breadcrumbsIntegration, browserTracingIntegration,
+  inboundFiltersIntegration, browserApiErrorsIntegration, globalHandlersIntegration,
+  linkedErrorsIntegration, dedupeIntegration,
+}, globalThis, {
+  dsn: config.dsn,
+  enabled: config.enabled,
+  productionHosts: ['gestiondehotel.com', 'www.gestiondehotel.com'],
+  productionEnvironment: 'prod',
+  tracesSampleRate: 0.1,
+  sanitizeErrorEvent: sanitizeSentryEvent,
+}, __SENTRY_RELEASE__);
+
+// Conservar la API existente; ambos nombres usan una sola instancia del SDK.
+if (telemetry.getStatus().enabled) {
+  globalThis.HotelMonitoring = Object.freeze({
+    captureException: telemetry.captureException, captureMessage, flush,
+  });
 }

@@ -54,7 +54,21 @@ export function sanitizeSentryEvent(event) {
     })) };
   }
   if (event.request?.url) clean.request = { url: cleanText(cleanUrl(event.request.url)) };
+  // Solo los identificadores tecnicos necesarios para enlazar el error con su traza.
+  if (event.contexts?.trace) {
+    clean.contexts = { trace: {} };
+    for (const key of ['trace_id', 'span_id', 'parent_span_id']) {
+      const value = event.contexts.trace[key];
+      if (typeof value === 'string' && /^(?:[a-f0-9]{16}|[a-f0-9]{32})$/i.test(value)) clean.contexts.trace[key] = value;
+    }
+    for (const key of ['op', 'status']) {
+      if (typeof event.contexts.trace[key] === 'string') clean.contexts.trace[key] = cleanText(event.contexts.trace[key]);
+    }
+  }
   clean.tags = { application: 'gestiondehotel' };
+  for (const key of ['source', 'event_type', 'app.route', 'test_event']) {
+    if (event.tags?.[key] !== undefined) clean.tags[key] = cleanText(event.tags[key]);
+  }
   return clean;
 }
 

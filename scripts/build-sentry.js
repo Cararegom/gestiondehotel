@@ -1,6 +1,7 @@
 const { build } = require('esbuild');
 const { execFileSync } = require('node:child_process');
-const { resolve } = require('node:path');
+const { resolve, dirname } = require('node:path');
+const { readFileSync } = require('node:fs');
 const config = require('../sentry.config.json');
 
 const root = resolve(__dirname, '..');
@@ -25,7 +26,12 @@ build({
   target: ['es2020'],
   minify: true,
   legalComments: 'eof',
-  define: { __SENTRY_RELEASE__: JSON.stringify(`gestiondehotel@${revision}`) },
+  banner: { js: '/*! Sentry JavaScript SDK\n' + readFileSync(resolve(dirname(require.resolve('@sentry/browser/package.json')), 'LICENSE'), 'utf8') + '\n*/' },
+  define: {
+    __SENTRY_RELEASE__: JSON.stringify(process.env.SENTRY_RELEASE || `gestiondehotel@${revision}`),
+    __SENTRY_DEBUG__: 'false',
+    __SENTRY_TRACING__: 'true',
+  },
 }).then(() => console.log('SDK Sentry compilado localmente.')).catch(() => {
   console.error('No se pudo compilar el SDK Sentry.');
   process.exitCode = 1;

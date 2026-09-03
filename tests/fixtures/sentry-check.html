@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Verificación técnica de Sentry</title>
+  <script>
+    globalThis.__HOTEL_APP_CONFIG__ = { sentry: { enabled: true, environment: 'verification', tracesSampleRate: 1 } };
+  </script>
+  <script src="/js/sentry-browser.js"></script>
+</head>
+<body>
+  <h1>Verificación técnica de Sentry</h1>
+  <p>Esta página utiliza solo datos sintéticos y el entorno verification.</p>
+  <pre id="status"></pre>
+  <button id="verify">Enviar prueba de conexión</button>
+  <button id="navigate">Simular navegación a Caja</button>
+  <button id="refresh">Actualizar estado</button>
+  <pre id="result"></pre>
+  <script>
+    document.getElementById('status').textContent = JSON.stringify(HotelTelemetry.getStatus());
+    document.getElementById('refresh').onclick = () => {
+      document.getElementById('status').textContent = JSON.stringify(HotelTelemetry.getStatus());
+    };
+    document.getElementById('verify').onclick = async () => {
+      document.getElementById('verify').disabled = true;
+      document.getElementById('result').textContent = JSON.stringify(await HotelTelemetry.verifyConnection());
+    };
+    document.getElementById('navigate').onclick = async () => {
+      location.hash = '#/caja';
+      const finish = HotelTelemetry.startRoute('/caja');
+      try { await fetch('/operation'); }
+      finally { finish(); }
+      document.getElementById('result').textContent = 'Navegación a /caja terminada';
+    };
+  </script>
+</body>
+</html>

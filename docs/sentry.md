@@ -22,7 +22,7 @@ Se capturan excepciones JavaScript no controladas y promesas rechazadas. Para er
 
 Los dominios `gestiondehotel.com` y `www.gestiondehotel.com` usan `prod`; localhost usa `development` y otros dominios usan `preview`. La versión enviada es `gestiondehotel@<revision>`. La configuración no incluye las funciones de Supabase.
 
-No se activan Replay, trazas de rendimiento, logs ni sesiones automáticas. Se excluyen usuarios, cabeceras, cookies, cuerpos de peticiones, breadcrumbs y contextos adicionales. El filtro elimina consultas y fragmentos de URLs y redacta patrones de credenciales, correos e identificadores en los mensajes. Evita incluir nombres o datos de huéspedes en mensajes de error: ningún filtro de texto puede reconocer todos los datos personales.
+Se activan trazas de carga y navegación con muestreo del 10 %. No se activan Replay, logs ni sesiones automáticas. Se excluyen usuarios, cabeceras, cookies, cuerpos de peticiones, breadcrumbs y contextos adicionales; se conserva el contexto técnico de traza para correlacionar errores. El filtro elimina consultas y fragmentos de URLs y redacta patrones de credenciales, correos e identificadores en los mensajes. Evita incluir nombres o datos de huéspedes en mensajes de error: ningún filtro de texto puede reconocer todos los datos personales.
 
 Para desactivar la captura, cambia `enabled` a `false` en la configuración y recompila. También se respeta `globalThis.__HOTEL_APP_CONFIG__.sentry.enabled = false` si se establece antes de cargar el SDK.
 
@@ -56,3 +56,42 @@ El primer comando envía un único error sintético mediante el SDK oficial al e
 No se suben sourcemaps: los módulos propios de la aplicación se sirven sin minificar y el bundle nuevo contiene principalmente el SDK. Esta configuración es local hasta que los cambios se confirmen, publiquen y desplieguen mediante el flujo habitual.
 
 Referencias: [SDK JavaScript](https://docs.sentry.io/platforms/javascript/), [filtrado de eventos](https://docs.sentry.io/platforms/javascript/configuration/filtering/), [plugins de OpenAI](https://learn.chatgpt.com/docs/plugins).
+
+
+## Trazas de carga y navegación
+
+El router mide el montaje de cada sección mediante `HotelTelemetry.startRoute`.
+Los errores de inicio, desmontaje y `logMonitoringEvent` se remiten a Sentry.
+`HotelMonitoring` conserva su API anterior y comparte la misma instancia.
+Las páginas de recuperación, tienda y menú público también cargan el SDK.
+La política de producción sigue usando `prod` y `sentry.config.json` como
+configuración pública. Los previews y localhost están desactivados por defecto.
+Para staging, definir antes del bundle:
+
+```js
+globalThis.__HOTEL_APP_CONFIG__ = {
+  ...globalThis.__HOTEL_APP_CONFIG__,
+  sentry: { enabled: true, environment: 'staging', tracesSampleRate: 1 },
+};
+```
+
+El código de instrumentación está en `js/telemetry/sentry-client.js` y se incluye
+mediante la entrada existente `js/monitoring/sentry-entry.mjs`. El mismo
+`npm run build:sentry` regenera el bundle. No se instrumenta el backend ni se
+añaden cabeceras de tracing a servicios externos.
+
+Para verificar manualmente error y traza juntos, ejecutar en la consola:
+
+```js
+await HotelTelemetry.verifyConnection()
+```
+
+Se crea un evento sintético con `test_event=true`. `accepted: true` y los códigos
+`eventHttpStatus: 200` y `traceHttpStatus: 200` confirman la aceptación por Sentry.
+`flushed` por sí solo no confirma recepción. Esta prueba no se ejecuta automáticamente.
+`HotelTelemetry.getStatus()` muestra activación, entorno, muestreo y la última
+respuesta de una traza. Las incidencias antiguas no adquieren trazas retrospectivas.
+
+Pruebas sin red: `node --test tests/sentry.test.cjs tests/sentry-telemetry.test.cjs`.
+Prueba manual del bundle con datos sintéticos: `node scripts/serve-sentry-check.cjs`.
+La página de esta prueba usa exclusivamente el entorno `verification`.

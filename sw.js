@@ -1,4 +1,4 @@
-const APP_VERSION = '20260902-sentry-1';
+const APP_VERSION = '20260903-sentry-tracing-1';
 const APP_SHELL_CACHE = `gestiondehotel-shell-${APP_VERSION}`;
 const RUNTIME_CACHE = `gestiondehotel-runtime-${APP_VERSION}`;
 const OFFLINE_URL = '/app/offline.html';
@@ -10,7 +10,7 @@ const APP_SHELL_ASSETS = [
   OFFLINE_URL,
   '/style.css',
   '/js/main.js',
-  '/js/sentry-browser.js',
+  '/js/sentry-browser.js?v=20260903-tracing-1',
   '/js/manifest.json',
   '/js/modules/control-energia/control-energia-20260902.js',
   '/favicon.ico',
