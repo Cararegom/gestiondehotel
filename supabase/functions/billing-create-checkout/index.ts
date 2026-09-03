@@ -96,6 +96,16 @@ function getPositiveSubscriptionPayments(pagos: Array<Record<string, unknown>> =
 }
 
 function getPromoBienvenidaStatus(hotel: Record<string, unknown>, pagos: Array<Record<string, unknown>> = []) {
+  if (hotel?.suscripcion_exenta === true) {
+    return {
+      aplica: false,
+      mesesRestantes: 0,
+      siguienteMesPromo: 0,
+      porcentaje: Math.round(PROMO_BIENVENIDA_DESCUENTO * 100),
+      aplicaEnPeriodo() { return false; }
+    };
+  }
+
   const trialStart = hotel?.trial_inicio ? new Date(String(hotel.trial_inicio)) : null;
   const elegiblePorFecha = Boolean(
     trialStart && !Number.isNaN(trialStart.getTime()) && trialStart >= PROMO_BIENVENIDA_INICIO
@@ -279,7 +289,7 @@ Deno.serve(async (req) => {
       supabaseAdmin.from('usuarios').select('id, hotel_id, rol').eq('id', authUser.id).maybeSingle(),
       supabaseAdmin
         .from('hoteles')
-        .select('id, nombre, plan, plan_id, estado_suscripcion, trial_inicio, trial_fin, suscripcion_inicio, suscripcion_fin, creado_en, creado_por')
+        .select('id, nombre, plan, plan_id, estado_suscripcion, trial_inicio, trial_fin, suscripcion_inicio, suscripcion_fin, creado_en, creado_por, suscripcion_exenta')
         .eq('id', hotelId)
         .maybeSingle(),
       supabaseAdmin.from('planes').select('*'),
@@ -307,6 +317,13 @@ Deno.serve(async (req) => {
         role: profile?.rol || null
       });
       return jsonResponse({ error: 'You are not authorized to manage this hotel subscription.' }, 403, origin);
+    }
+
+    if (hotel.suscripcion_exenta === true) {
+      return jsonResponse({
+        error: 'Esta cuenta interna está exenta de cobro y no requiere renovación.',
+        code: 'SUBSCRIPTION_EXEMPT'
+      }, 409, origin);
     }
 
     if (plansError || !Array.isArray(plans)) {
