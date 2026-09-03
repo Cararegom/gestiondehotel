@@ -6,6 +6,7 @@ const datos = fs.readFileSync('js/modules/mapa-habitaciones/datos.js', 'utf8');
 const gestion = fs.readFileSync('js/modules/mapa-habitaciones/modales-gestion.js', 'utf8');
 const alquiler = fs.readFileSync('js/modules/mapa-habitaciones/modales-alquiler.js', 'utf8');
 const saldoMapa = fs.readFileSync('js/mapa-saldo-enhancer.js', 'utf8');
+const pagosConsumos = fs.readFileSync('js/mapa-consumos-pagos-enhancer.js', 'utf8');
 const appIndex = fs.readFileSync('app/index.html', 'utf8');
 
 test('el mapa reconoce pagos historicos sin duplicar pagos normalizados', () => {
@@ -23,7 +24,7 @@ test('liberar habitacion no vuelve a cobrar consumos que ya figuran pagados', ()
   assert.match(datos, /select\('tipo, monto, venta_tienda_id'\)/);
   assert.match(datos, /select\('tipo, monto, venta_restaurante_id'\)/);
   assert.match(datos, /resultados\.find\(\(resultado\) => resultado\.error\)/);
-  assert.match(gestion, /calcularResumenSaldoCheckout\(/);
+  assert.match(gestion, /calcularResumenSaldoCheckout\(\{/);
   assert.doesNotMatch(gestion, /totalPagado - totalExtrasPagados/);
 });
 
@@ -77,4 +78,18 @@ test('el indicador se refresca por render y mutaciones de tarjetas sin polling',
   assert.match(saldoMapa, /MutationObserver/);
   assert.match(saldoMapa, /mutationTouchesRoomMap/);
   assert.doesNotMatch(saldoMapa, /setInterval\(/);
+});
+
+test('ver consumos muestra fechas de pagos y las incluye en la factura POS', () => {
+  assert.match(saldoMapa, /import '\.\/mapa-consumos-pagos-enhancer\.js'/);
+  assert.match(pagosConsumos, /Historial de pagos y abonos/);
+  assert.match(pagosConsumos, /select\('id, monto, fecha_pago, concepto'\)/);
+  assert.match(pagosConsumos, /America\/Bogota/);
+  assert.match(pagosConsumos, /Último pago:/);
+  assert.match(pagosConsumos, /btn-imprimir-pos-local/);
+  assert.match(pagosConsumos, /PAGOS \/ ABONOS/);
+  assert.match(pagosConsumos, /cleanPaymentConcept/);
+  assert.doesNotMatch(pagosConsumos, /\.insert\(/);
+  assert.doesNotMatch(pagosConsumos, /\.update\(/);
+  assert.doesNotMatch(pagosConsumos, /\.from\(['"][^'"]+['"]\)\s*\.delete\(/);
 });
