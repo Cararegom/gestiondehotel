@@ -1,11 +1,11 @@
 // js/supabaseClient.js
 import './safeLogger.js';
 import { installClienteIdentityGuard } from './services/clienteIdentityGuard.js';
+import { createHotelTimeZoneAwareSupabaseClient } from './services/hotelTimeZoneService.js';
 
 // CAMBIO IMPORTANTE: Usamos una versión específica (@2.39.7) para evitar el error de 'AuthClient'
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/+esm';
 
-// TUS CREDENCIALES (Están correctas, las mantengo aquí)
 const PRODUCTION_SUPABASE_URL = 'https://iikpqpdoslyduecibaij.supabase.co';
 const PRODUCTION_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlpa3BxcGRvc2x5ZHVlY2liYWlqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3MzA2NTIsImV4cCI6MjA2MjMwNjY1Mn0.j9mIsD8-sn_jNsQtguKxsagWzfY_p41KV4TIaur-VBM';
 const STAGING_SUPABASE_URL = 'https://vyzscuzgjdhrhzctmsuv.supabase.co';
@@ -33,14 +33,11 @@ if (activeBackend === 'staging' && globalThis.document) {
   }, { once: true });
 }
 
-// Validaciones básicas de seguridad
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error("Error crítico: Faltan las credenciales de Supabase en supabaseClient.js");
+  console.error('Error crítico: Faltan las credenciales de Supabase en supabaseClient.js');
 }
 
-// Inicializar el cliente con opciones explÃ­citas de sesiÃ³n para evitar
-// comportamientos ambiguos entre pÃ¡ginas pÃºblicas, login y recuperaciÃ³n.
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+const supabaseBase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
@@ -54,6 +51,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   }
 });
 
-installClienteIdentityGuard(supabase);
+// Primero se instalan las barreras de identidad sobre el cliente real. Luego se expone
+// un proxy único que convierte los cortes diarios legacy a la zona oficial del hotel y
+// aprende zona_horaria cada vez que se carga configuracion_hotel.
+installClienteIdentityGuard(supabaseBase);
+export const supabase = createHotelTimeZoneAwareSupabaseClient(supabaseBase);
 
 console.log(`Supabase Client cargado correctamente (v2.39.7, ${activeBackend})`);
