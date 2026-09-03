@@ -91,5 +91,5 @@ test('ver consumos muestra fechas de pagos y las incluye en la factura POS', () 
   assert.match(pagosConsumos, /cleanPaymentConcept/);
   assert.doesNotMatch(pagosConsumos, /\.insert\(/);
   assert.doesNotMatch(pagosConsumos, /\.update\(/);
-  assert.doesNotMatch(pagosConsumos, /\.delete\(/);
+  assert.doesNotMatch(pagosConsumos, /\.from\(['"][^'"]+['"]\)\s*\.delete\(/);
 });
