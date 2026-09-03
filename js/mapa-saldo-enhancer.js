@@ -1,5 +1,6 @@
 import { calcularResumenSaldoCheckout } from './modules/mapa-habitaciones/datos.js';
 import { formatCurrency } from './uiUtils.js';
+import './mapa-consumos-pagos-enhancer.js';
 
 const ACTIVE_RESERVATION_STATES = ['activa', 'ocupada', 'tiempo agotado'];
 const BALANCE_TOLERANCE = 50;
