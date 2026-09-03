@@ -1,0 +1,159 @@
+name: Fix clientes selection once
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-clientes-selection-once.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-clientes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply targeted fix
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          path = Path('js/modules/clientes/clientes.js')
+          source = path.read_text(encoding='utf-8')
+
+          def replace_once(old, new, label):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 occurrence, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              """        let { data, error } = await supabaseInstance.from('clientes').select('*').eq('id', clienteId).single();""",
+              """        let { data, error } = await supabaseInstance
+            .from('clientes')
+            .select('*')
+            .eq('id', clienteId)
+            .eq('hotel_id', hotelIdActual)
+            .maybeSingle();""",
+              'scope getClienteById by hotel'
+          )
+
+          replace_once(
+              """    if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;
+
+    try {
+        const results = await Promise.all([""",
+              """    if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;
+
+    try {
+        let totalClientesHotel = clientesData.length;
+        const { count: totalClientesCount, error: totalClientesError } = await supabaseInstance
+            .from('clientes')
+            .select('id', { count: 'exact', head: true })
+            .eq('hotel_id', hotelIdActual);
+
+        if (totalClientesError) {
+            logError('No se pudo obtener el total exacto de clientes del hotel:', totalClientesError);
+        } else if (Number.isFinite(totalClientesCount)) {
+            totalClientesHotel = totalClientesCount;
+        }
+
+        const results = await Promise.all([""",
+              'load exact client count'
+          )
+
+          replace_once(
+              """        crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);
+        crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);""",
+              """        crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);
+        crmPortfolioSummary.total = totalClientesHotel;
+        crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);""",
+              'apply exact client count to header'
+          )
+
+          replace_once(
+              """        const filteredClients = await getClientes({ hotelId: hotelIdActual, search: texto, dateRange: dateRange });
+        renderTablaClientes(filteredClients);""",
+              """        const filteredClients = await getClientes({ hotelId: hotelIdActual, search: texto, dateRange: dateRange });
+
+        // Los resultados filtrados pueden incluir clientes que no estaban en la carga inicial
+        // (Supabase limita por defecto la cantidad de filas devueltas). Los conservamos en la
+        // caché del módulo para que las acciones Ver y Editar siempre resuelvan el cliente.
+        const clientesById = new Map(clientesData.map((cliente) => [String(cliente.id), cliente]));
+        filteredClients.forEach((cliente) => clientesById.set(String(cliente.id), cliente));
+        clientesData = Array.from(clientesById.values());
+
+        renderTablaClientes(filteredClients);""",
+              'cache filtered clients'
+          )
+
+          replace_once(
+              """    const cliente = clientesData.find(c => c.id === clienteId);
+    if (!cliente) {
+        showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');
+        return;
+    }""",
+              """    let cliente = clientesData.find(c => String(c.id) === String(clienteId));
+    if (!cliente) {
+        cliente = await getClienteById(clienteId);
+        if (!cliente) {
+            showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');
+            return;
+        }
+        clientesData = [...clientesData, cliente];
+    }""",
+              'fallback client lookup for details'
+          )
+
+          path.write_text(source, encoding='utf-8')
+
+          test_path = Path('tests/clientes-selection-fallback.test.cjs')
+          test_path.write_text(r'''const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const source = fs.readFileSync(
+  path.resolve(__dirname, '../js/modules/clientes/clientes.js'),
+  'utf8'
+);
+
+test('detalle de cliente hace fallback por ID y respeta el hotel actual', () => {
+  assert.match(source, /cliente = await getClienteById\(clienteId\)/);
+  assert.match(source, /\.eq\('id', clienteId\)[\s\S]*?\.eq\('hotel_id', hotelIdActual\)[\s\S]*?\.maybeSingle\(\)/);
+});
+
+test('resultados filtrados se agregan a la cache de clientes', () => {
+  assert.match(source, /const clientesById = new Map\(clientesData\.map/);
+  assert.match(source, /filteredClients\.forEach\(\(cliente\) => clientesById\.set/);
+  assert.match(source, /clientesData = Array\.from\(clientesById\.values\(\)\)/);
+});
+
+test('cabecera CRM usa conteo exacto de clientes del hotel', () => {
+  assert.match(source, /select\('id', \{ count: 'exact', head: true \}\)/);
+  assert.match(source, /crmPortfolioSummary\.total = totalClientesHotel/);
+});
+''', encoding='utf-8')
+          PY
+
+      - name: Validate syntax and regression test
+        run: |
+          node scripts/check-syntax.js
+          node --test tests/clientes-selection-fallback.test.cjs
+
+      - name: Commit fix and remove one-time workflow
+        shell: bash
+        run: |
+          rm .github/workflows/fix-clientes-selection-once.yml
+          git config user.name "gestiondehotel-fix-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/modules/clientes/clientes.js tests/clientes-selection-fallback.test.cjs .github/workflows/fix-clientes-selection-once.yml
+          git commit -m "Corregir apertura de clientes fuera del limite inicial"
+          git push origin HEAD:main
