@@ -60,3 +60,22 @@ test('Promociones ya expone la opción de productos de tienda que habilita la mi
   const source = fs.readFileSync('js/modules/descuentos/descuentos.js', 'utf8');
   assert.match(source, /option value="productos_tienda"/i);
 });
+
+test('el POS usa el resumen común para pantalla cobro y ticket', () => {
+  const source = fs.readFileSync('js/modules/tienda/pos.js', 'utf8');
+  assert.match(source, /calcularResumenDescuentoTienda/);
+  assert.match(source, /const resumen = calcularResumenDescuentoTienda\(posCarrito, descuentoAplicado\)/);
+  assert.match(source, /pagos: \[\{ metodo_pago_id, monto: total \}\]/);
+  assert.match(source, /mostrarModalPagoMixto\(total/);
+  assert.match(source, /ventaResult\.subtotal \?\? subtotalVenta/);
+  assert.match(source, /ventaResult\.descuento \?\? montoDescuento/);
+  assert.doesNotMatch(source, /const total = posCarrito\.reduce/);
+});
+
+test('el POS valida cupones con el servicio común y no con una consulta paralela', () => {
+  const source = fs.readFileSync('js/modules/tienda/pos.js', 'utf8');
+  assert.match(source, /consultarDescuentosElegibles/);
+  assert.match(source, /normalizarCodigoDescuento/);
+  assert.doesNotMatch(source, /\.from\(['"]descuentos['"]\)/);
+  assert.doesNotMatch(source, /aplicabilidad === 'categorias_restaurante'/);
+});
