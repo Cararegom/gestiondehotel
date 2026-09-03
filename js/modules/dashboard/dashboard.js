@@ -37,6 +37,16 @@ function formatDashboardTimestamp(date) {
   })}`;
 }
 
+function showDashboardError(errorElement, message) {
+  if (errorElement) {
+    errorElement.textContent = message;
+    errorElement.className = 'feedback-message mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700';
+    errorElement.style.display = 'block';
+    errorElement.setAttribute('aria-live', 'assertive');
+  }
+  showAppFeedback(message, 'error');
+}
+
 function updateRefreshControls(containerEl) {
   if (!containerEl || !isMounted) return;
   const refreshButton = containerEl.querySelector('#dashboard-refresh-btn');
@@ -424,7 +434,7 @@ async function loadDashboardPageData(containerEl, hotelId, supabaseInstance) {
     renderChecklist(containerEl, 'list-next-checkouts', rpcData.checkouts || [], 'check-out');
     return true;
   } catch (error) {
-    showAppFeedback(mainErrorDiv, `Error al cargar datos principales: ${error.message}`, 'error');
+    showDashboardError(mainErrorDiv, `Error al cargar datos principales: ${error.message}`);
     return false;
   }
 }
@@ -488,13 +498,13 @@ export async function mount(container, supabaseInstance, currentUser) {
   if (!hotelId && currentUser?.id) {
     const { data: perfil, error } = await supabaseInstance.from('usuarios').select('hotel_id').eq('id', currentUser.id).single();
     if (error && error.code !== 'PGRST116') {
-      showAppFeedback(container.querySelector('#dashboard-main-error'), 'No se pudo determinar el hotel del usuario.', 'error');
+      showDashboardError(container.querySelector('#dashboard-main-error'), 'No se pudo determinar el hotel del usuario.');
       return;
     }
     hotelId = perfil?.hotel_id;
   }
   if (!hotelId) {
-    showAppFeedback(container.querySelector('#dashboard-main-error'), 'Hotel ID no disponible.', 'error');
+    showDashboardError(container.querySelector('#dashboard-main-error'), 'Hotel ID no disponible.');
     return;
   }
   currentHotelIdGlobal = hotelId;
