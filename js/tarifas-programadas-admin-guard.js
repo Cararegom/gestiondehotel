@@ -63,3 +63,9 @@ const observer = new MutationObserver(() => {
 
 observer.observe(document.documentElement, { childList: true, subtree: true });
 enforceTariffPermissions().catch(() => {});
+
+// Capa opcional de ayuda. Se carga dinámicamente para que un fallo del simulador
+// nunca impida que el guard de permisos proteja la administración de tarifas.
+import('./tarifas-programadas-simulador-bootstrap.js').catch((error) => {
+  console.warn('[TarifasAdminGuard] Simulador no disponible:', error);
+});
