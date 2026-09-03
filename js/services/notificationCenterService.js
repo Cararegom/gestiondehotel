@@ -68,6 +68,12 @@ export async function canUseNotificationCenter(supabase, hotelId) {
 }
 
 function buildNotificationMatchFilter(context) {
+  if (isAdministrativeRole(context.role)) {
+    // Los administradores conservan la vista de alertas globales por rol,
+    // pero no deben recibir las copias personales creadas para otros usuarios.
+    return `usuario_id.eq.${context.userId},usuario_id.is.null`;
+  }
+
   return `usuario_id.eq.${context.userId},rol_destino.eq.${context.role}`;
 }
 
@@ -82,14 +88,11 @@ function shouldRetryNotificationSelectCompatibility(error) {
 
 async function fetchNotificationsWithCompatibility(supabase, context, limit) {
   const buildQuery = (selectColumns) => {
-    let query = supabase
+    const query = supabase
       .from('notificaciones')
       .select(selectColumns)
-      .eq('hotel_id', context.hotelId);
-
-    if (!isAdministrativeRole(context.role)) {
-      query = query.or(buildNotificationMatchFilter(context));
-    }
+      .eq('hotel_id', context.hotelId)
+      .or(buildNotificationMatchFilter(context));
 
     return query
       .order('creado_en', { ascending: false })
@@ -138,15 +141,12 @@ export async function markAllNotificationsAsRead(supabase, context) {
   }
 
   console.warn('La RPC para marcar notificaciones falló; usando actualización compatible.', rpcError);
-  let fallbackQuery = supabase
+  const fallbackQuery = supabase
     .from('notificaciones')
     .update({ leida: true, actualizado_en: new Date().toISOString() })
     .eq('hotel_id', context.hotelId)
-    .eq('leida', false);
-
-  if (!isAdministrativeRole(context.role)) {
-    fallbackQuery = fallbackQuery.or(buildNotificationMatchFilter(context));
-  }
+    .eq('leida', false)
+    .or(buildNotificationMatchFilter(context));
 
   const { error: fallbackError } = await fallbackQuery;
 
