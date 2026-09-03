@@ -1,8 +1,7 @@
 import { formatCurrency } from './uiUtils.js';
+import { formatInTimeZone, getRuntimeHotelTimeZone } from './services/hotelTimeZoneService.js';
 
 const ACTIVE_RESERVATION_STATES = ['activa', 'ocupada', 'tiempo agotado'];
-
-const COLOMBIA_TIME_ZONE = 'America/Bogota';
 const CONSUMOS_PAYMENT_HISTORY_ATTR = 'data-consumos-payment-history';
 
 let consumosObserver = null;
@@ -14,15 +13,14 @@ function formatPaymentDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
 
-  return new Intl.DateTimeFormat('es-CO', {
-    timeZone: COLOMBIA_TIME_ZONE,
+  return formatInTimeZone(date, getRuntimeHotelTimeZone(), 'es-CO', {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
     hour12: true
-  }).format(date);
+  });
 }
 
 function cleanPaymentConcept(value) {
@@ -536,7 +534,6 @@ function initConsumosPaymentEnhancer() {
   document.addEventListener('click', interceptConsumosPrint, true);
   enhanceVisibleConsumosModal();
 }
-
 
 export function initMapaConsumosPagosEnhancer() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
