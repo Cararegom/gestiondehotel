@@ -2,7 +2,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const hub = fs.readFileSync('js/modules/reportes/reportes-centro.js', 'utf8');
+const hubFacade = fs.readFileSync('js/modules/reportes/reportes-centro.js', 'utf8');
+const hub = fs.readFileSync('js/modules/reportes/reportes-centro-core.js', 'utf8');
 const bankModule = fs.readFileSync('js/modules/pagos-bancarios/pagos-bancarios.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
 const migration = fs.readFileSync('supabase/migrations/20260803120000_bank_email_payments_pilot.sql', 'utf8');
@@ -16,6 +17,7 @@ const cashView = fs.readFileSync('js/modules/caja/caja.js', 'utf8');
 const bankService = fs.readFileSync('js/services/bankPaymentService.js', 'utf8');
 
 test('Fase 6 solo aparece en Reportes para el piloto administrador', () => {
+  assert.match(hubFacade, /reportes-centro-core\.js/);
   assert.match(hub, /key: 'conciliacion'.*adminOnly: true, pilotOnly: true/);
   assert.match(hub, /getBankPaymentPilotStatus/);
   assert.match(hub, /pilotStatus\.canAccess === true && pilotStatus\.isAdmin === true/);
