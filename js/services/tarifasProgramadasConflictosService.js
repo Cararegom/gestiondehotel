@@ -41,17 +41,59 @@ function compareRoomScopeSpecificity(a, b) {
   return 0;
 }
 
+function validDateKey(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ''));
+}
+
 function dateRangeOverlaps(a, b) {
-  const startA = String(a?.fecha_inicio || '0000-01-01');
-  const endA = String(a?.fecha_fin || '9999-12-31');
-  const startB = String(b?.fecha_inicio || '0000-01-01');
-  const endB = String(b?.fecha_fin || '9999-12-31');
+  const startA = validDateKey(a?.fecha_inicio) ? String(a.fecha_inicio) : '0000-01-01';
+  const endA = validDateKey(a?.fecha_fin) ? String(a.fecha_fin) : '9999-12-31';
+  const startB = validDateKey(b?.fecha_inicio) ? String(b.fecha_inicio) : '0000-01-01';
+  const endB = validDateKey(b?.fecha_fin) ? String(b.fecha_fin) : '9999-12-31';
   return startA <= endB && startB <= endA;
 }
 
 function overlappingDays(a, b) {
   const aDays = new Set(normalizeDays(a));
   return normalizeDays(b).filter((day) => aDays.has(day));
+}
+
+function shiftDateKey(dateKey, days) {
+  const [year, month, day] = String(dateKey).split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+}
+
+function weekdayFromDateKey(dateKey) {
+  return new Date(`${dateKey}T12:00:00.000Z`).getUTCDay();
+}
+
+function calendarOverlapDays(a, b) {
+  const sharedDays = overlappingDays(a, b);
+  if (!sharedDays.length || !dateRangeOverlaps(a, b)) return [];
+
+  const starts = [a?.fecha_inicio, b?.fecha_inicio].filter(validDateKey).map(String).sort();
+  const ends = [a?.fecha_fin, b?.fecha_fin].filter(validDateKey).map(String).sort();
+  const overlapStart = starts.length ? starts[starts.length - 1] : null;
+  const overlapEnd = ends.length ? ends[0] : null;
+  if (overlapStart && overlapEnd && overlapStart > overlapEnd) return [];
+
+  // Con un rango abierto, cualquier día compartido aparecerá dentro de una ventana de 7 días.
+  // Con un rango cerrado, revisar como máximo 7 días basta para probar si el weekday existe
+  // realmente dentro de la intersección, evitando falsos conflictos en rangos muy cortos.
+  if (!overlapStart && !overlapEnd) return sharedDays;
+
+  const anchor = overlapStart || overlapEnd;
+  const direction = overlapStart ? 1 : -1;
+  const found = new Set();
+  for (let index = 0; index < 7; index += 1) {
+    const dateKey = shiftDateKey(anchor, direction * index);
+    if (overlapStart && dateKey < overlapStart) continue;
+    if (overlapEnd && dateKey > overlapEnd) continue;
+    const weekday = weekdayFromDateKey(dateKey);
+    if (sharedDays.includes(weekday)) found.add(weekday);
+  }
+  return [...found];
 }
 
 export function tarifaAplicaHabitacionScope(tarifa, habitacionId) {
@@ -94,16 +136,15 @@ export function detectarConflictosTarifaProgramada(candidata, existentes = [], h
   const rooms = normalizeRoomIds(habitacionIds);
 
   return (Array.isArray(existentes) ? existentes : [])
-    .filter((tarifa) => {
-      if (!tarifa || tarifa.activo === false) return false;
-      if (candidateId && String(tarifa.id || '') === candidateId) return false;
-      if (String(tarifa.modalidad || 'noche') !== modality) return false;
-      if (modality === 'tiempo_estancia' && String(tarifa.tiempo_estancia_id || '') !== String(candidata.tiempo_estancia_id || '')) return false;
-      if (!dateRangeOverlaps(candidata, tarifa)) return false;
-      if (overlappingDays(candidata, tarifa).length === 0) return false;
-      return true;
-    })
     .map((tarifa) => {
+      if (!tarifa || tarifa.activo === false) return null;
+      if (candidateId && String(tarifa.id || '') === candidateId) return null;
+      if (String(tarifa.modalidad || 'noche') !== modality) return null;
+      if (modality === 'tiempo_estancia' && String(tarifa.tiempo_estancia_id || '') !== String(candidata.tiempo_estancia_id || '')) return null;
+
+      const diasCoincidentes = calendarOverlapDays(candidata, tarifa);
+      if (!diasCoincidentes.length) return null;
+
       const habitacionesCoincidentes = rooms.filter(
         (roomId) => tarifaAplicaHabitacionScope(candidata, roomId) && tarifaAplicaHabitacionScope(tarifa, roomId)
       );
@@ -113,7 +154,7 @@ export function detectarConflictosTarifaProgramada(candidata, existentes = [], h
       const precedence = compararPrecedenciaTarifas(candidata, tarifa);
       return {
         tarifa,
-        diasCoincidentes: overlappingDays(candidata, tarifa),
+        diasCoincidentes,
         habitacionesCoincidentes,
         ambigua: precedence === 0,
         gana: precedence < 0 ? 'candidata' : precedence > 0 ? 'existente' : 'ambigua'
