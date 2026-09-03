@@ -6,6 +6,7 @@ const service = fs.readFileSync('js/services/hotelTimeZoneService.js', 'utf8');
 const client = fs.readFileSync('js/supabaseClient.js', 'utf8');
 const config = fs.readFileSync('js/modules/configuracion/configuracion.js', 'utf8');
 const reports = fs.readFileSync('js/modules/reportes/reportes-centro.js', 'utf8');
+const dashboard = fs.readFileSync('js/modules/dashboard/dashboard.js', 'utf8');
 const paymentDates = fs.readFileSync('js/mapa-fechas-abonos-inline.js', 'utf8');
 const paymentHistory = fs.readFileSync('js/mapa-consumos-pagos-enhancer.js', 'utf8');
 const calendar = fs.readFileSync('supabase/functions/calendar-create-event/index.ts', 'utf8');
@@ -50,6 +51,19 @@ test('base financiera, dashboard, mantenimiento y horarios consumen hotel_time_z
   assert.match(migration, /preparar_tarea_mantenimiento_fase3/);
   assert.match(migration, /trg_horario_forzar_zona_hotel/);
   assert.match(migration, /trg_sincronizar_zona_horaria_configuracion/);
+});
+
+test('Dashboard agrupa días por la fecha operativa del hotel y no por UTC del navegador', () => {
+  assert.match(dashboard, /getRuntimeHotelTimeZone/);
+  assert.match(dashboard, /getTodayInTimeZone/);
+  assert.match(dashboard, /getUtcRangeForHotelDates/);
+  assert.match(dashboard, /\.select\('monto, business_date'\)/);
+  assert.match(dashboard, /entry\.business_date/);
+  assert.match(dashboard, /formatInTimeZone/);
+  assert.doesNotMatch(dashboard, /T00:00:00\.000Z/);
+  assert.doesNotMatch(dashboard, /T23:59:59\.999Z/);
+  assert.doesNotMatch(dashboard, /toISOString\(\)\.slice\(0,\s*10\)/);
+  assert.doesNotMatch(dashboard, /getFullYear\(\).*getMonth\(\).*getDate\(\)/s);
 });
 
 test('calendarios, alertas y fechas de pagos ya no fijan Bogotá localmente', () => {
