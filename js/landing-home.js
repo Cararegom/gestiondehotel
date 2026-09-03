@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+  document.documentElement.classList.add('landing-js');
   const SUPABASE_FUNCTIONS_BASE = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1';
   const CHATKIT_SESSION_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/chatkit-session`;
   const LANDING_TRACK_EVENT_ENDPOINT = `${SUPABASE_FUNCTIONS_BASE}/landing-track-event`;
@@ -8,94 +9,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const LANDING_SESSION_KEY = 'gestionhotel.landing_session_id';
   const LANDING_UTM_KEY = 'gestionhotel.landing_utm_first_touch';
 
-  const testimonials = [
-    {
-      name: 'Laura Cárdenas',
-      role: 'Propietaria, Hotel Paraíso Azul',
-      content:
-        'Desde que usamos Gestión de Hotel, nuestras reservas por horas se dispararon un 40%. El sistema es súper fácil de usar y el soporte siempre está ahí. ¡Lo recomiendo a ojos cerrados!',
-      image: 'icons/testimonio-laura-cardenas.png'
-    },
-    {
-      name: 'Ricardo Morales',
-      role: 'Gerente, Motel El Descanso',
-      content:
-        'Antes perdíamos mucho tiempo con la caja y las facturas. Ahora todo es automático y sin errores. La integración con WhatsApp es una maravilla para confirmar reservas. ¡Un alivio total!',
-      image: 'icons/testimonio-ricardo-morales.png'
-    },
-    {
-      name: 'Sofía Peña',
-      role: 'Administradora, Hostal Aventura',
-      content:
-        'Lo que más me gusta es el mapa de habitaciones y lo fácil que es ver la disponibilidad. El primer mes gratis nos convenció y ahora no podríamos vivir sin él. ¡Gracias, Gestión de Hotel!',
-      image: 'icons/testimonio-sofia-pena.png'
-    }
-  ];
-
-  const carouselEl = document.getElementById('testimonial-carousel');
-  const carouselInner = document.querySelector('#testimonial-carousel .carousel-inner');
-  let testimonialsMounted = false;
-
-  function mountTestimonials() {
-    if (!carouselEl || !carouselInner || testimonialsMounted) return;
-
-    testimonialsMounted = true;
-    const fragment = document.createDocumentFragment();
-
-    testimonials.forEach((testimonial, index) => {
-      const item = document.createElement('div');
-      item.className = `carousel-item ${index === 0 ? 'active' : ''}`;
-      item.innerHTML = `
-        <div class="card testimonial-card border-0 hotel-shadow-lg bg-white text-center p-4 p-md-5">
-          <img
-            src="${testimonial.image}"
-            alt="Foto de ${testimonial.name}"
-            class="rounded-circle mx-auto mb-3"
-            style="width: 70px; height: 70px; border: 3px solid var(--hotel-blue); object-fit: cover;"
-            loading="lazy"
-            decoding="async"
-          >
-          <p class="fs-5 fst-italic text-secondary mb-4">"${testimonial.content}"</p>
-          <div>
-            <p class="fw-bold mb-0">${testimonial.name}</p>
-            <p class="text-secondary small mb-0">${testimonial.role}</p>
-          </div>
-        </div>
-      `;
-      fragment.appendChild(item);
-    });
-
-    carouselInner.appendChild(fragment);
-
-    if (window.bootstrap?.Carousel) {
-      const testimonialCarousel = new window.bootstrap.Carousel(carouselEl, {
-        interval: 6000,
-        ride: 'carousel'
-      });
-
-      const prevBtn = document.getElementById('prev-testimonial');
-      const nextBtn = document.getElementById('next-testimonial');
-      prevBtn?.addEventListener('click', () => testimonialCarousel.prev());
-      nextBtn?.addEventListener('click', () => testimonialCarousel.next());
-    }
-  }
-
-  if (carouselEl && 'IntersectionObserver' in window) {
-    const testimonialsObserver = new IntersectionObserver((entries, observer) => {
-      if (!entries.some((entry) => entry.isIntersecting)) return;
-      mountTestimonials();
-      observer.disconnect();
-    }, { rootMargin: '240px 0px' });
-
-    testimonialsObserver.observe(carouselEl);
-  } else {
-    mountTestimonials();
-  }
-
   const planes = {
-    lite: { cop: 99000, usd: 25, original_cop: 149000, original_usd: 40 },
-    pro: { cop: 149000, usd: 38, original_cop: 229000, original_usd: 60 },
-    max: { cop: 199000, usd: 50, original_cop: 299000, original_usd: 75 }
+    lite: { cop: 99000, usd: 25 },
+    pro: { cop: 149000, usd: 38 },
+    max: { cop: 199000, usd: 50 }
   };
   const WELCOME_PROMO_DISCOUNT = 0.5;
 
@@ -106,7 +23,6 @@ document.addEventListener('DOMContentLoaded', () => {
       plan,
       {
         price: document.getElementById(`price-${plan}`),
-        originalPrice: document.getElementById(`price-original-${plan}`),
         period: document.getElementById(`period-${plan}`),
         promoNote: document.getElementById(`promo-note-${plan}`)
       }
@@ -142,7 +58,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const isCop = monedaSwitch.checked;
     const isAnnual = periodoSwitch.checked;
     const currency = isCop ? 'cop' : 'usd';
-    const originalCurrencyKey = isCop ? 'original_cop' : 'original_usd';
     const currencyCode = isCop ? 'COP' : 'USD';
 
     updateLabels(isCop, isAnnual);
@@ -152,22 +67,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const promoMonthlyPrice = priceMonthly * WELCOME_PROMO_DISCOUNT;
       const priceAnnual = priceMonthly * 10;
       const displayPrice = isAnnual ? priceAnnual : promoMonthlyPrice;
-      const originalPriceMonthly = planes[plan][originalCurrencyKey];
-      const originalPriceAnnual = originalPriceMonthly * 10;
-      const displayOriginalPrice = isAnnual ? originalPriceAnnual : originalPriceMonthly;
       const periodText = isAnnual ? '/año' : '/mes';
 
       const planNode = planNodes[plan];
       if (!planNode?.price || !planNode?.period) return;
 
       planNode.price.textContent = formatLandingCurrency(displayPrice, currencyCode);
-
-      const originalPriceElement = planNode.originalPrice;
-      if (originalPriceElement) {
-        originalPriceElement.textContent = formatLandingCurrency(displayOriginalPrice, currencyCode);
-        originalPriceElement.style.display = isAnnual ? '' : 'none';
-      }
-
       planNode.period.textContent = periodText;
 
       const promoNote = planNode.promoNote;
@@ -175,15 +80,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const regularMonthlyPrice = planes[plan][currency];
         if (isAnnual) {
           promoNote.innerHTML = `
-            <div class="promo-inline-kicker">Promo mensual para cuentas nuevas</div>
-            <div class="promo-inline-copy">Mes 1 gratis y meses 2 al 4 al 50% en modalidad mensual.</div>
-            <div class="promo-inline-footnote">Luego del 3er mes promocional pagas la tarifa regular de ${formatLandingCurrency(regularMonthlyPrice, currencyCode)}/mes. Si eliges anual, se mantienen 2 meses gratis.</div>
+            <strong>Pago anual:</strong> equivale a 10 mensualidades de ${formatLandingCurrency(regularMonthlyPrice, currencyCode)}.
           `;
         } else {
           promoNote.innerHTML = `
-            <div class="promo-inline-kicker">Mes 1 gratis</div>
-            <div class="promo-inline-copy">El precio grande de arriba corresponde al valor promocional de los meses 2 al 4.</div>
-            <div class="promo-inline-footnote">Después del 3er mes promocional pagas la tarifa regular de ${formatLandingCurrency(regularMonthlyPrice, currencyCode)}/mes.</div>
+            <strong>Precio promocional:</strong> aplica a los 3 primeros pagos mensuales. Luego ${formatLandingCurrency(regularMonthlyPrice, currencyCode)}/mes.
           `;
         }
       }
@@ -193,6 +94,45 @@ document.addEventListener('DOMContentLoaded', () => {
   monedaSwitch?.addEventListener('change', updatePrices);
   periodoSwitch?.addEventListener('change', updatePrices);
   updatePrices();
+
+  function initializeLandingMotion() {
+    const revealElements = document.querySelectorAll('.reveal');
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    if (reducedMotion || !('IntersectionObserver' in window)) {
+      revealElements.forEach((element) => element.classList.add('is-visible'));
+      return;
+    }
+
+    const revealObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+
+    revealElements.forEach((element) => revealObserver.observe(element));
+  }
+
+  function initializeLandingNavigation() {
+    const navbar = document.querySelector('.landing-navbar');
+    const navbarCollapse = document.getElementById('navbarNav');
+    const updateNavbar = () => navbar?.classList.toggle('is-scrolled', window.scrollY > 20);
+
+    updateNavbar();
+    window.addEventListener('scroll', updateNavbar, { passive: true });
+
+    navbarCollapse?.querySelectorAll('a').forEach((link) => {
+      link.addEventListener('click', () => {
+        if (!navbarCollapse.classList.contains('show') || !window.bootstrap?.Collapse) return;
+        window.bootstrap.Collapse.getOrCreateInstance(navbarCollapse).hide();
+      });
+    });
+  }
+
+  initializeLandingMotion();
+  initializeLandingNavigation();
 
   const launcher = document.getElementById('sales-chat-launcher');
   const panel = document.getElementById('sales-chat-panel');
@@ -303,6 +243,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function trackLandingEvent(eventName, metadata = {}, { keepalive = false } = {}) {
     const utm = getFirstTouchUtm();
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push({
+      event: eventName,
+      landing_metadata: metadata
+    });
+
+    if (['localhost', '127.0.0.1'].includes(window.location.hostname)) {
+      return Promise.resolve();
+    }
+
     return postLandingPayload(LANDING_TRACK_EVENT_ENDPOINT, {
       eventName,
       source: 'landing',
@@ -318,7 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function bindLandingConversionTracking() {
-    trackLandingEvent('page_view', {
+    trackLandingEvent('landing_view', {
       title: document.title,
       host: window.location.hostname
     }, { keepalive: true });
@@ -335,38 +285,39 @@ document.addEventListener('DOMContentLoaded', () => {
       }, { keepalive: true });
     });
 
-    document.querySelectorAll('[data-bs-target="#registroModal"]').forEach((element) => {
+    document.querySelectorAll('[data-analytics]').forEach((element) => {
       element.addEventListener('click', () => {
-        trackLandingEvent('open_registration_modal', {
-          cta_label: (element.textContent || '').trim().slice(0, 120)
-        }, { keepalive: true });
-      });
-    });
+        const eventName = element.getAttribute('data-analytics');
+        if (!eventName) return;
 
-    document.querySelectorAll('a[href="#pricing"]').forEach((element) => {
-      element.addEventListener('click', () => {
-        trackLandingEvent('view_pricing_section', {
-          cta_label: (element.textContent || '').trim().slice(0, 120)
-        }, { keepalive: true });
-      });
-    });
-
-    document.querySelectorAll('a[href="#demo-video"]').forEach((element) => {
-      element.addEventListener('click', () => {
-        trackLandingEvent('open_demo_section', {
-          cta_label: (element.textContent || '').trim().slice(0, 120)
-        }, { keepalive: true });
-      });
-    });
-
-    document.querySelectorAll('.plan-button-select').forEach((element) => {
-      element.addEventListener('click', () => {
-        trackLandingEvent('select_plan_from_landing', {
+        trackLandingEvent(eventName, {
           plan_id: element.getAttribute('data-plan-id') || '',
+          cta_location: element.getAttribute('data-cta-location') || '',
           cta_label: (element.textContent || '').trim().slice(0, 120)
         }, { keepalive: true });
       });
     });
+
+    const observedEvents = document.querySelectorAll('[data-observe-event]');
+    if (!observedEvents.length) return;
+
+    if (!('IntersectionObserver' in window)) {
+      observedEvents.forEach((section) => {
+        trackLandingEvent(section.getAttribute('data-observe-event'), {}, { keepalive: true });
+      });
+      return;
+    }
+
+    const eventObserver = new IntersectionObserver((entries, observer) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const eventName = entry.target.getAttribute('data-observe-event');
+        if (eventName) trackLandingEvent(eventName, {}, { keepalive: true });
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.35 });
+
+    observedEvents.forEach((section) => eventObserver.observe(section));
   }
 
   function setLauncherExpanded(isExpanded) {

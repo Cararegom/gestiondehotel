@@ -1,819 +1,254 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es-CO">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="referrer" content="strict-origin-when-cross-origin">
-    <meta name="robots" content="index,follow,max-image-preview:large">
-    <meta name="theme-color" content="#1a5ca3">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; frame-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self' https:; manifest-src 'self'; worker-src 'self' blob:;">
-    <title>Software para Hoteles, Moteles y Hostales | Gestión de Hotel</title>
-    <meta name="description" content="Software para hoteles, moteles y hostales con reservas por horas o noches, caja, limpieza, tienda, restaurante y mantenimiento. Prueba gratis 30 días.">
-    <meta name="author" content="Gestión de Hotel">
-    <script src="/js/sentry-browser.js?v=20260903-tracing-1"></script>
-    <link rel="canonical" href="https://gestiondehotel.com/">
-    <link rel="alternate" hreflang="es-CO" href="https://gestiondehotel.com/">
-    <link rel="alternate" hreflang="x-default" href="https://gestiondehotel.com/">
-    <meta property="og:type" content="website">
-    <meta property="og:locale" content="es_CO">
-    <meta property="og:site_name" content="Gestión de Hotel">
-    <meta property="og:title" content="Software para Hoteles, Moteles y Hostales | Gestión de Hotel">
-    <meta property="og:description" content="Administra reservas, caja, limpieza, tienda, restaurante y mantenimiento desde un solo lugar. Prueba gratis 30 días.">
-    <meta property="og:url" content="https://gestiondehotel.com/">
-    <meta property="og:image" content="https://gestiondehotel.com/vista%20dashboard.png">
-    <meta property="og:image:width" content="1360">
-    <meta property="og:image:height" content="583">
-    <meta property="og:image:alt" content="Vista del dashboard del software Gestión de Hotel">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Software para Hoteles, Moteles y Hostales | Gestión de Hotel">
-    <meta name="twitter:description" content="Software hotelero todo en uno con reservas por horas o noches, caja, limpieza y mantenimiento.">
-    <meta name="twitter:image" content="https://gestiondehotel.com/vista%20dashboard.png">
-    <meta name="twitter:image:alt" content="Vista del dashboard del software Gestión de Hotel">
-    <script>
-// GTM: inicializa dataLayer primero, luego carga el script.
-(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-'https://www.googletagmanager.com/gtm.js?id=GTM-NDC7DNLK';f.parentNode.insertBefore(j,f);
-})(window,document,'script','dataLayer','GTM-NDC7DNLK');
-</script>
-    <link rel="icon" href="/icons/favicon.png" type="image/png">
-    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://www.googletagmanager.com">
-    <link rel="preload" as="image" href="vista dashboard.png">
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <meta name="theme-color" content="#0b1f33">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: data: blob:; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; frame-src 'self' https:; object-src 'none'; base-uri 'self'; form-action 'self' https:; manifest-src 'self'; worker-src 'self' blob:;">
 
-    <link rel="stylesheet" href="landing-home.css">
-    <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@graph": [
-        {
-          "@type": "Organization",
-          "@id": "https://gestiondehotel.com/#organization",
-          "name": "Gestión de Hotel",
-          "url": "https://gestiondehotel.com/",
-          "logo": {
-            "@type": "ImageObject",
-            "url": "https://gestiondehotel.com/icons/logo.jpeg"
-          },
-          "email": "support@gestiondehotel.com",
-          "contactPoint": {
-            "@type": "ContactPoint",
-            "contactType": "customer support",
-            "email": "support@gestiondehotel.com",
-            "availableLanguage": [
-              "es"
-            ]
-          }
-        },
-        {
-          "@type": "WebSite",
-          "@id": "https://gestiondehotel.com/#website",
-          "url": "https://gestiondehotel.com/",
-          "name": "Gestión de Hotel",
-          "inLanguage": "es-CO",
-          "publisher": {
-            "@id": "https://gestiondehotel.com/#organization"
-          }
-        },
-        {
-          "@type": "SoftwareApplication",
-          "@id": "https://gestiondehotel.com/#software",
-          "name": "Gestión de Hotel",
-          "url": "https://gestiondehotel.com/",
-          "applicationCategory": "BusinessApplication",
-          "operatingSystem": "Web",
-          "inLanguage": "es-CO",
-          "description": "Software para hoteles, moteles y hostales con reservas por horas o noches, caja, limpieza, tienda, restaurante y mantenimiento.",
-          "image": "https://gestiondehotel.com/vista%20dashboard.png",
-          "publisher": {
-            "@id": "https://gestiondehotel.com/#organization"
-          },
-          "offers": {
-            "@type": "Offer",
-            "price": "0",
-            "priceCurrency": "COP",
-            "availability": "https://schema.org/InStock",
-            "description": "Prueba gratis por 30 días sin tarjeta para cuentas nuevas",
-            "url": "https://gestiondehotel.com/#pricing"
-          }
-        },
-        {
-          "@type": "FAQPage",
-          "@id": "https://gestiondehotel.com/#faq",
-          "mainEntity": [
-            {
-              "@type": "Question",
-              "name": "¿Cómo funciona la prueba GRATIS de 30 días?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "Te registras sin necesidad de tarjeta de crédito y obtienes acceso completo a todas las funcionalidades del Plan Max durante 30 días."
-              }
-            },
-            {
-              "@type": "Question",
-              "name": "¿Qué pasa después de los 30 días de prueba?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "Si decides continuar, eliges el plan que mejor se ajuste a tu hotel y pagas de forma segura. Para cuentas nuevas, los primeros 3 meses pagos quedan al 50 por ciento en modalidad mensual."
-              }
-            },
-            {
-              "@type": "Question",
-              "name": "¿Puedo cambiar de plan o cancelar en cualquier momento?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "Sí. Puedes cambiar de plan o cancelar tu suscripción cuando quieras directamente desde tu panel Mi Cuenta, sin contratos a largo plazo ni penalizaciones."
-              }
-            },
-            {
-              "@type": "Question",
-              "name": "¿Qué tipo de soporte ofrecen?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "Ofrecemos soporte técnico en español por chat, email y, para planes Pro y Max, atención prioritaria y WhatsApp."
-              }
-            },
-            {
-              "@type": "Question",
-              "name": "¿Ofrecen descuento por pago anual?",
-              "acceptedAnswer": {
-                "@type": "Answer",
-                "text": "Sí. El pago anual incluye un descuento equivalente a 2 meses gratis. La promo de 3 meses al 50 por ciento aplica para pagos mensuales y no se acumula con el anual."
-              }
-            }
-          ]
-        }
-      ]
-    }
-    </script>
+  <title>Software de Gestión Hotelera | Gestión de Hotel</title>
+  <meta name="description" content="Controla habitaciones, reservas por horas o noches, caja, turnos, limpieza, inventario y reportes con Gestión de Hotel. Prueba gratis 30 días.">
+  <meta name="author" content="Gestión de Hotel">
+  <link rel="canonical" href="https://gestiondehotel.com/">
+  <link rel="alternate" hreflang="es-CO" href="https://gestiondehotel.com/">
+  <link rel="alternate" hreflang="x-default" href="https://gestiondehotel.com/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_CO">
+  <meta property="og:site_name" content="Gestión de Hotel">
+  <meta property="og:title" content="Gestión de Hotel | Tu hotel bajo control">
+  <meta property="og:description" content="Habitaciones, caja y operación hotelera en un solo sistema. Prueba gratis durante 30 días.">
+  <meta property="og:url" content="https://gestiondehotel.com/">
+  <meta property="og:image" content="https://gestiondehotel.com/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Gestión de Hotel, tu hotel bajo control">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Gestión de Hotel | Tu hotel bajo control">
+  <meta name="twitter:description" content="Controla habitaciones, caja, reservas y operación desde un solo lugar.">
+  <meta name="twitter:image" content="https://gestiondehotel.com/og.png">
+  <meta name="twitter:image:alt" content="Gestión de Hotel, tu hotel bajo control">
+
+  <script src="/js/sentry-browser.js?v=20260903-tracing-1"></script>
+  <script>
+    (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','GTM-NDC7DNLK');
+  </script>
+
+  <link rel="icon" href="/icons/favicon.png" type="image/png">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="image" href="/vista%20dashboard.png" fetchpriority="high">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="/landing-home.css?v=20260903-redesign2">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://gestiondehotel.com/#organization",
+        "name": "Gestión de Hotel",
+        "url": "https://gestiondehotel.com/",
+        "logo": "https://gestiondehotel.com/icons/logo.jpeg",
+        "email": "support@gestiondehotel.com"
+      },
+      {
+        "@type": "SoftwareApplication",
+        "@id": "https://gestiondehotel.com/#software",
+        "name": "Gestión de Hotel",
+        "url": "https://gestiondehotel.com/",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "inLanguage": "es-CO",
+        "description": "Software de gestión hotelera para controlar habitaciones, reservas por horas o noches, caja, limpieza, inventario y reportes.",
+        "publisher": { "@id": "https://gestiondehotel.com/#organization" },
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "COP", "description": "Prueba gratis de 30 días sin tarjeta para cuentas nuevas", "url": "https://gestiondehotel.com/#pricing" }
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://gestiondehotel.com/#faq",
+        "mainEntity": [
+          { "@type": "Question", "name": "¿Necesito instalar algo?", "acceptedAnswer": { "@type": "Answer", "text": "No. Gestión de Hotel funciona desde un navegador web moderno y también puede instalarse como aplicación web en dispositivos compatibles." } },
+          { "@type": "Question", "name": "¿Puedo usarlo desde el celular?", "acceptedAnswer": { "@type": "Answer", "text": "Sí. Puedes acceder desde celular, tableta o computador con conexión a internet." } },
+          { "@type": "Question", "name": "¿Sirve para hoteles y moteles?", "acceptedAnswer": { "@type": "Answer", "text": "Sí. El sistema admite reservas y hospedajes por horas o por noches." } },
+          { "@type": "Question", "name": "¿Cómo funciona la prueba gratuita?", "acceptedAnswer": { "@type": "Answer", "text": "Las cuentas nuevas reciben 30 días de acceso al plan Max sin tarjeta de crédito." } },
+          { "@type": "Question", "name": "¿Mis empleados pueden tener usuarios diferentes?", "acceptedAnswer": { "@type": "Answer", "text": "Sí. El sistema maneja usuarios, roles y permisos; la cantidad de usuarios depende del plan." } },
+          { "@type": "Question", "name": "¿Puedo controlar ingresos y caja?", "acceptedAnswer": { "@type": "Answer", "text": "Sí. Puedes administrar turnos, ingresos, egresos, pagos y cierres de caja." } },
+          { "@type": "Question", "name": "¿Puedo ver reportes?", "acceptedAnswer": { "@type": "Answer", "text": "Sí. Todos los planes incluyen reportes y los niveles superiores habilitan reportes operativos y avanzados." } },
+          { "@type": "Question", "name": "¿Qué soporte ofrecen?", "acceptedAnswer": { "@type": "Answer", "text": "La landing ofrece chat comercial y contacto por correo. La prioridad de soporte depende del plan contratado." } }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
-    <noscript>
-  <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK"
-  height="0" width="0" style="display:none;visibility:hidden"></iframe>
-</noscript>
-    <nav class="navbar navbar-expand-lg navbar-light shadow-sm fixed-top">
-        <div class="container">
-          <a class="navbar-brand" href="/" aria-label="Ir al inicio">
-    <img class="landing-brand-logo" src="/icons/logo.jpeg" alt="Gestión de Hotel" width="1024" height="1024" decoding="async" fetchpriority="high">
-</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Abrir navegación">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto align-items-center">
-                    <li class="nav-item"><a class="nav-link fw-semibold" href="#beneficios">Beneficios</a></li>
-                    <li class="nav-item"><a class="nav-link fw-semibold" href="#features">Módulos</a></li>
-                    <li class="nav-item"><a class="nav-link fw-semibold" href="#pricing">Planes</a></li>
-                    <li class="nav-item"><a class="nav-link fw-semibold" href="#testimonials">Testimonios</a></li>
-                    <li class="nav-item"><a class="nav-link fw-semibold" href="#faq">FAQ</a></li>
-                    <li class="nav-item ms-lg-2"><a class="btn btn-outline-primary btn-sm" href="login.html">Iniciar Sesión</a></li>
-                    <li class="nav-item ms-lg-2"><a class="btn btn-hotel-primary btn-sm" data-bs-toggle="modal" data-bs-target="#registroModal">Probar Gratis</a></li>
-                </ul>
-            </div>
-        </div>
-    </nav>
+  <a class="skip-link" href="#contenido">Saltar al contenido</a>
+  <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK" height="0" width="0" style="display:none;visibility:hidden" title="Google Tag Manager"></iframe></noscript>
 
-    <main>
-        <section class="py-5" style="background: linear-gradient(to bottom right, #f0f7ff, #ffffff, #f0fff4); overflow: hidden;">
-             <div class="container py-5">
-                <div class="row align-items-center g-5">
-                    <div class="col-lg-6">
-                        <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-3 py-2 mb-3 badge-custom">
-                            <i class="bi bi-sparkles me-1"></i> Primer mes gratis • Sin tarjeta • 3 meses al 50%
-                        </span>
-                        <div class="d-flex flex-wrap gap-2 mb-3">
-                            <span class="badge rounded-pill text-bg-light border text-success-emphasis">Solo cuentas nuevas</span>
-                            <span class="badge rounded-pill text-bg-warning">3 meses al 50% despues del mes gratis</span>
-                        </div>
-                        <h1 class="responsive-text-hero fw-bolder lh-tight">
-Administra tu Hotel, Motel u Hostal <span class="d-block text-gradient-hotel mt-1">por horas o noches con facilidad</span>
-</h1>
-<p class="fs-5 text-secondary fw-medium my-4">
-Gestiona reservas, caja, limpieza, tienda, restaurante y mantenimiento desde un solo lugar.
-<span class="d-block fw-bold mt-1" style="color: var(--hotel-green);">Ahorra tiempo. Aumenta ingresos. Sin complicaciones.</span>
-</p>
-<p class="small fw-semibold text-success mb-4">Prueba sin tarjeta y, si te gusta, tus primeros 3 meses pagos quedan al 50%.</p>
-
-                        <div class="d-flex flex-column flex-sm-row gap-3 mt-4">
-                            <a href="#" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-hotel-primary btn-lg rounded-pill px-4 py-3 hover-lift">
-                                Crear cuenta GRATIS <i class="bi bi-person-plus"></i>
-                            </a>
-                            <a href="#demo-video" class="btn btn-outline-secondary btn-lg rounded-pill px-4 py-3 hover-lift">
-                                Ver un Demo <i class="bi bi-play-circle"></i>
-                            </a>
-                            <a href="#pricing" class="btn btn-hotel-secondary btn-lg rounded-pill px-4 py-3 hover-lift">
-                                Ver planes y precios
-                            </a>
-                        </div>
-                        </div>
-                    <div class="col-lg-6 d-none d-lg-block">
-    <div class="rounded-4 hotel-shadow-lg" style="border: 1px solid rgba(0,0,0,0.1); overflow: hidden; background-color: #fff;">
-        <img 
-            src="vista dashboard.png" 
-            alt="Vista del dashboard del software Gestión de Hotel"
-            width="1360"
-            height="583"
-            decoding="async"
-            fetchpriority="high"
-            style="width: 100%; height: auto; display: block;"
-        >
-    </div>
-</div>
-                        </div>
-                </div>
-            </div>
-        </section>
-
-<section id="features" class="py-5 bg-light">
-  <div class="container text-center">
-    <h2 class="fw-bold mb-4 responsive-text-section text-primary">Un software, todas las soluciones</h2>
-    <p class="text-secondary fs-5 mb-5 mx-auto" style="max-width: 800px;">
-      Deja de usar 5 herramientas distintas. Gestiona todo desde un solo lugar, agrupado por lo que más te importa.
-    </p>
-
-    <ul class="nav nav-pills nav-pills-hotel justify-content-center mb-5" id="modulesTab" role="tablist">
-      <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="pills-gestion-tab" data-bs-toggle="pill" data-bs-target="#pills-gestion" type="button" role="tab" aria-controls="pills-gestion" aria-selected="true">
-          <i class="bi bi-bar-chart-steps me-1"></i> Gestión de Ocupación
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" id="pills-caja-tab" data-bs-toggle="pill" data-bs-target="#pills-caja" type="button" role="tab" aria-controls="pills-caja" aria-selected="false">
-          <i class="bi bi-cash-coin me-1"></i> Control de Caja y POS
-        </button>
-      </li>
-      <li class="nav-item" role="presentation">
-        <button class="nav-link" id="pills-admin-tab" data-bs-toggle="pill" data-bs-target="#pills-admin" type="button" role="tab" aria-controls="pills-admin" aria-selected="false">
-          <i class="bi bi-clipboard-data me-1"></i> Administración y Reportes
-        </button>
-      </li>
-    </ul>
-
-    <div class="tab-content" id="modulesTabContent">
-      
-      <div class="tab-pane fade show active" id="pills-gestion" role="tabpanel" aria-labelledby="pills-gestion-tab">
-        <div class="row g-4 justify-content-center">
-          
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🗺️</div> <h5 class="fw-bold">Mapa Hotel</h5>
-              <p class="text-secondary small">Visualiza en vivo el estado de todas las habitaciones.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🗓️</div> <h5 class="fw-bold">Reservas</h5>
-              <p class="text-secondary small">Crea, gestiona y confirma reservas con anticipación.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🏨</div> <h5 class="fw-bold">Habitaciones</h5>
-              <p class="text-secondary small">Configura nombres, tarifas por horas y noches.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🧹</div> <h5 class="fw-bold">Limpieza</h5>
-              <p class="text-secondary small">Controla las habitaciones pendientes de limpieza.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🛠️</div> <h5 class="fw-bold">Mantenimiento</h5>
-              <p class="text-secondary small">Registra tareas, asigna responsables y haz seguimiento.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🔔</div> <h5 class="fw-bold">Notificaciones</h5>
-              <p class="text-secondary small">Alertas automáticas de limpieza y mantenimiento.</p>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <div class="tab-pane fade" id="pills-caja" role="tabpanel" aria-labelledby="pills-caja-tab">
-        <div class="row g-4 justify-content-center">
-
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">📊</div> <h5 class="fw-bold">Dashboard</h5>
-              <p class="text-secondary small">Resumen general en tiempo real del estado del hotel.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">💰</div> <h5 class="fw-bold">Caja / Turnos</h5>
-              <p class="text-secondary small">Control total de ingresos, egresos y cortes diarios.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🏪</div> <h5 class="fw-bold">Tienda (POS)</h5>
-              <p class="text-secondary small">Gestiona ventas de snacks, bebidas y productos en stock.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🍔</div> <h5 class="fw-bold">Restaurante</h5>
-              <p class="text-secondary small">Administra tu menú, ingredientes y ventas desde el POS.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🛎️</div> <h5 class="fw-bold">Servicios Adicionales</h5>
-              <p class="text-secondary small">Crea y cobra servicios extra como lavandería o transporte.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🎟️</div> <h5 class="fw-bold">Descuentos</h5>
-              <p class="text-secondary small">Crea códigos promocionales y descuentos automáticos.</p>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <div class="tab-pane fade" id="pills-admin" role="tabpanel" aria-labelledby="pills-admin-tab">
-        <div class="row g-4 justify-content-center">
-          
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">📈</div> <h5 class="fw-bold">Reportes</h5>
-              <p class="text-secondary small">Obtén análisis detallados y gráficos de rendimiento.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">📧</div> <h5 class="fw-bold">Reporte Automático</h5>
-              <p class="text-secondary small">Resumen de cierre de turno enviado a tu correo.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">👤</div> <h5 class="fw-bold">Clientes / CRM</h5>
-              <p class="text-secondary small">Registra huéspedes, historial y descuentos.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">👥</div> <h5 class="fw-bold">Usuarios</h5>
-              <p class="text-secondary small">Crea cuentas, asigna roles y gestiona permisos.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">⚙️</div> <h5 class="fw-bold">Configuración</h5>
-              <p class="text-secondary small">Personaliza el sistema, define políticas y pagos.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">🔌</div> <h5 class="fw-bold">Integraciones</h5>
-              <p class="text-secondary small">Conecta con Google Calendar, Booking o Airbnb.</p>
-            </div>
-          </div>
-          <div class="col-6 col-md-4 col-lg-3">
-            <div class="p-4 bg-white rounded-4 shadow-sm h-100 module-card">
-              <div class="fs-1 mb-2">💳</div> <h5 class="fw-bold">Mi Cuenta</h5>
-              <p class="text-secondary small">Gestiona tu plan, pagos, y programa de referidos.</p>
-            </div>
-          </div>
-
-        </div>
+  <nav class="navbar navbar-expand-lg fixed-top landing-navbar" aria-label="Navegación principal">
+    <div class="container landing-navbar__inner">
+      <a class="navbar-brand landing-brand" href="/" aria-label="Gestión de Hotel, ir al inicio">
+        <span class="landing-brand__mark" aria-hidden="true"><img src="/icons/favicon.png" alt="" width="40" height="40"></span>
+        <span class="landing-brand__copy"><strong>Gestión de Hotel</strong><small>Tu hotel bajo control</small></span>
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Abrir navegación"><span class="navbar-toggler-icon"></span></button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto align-items-lg-center">
+          <li class="nav-item"><a class="nav-link" href="#producto">Producto</a></li>
+          <li class="nav-item"><a class="nav-link" href="#features">Funciones</a></li>
+          <li class="nav-item"><a class="nav-link" href="#pricing">Planes</a></li>
+          <li class="nav-item"><a class="nav-link" href="#faq">Preguntas</a></li>
+          <li class="nav-item ms-lg-2"><a class="btn btn-link-login" href="/login.html" data-analytics="login_clicked">Iniciar sesión</a></li>
+          <li class="nav-item ms-lg-2"><a class="btn btn-hotel-primary btn-sm" href="#registroModal" data-bs-toggle="modal" data-bs-target="#registroModal" data-analytics="start_trial_clicked" data-cta-location="navbar">Comenzar gratis</a></li>
+        </ul>
       </div>
     </div>
-  </div>
-</section>
-<section id="trusted-by" class="py-4" style="background-color: #fdfdfd;">
-    <div class="container">
-        <h6 class="text-center text-secondary fw-bold text-uppercase small mb-4">CON LA CONFIANZA DE HOTELES REALES</h6>
-        <div class="d-flex flex-wrap align-items-center justify-content-center gap-4 gap-md-5">
-            <img src="logo cliente 1.jpg" alt="Logo de Cliente 1" style="height: 45px;" loading="lazy" decoding="async">
-            <img src="logo cliente 2.jpg" alt="Logo de Cliente 2" style="height: 45px;" loading="lazy" decoding="async">
-            <img src="logo cliente 3.jpg" alt="Logo de Cliente 3" style="height: 45px;" loading="lazy" decoding="async">
+  </nav>
+
+  <main id="contenido">
+    <section class="landing-hero" aria-labelledby="hero-title">
+      <div class="landing-hero__glow" aria-hidden="true"></div>
+      <div class="container landing-hero__container">
+        <div class="landing-hero__copy">
+          <span class="eyebrow"><i class="bi bi-grid-1x2-fill" aria-hidden="true"></i> Operación hotelera en un solo sistema</span>
+          <h1 id="hero-title">Tu hotel bajo control. <span>Habitaciones, caja y operación en un solo lugar.</span></h1>
+          <p class="landing-hero__lead">Gestiona reservas por horas o noches, check-in, pagos, turnos, limpieza, inventario y reportes desde una plataforma clara para todo tu equipo.</p>
+          <div class="landing-hero__actions">
+            <a href="#registroModal" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-hotel-primary btn-lg" data-analytics="hero_cta_clicked" data-cta-location="hero">Comenzar prueba gratis <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+            <a href="#producto" class="btn btn-hotel-secondary btn-lg" data-analytics="product_preview_clicked">Ver cómo funciona <i class="bi bi-play-circle" aria-hidden="true"></i></a>
+          </div>
+          <ul class="landing-hero__assurances" aria-label="Condiciones de la prueba"><li><i class="bi bi-check2" aria-hidden="true"></i> 30 días gratis</li><li><i class="bi bi-check2" aria-hidden="true"></i> Sin tarjeta</li><li><i class="bi bi-check2" aria-hidden="true"></i> Acceso al plan Max</li></ul>
         </div>
-    </div>
-</section>
-
-<section id="demo-video" class="py-5">
-    <div class="container text-center" style="max-width: 800px;">
-        <h2 class="responsive-text-section fw-bold mb-4">
-            Mira cómo funciona en <span class="text-gradient-hotel">2 minutos</span>
-        </h2>
-        <p class="fs-5 text-secondary mb-4">
-            Descubre cómo puedes gestionar reservas por horas, cerrar caja y controlar la limpieza, todo en un solo lugar.
-        </p>
-        <div class="ratio ratio-16x9 rounded-4 shadow-lg overflow-hidden">
-            <iframe 
-                src="https://www.youtube.com/embed/nRjH2XeJYpU" 
-                title="Demo de Gestión de Hotel" 
-                frameborder="0" 
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
-                loading="lazy"
-                referrerpolicy="strict-origin-when-cross-origin"
-                allowfullscreen>
-            </iframe>
+        <div class="landing-hero__visual" id="producto">
+          <div class="product-window"><div class="product-window__bar" aria-hidden="true"><span></span><span></span><span></span><div>Panel general · Hoy</div></div><img src="/vista%20dashboard.png" alt="Panel de control real de Gestión de Hotel con ocupación, ingresos y próximos check-ins" width="1360" height="583" decoding="async" fetchpriority="high"></div>
+          <div class="hero-status hero-status--rooms"><span class="hero-status__dot"></span><div><strong>Habitaciones</strong><small>Estado visible en tiempo real</small></div></div>
+          <div class="hero-status hero-status--cash"><i class="bi bi-cash-stack" aria-hidden="true"></i><div><strong>Caja y turnos</strong><small>Movimientos organizados</small></div></div>
         </div>
-    </div>
-</section>
-<section id="beneficios" class="py-5 bg-light"> <div class="container py-4">
-        <div class="text-center mb-5">
-<h2 class="responsive-text-section fw-bold">Todo lo que necesita tu hotel o motel <span class="text-gradient-hotel">en un solo sistema</span></h2>
-<p class="fs-5 text-secondary mx-auto" style="max-width: 800px;">Gestión por horas, reservas automáticas, caja, limpieza, mantenimiento, restaurante y mucho más — todo conectado.</p>
-
-</div>
-        <div class="row g-4">
-            <div class="col-lg-3 col-md-6 d-flex">
-                <div class="benefit-card w-100">
-                    <div class="module-icon-hotel module-icon-green mx-auto mb-4">
-                        <i class="bi bi-clock-history fs-2"></i>
-                    </div>
-                    <h5 class="fw-bold">Reservas Flexibles</h5>
-                    <p class="small text-secondary">Gestiona tarifas por noches completas, por horas o estadías personalizadas. Maximiza tu ocupación.</p>
-                </div>
-            </div>
-
-            <div class="col-lg-3 col-md-6 d-flex">
-                <div class="benefit-card w-100">
-                    <div class="module-icon-hotel module-icon-blue mx-auto mb-4">
-                        <i class="bi bi-phone-fill fs-2"></i>
-                    </div>
-                    <h5 class="fw-bold">Tu Hotel en tu Bolsillo</h5>
-                    <p class="small text-secondary">Monitorea todo en tiempo real desde tu celular o tablet. Ingresos, ocupación y más, al instante.</p>
-                </div>
-            </div>
-
-            <div class="col-lg-3 col-md-6 d-flex">
-                <div class="benefit-card w-100">
-                    <div class="module-icon-hotel module-icon-green mx-auto mb-4">
-                        <i class="bi bi-bar-chart-line-fill fs-2"></i>
-                    </div>
-                    <h5 class="fw-bold">Reportes Inteligentes</h5>
-                    <p class="small text-secondary">Toma mejores decisiones con reportes automáticos de ingresos, ocupación y tendencias.</p>
-                </div>
-            </div>
-
-            <div class="col-lg-3 col-md-6 d-flex">
-                <div class="benefit-card w-100">
-                    <div class="module-icon-hotel module-icon-blue mx-auto mb-4">
-                        <i class="bi bi-headset fs-2"></i>
-                    </div>
-                    <h5 class="fw-bold">Soporte Global en tu Idioma</h5>
-                    <p class="small text-secondary">Recibe asistencia rápida y personalizada por WhatsApp, sin importar si estás en LATAM, España o Guinea Ecuatorial.</p>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
-
-<section id="pricing" class="py-5"> <div class="container py-4">
-        <div class="text-center mb-5">
-            <h2 class="responsive-text-section fw-bold">
-                Planes diseñados para <span class="text-gradient-hotel">hacer crecer tu hotel</span>
-            </h2>
-            <p class="fs-5 text-secondary mx-auto" style="max-width: 720px;">
-                Comienza con el plan Max <strong>GRATIS por 30 días</strong>. Si te quedas, los primeros 3 meses pagos salen al 50% para cuentas nuevas. Sin contratos.
-            </p>
-        </div>
-
-        <div class="promo-launch-banner mx-auto mb-4" style="max-width: 980px;">
-            <div class="promo-pill">
-                <span class="promo-pill-label">Mes 1</span>
-                <strong>Gratis</strong>
-                <small>Acceso completo al Plan Max</small>
-            </div>
-            <div class="promo-pill">
-                <span class="promo-pill-label">Meses 2 al 4</span>
-                <strong>50% OFF</strong>
-                <small>Aplica en pagos mensuales</small>
-            </div>
-            <div class="promo-pill">
-                <span class="promo-pill-label">Condicion</span>
-                <strong>Solo cuentas nuevas</strong>
-                <small>Sin tarjeta para empezar</small>
-            </div>
-        </div>
-
-        <div class="d-flex flex-column flex-sm-row align-items-center justify-content-center gap-4 my-5 p-4 bg-white rounded-4 shadow-sm border">
-            <div class="switch-container">
-    <span id="label-usd" class="switch-label active">USD</span>
-    <label class="switch"><input type="checkbox" id="monedaSwitch"><span class="slider"></span></label>
-    <span id="label-cop" class="switch-label">COP</span>
-</div>
-            <div class="switch-container">
-                <span id="label-mensual" class="switch-label active">Mensual</span>
-                <label class="switch"><input type="checkbox" id="periodoSwitch"><span class="slider"></span></label>
-                <span id="label-anual" class="switch-label">Anual (2 meses gratis)</span>
-            </div>
-        </div>
-        <div class="row justify-content-center g-4 g-lg-5">
-            
-            <div class="col-lg-4 d-flex">
-                <div class="pricing-card p-4">
-                    <div class="text-center">
-                        <h3 class="fw-bold fs-4">Lite</h3>
-                        <p class="text-secondary">Ideal para hoteles pequeños o en lanzamiento</p>
-                        <div class="my-4">
-                            <span class="fs-5 text-muted text-decoration-line-through me-2" id="price-original-lite">$149.000</span>
-                            <span class="fs-1 fw-bolder text-gradient-hotel" id="price-lite">$99.000</span>
-                            <span class="text-secondary" id="period-lite">/mes</span>
-                        </div>
-                        <div class="promo-inline-note" id="promo-note-lite"></div>
-                    </div>
-                    <ul class="feature-list mt-3 mb-auto">
-                        <li><i class="bi bi-check-circle-fill"></i> Hasta 10 habitaciones</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Reservas por horas y noches</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Cronómetro por habitación</li>
-                        <li><i class="bi bi-check-circle-fill"></i> 1 usuario</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Caja + Facturación PDF</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Reportes básicos</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Backups automáticos</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Programa de referidos</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Soporte Chatbot IA</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Servicios, Tienda y Restaurante</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Limpieza y Mantenimiento</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Horarios automáticos</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Reportes avanzados + KPIs</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Notificaciones internas</li>
-                    </ul>
-                </div>
-            </div>
-
-            <div class="col-lg-4 d-flex">
-                <div class="pricing-card p-4">
-                    <div class="text-center">
-                        <h3 class="fw-bold fs-4">Pro</h3>
-                        <p class="text-secondary">Perfecto para hoteles en operación</p>
-                        <div class="my-4">
-                            <span class="fs-5 text-muted text-decoration-line-through me-2" id="price-original-pro">$199.000</span>
-                            <span class="fs-1 fw-bolder text-gradient-hotel" id="price-pro">$149.000</span>
-                            <span class="text-secondary" id="period-pro">/mes</span>
-                        </div>
-                        <div class="promo-inline-note" id="promo-note-pro"></div>
-                    </div>
-                    <ul class="feature-list mt-3 mb-auto">
-                        <li><i class="bi bi-check-circle-fill"></i> Hasta 20 habitaciones</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Hasta 5 usuarios</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Servicios adicionales</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Tienda / Inventario / Compras</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Restaurante + Comandas</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Limpieza y Mantenimiento</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Reportes operativos</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Soporte Prioritario</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Modulo de Descuentos</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Integracion de Fact. electrónica</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Reportes avanzados + KPIs</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Integraciones (Google Calendar / Outlook Calendar)</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Horarios automáticos</li>
-                        <li class="text-muted"><i class="bi bi-x-circle-fill"></i> Notificaciones internas
-</li>
-                    </ul>
-                </div>
-            </div>
-
-            <div class="col-lg-4 d-flex">
-                <div class="pricing-card popular p-4 position-relative">
-                    <span class="badge bg-warning text-dark position-absolute top-0 start-50 translate-middle-x py-1 px-3 fw-bold">RECOMENDADO</span>
-                    <div class="text-center mt-3">
-                        <h3 class="fw-bold fs-4">Max</h3>
-                        <p class="text-secondary">Solución completa para crecer sin límites</p>
-                        <div class="my-4">
-                            <span class="fs-5 text-muted text-decoration-line-through me-2" id="price-original-max">$299.000</span>
-                            <span class="fs-1 fw-bolder" style="color:var(--hotel-orange)" id="price-max">$199.000</span>
-                            <span class="text-secondary" id="period-max">/mes</span>
-                        </div>
-                        <div class="promo-inline-note" id="promo-note-max"></div>
-                    </div>
-                    <ul class="feature-list mt-3 mb-auto">
-                      <li><i class="bi bi-check-circle-fill"></i> Todo lo de Lite y Pro</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Habitaciones ilimitadas</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Hasta 20 usuarios</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Notificaciones internas</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Descuentos automáticos</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Reportes avanzados + KPIs</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Integraciones (Google Calendar / Outlook Calendar)</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Horarios automáticos</li>
-                        <li><i class="bi bi-check-circle-fill"></i> Soporte VIP + Consultoría</li>
-                    </ul>
-                </div>
-            </div>
-
-        </div>
-
-        <div class="text-center mt-5">
-            <a href="#" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-primary btn-lg px-5 fw-bold">
-                Activa tu mes gratis y tu promo
-            </a>
-        </div>
-    </div>
-</section>
-
-<section id="comparativa" class="py-5 bg-light"> <div class="container text-center">
-    <h2 class="responsive-text-section fw-bold mb-4">
-      ¿Por qué elegir <span class="text-gradient-hotel">Gestión de Hotel</span>?
-    </h2>
-    <p class="text-secondary fs-5 mb-5">
-      Porque ningún otro software ofrece tanto valor, flexibilidad y soporte al mismo precio.
-    </p>
-    <div class="table-responsive">
-      <table class="table table-bordered align-middle">
-        <thead class="table-light">
-          <tr>
-            <th>Característica</th>
-            <th>Gestión de Hotel</th>
-            <th>Otros sistemas</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td>Reservas por horas y noches</td><td>✅ Incluido</td><td>❌ No disponible</td></tr>
-          <tr><td>Control de caja y turnos</td><td>✅ Integrado</td><td>❌ Separado</td></tr>
-          <tr><td>Facturación automática PDF</td><td>✅ Sí</td><td>⚠️ Limitado</td></tr>
-          <tr><td>Soporte por WhatsApp en español</td><td>✅ 24/7</td><td>❌ Solo email</td></tr>
-          <tr><td>Gestión de limpieza y mantenimiento</td><td>✅ En tiempo real</td><td>❌ Manual</td></tr>
-          <tr><td>Instalación y configuración</td><td>✅ En 5 minutos</td><td>⚠️ Requiere técnicos</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-
-
-        <section id="testimonials" class="py-5"><div class="container py-4"><div class="text-center mb-5"><h2 class="responsive-text-section fw-bold">Hoteleros Reales, <span class="text-gradient-hotel">Resultados Reales</span></h2><p class="fs-5 text-secondary mx-auto" style="max-width: 800px;">No solo lo decimos nosotros. Escucha a quienes ya están transformando su gestión.</p></div><div class="position-relative mx-auto" style="max-width: 800px;"><div id="testimonial-carousel" class="carousel slide"><div class="carousel-inner"></div></div><button id="prev-testimonial" class="btn btn-outline-dark rounded-circle d-none d-md-block" style="position: absolute; top: 50%; left: -30px; transform: translateY(-50%); width: 45px; height: 45px;"><i class="bi bi-chevron-left"></i></button><button id="next-testimonial" class="btn btn-outline-dark rounded-circle d-none d-md-block" style="position: absolute; top: 50%; right: -30px; transform: translateY(-50%); width: 45px; height: 45px;"><i class="bi bi-chevron-right"></i></button></div></div></section>
-
-        <section class="py-5 hotel-gradient text-white"><div class="container text-center py-5"><div class="mx-auto" style="max-width: 800px;">
-            <h2 class="display-4 fw-bold mb-4">Más de 200 hoteles en 5 países ya usan Gestión de Hotel</h2>
-            <p class="fs-4 lead mb-4">Regístrate hoy, automatiza tu operación y comienza a ahorrar tiempo desde el primer día. Prueba gratuita sin tarjeta y 3 meses al 50% para cuentas nuevas.</p>
-<a href="#" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-warning btn-lg px-5 py-3 animate-pulse-hotel">Crear mi cuenta gratis y bloquear promo <i class="bi bi-person-plus"></i></a>
-</div></div></section>
-
-        <section id="faq" class="py-5"><div class="container py-4" style="max-width: 800px;"><div class="text-center mb-5"><h2 class="responsive-text-section fw-bold">Resolvemos tus <span class="text-gradient-hotel">Dudas</span></h2></div><div class="accordion accordion-flush" id="faqAccordion"><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse1">¿Cómo funciona la prueba GRATIS de 30 días?</button></h2><div id="faqCollapse1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion"><div class="accordion-body">Es muy simple: te registras (sin necesidad de tarjeta de crédito) y obtienes acceso COMPLETO a TODAS las funcionalidades del Plan Max durante 30 días. Queremos que pruebes a fondo el sistema y veas cómo puede transformar la gestión de tu hotel.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse2">¿Qué pasa después de los 30 días de prueba?</button></h2><div id="faqCollapse2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Si decides continuar, podrás elegir el plan que mejor se ajuste a tu hotel y pagar de forma segura. Para cuentas nuevas registradas con esta campaña, los <strong>primeros 3 meses pagos quedan al 50%</strong> en modalidad mensual. Si no deseas seguir, simplemente no pagas nada y tu cuenta se desactiva al terminar el periodo gratis.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse3">¿Puedo cambiar de plan o cancelar en cualquier momento?</button></h2><div id="faqCollapse3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">¡Totalmente! Creemos en la flexibilidad. Puedes cambiar de plan (subir o bajar) o cancelar tu suscripción cuando quieras directamente desde tu panel "Mi Cuenta", sin contratos a largo plazo ni penalizaciones. Tú tienes el control.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse4">¿Qué tipo de soporte ofrecen?</button></h2><div id="faqCollapse4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Ofrecemos soporte técnico en español a través de nuestro Chatbot IA inteligente (24/7), email, y para planes Pro y Max, atención prioritaria y WhatsApp. El Plan Max incluye soporte VIP y consultoría inicial.</div></div></div><div class="accordion-item border rounded-3 mb-2"><h2 class="accordion-header"><button class="accordion-button collapsed fw-semibold" data-bs-toggle="collapse" data-bs-target="#faqCollapse5">¿Ofrecen descuento por pago anual?</button></h2><div id="faqCollapse5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">¡Sí! Al elegir el pago anual para cualquiera de nuestros planes, obtienes un generoso descuento equivalente a <strong>2 meses GRATIS</strong>. La promo de 3 meses al 50% está pensada para pagos mensuales y no se acumula con el anual.</div></div></div></div></div></section>
-        <section class="py-5 bg-white">
-  <div class="container text-center">
-    <h2 class="fw-bold responsive-text-section mb-4">
-      Seguridad, estabilidad y soporte garantizados
-    </h2>
-    <p class="text-secondary fs-5 mb-5">
-      Tus datos y los de tus huéspedes están protegidos con cifrado avanzado y servidores seguros en la nube de <strong>Supabase</strong>.
-    </p>
-    <div class="row g-4">
-      <div class="col-md-4">
-        <i class="bi bi-shield-lock-fill fs-1 text-success"></i>
-        <h5 class="mt-3 fw-bold">Cifrado y respaldo diario</h5>
-        <p class="text-secondary small">Protegemos toda tu información con copias automáticas y encriptación.</p>
       </div>
-      <div class="col-md-4">
-        <i class="bi bi-headset fs-1 text-primary"></i>
-        <h5 class="mt-3 fw-bold">Soporte humano real</h5>
-        <p class="text-secondary small">Habla con nuestro equipo por WhatsApp o correo en minutos.</p>
-      </div>
-      <div class="col-md-4">
-        <i class="bi bi-rocket-takeoff-fill fs-1 text-warning"></i>
-        <h5 class="mt-3 fw-bold">Actualizaciones constantes</h5>
-        <p class="text-secondary small">Cada mes lanzamos mejoras, integraciones y nuevas funciones.</p>
-      </div>
-    </div>
-  </div>
-</section>
+    </section>
 
-    </main>
-<section class="py-5 text-center" style="background: linear-gradient(135deg, #144981, #28a745); color:white;">
-  <div class="container py-4">
-    <h2 class="fw-bold mb-3">¿Listo para modernizar tu hotel?</h2>
-    <p class="fs-5 mb-4">Empieza tu prueba gratuita de 30 días hoy mismo. Sin tarjeta, sin compromisos. Y si te gusta, tus primeros 3 meses pagos quedan al 50% por ser cuenta nueva.</p>
-    <a href="#" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-warning btn-lg fw-bold px-5 py-3 animate-pulse-hotel">
-      Activar mi prueba y promo
-    </a>
-  </div>
-</section>
+    <section class="signal-strip" aria-label="Resumen de capacidades principales"><div class="container signal-strip__grid"><div><i class="bi bi-door-open" aria-hidden="true"></i><span><strong>Habitaciones</strong><small>Disponibilidad y estado</small></span></div><div><i class="bi bi-calendar2-check" aria-hidden="true"></i><span><strong>Reservas</strong><small>Por horas o noches</small></span></div><div><i class="bi bi-wallet2" aria-hidden="true"></i><span><strong>Caja</strong><small>Turnos y movimientos</small></span></div><div><i class="bi bi-graph-up-arrow" aria-hidden="true"></i><span><strong>Reportes</strong><small>Operación y resultados</small></span></div></div></section>
 
-    <footer class="footer py-5">
-        <div class="container">
-            <div class="row gy-4">
-                <div class="col-lg-4 text-center text-lg-start">
-                    <h5 class="mb-3">Gestión de Hotel</h5>
-                    <p class="text-muted">La plataforma más fácil para administrar hoteles, moteles y hostales en Latinoamérica.</p>
-                </div>
-                <div class="col-lg-2 col-6"><h5 class="mb-3">Producto</h5><ul class="list-unstyled"><li class="mb-2"><a href="#beneficios">Beneficios</a></li><li class="mb-2"><a href="#features">Módulos</a></li><li class="mb-2"><a href="#pricing">Planes</a></li></ul></div>
-                <div class="col-lg-2 col-6"><h5 class="mb-3">Soporte</h5><ul class="list-unstyled"><li class="mb-2"><a href="#faq">Centro de Ayuda</a></li><li class="mb-2"><a href="#demo-video">Video Tutoriales</a></li><li class="mb-2"><a href="mailto:support@gestiondehotel.com">Contacto</a></li></ul></div>
-                <div class="col-lg-2 col-6"><h5 class="mb-3">Empresa</h5><ul class="list-unstyled"><li class="mb-2"><a href="#" data-bs-toggle="modal" data-bs-target="#privacidadModal">Política de Privacidad</a></li><li class="mb-2"><a href="#" data-bs-toggle="modal" data-bs-target="#terminosModal">Términos de Servicio</a></li></ul></div>
-                 <div class="col-lg-2 col-6"><h5 class="mb-3">Contacto</h5><ul class="list-unstyled"><li class="mb-2"><a href="mailto:soporte@gestiondehotel.com">Email</a></li></ul></div>
-            </div>
-            <div class="text-center text-muted border-top border-secondary-subtle mt-4 pt-4">
-                <p>&copy; 2026 Gestión de Hotel. Todos los derechos reservados. Hecho con ❤️ en Colombia.</p>
-            </div>
+    <section class="section problem-section" id="features" data-observe-event="feature_section_viewed">
+      <div class="container"><div class="problem-grid">
+        <div class="section-heading section-heading--left reveal"><span class="section-kicker">Menos improvisación. Más control.</span><h2>Cuando la operación vive en varios lugares, el control se pierde.</h2><p>Cuadernos, hojas de cálculo y mensajes aislados dificultan saber qué pasó con una habitación, un pago o un turno. Gestión de Hotel conecta la jornada en una sola vista.</p></div>
+        <div class="control-board reveal" aria-label="Comparación entre una operación dispersa y una centralizada">
+          <div class="control-board__side control-board__side--before"><span class="control-board__label">Operación dispersa</span><ul><li><i class="bi bi-journal-text" aria-hidden="true"></i> Cuadernos y notas</li><li><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i> Archivos separados</li><li><i class="bi bi-chat-left-text" aria-hidden="true"></i> Novedades por chat</li><li><i class="bi bi-calculator" aria-hidden="true"></i> Cálculos manuales</li></ul></div>
+          <div class="control-board__arrow" aria-hidden="true"><i class="bi bi-arrow-right"></i></div>
+          <div class="control-board__side control-board__side--after"><span class="control-board__label">Con Gestión de Hotel</span><ul><li><i class="bi bi-grid-1x2" aria-hidden="true"></i> Un panel central</li><li><i class="bi bi-door-open" aria-hidden="true"></i> Estados visibles</li><li><i class="bi bi-cash-coin" aria-hidden="true"></i> Caja organizada</li><li><i class="bi bi-clock-history" aria-hidden="true"></i> Historial consultable</li></ul></div>
         </div>
-    </footer>
+      </div></div>
+    </section>
 
-    <div class="modal fade" id="registroModal" tabindex="-1" aria-labelledby="registroModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <form id="registroForm">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title" id="registroModalLabel">¡Estás a un paso de Transformar tu Hotel!</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Cerrar"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-center fw-bold">Completa tus datos y obtén 30 DÍAS GRATIS con TODAS las funcionalidades del Plan Max.</p>
-                    <p class="text-center small mb-3">Sin tarjeta de crédito requerida. Sin compromisos.</p>
-                    <p class="text-center small text-success fw-semibold mb-3">Ademas, si continuas, tus primeros 3 meses pagos quedan al 50%. Solo para cuentas nuevas.</p>
-                    <div id="registroFormAlert" class="alert d-none" role="alert"></div>
-
-                    <div class="mb-3">
-                        <label for="hotelName" class="form-label">Nombre del Hotel <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="hotelName" required autocomplete="organization">
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="adminName" class="form-label">Tu Nombre (Administrador) <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="adminName" required autocomplete="name">
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="registroEmail" class="form-label">Email <span class="text-danger">*</span></label>
-                        <input type="email" class="form-control" id="registroEmail" required autocomplete="email" inputmode="email" spellcheck="false">
-                    </div>
-
-                    <div class="mb-3 position-relative">
-                        <label for="registroPassword" class="form-label">Contraseña <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" id="registroPassword" required minlength="8" autocomplete="new-password">
-                        <i class="bi bi-eye-slash-fill position-absolute" style="cursor: pointer; right: 15px; top: 42px;" id="togglePassword"></i>
-                    </div>
-
-                    <div class="mb-3 position-relative">
-                        <label for="confirmPassword" class="form-label">Confirmar Contraseña <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" id="confirmPassword" required minlength="8" autocomplete="new-password">
-                        <i class="bi bi-eye-slash-fill position-absolute" style="cursor: pointer; right: 15px; top: 42px;" id="toggleConfirmPassword"></i>
-                    </div>
-                </div>
-                <div class="modal-footer flex-column"> <p class="text-center text-muted small mb-3">
-                        Al hacer clic en "Crear mi Cuenta", aceptas nuestros 
-                        <a href="#terminos" data-bs-toggle="modal" data-bs-target="#terminosModal" class="text-decoration-underline">Términos y Condiciones</a> y nuestra 
-                        <a href="#privacidad" data-bs-toggle="modal" data-bs-target="#privacidadModal" class="text-decoration-underline">Política de Privacidad</a>.
-                    </p>
-                    <button type="submit" class="btn btn-warning w-100 py-2 fw-bold">Crear mi cuenta gratis y activar promo</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-    <div class="modal fade" id="modalBloqueoSuscripcion" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white"><h5 class="modal-title">Tu Suscripción Requiere Atención</h5></div><div class="modal-body text-center"><p>Tu periodo de prueba de 30 días ha finalizado o tu suscripción está vencida.<br>Para continuar usando todas las funcionalidades del sistema, por favor realiza el pago de tu plan:</p><button id="btnPagarModal" class="btn btn-success btn-lg"><i class="bi bi-cash-coin me-2"></i> Pagar Suscripción Ahora</button></div></div></div></div>
-    <div class="modal fade" id="terminosModal" tabindex="-1" aria-labelledby="terminosModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="terminosModalLabel">Términos y Condiciones de Uso</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><p>Bienvenido a Gestión de Hotel. Al utilizar nuestros servicios, aceptas los siguientes términos y condiciones:</p><h6>1. Prueba Gratuita y Suscripción</h6><p>Ofrecemos una prueba gratuita de 30 días con acceso a todas las funcionalidades del Plan Max. No se requiere tarjeta de crédito para la prueba. Al finalizar el periodo de prueba, para continuar utilizando el servicio, deberás seleccionar un plan de suscripción y realizar el pago correspondiente. Para cuentas nuevas registradas durante esta campaña, los primeros 3 meses pagos en modalidad mensual tendrán un 50% de descuento. Las tarifas de suscripción se detallan en nuestra sección de Planes y Precios. Se ofrecen descuentos por pagos anuales.</p><h6>2. Uso Aceptable</h6><p>Te comprometes a utilizar el software Gestión de Hotel únicamente para fines lícitos y relacionados con la administración de tu establecimiento hotelero. No podrás utilizar el servicio para transmitir material ilegal, difamatorio, o que infrinja derechos de terceros.</p><p></p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
-    <div class="modal fade" id="privacidadModal" tabindex="-1" aria-labelledby="privacidadModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="privacidadModalLabel">Política de Privacidad</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body"><p>En Gestión de Hotel, la privacidad de tus datos es fundamental. Esta política describe cómo recopilamos, usamos y protegemos tu información:</p><h6>1. Información que Recopilamos</h6><p>Recopilamos información que nos proporcionas durante el registro (nombre, email, nombre del hotel) y datos generados por el uso del sistema (reservas, datos de huéspedes bajo tu responsabilidad, configuraciones). No almacenamos datos de tarjetas de crédito directamente; estos son procesados por pasarelas de pago seguras.</p><h6>2. Uso de la Información</h6><p>Utilizamos tu información para operar y mejorar el servicio, comunicarnos contigo, procesar pagos y cumplir con obligaciones legales. Los datos de tus huéspedes son gestionados por ti, y nosotros solo actuamos como procesadores de datos según tus instrucciones.</p><p></p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
-    <div class="modal fade" id="registroExitosoModal" tabindex="-1" aria-labelledby="registroExitosoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow-lg"><div class="modal-body text-center p-4 p-md-5"><i class="bi bi-check-circle-fill display-1 text-success mb-3"></i><h4 class="modal-title fw-bold mb-2" id="registroExitosoModalLabel">¡Registro Completado!</h4><p class="fs-5">¡Revisa tu correo para activar tu cuenta!</p><p class="text-secondary">Te hemos enviado un correo de confirmación a la dirección que proporcionaste. Por favor, haz clic en el enlace de activación para empezar a usar tu cuenta.</p><p class="small text-success fw-semibold mt-2">Tu cuenta nueva queda lista con 30 dias gratis y acceso a la promo de 3 meses al 50% si decides continuar.</p><p class="small text-danger fst-italic mt-3"><i class="bi bi-exclamation-triangle-fill me-1"></i> Si no lo ves, ¡revisa tu carpeta de Spam o Correo no deseado!</p><button type="button" id="btn-ok-registro-exitoso" class="btn btn-primary mt-3">Entendido, ir a Iniciar Sesión</button></div></div></div></div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="js/safeLogger.js"></script>
-    <script type="module" src="script.js"></script>
-    <script src="js/landing-home.js" defer></script>
-
-<button type="button" id="sales-chat-launcher" aria-controls="sales-chat-panel" aria-expanded="false" aria-label="¿Dudas? Habla con un experto">
-  <span class="sales-chat-launcher__badge">Laura en línea</span>
-  <span class="sales-chat-launcher__copy">
-    <strong>¿Dudas?</strong>
-    <small>Habla con un experto</small>
-  </span>
-  <span class="sales-chat-launcher__icon"><i class="bi bi-chat-dots-fill" aria-hidden="true"></i></span>
-  <span class="sales-chat-launcher__ping" aria-hidden="true"></span>
-</button>
-
-<section id="sales-chat-panel" aria-label="Habla con Laura" hidden>
-  <header class="sales-chat-panel__header">
-    <div class="sales-chat-panel__identity">
-      <div class="sales-chat-panel__avatar">L</div>
-      <div>
-        <strong>Laura</strong>
-        <small>Asesora comercial en línea</small>
+    <section class="section workflow-section" aria-labelledby="workflow-title"><div class="container">
+      <div class="section-heading reveal"><span class="section-kicker">Una jornada conectada</span><h2 id="workflow-title">De la reserva al cierre de caja, sin perder el hilo.</h2><p>Cada paso alimenta el siguiente para que recepción y administración trabajen con la misma información.</p></div>
+      <div class="workflow-canvas">
+        <div class="workflow-preview reveal"><div class="workflow-preview__top"><span>Vista de operación</span><span class="status-live"><i></i> Actualizada</span></div><img src="/vista%20dashboard.png" alt="Dashboard de Gestión de Hotel utilizado para revisar ingresos, ocupación y actividad del día" width="1360" height="583" loading="lazy" decoding="async"><div class="workflow-preview__caption"><strong>Lo importante, visible desde el inicio</strong><span>Actividad, ingresos, ocupación y próximos movimientos.</span></div></div>
+        <ol class="workflow-steps">
+          <li class="workflow-step reveal"><span class="workflow-step__number">01</span><div class="workflow-step__icon"><i class="bi bi-building" aria-hidden="true"></i></div><div><h3>Habitaciones listas para operar</h3><p>Configura habitaciones, tipos, tarifas y tiempos de estancia. El mapa muestra qué está libre, ocupado, en limpieza o mantenimiento.</p><ul><li>Mapa de habitaciones</li><li>Tarifas por horas y noches</li><li>Cambios de estado</li></ul></div></li>
+          <li class="workflow-step reveal"><span class="workflow-step__number">02</span><div class="workflow-step__icon"><i class="bi bi-calendar2-check" aria-hidden="true"></i></div><div><h3>Reservas y hospedajes ordenados</h3><p>Registra reservas, check-in, check-out, abonos, pagos y servicios asociados a cada estancia.</p><ul><li>Reservas anticipadas</li><li>Abonos y pagos</li><li>Historial del hospedaje</li></ul></div></li>
+          <li class="workflow-step reveal"><span class="workflow-step__number">03</span><div class="workflow-step__icon"><i class="bi bi-wallet2" aria-hidden="true"></i></div><div><h3>Caja por turno, con contexto</h3><p>Separa la operación de cada turno y consulta ingresos, egresos, medios de pago y cierres.</p><ul><li>Apertura y cierre</li><li>Movimientos de caja</li><li>Relación con ventas y reservas</li></ul></div></li>
+          <li class="workflow-step reveal"><span class="workflow-step__number">04</span><div class="workflow-step__icon"><i class="bi bi-stars" aria-hidden="true"></i></div><div><h3>Limpieza y mantenimiento coordinados</h3><p>Organiza habitaciones pendientes, tareas, responsables y novedades que afectan la disponibilidad.</p><ul><li>Cola de limpieza</li><li>Tareas de mantenimiento</li><li>Seguimiento de responsables</li></ul></div></li>
+          <li class="workflow-step reveal"><span class="workflow-step__number">05</span><div class="workflow-step__icon"><i class="bi bi-bar-chart-line" aria-hidden="true"></i></div><div><h3>Reportes para decidir con información</h3><p>Revisa la operación hotelera, las ventas y el comportamiento financiero desde reportes según tu plan.</p><ul><li>Indicadores operativos</li><li>Reportes de ventas</li><li>Resumen financiero</li></ul></div></li>
+        </ol>
       </div>
+    </div></section>
+
+    <section class="section capabilities-section" aria-labelledby="capabilities-title"><div class="container">
+      <div class="section-heading reveal"><span class="section-kicker">Todo tu hotel en un solo lugar</span><h2 id="capabilities-title">Herramientas para operar hoy y entender el negocio.</h2><p>Una plataforma modular para recepción, caja, inventario, servicio y administración.</p></div>
+      <div class="capability-grid">
+        <article class="capability-card capability-card--wide capability-card--blue reveal"><span class="capability-card__icon"><i class="bi bi-map" aria-hidden="true"></i></span><div><span class="capability-card__tag">OPERACIÓN</span><h3>Mapa de habitaciones y reservas</h3><p>Consulta disponibilidad, estados y reservas por horas o noches desde una vista conectada.</p></div><div class="room-mini" aria-hidden="true"><span class="room-mini__free">101 <small>Libre</small></span><span class="room-mini__busy">102 <small>Ocupada</small></span><span class="room-mini__clean">103 <small>Limpieza</small></span><span>104 <small>Reservada</small></span></div></article>
+        <article class="capability-card capability-card--tall reveal"><span class="capability-card__icon"><i class="bi bi-cash-stack" aria-hidden="true"></i></span><div><span class="capability-card__tag">DINERO</span><h3>Caja, turnos y cierres</h3><p>Registra ingresos y egresos, organiza medios de pago y conserva trazabilidad por turno.</p></div><div class="money-mini"><div><span>Turno actual</span><strong>Abierto</strong></div><div><span>Movimientos</span><strong>Ordenados por origen</strong></div></div></article>
+        <article class="capability-card reveal"><span class="capability-card__icon"><i class="bi bi-cart3" aria-hidden="true"></i></span><span class="capability-card__tag">VENTAS</span><h3>Tienda e inventario</h3><p>Ventas, compras, proveedores, existencias y movimientos de productos.</p></article>
+        <article class="capability-card reveal"><span class="capability-card__icon"><i class="bi bi-cup-hot" aria-hidden="true"></i></span><span class="capability-card__tag">SERVICIO</span><h3>Restaurante y POS</h3><p>Platos, comandas, cobros y consumos asociados a la operación.</p></article>
+        <article class="capability-card capability-card--wide reveal"><span class="capability-card__icon"><i class="bi bi-clipboard2-check" aria-hidden="true"></i></span><div><span class="capability-card__tag">COORDINACIÓN</span><h3>Limpieza y mantenimiento</h3><p>Prioriza habitaciones, asigna tareas y deja registro de novedades y evidencias.</p></div><div class="task-mini" aria-hidden="true"><span><i class="bi bi-check2"></i> Suite 201 lista</span><span><i class="bi bi-arrow-repeat"></i> 105 en proceso</span><span><i class="bi bi-tools"></i> 304 programada</span></div></article>
+        <article class="capability-card capability-card--dark reveal"><span class="capability-card__icon"><i class="bi bi-graph-up" aria-hidden="true"></i></span><span class="capability-card__tag">VISIBILIDAD</span><h3>Reportes y control financiero</h3><p>Conecta ingresos, gastos, ventas y resultados para revisar la operación con contexto.</p></article>
+        <article class="capability-card reveal"><span class="capability-card__icon"><i class="bi bi-people" aria-hidden="true"></i></span><span class="capability-card__tag">EQUIPO</span><h3>Clientes, usuarios y roles</h3><p>Historial de clientes, usuarios por empleado y permisos según responsabilidad.</p></article>
+        <article class="capability-card reveal"><span class="capability-card__icon"><i class="bi bi-tags" aria-hidden="true"></i></span><span class="capability-card__tag">CONFIGURACIÓN</span><h3>Tarifas y promociones</h3><p>Define precios por estancia y aplica reglas de descuento a productos o servicios.</p></article>
+      </div>
+    </div></section>
+
+    <section class="section outcome-section" aria-labelledby="outcome-title"><div class="container">
+      <div class="section-heading reveal"><span class="section-kicker">Antes y después</span><h2 id="outcome-title">Del seguimiento manual a una operación visible.</h2></div>
+      <div class="outcome-grid"><article class="outcome-card outcome-card--before reveal"><header><span>ANTES</span><h3>La información está repartida</h3></header><ul><li><i class="bi bi-x" aria-hidden="true"></i> Cuadernos, Excel y chats separados</li><li><i class="bi bi-x" aria-hidden="true"></i> Cálculos y cierres manuales</li><li><i class="bi bi-x" aria-hidden="true"></i> Errores al cambiar de turno</li><li><i class="bi bi-x" aria-hidden="true"></i> Poca visibilidad del dinero y la ocupación</li></ul></article><div class="outcome-bridge" aria-hidden="true"><i class="bi bi-arrow-right"></i></div><article class="outcome-card outcome-card--after reveal"><header><span>CON GESTIÓN DE HOTEL</span><h3>La operación comparte una fuente</h3></header><ul><li><i class="bi bi-check2" aria-hidden="true"></i> Habitaciones y reservas centralizadas</li><li><i class="bi bi-check2" aria-hidden="true"></i> Caja y pagos relacionados con la operación</li><li><i class="bi bi-check2" aria-hidden="true"></i> Historial para revisar movimientos</li><li><i class="bi bi-check2" aria-hidden="true"></i> Reportes para administrar con contexto</li></ul></article></div>
+      <div class="benefit-grid"><div class="benefit-item reveal"><span>01</span><h3>Menos errores operativos</h3><p>El equipo trabaja con estados, reservas y movimientos en un mismo sistema.</p></div><div class="benefit-item reveal"><span>02</span><h3>Mayor control del dinero</h3><p>Caja, pagos y ventas quedan organizados para su consulta.</p></div><div class="benefit-item reveal"><span>03</span><h3>Mejor coordinación</h3><p>Cada turno encuentra información e historial para continuar la jornada.</p></div><div class="benefit-item reveal"><span>04</span><h3>Decisiones con información</h3><p>Los reportes ayudan a revisar ocupación, actividad y resultados.</p></div></div>
+    </div></section>
+
+    <section class="section trust-section" aria-labelledby="trust-title"><div class="container trust-grid"><div class="section-heading section-heading--left reveal"><span class="section-kicker">Control que también genera confianza</span><h2 id="trust-title">La operación no depende de una sola persona o dispositivo.</h2><p>El sistema funciona en la web, separa responsabilidades mediante roles y conserva historial en procesos clave.</p></div><div class="trust-list"><article class="reveal"><i class="bi bi-cloud-check" aria-hidden="true"></i><div><h3>Acceso desde distintos dispositivos</h3><p>Ingresa desde un navegador moderno en computador, tableta o celular.</p></div></article><article class="reveal"><i class="bi bi-person-lock" aria-hidden="true"></i><div><h3>Roles y permisos</h3><p>Asigna accesos según las responsabilidades del administrador y el equipo.</p></div></article><article class="reveal"><i class="bi bi-clock-history" aria-hidden="true"></i><div><h3>Historial de movimientos</h3><p>Consulta registros operativos y trazabilidad en caja, inventario y procesos sensibles.</p></div></article></div></div></section>
+
+    <section class="section pricing-section" id="pricing" data-observe-event="pricing_viewed" aria-labelledby="pricing-title"><div class="container">
+      <div class="section-heading reveal"><span class="section-kicker">Planes claros</span><h2 id="pricing-title">Empieza con todo el sistema. Elige después.</h2><p>Las cuentas nuevas prueban el plan Max durante 30 días sin tarjeta. Si continúas en modalidad mensual, tus tres primeros pagos tienen 50% de descuento.</p></div>
+      <div class="trial-banner reveal"><div><span class="trial-banner__label">PRUEBA INICIAL</span><strong>30 días gratis</strong><small>Acceso al plan Max · sin tarjeta</small></div><div><span class="trial-banner__label">DESPUÉS DE LA PRUEBA</span><strong>3 pagos al 50%</strong><small>Solo mensual · cuentas nuevas elegibles</small></div><div><span class="trial-banner__label">PAGO ANUAL</span><strong>2 meses incluidos</strong><small>El equivalente a 10 mensualidades</small></div></div>
+      <div class="pricing-controls reveal" aria-label="Opciones de precio"><div class="pricing-control"><span>Moneda</span><label class="toggle-control" for="monedaSwitch"><span id="label-usd">USD</span><input type="checkbox" id="monedaSwitch" checked aria-label="Cambiar entre dólares y pesos colombianos"><span class="toggle-control__track" aria-hidden="true"></span><span id="label-cop" class="active">COP</span></label></div><div class="pricing-control"><span>Periodo</span><label class="toggle-control" for="periodoSwitch"><span id="label-mensual" class="active">Mensual</span><input type="checkbox" id="periodoSwitch" aria-label="Cambiar entre pago mensual y anual"><span class="toggle-control__track" aria-hidden="true"></span><span id="label-anual">Anual</span></label></div></div>
+      <div class="pricing-grid">
+        <article class="pricing-plan reveal" data-plan="lite"><header><span class="pricing-plan__eyebrow">PARA EMPEZAR</span><h3>Lite</h3><p>Control esencial para establecimientos pequeños.</p></header><div class="pricing-plan__price"><span id="price-lite">$12</span><small id="period-lite">/mes</small></div><div class="pricing-plan__regular" id="promo-note-lite">Luego $25/mes.</div><ul><li><i class="bi bi-check2" aria-hidden="true"></i> Hasta 10 habitaciones</li><li><i class="bi bi-check2" aria-hidden="true"></i> 1 usuario</li><li><i class="bi bi-check2" aria-hidden="true"></i> Reservas por horas y noches</li><li><i class="bi bi-check2" aria-hidden="true"></i> Caja y turnos</li><li><i class="bi bi-check2" aria-hidden="true"></i> Reportes básicos</li></ul><button type="button" class="btn btn-plan plan-button-select" data-plan-id="lite" data-analytics="pricing_plan_clicked">Elegir Lite tras la prueba</button></article>
+        <article class="pricing-plan reveal" data-plan="pro"><header><span class="pricing-plan__eyebrow">PARA OPERAR</span><h3>Pro</h3><p>Más módulos para una operación en crecimiento.</p></header><div class="pricing-plan__price"><span id="price-pro">$19</span><small id="period-pro">/mes</small></div><div class="pricing-plan__regular" id="promo-note-pro">Luego $38/mes.</div><ul><li><i class="bi bi-check2" aria-hidden="true"></i> Hasta 20 habitaciones</li><li><i class="bi bi-check2" aria-hidden="true"></i> Hasta 5 usuarios</li><li><i class="bi bi-check2" aria-hidden="true"></i> Todo lo esencial de operación</li><li><i class="bi bi-check2" aria-hidden="true"></i> Tienda, inventario y restaurante</li><li><i class="bi bi-check2" aria-hidden="true"></i> Limpieza, mantenimiento y reportes operativos</li></ul><button type="button" class="btn btn-plan plan-button-select" data-plan-id="pro" data-analytics="pricing_plan_clicked">Elegir Pro tras la prueba</button></article>
+        <article class="pricing-plan pricing-plan--featured reveal" data-plan="max"><span class="pricing-plan__badge">RECOMENDADO</span><header><span class="pricing-plan__eyebrow">CONTROL COMPLETO</span><h3>Max</h3><p>La operación completa, sin límite de habitaciones.</p></header><div class="pricing-plan__price"><span id="price-max">$25</span><small id="period-max">/mes</small></div><div class="pricing-plan__regular" id="promo-note-max">Luego $50/mes.</div><ul><li><i class="bi bi-check2" aria-hidden="true"></i> Habitaciones ilimitadas</li><li><i class="bi bi-check2" aria-hidden="true"></i> Hasta 20 usuarios</li><li><i class="bi bi-check2" aria-hidden="true"></i> Todo lo incluido en Pro</li><li><i class="bi bi-check2" aria-hidden="true"></i> Notificaciones, descuentos y horarios</li><li><i class="bi bi-check2" aria-hidden="true"></i> Reportes avanzados e integraciones de calendario</li></ul><button type="button" class="btn btn-plan plan-button-select" data-plan-id="max" data-analytics="pricing_plan_clicked">Comenzar 30 días gratis</button></article>
+      </div>
+      <div class="comparison-wrap reveal"><div class="comparison-heading"><div><span class="section-kicker">Comparar planes</span><h3>Elige según el tamaño y la operación de tu hotel.</h3></div><span>Desliza para ver todas las columnas <i class="bi bi-arrow-right" aria-hidden="true"></i></span></div><div class="comparison-scroll" tabindex="0" aria-label="Tabla comparativa de planes, desplazable horizontalmente"><table class="comparison-table"><thead><tr><th scope="col">Capacidad y función</th><th scope="col">Lite</th><th scope="col">Pro</th><th scope="col" class="is-featured">Max</th></tr></thead><tbody>
+        <tr class="comparison-group"><th colspan="4" scope="colgroup">OPERACIÓN</th></tr><tr><th scope="row">Habitaciones</th><td>Hasta 10</td><td>Hasta 20</td><td class="is-featured">Ilimitadas</td></tr><tr><th scope="row">Usuarios</th><td>1</td><td>Hasta 5</td><td class="is-featured">Hasta 20</td></tr><tr><th scope="row">Reservas por horas y noches</th><td><i class="bi bi-check2-circle" aria-label="Incluido"></i></td><td><i class="bi bi-check2-circle" aria-label="Incluido"></i></td><td class="is-featured"><i class="bi bi-check2-circle" aria-label="Incluido"></i></td></tr><tr><th scope="row">Caja y turnos</th><td><i class="bi bi-check2-circle" aria-label="Incluido"></i></td><td><i class="bi bi-check2-circle" aria-label="Incluido"></i></td><td class="is-featured"><i class="bi bi-check2-circle" aria-label="Incluido"></i></td></tr>
+        <tr class="comparison-group"><th colspan="4" scope="colgroup">MÓDULOS Y CONTROL</th></tr><tr><th scope="row">Tienda, inventario y restaurante</th><td><i class="bi bi-dash" aria-label="No incluido"></i></td><td><i class="bi bi-check2-circle" aria-label="Incluido"></i></td><td class="is-featured"><i class="bi bi-check2-circle" aria-label="Incluido"></i></td></tr><tr><th scope="row">Limpieza y mantenimiento</th><td><i class="bi bi-dash" aria-label="No incluido"></i></td><td><i class="bi bi-check2-circle" aria-label="Incluido"></i></td><td class="is-featured"><i class="bi bi-check2-circle" aria-label="Incluido"></i></td></tr><tr><th scope="row">Reportes</th><td>Básicos</td><td>Operativos</td><td class="is-featured">Avanzados + KPI</td></tr><tr><th scope="row">Notificaciones y horarios</th><td><i class="bi bi-dash" aria-label="No incluido"></i></td><td><i class="bi bi-dash" aria-label="No incluido"></i></td><td class="is-featured"><i class="bi bi-check2-circle" aria-label="Incluido"></i></td></tr><tr><th scope="row">Integraciones de calendario</th><td><i class="bi bi-dash" aria-label="No incluido"></i></td><td><i class="bi bi-dash" aria-label="No incluido"></i></td><td class="is-featured"><i class="bi bi-check2-circle" aria-label="Incluido"></i></td></tr>
+      </tbody></table></div></div>
+    </div></section>
+
+    <section class="section faq-section" id="faq" aria-labelledby="faq-title"><div class="container faq-grid">
+      <div class="section-heading section-heading--left reveal"><span class="section-kicker">Preguntas frecuentes</span><h2 id="faq-title">Lo que necesitas saber antes de empezar.</h2><p>Respuestas directas basadas en las funciones y condiciones actuales del sistema.</p><a href="mailto:support@gestiondehotel.com">Otra pregunta: support@gestiondehotel.com <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a></div>
+      <div class="accordion faq-accordion" id="faqAccordion">
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1" aria-expanded="true" aria-controls="faq1" data-analytics="faq_opened">¿Necesito instalar algo?</button></h3><div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion"><div class="accordion-body">No. Gestión de Hotel funciona desde un navegador web moderno. En dispositivos compatibles también puede instalarse como aplicación web.</div></div></div>
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2" aria-expanded="false" aria-controls="faq2" data-analytics="faq_opened">¿Puedo usarlo desde el celular?</button></h3><div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Sí. Puedes acceder desde celular, tableta o computador con conexión a internet. Las vistas se adaptan al tamaño de pantalla.</div></div></div>
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3" aria-expanded="false" aria-controls="faq3" data-analytics="faq_opened">¿Sirve para hoteles, moteles y hostales?</button></h3><div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Sí. El sistema admite reservas y hospedajes por horas o por noches, por lo que se adapta a diferentes tipos de establecimiento.</div></div></div>
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4" aria-expanded="false" aria-controls="faq4" data-analytics="faq_opened">¿Cómo funciona la prueba?</button></h3><div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Las cuentas nuevas reciben 30 días de acceso al plan Max sin tarjeta de crédito. Al terminar, eliges si continúas con un plan.</div></div></div>
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5" aria-expanded="false" aria-controls="faq5" data-analytics="faq_opened">¿Mis empleados pueden tener usuarios diferentes?</button></h3><div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Sí. El sistema maneja usuarios, roles y permisos. La cantidad de usuarios habilitada depende del plan.</div></div></div>
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq6" aria-expanded="false" aria-controls="faq6" data-analytics="faq_opened">¿Puedo controlar ingresos, caja y reportes?</button></h3><div id="faq6" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Sí. Puedes administrar turnos, ingresos, egresos, pagos y cierres. Todos los planes incluyen reportes; el nivel de detalle aumenta en Pro y Max.</div></div></div>
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq7" aria-expanded="false" aria-controls="faq7" data-analytics="faq_opened">¿Puedo cambiar de plan?</button></h3><div id="faq7" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Sí. La administración de la suscripción y los cambios de plan están disponibles desde Mi Cuenta.</div></div></div>
+        <div class="accordion-item reveal"><h3 class="accordion-header"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq8" aria-expanded="false" aria-controls="faq8" data-analytics="faq_opened">¿Qué soporte ofrecen?</button></h3><div id="faq8" class="accordion-collapse collapse" data-bs-parent="#faqAccordion"><div class="accordion-body">Puedes resolver dudas comerciales desde el chat de esta página o escribir a support@gestiondehotel.com. La prioridad de soporte depende del plan.</div></div></div>
+      </div>
+    </div></section>
+
+    <section class="final-cta" aria-labelledby="final-cta-title"><div class="container final-cta__inner reveal"><div><span class="section-kicker">Empieza con claridad</span><h2 id="final-cta-title">Empieza a controlar tu hotel de verdad.</h2><p>30 días con el plan Max, sin tarjeta. Configura tu cuenta y conoce el sistema con tu propia operación.</p></div><div class="final-cta__actions"><a href="#registroModal" data-bs-toggle="modal" data-bs-target="#registroModal" class="btn btn-light btn-lg" data-analytics="final_cta_clicked" data-cta-location="final">Comenzar prueba gratuita <i class="bi bi-arrow-right" aria-hidden="true"></i></a><a href="/login.html" class="btn btn-outline-light btn-lg" data-analytics="login_clicked">Ya tengo una cuenta</a></div></div></section>
+  </main>
+
+  <footer class="landing-footer"><div class="container"><div class="landing-footer__grid">
+    <div class="landing-footer__brand"><a class="landing-brand" href="/" aria-label="Gestión de Hotel, ir al inicio"><span class="landing-brand__mark" aria-hidden="true"><img src="/icons/favicon.png" alt="" width="40" height="40"></span><span class="landing-brand__copy"><strong>Gestión de Hotel</strong><small>Tu hotel bajo control</small></span></a><p>Software de gestión hotelera para controlar habitaciones, caja y operación desde un solo lugar.</p></div>
+    <div><h2>Producto</h2><ul><li><a href="#producto">Cómo funciona</a></li><li><a href="#features">Funciones</a></li><li><a href="#pricing">Planes</a></li></ul></div>
+    <div><h2>Ayuda</h2><ul><li><a href="#faq">Preguntas frecuentes</a></li><li><a href="mailto:support@gestiondehotel.com">Contacto</a></li><li><a href="/login.html" data-analytics="login_clicked">Iniciar sesión</a></li></ul></div>
+    <div><h2>Legal</h2><ul><li><a href="#privacidadModal" data-bs-toggle="modal" data-bs-target="#privacidadModal">Privacidad</a></li><li><a href="#terminosModal" data-bs-toggle="modal" data-bs-target="#terminosModal">Términos de servicio</a></li></ul></div>
+  </div><div class="landing-footer__bottom"><span>&copy; 2026 Gestión de Hotel.</span><span>Software hotelero creado en Colombia.</span></div></div></footer>
+
+  <div class="modal fade landing-modal" id="registroModal" tabindex="-1" aria-labelledby="registroModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><form id="registroForm">
+    <div class="modal-header"><div><span class="modal-kicker">30 DÍAS GRATIS · SIN TARJETA</span><h2 class="modal-title" id="registroModalLabel">Crea la cuenta de tu hotel</h2></div><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div>
+    <div class="modal-body"><p class="modal-intro">Prueba todas las funciones del plan Max. Solo necesitamos los datos básicos para crear tu acceso.</p><div id="registroFormAlert" class="alert d-none" role="alert"></div>
+      <div class="mb-3"><label for="hotelName" class="form-label">Nombre del hotel <span class="text-danger">*</span></label><input type="text" class="form-control" id="hotelName" required autocomplete="organization"></div>
+      <div class="mb-3"><label for="adminName" class="form-label">Tu nombre <span class="text-danger">*</span></label><input type="text" class="form-control" id="adminName" required autocomplete="name"></div>
+      <div class="mb-3"><label for="registroEmail" class="form-label">Correo electrónico <span class="text-danger">*</span></label><input type="email" class="form-control" id="registroEmail" required autocomplete="email" inputmode="email" spellcheck="false"></div>
+      <div class="mb-3 position-relative"><label for="registroPassword" class="form-label">Contraseña <span class="text-danger">*</span></label><input type="password" class="form-control" id="registroPassword" required minlength="8" autocomplete="new-password"><button type="button" class="password-toggle bi bi-eye-slash-fill" id="togglePassword" aria-label="Mostrar u ocultar contraseña"></button></div>
+      <div class="mb-2 position-relative"><label for="confirmPassword" class="form-label">Confirmar contraseña <span class="text-danger">*</span></label><input type="password" class="form-control" id="confirmPassword" required minlength="8" autocomplete="new-password"><button type="button" class="password-toggle bi bi-eye-slash-fill" id="toggleConfirmPassword" aria-label="Mostrar u ocultar confirmación"></button></div>
     </div>
-    <button type="button" class="sales-chat-panel__close" id="sales-chat-close" aria-label="Cerrar chat">
-      <i class="bi bi-x-lg" aria-hidden="true"></i>
-    </button>
-  </header>
-  <div class="sales-chat-panel__body">
-    <div id="sales-chat-status" class="sales-chat-status">Conectando con Laura...</div>
-    <div id="sales-chat-fallback" class="sales-chat-fallback" hidden>
-      <strong>No pudimos abrir el chat en este momento.</strong>
-      <span>Escríbenos a <a href="mailto:support@gestiondehotel.com">support@gestiondehotel.com</a> y te ayudamos.</span>
-    </div>
-    <div id="landing-sales-chat-mount"></div>
-  </div>
-</section>
+    <div class="modal-footer"><p>Al crear tu cuenta aceptas los <a href="#terminosModal" data-bs-toggle="modal" data-bs-target="#terminosModal">Términos</a> y la <a href="#privacidadModal" data-bs-toggle="modal" data-bs-target="#privacidadModal">Política de privacidad</a>.</p><button type="submit" class="btn btn-hotel-primary w-100">Crear mi cuenta gratis <i class="bi bi-arrow-right" aria-hidden="true"></i></button></div>
+  </form></div></div></div>
 
+  <div class="modal fade" id="modalBloqueoSuscripcion" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white"><h2 class="modal-title fs-5">Tu suscripción requiere atención</h2></div><div class="modal-body text-center"><p>Tu periodo de prueba ha finalizado o tu suscripción está vencida. Para continuar, realiza el pago de tu plan.</p><button id="btnPagarModal" class="btn btn-success btn-lg">Pagar suscripción</button></div></div></div></div>
+  <div class="modal fade" id="terminosModal" tabindex="-1" aria-labelledby="terminosModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="terminosModalLabel">Términos y condiciones de uso</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><h3 class="fs-6">1. Prueba gratuita y suscripción</h3><p>Las cuentas nuevas reciben una prueba gratuita de 30 días con acceso al plan Max y sin tarjeta. Al finalizar, debes seleccionar un plan para continuar. La promoción de tres pagos al 50% aplica a cuentas nuevas elegibles en modalidad mensual. El pago anual equivale a diez mensualidades.</p><h3 class="fs-6">2. Uso aceptable</h3><p>El servicio debe utilizarse para fines lícitos relacionados con la administración del establecimiento. No se permite transmitir material ilegal o que infrinja derechos de terceros.</p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
+  <div class="modal fade" id="privacidadModal" tabindex="-1" aria-labelledby="privacidadModalLabel" aria-hidden="true"><div class="modal-dialog modal-dialog-scrollable modal-lg"><div class="modal-content"><div class="modal-header"><h2 class="modal-title fs-5" id="privacidadModalLabel">Política de privacidad</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button></div><div class="modal-body"><h3 class="fs-6">1. Información que recopilamos</h3><p>Recopilamos la información proporcionada durante el registro y los datos generados al usar el sistema. Los datos de tarjetas no se almacenan directamente en Gestión de Hotel.</p><h3 class="fs-6">2. Uso de la información</h3><p>La información se utiliza para operar el servicio, comunicarnos contigo, procesar pagos y cumplir obligaciones aplicables. El establecimiento es responsable de los datos de sus huéspedes.</p></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button></div></div></div></div>
+  <div class="modal fade" id="registroExitosoModal" tabindex="-1" aria-labelledby="registroExitosoModalLabel" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false"><div class="modal-dialog modal-dialog-centered"><div class="modal-content border-0 shadow-lg"><div class="modal-body text-center p-4 p-md-5"><i class="bi bi-check-circle-fill display-1 text-success mb-3" aria-hidden="true"></i><h2 class="modal-title fs-4 fw-bold mb-2" id="registroExitosoModalLabel">Cuenta creada</h2><p class="fs-5">Revisa tu correo para activar el acceso.</p><p class="text-secondary">Te enviamos un enlace de confirmación. Si no aparece, revisa la carpeta de correo no deseado.</p><p class="small text-success fw-semibold">Tu cuenta incluye 30 días del plan Max.</p><button type="button" id="btn-ok-registro-exitoso" class="btn btn-hotel-primary mt-3">Ir a iniciar sesión</button></div></div></div></div>
 
+  <button type="button" id="sales-chat-launcher" aria-controls="sales-chat-panel" aria-expanded="false" aria-label="¿Dudas? Habla con un experto"><span class="sales-chat-launcher__badge">Laura en línea</span><span class="sales-chat-launcher__copy"><strong>¿Dudas?</strong><small>Habla con un experto</small></span><span class="sales-chat-launcher__icon"><i class="bi bi-chat-dots-fill" aria-hidden="true"></i></span><span class="sales-chat-launcher__ping" aria-hidden="true"></span></button>
+  <section id="sales-chat-panel" aria-label="Habla con Laura" hidden><header class="sales-chat-panel__header"><div class="sales-chat-panel__identity"><div class="sales-chat-panel__avatar">L</div><div><strong>Laura</strong><small>Asesora comercial en línea</small></div></div><button type="button" class="sales-chat-panel__close" id="sales-chat-close" aria-label="Cerrar chat"><i class="bi bi-x-lg" aria-hidden="true"></i></button></header><div class="sales-chat-panel__body"><div id="sales-chat-status" class="sales-chat-status">Conectando con Laura...</div><div id="sales-chat-fallback" class="sales-chat-fallback" hidden><strong>No pudimos abrir el chat en este momento.</strong><span>Escríbenos a <a href="mailto:support@gestiondehotel.com">support@gestiondehotel.com</a> y te ayudamos.</span></div><div id="landing-sales-chat-mount"></div></div></section>
 
-
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/js/safeLogger.js"></script>
+  <script type="module" src="/script.js"></script>
+  <script src="/js/landing-home.js?v=20260903-redesign2" defer></script>
 </body>
 </html>
