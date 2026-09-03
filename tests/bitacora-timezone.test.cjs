@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const migration = fs.readFileSync('supabase/migrations/20260903061000_bitacora_timezone_operativa.sql', 'utf8');
+const readOnlyMigration = fs.readFileSync('supabase/migrations/20260903062000_bitacora_view_read_only.sql', 'utf8');
 const bitacora = fs.readFileSync('js/modules/bitacora/bitacora.js', 'utf8');
 
 test('Bitacora calcula fecha operativa y zona por cada hotel sin perder RLS', () => {
@@ -11,8 +12,8 @@ test('Bitacora calcula fecha operativa y zona por cada hotel sin perder RLS', ()
   assert.match(migration, /hotel_business_date/);
   assert.match(migration, /hotel_time_zone/);
   assert.match(migration, /creado_en at time zone 'UTC'/i);
-  assert.match(migration, /revoke all on public\.bitacora_operativa from public, anon/i);
-  assert.match(migration, /grant select on public\.bitacora_operativa to authenticated, service_role/i);
+  assert.match(readOnlyMigration, /revoke all on public\.bitacora_operativa from public, anon, authenticated, service_role/i);
+  assert.match(readOnlyMigration, /grant select on public\.bitacora_operativa to authenticated, service_role/i);
 });
 
 test('Bitacora filtra por business_date y formatea cada fila con la zona de su hotel', () => {
