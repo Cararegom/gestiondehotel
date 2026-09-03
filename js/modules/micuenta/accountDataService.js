@@ -6,19 +6,16 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function parseDate(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 function resolveEffectiveHotelPlan(hotel) {
-  const pendingStart = hotel?.plan_pendiente_desde ? new Date(hotel.plan_pendiente_desde) : null;
-  const pendingDue = Boolean(
-    hotel?.plan_pendiente &&
-    pendingStart &&
-    !Number.isNaN(pendingStart.getTime()) &&
-    pendingStart <= new Date()
-  );
-
-  if (!pendingDue) {
-    return hotel;
-  }
-
+  const pendingStart = parseDate(hotel?.plan_pendiente_desde);
+  const pendingDue = Boolean(hotel?.plan_pendiente && pendingStart && pendingStart <= new Date());
+  if (!pendingDue) return hotel;
   return {
     ...hotel,
     plan: hotel.plan_pendiente,
@@ -32,40 +29,67 @@ function buildReferidosAnalytics(referidos = []) {
   const trial = referidos.filter((item) => item.estado === 'trial').length;
   const pendientes = referidos.filter((item) => !item.recompensa_otorgada).length;
   const recompensasOtorgadas = referidos.filter((item) => item.recompensa_otorgada).length;
-  const conversionRate = total > 0 ? (activos / total) * 100 : 0;
-
   return {
     total,
     activos,
     trial,
     pendientes,
     recompensasOtorgadas,
-    conversionRate
+    conversionRate: total > 0 ? (activos / total) * 100 : 0
   };
 }
 
 function calcularEstadoDeVencimiento(hotel) {
-  const fechaFin = new Date(hotel?.suscripcion_fin || hotel?.trial_fin || Date.now());
-  const hoy = new Date();
-  let diasRestantes = Math.ceil((fechaFin - hoy) / (1000 * 60 * 60 * 24));
-  let enGracia = false;
+  if (hotel?.suscripcion_exenta === true) {
+    return {
+      fechaFin: null,
+      diasRestantes: null,
+      enGracia: false,
+      estadoEfectivo: 'interno'
+    };
+  }
 
+  const fechaFin = parseDate(hotel?.suscripcion_fin || hotel?.trial_fin);
+  if (!fechaFin) {
+    return {
+      fechaFin: null,
+      diasRestantes: 0,
+      enGracia: false,
+      estadoEfectivo: String(hotel?.estado_suscripcion || 'vencido').toLowerCase()
+    };
+  }
+
+  const hoy = new Date();
   const fechaFinMasGracia = new Date(fechaFin);
   fechaFinMasGracia.setDate(fechaFinMasGracia.getDate() + DIAS_GRACIA);
-  const graciaManualHasta = hotel?.gracia_hasta ? new Date(hotel.gracia_hasta) : null;
-  const fechaLimiteGracia = graciaManualHasta && !Number.isNaN(graciaManualHasta.getTime()) && graciaManualHasta > fechaFinMasGracia
+  const graciaManualHasta = parseDate(hotel?.gracia_hasta);
+  const fechaLimiteGracia = graciaManualHasta && graciaManualHasta > fechaFinMasGracia
     ? graciaManualHasta
     : fechaFinMasGracia;
 
-  if (hotel?.estado_suscripcion === 'vencido' && hoy <= fechaLimiteGracia) {
-    enGracia = true;
-    diasRestantes = Math.ceil((fechaLimiteGracia - hoy) / (1000 * 60 * 60 * 24));
+  if (hoy <= fechaFin) {
+    return {
+      fechaFin,
+      diasRestantes: Math.max(0, Math.ceil((fechaFin - hoy) / 86400000)),
+      enGracia: false,
+      estadoEfectivo: hotel?.estado_suscripcion === 'trial' ? 'trial' : 'activo'
+    };
+  }
+
+  if (hoy <= fechaLimiteGracia) {
+    return {
+      fechaFin,
+      diasRestantes: Math.max(0, Math.ceil((fechaLimiteGracia - hoy) / 86400000)),
+      enGracia: true,
+      estadoEfectivo: 'vencido'
+    };
   }
 
   return {
     fechaFin,
-    diasRestantes: Math.max(0, diasRestantes),
-    enGracia
+    diasRestantes: 0,
+    enGracia: false,
+    estadoEfectivo: 'vencido'
   };
 }
 
@@ -101,7 +125,12 @@ export async function loadMiCuentaData(supabase, user, hotelId) {
   if (cambiosPlanResult.error) throw cambiosPlanResult.error;
 
   const userProfile = userProfileResult.data;
-  const hotel = resolveEffectiveHotelPlan(hotelResult.data);
+  const hotelConPlan = resolveEffectiveHotelPlan(hotelResult.data);
+  const estado = calcularEstadoDeVencimiento(hotelConPlan);
+  const hotel = {
+    ...hotelConPlan,
+    estado_suscripcion: estado.estadoEfectivo
+  };
   const plans = safeArray(plansResult.data);
   const pagos = safeArray(pagosResult.data);
   const cambiosPlan = safeArray(cambiosPlanResult.data);
@@ -117,7 +146,6 @@ export async function loadMiCuentaData(supabase, user, hotelId) {
   });
 
   const promoBienvenida = getPromoBienvenidaStatus(hotel, pagos);
-  const { fechaFin, diasRestantes, enGracia } = calcularEstadoDeVencimiento(hotel);
   const rolNormalizado = String(userProfile?.rol || '').trim().toLowerCase();
   const esSuperAdmin = (
     rolNormalizado === 'admin' ||
@@ -136,9 +164,9 @@ export async function loadMiCuentaData(supabase, user, hotelId) {
     referidosAnalytics,
     planActivo,
     promoBienvenida,
-    fechaFin,
-    diasRestantes,
-    enGracia,
+    fechaFin: estado.fechaFin,
+    diasRestantes: estado.diasRestantes,
+    enGracia: estado.enGracia,
     esSuperAdmin,
     conteoHabitaciones: conteoHabitacionesResult.count || 0,
     conteoUsuarios: conteoUsuariosResult.count || 0,
