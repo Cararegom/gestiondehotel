@@ -9,20 +9,103 @@ function normalizeText(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
+function normalizeRole(value) {
+  return normalizeText(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
+function roleCanManageUsers(value) {
+  return ['admin', 'administrador', 'superadmin'].includes(normalizeRole(value));
+}
+
 async function getActorContext() {
   if (!actorContextPromise) {
     actorContextPromise = (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
+
       const { data: profile } = await supabase
         .from('usuarios')
-        .select('id, hotel_id')
+        .select('id, hotel_id, rol, usuarios_roles(roles(nombre))')
         .eq('id', user.id)
         .maybeSingle();
-      return profile ? { id: user.id, hotel_id: profile.hotel_id } : null;
+      if (!profile) return null;
+
+      const assignedRoles = (profile.usuarios_roles || [])
+        .map((item) => item?.roles?.nombre)
+        .filter(Boolean);
+      let canManageUsers = roleCanManageUsers(profile.rol) || assignedRoles.some(roleCanManageUsers);
+
+      if (!canManageUsers && profile.hotel_id) {
+        const { data: hotel } = await supabase
+          .from('hoteles')
+          .select('creado_por')
+          .eq('id', profile.hotel_id)
+          .maybeSingle();
+        canManageUsers = hotel?.creado_por === user.id;
+      }
+
+      return {
+        id: user.id,
+        hotel_id: profile.hotel_id,
+        canManageUsers
+      };
     })();
   }
   return actorContextPromise;
+}
+
+async function syncUsersMenuAccess() {
+  const actor = await getActorContext();
+  const allowed = actor?.canManageUsers === true;
+  document.querySelectorAll('a[href="#/usuarios"]').forEach((link) => {
+    link.hidden = !allowed;
+    link.style.display = allowed ? '' : 'none';
+  });
+  return allowed;
+}
+
+async function enforceUsersRouteAccess() {
+  const allowed = await syncUsersMenuAccess();
+  const route = window.location.hash.split('?')[0];
+  if (!allowed && route === '#/usuarios') {
+    window.location.hash = '#/dashboard';
+  }
+  return allowed;
+}
+
+function parseNumericCell(value) {
+  const normalized = String(value ?? '').replace(/[^\d-]/g, '');
+  return Number(normalized || 0);
+}
+
+function filterInactiveZeroSalesRows(root) {
+  const table = root.querySelector('#top-ventas-recepcionistas table');
+  if (!table) return;
+
+  const rows = [...table.querySelectorAll('tbody tr')];
+  const visibleRows = [];
+
+  rows.forEach((row) => {
+    const cells = row.children;
+    if (!cells || cells.length < 7) return;
+
+    const inactive = normalizeText(cells[1]?.textContent).includes('(inactivo)');
+    const operations = parseNumericCell(cells[5]?.textContent);
+    const total = parseNumericCell(cells[6]?.textContent);
+    const hide = inactive && operations === 0 && total === 0;
+
+    row.hidden = hide;
+    row.style.display = hide ? 'none' : '';
+    if (!hide) visibleRows.push(row);
+  });
+
+  visibleRows.forEach((row, index) => {
+    const positionCell = row.children?.[0];
+    if (!positionCell) return;
+    positionCell.textContent = index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`;
+  });
 }
 
 async function readFunctionError(error) {
@@ -306,21 +389,38 @@ function enhanceUsersModule(root) {
   root.setAttribute(ENHANCED_ATTR, 'true');
   root.dataset.userListView = 'active';
 
+  void getActorContext().then((actor) => {
+    if (actor?.canManageUsers === true) return;
+    root.innerHTML = '<div class="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-800"><h2 class="text-xl font-bold">Acceso restringido</h2><p class="mt-2 text-sm">La gestión de usuarios está disponible solo para administradores del hotel.</p></div>';
+    if (window.location.hash.split('?')[0] === '#/usuarios') window.location.hash = '#/dashboard';
+  });
+
   const title = [...root.querySelectorAll('h3')].find((el) => normalizeText(el.textContent).includes('usuarios registrados'));
   if (title) title.textContent = '👥 Personal del hotel';
 
   hideLegacyActiveCheckbox(root);
   installToolbar(root);
   decorateRows(root);
+  filterInactiveZeroSalesRows(root);
 
   root.addEventListener('click', (event) => handleLifecycleClick(root, event), true);
   const tableObserver = new MutationObserver(() => decorateRows(root));
   tableObserver.observe(tbody, { childList: true });
+
+  const rankingHost = root.querySelector('#top-ventas-recepcionistas');
+  if (rankingHost) {
+    const rankingObserver = new MutationObserver(() => filterInactiveZeroSalesRows(root));
+    rankingObserver.observe(rankingHost, { childList: true, subtree: true });
+  }
 }
 
 function scan() {
+  void syncUsersMenuAccess();
   document.querySelectorAll('.usuarios-module').forEach(enhanceUsersModule);
 }
+
+window.addEventListener('hashchange', () => { void enforceUsersRouteAccess(); });
+void enforceUsersRouteAccess();
 
 const observer = new MutationObserver(scan);
 observer.observe(document.documentElement, { childList: true, subtree: true });
