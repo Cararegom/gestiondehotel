@@ -2,10 +2,9 @@ import { getBankPaymentPilotStatus } from '../../services/bankPaymentService.js'
 import {
   DEFAULT_HOTEL_TIME_ZONE,
   addCalendarDays,
-  detectBrowserTimeZone,
-  getSupportedTimeZones,
   getTodayInTimeZone,
   getUtcRangeForHotelDates,
+  loadHotelTimeZone as loadConfiguredHotelTimeZone,
   normalizeTimeZone
 } from '../../services/hotelTimeZoneService.js';
 
@@ -54,29 +53,22 @@ function adjustLegacyReportBoundary(method, value, timeZone) {
 
 function wrapReportQueryBuilder(builder, getTimeZone) {
   if (!builder || typeof builder !== 'object') return builder;
-
   return new Proxy(builder, {
     get(target, property) {
       const value = target[property];
       if (typeof value !== 'function') return value;
-
-      if (['then', 'catch', 'finally'].includes(String(property))) {
-        return value.bind(target);
-      }
-
+      if (['then', 'catch', 'finally'].includes(String(property))) return value.bind(target);
       if (property === 'gte' || property === 'lte') {
-        return (column, boundary) => {
-          const adjusted = adjustLegacyReportBoundary(String(property), boundary, getTimeZone());
-          return wrapReportQueryBuilder(value.call(target, column, adjusted), getTimeZone);
-        };
+        return (column, boundary) => wrapReportQueryBuilder(
+          value.call(target, column, adjustLegacyReportBoundary(String(property), boundary, getTimeZone())),
+          getTimeZone
+        );
       }
-
       return (...args) => {
         const result = value.apply(target, args);
-        if (result && typeof result === 'object' && typeof result.then === 'function') {
-          return wrapReportQueryBuilder(result, getTimeZone);
-        }
-        return result;
+        return result && typeof result === 'object' && typeof result.then === 'function'
+          ? wrapReportQueryBuilder(result, getTimeZone)
+          : result;
       };
     }
   });
@@ -94,26 +86,13 @@ function createTimeZoneAwareReportClient(supabase, getTimeZone) {
   });
 }
 
-async function loadHotelTimeZone(supabase, hotelId) {
-  const fallback = detectBrowserTimeZone();
+async function resolveHotelTimeZone(supabase, hotelId) {
   try {
-    const { data, error } = await supabase
-      .from('configuracion_hotel')
-      .select('zona_horaria')
-      .eq('hotel_id', hotelId)
-      .maybeSingle();
-    if (error) throw error;
-    return normalizeTimeZone(data?.zona_horaria, fallback);
+    return await loadConfiguredHotelTimeZone(supabase, hotelId);
   } catch (error) {
-    console.warn('[Reportes] No se pudo cargar la zona horaria del hotel; se usará una zona segura.', error);
-    return normalizeTimeZone(fallback, DEFAULT_HOTEL_TIME_ZONE);
+    console.warn('[Reportes] No se pudo leer zona_horaria desde Configuración; se usará el fallback operativo del sistema.', error);
+    return DEFAULT_HOTEL_TIME_ZONE;
   }
-}
-
-function renderTimeZoneOptions(selected) {
-  const zones = getSupportedTimeZones();
-  if (!zones.includes(selected)) zones.unshift(selected);
-  return zones.map((zone) => `<option value="${zone}" ${zone === selected ? 'selected' : ''}>${zone}</option>`).join('');
 }
 
 function applyOperationalTimeZoneUi(context) {
@@ -134,42 +113,6 @@ function applyOperationalTimeZoneUi(context) {
   }
 }
 
-async function saveHotelTimeZone(context, select, status) {
-  const nextZone = normalizeTimeZone(select.value, context.hotelTimeZone);
-  select.disabled = true;
-  if (status) {
-    status.textContent = 'Guardando zona horaria…';
-    status.className = 'text-xs font-semibold text-blue-100';
-  }
-
-  try {
-    const { data, error } = await context.supabase
-      .from('configuracion_hotel')
-      .update({ zona_horaria: nextZone, actualizado_en: new Date().toISOString() })
-      .eq('hotel_id', context.hotelId)
-      .select('hotel_id')
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error('El hotel todavía no tiene una configuración general creada.');
-
-    context.hotelTimeZone = nextZone;
-    if (status) {
-      status.textContent = `Zona activa: ${nextZone}`;
-      status.className = 'text-xs font-semibold text-emerald-200';
-    }
-    if (context.activeTab === 'operativos') await showTab('operativos', context);
-  } catch (error) {
-    console.error('[Reportes] No se pudo guardar la zona horaria:', error);
-    select.value = context.hotelTimeZone;
-    if (status) {
-      status.textContent = `No se pudo guardar: ${String(error?.message || error)}`;
-      status.className = 'text-xs font-semibold text-rose-200';
-    }
-  } finally {
-    select.disabled = false;
-  }
-}
-
 async function showTab(key, context) {
   const tab = tabs.find((item) => item.key === key) || tabs[0];
   if (tab.adminOnly && !context.admin) return;
@@ -177,11 +120,13 @@ async function showTab(key, context) {
   if (activeModule?.unmount) activeModule.unmount(context.host);
   activeModule = null;
   context.host.innerHTML = '<div class="p-8 text-center text-slate-500">Cargando sección...</div>';
+
   root.querySelectorAll('[data-report-tab]').forEach((button) => {
     const selected = button.dataset.reportTab === tab.key;
     button.setAttribute('aria-selected', String(selected));
     button.className = `rounded-xl px-4 py-2.5 text-sm font-semibold transition ${selected ? 'bg-blue-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:border-blue-300'}`;
   });
+
   try {
     activeModule = await tab.load();
     const moduleSupabase = tab.key === 'operativos' ? context.reportSupabase : context.supabase;
@@ -197,7 +142,8 @@ export async function mount(container, supabase, user, hotelId, planDetails) {
   unmount();
   root = container;
   const admin = isAdmin(user);
-  const hotelTimeZone = await loadHotelTimeZone(supabase, hotelId);
+  const hotelTimeZone = await resolveHotelTimeZone(supabase, hotelId);
+
   let bankPilotEnabled = false;
   if (admin) {
     try {
@@ -207,9 +153,11 @@ export async function mount(container, supabase, user, hotelId, planDetails) {
       console.warn('[Reportes] No se pudo verificar el piloto de conciliación bancaria.');
     }
   }
+
   const visibleTabs = tabs.filter((tab) =>
     (!tab.adminOnly || admin) && (!tab.pilotOnly || bankPilotEnabled)
   );
+
   root.innerHTML = `
     <section class="min-h-full bg-slate-50 p-3 md:p-5">
       <header class="mb-4 rounded-2xl bg-gradient-to-r from-slate-950 via-blue-950 to-blue-700 p-5 text-white shadow-lg">
@@ -220,11 +168,9 @@ export async function mount(container, supabase, user, hotelId, planDetails) {
             <p class="mt-1 max-w-3xl text-sm text-blue-100">${admin ? 'Consulta la operación y administra la información financiera desde un solo lugar.' : 'Consulta los reportes necesarios para la operación del hotel.'}</p>
           </div>
           <div class="min-w-[260px] rounded-xl border border-white/20 bg-white/10 p-3 backdrop-blur-sm">
-            <label for="reportes-zona-horaria" class="block text-[11px] font-bold uppercase tracking-[.16em] text-blue-100">Zona horaria del hotel</label>
-            ${admin
-              ? `<select id="reportes-zona-horaria" class="mt-2 w-full rounded-lg border border-white/30 bg-white px-3 py-2 text-sm font-semibold text-slate-800">${renderTimeZoneOptions(hotelTimeZone)}</select>`
-              : `<p class="mt-2 text-sm font-bold text-white">${hotelTimeZone}</p>`}
-            <p id="reportes-zona-horaria-estado" class="mt-1 text-xs font-semibold text-blue-100">Los filtros de fecha usan esta zona, no UTC.</p>
+            <p class="text-[11px] font-bold uppercase tracking-[.16em] text-blue-100">Zona horaria activa</p>
+            <p class="mt-2 text-sm font-bold text-white">${hotelTimeZone}</p>
+            <p class="mt-1 text-xs font-semibold text-blue-100">Se administra únicamente desde Configuración del hotel.</p>
           </div>
         </div>
       </header>
@@ -234,6 +180,7 @@ export async function mount(container, supabase, user, hotelId, planDetails) {
       ${admin ? '<div class="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900"><strong>Acceso administrativo:</strong> las secciones financieras no se muestran a recepcionistas ni a otros roles operativos.</div>' : ''}
       <div id="reportes-centro-contenido"></div>
     </section>`;
+
   const host = root.querySelector('#reportes-centro-contenido');
   const context = {
     host,
@@ -247,13 +194,9 @@ export async function mount(container, supabase, user, hotelId, planDetails) {
   };
   context.reportSupabase = createTimeZoneAwareReportClient(supabase, () => context.hotelTimeZone);
 
-  root.querySelectorAll('[data-report-tab]').forEach((button) => button.addEventListener('click', () => showTab(button.dataset.reportTab, context)));
-
-  const timeZoneSelect = root.querySelector('#reportes-zona-horaria');
-  const timeZoneStatus = root.querySelector('#reportes-zona-horaria-estado');
-  if (timeZoneSelect) {
-    timeZoneSelect.addEventListener('change', () => saveHotelTimeZone(context, timeZoneSelect, timeZoneStatus));
-  }
+  root.querySelectorAll('[data-report-tab]').forEach((button) => {
+    button.addEventListener('click', () => showTab(button.dataset.reportTab, context));
+  });
 
   await showTab('operativos', context);
 }
