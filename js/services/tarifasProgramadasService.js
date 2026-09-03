@@ -31,6 +31,37 @@ function normalizeDays(tarifa) {
     : [];
 }
 
+function normalizeRoomIds(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+function roomScopeRank(tarifa) {
+  if (tarifa?.habitacion_id) return 3;
+  if (normalizeRoomIds(tarifa?.habitaciones_aplicables).length > 0) return 2;
+  if (normalizeRoomIds(tarifa?.habitaciones_excluidas).length > 0) return 1;
+  return 0;
+}
+
+function compareRoomScopeSpecificity(a, b) {
+  const rankDiff = roomScopeRank(b) - roomScopeRank(a);
+  if (rankDiff !== 0) return rankDiff;
+
+  const aIncluded = normalizeRoomIds(a?.habitaciones_aplicables);
+  const bIncluded = normalizeRoomIds(b?.habitaciones_aplicables);
+  if (aIncluded.length && bIncluded.length && aIncluded.length !== bIncluded.length) {
+    return aIncluded.length - bIncluded.length;
+  }
+
+  const aExcluded = normalizeRoomIds(a?.habitaciones_excluidas);
+  const bExcluded = normalizeRoomIds(b?.habitaciones_excluidas);
+  if (aExcluded.length && bExcluded.length && aExcluded.length !== bExcluded.length) {
+    return bExcluded.length - aExcluded.length;
+  }
+
+  return 0;
+}
+
 function dateKeyForContext(value, timeZone) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(String(value || ''))) return String(value);
   return getDateKeyInTimeZone(value, timeZone);
@@ -55,7 +86,14 @@ export function tarifaProgramadaAplica(tarifa, {
   const days = normalizeDays(tarifa);
   if (days.length > 0 && !days.includes(weekdayFromDateKey(dateKey))) return false;
 
-  if (tarifa.habitacion_id && String(tarifa.habitacion_id) !== String(habitacionId || '')) return false;
+  const currentRoomId = String(habitacionId || '');
+  if (tarifa.habitacion_id && String(tarifa.habitacion_id) !== currentRoomId) return false;
+
+  const includedRooms = normalizeRoomIds(tarifa.habitaciones_aplicables);
+  if (includedRooms.length > 0 && (!currentRoomId || !includedRooms.includes(currentRoomId))) return false;
+
+  const excludedRooms = normalizeRoomIds(tarifa.habitaciones_excluidas);
+  if (currentRoomId && excludedRooms.includes(currentRoomId)) return false;
 
   if (modalidad === 'tiempo_estancia') {
     if (!tiempoEstanciaId) return false;
@@ -72,7 +110,7 @@ export function seleccionarTarifaProgramada(tarifas = [], context = {}) {
       const priorityDiff = normalizePriority(b) - normalizePriority(a);
       if (priorityDiff !== 0) return priorityDiff;
 
-      const roomSpecificity = Number(Boolean(b.habitacion_id)) - Number(Boolean(a.habitacion_id));
+      const roomSpecificity = compareRoomScopeSpecificity(a, b);
       if (roomSpecificity !== 0) return roomSpecificity;
 
       const boundedDateSpecificity = Number(Boolean(b.fecha_inicio || b.fecha_fin)) - Number(Boolean(a.fecha_inicio || a.fecha_fin));
