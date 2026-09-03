@@ -147,6 +147,18 @@ async function cargarCRMInsightsHotel() {
     if (!supabaseInstance || !hotelIdActual || !clientesData.length) return;
 
     try {
+        let totalClientesHotel = clientesData.length;
+        const { count: totalClientesCount, error: totalClientesError } = await supabaseInstance
+            .from('clientes')
+            .select('id', { count: 'exact', head: true })
+            .eq('hotel_id', hotelIdActual);
+
+        if (totalClientesError) {
+            logError('No se pudo obtener el total exacto de clientes del hotel:', totalClientesError);
+        } else if (Number.isFinite(totalClientesCount)) {
+            totalClientesHotel = totalClientesCount;
+        }
+
         const results = await Promise.all([
             supabaseInstance.from('reservas').select('cliente_id, fecha_inicio, fecha_fin, monto_total, creado_en').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
             supabaseInstance.from('ventas').select('cliente_id, total, fecha_venta').eq('hotel_id', hotelIdActual).not('cliente_id', 'is', null),
@@ -173,6 +185,7 @@ async function cargarCRMInsightsHotel() {
             actividades
         });
         crmPortfolioSummary = summarizeCRMPortfolio(clientesData, crmInsightsByClientId);
+        crmPortfolioSummary.total = totalClientesHotel;
         crmCampaignSuggestions = buildCampaignSuggestions(clientesData, crmInsightsByClientId);
     } catch (error) {
         logError('No se pudieron cargar las métricas CRM del hotel:', error);
@@ -473,7 +486,12 @@ export async function getClienteById(clienteId) {
             logError('Supabase instance no está inicializada en getClienteById.');
             throw new Error('Supabase no está disponible.');
         }
-        let { data, error } = await supabaseInstance.from('clientes').select('*').eq('id', clienteId).single();
+        let { data, error } = await supabaseInstance
+            .from('clientes')
+            .select('*')
+            .eq('id', clienteId)
+            .eq('hotel_id', hotelIdActual)
+            .maybeSingle();
         if (error) {
             logError('Error al obtener cliente por ID:', error);
             throw error;
@@ -706,6 +724,13 @@ async function filtrarTabla(texto, dateRange) {
     showLoading(feedbackEl, 'Filtrando clientes...');
     try {
         const filteredClients = await getClientes({ hotelId: hotelIdActual, search: texto, dateRange: dateRange });
+
+        // Los resultados filtrados pueden incluir clientes que no estaban en la carga inicial.
+        // Se guardan en la cache para que Ver y Editar resuelvan siempre el ID seleccionado.
+        const clientesById = new Map(clientesData.map((cliente) => [String(cliente.id), cliente]));
+        filteredClients.forEach((cliente) => clientesById.set(String(cliente.id), cliente));
+        clientesData = Array.from(clientesById.values());
+
         renderTablaClientes(filteredClients);
         clearFeedback(feedbackEl);
         logDebug('Tabla filtrada y re-renderizada.');
@@ -864,10 +889,14 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
 
 async function mostrarHistorialCliente(clienteId) {
     logDebug('Mostrando historial del cliente para ID:', clienteId);
-    const cliente = clientesData.find(c => c.id === clienteId);
+    let cliente = clientesData.find(c => String(c.id) === String(clienteId));
     if (!cliente) {
-        showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');
-        return;
+        cliente = await getClienteById(clienteId);
+        if (!cliente) {
+            showError(document.getElementById('clientes-feedback'), 'Cliente no encontrado.');
+            return;
+        }
+        clientesData = [...clientesData, cliente];
     }
 
     const modal = document.getElementById('modal-container');
