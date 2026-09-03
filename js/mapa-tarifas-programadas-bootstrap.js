@@ -211,6 +211,9 @@ function buildPricingAwareSupabase(baseSupabase, {
                   timeZone: getRuntimeHotelTimeZone()
                 });
 
+                // Sin override programado, conservar exactamente el precio que ya traía tiempos_estancia.
+                if (!priceResult.tarifaAplicada) return Number(timeTarget.precio) || 0;
+
                 return mode === 'extension'
                   ? Number(priceResult.total) || 0
                   : Number(priceResult.precioHospedaje) || 0;
