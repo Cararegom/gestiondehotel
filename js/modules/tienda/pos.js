@@ -2,6 +2,11 @@ import { turnoService } from '../../services/turnoService.js';
 import { showError } from '../../uiUtils.js';
 import { clearPOSDraft, loadPOSDraft, savePOSDraft } from '../../services/posDraftService.js';
 import { imprimirTicketOperacion } from '../../services/thermalPrintService.js';
+import {
+  calcularResumenDescuentoTienda,
+  consultarDescuentosElegibles,
+  normalizarCodigoDescuento
+} from '../../services/descuentosService.js';
 import { tiendaState } from './state.js';
 import { formatCurrency, getTabContentEl } from './helpers.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
@@ -271,83 +276,57 @@ export async function renderPOS() {
   }
 }
 
-function getDiscountableBase(discount, cart) {
-  const aplicabilidad = discount.aplicabilidad;
-  const itemsAplicables = discount.habitaciones_aplicables || [];
-
-  if (aplicabilidad === 'reserva_total') {
-    return cart.reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
-  }
-  if (aplicabilidad === 'productos_tienda') {
-    if (!itemsAplicables.length) return 0;
-    return cart
-      .filter((item) => itemsAplicables.includes(item.id))
-      .reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
-  }
-  if (aplicabilidad === 'categorias_restaurante') {
-    if (!itemsAplicables.length) return 0;
-    return cart
-      .filter((item) => itemsAplicables.includes(item.categoria_id))
-      .reduce((acc, item) => acc + (item.cantidad * item.precio_venta), 0);
-  }
-  return 0;
-}
-
 export async function aplicarDescuentoPOS() {
   const codigoInput = document.getElementById('codigoDescuentoInput');
-  const codigo = codigoInput.value.trim().toUpperCase();
+  const codigo = normalizarCodigoDescuento(codigoInput?.value);
   const msgEl = document.getElementById('msgPOS');
 
   if (!codigo) {
     msgEl.textContent = 'Por favor, ingresa un codigo.';
     return;
   }
+  if (!posCarrito.length) {
+    msgEl.textContent = 'Agrega productos antes de aplicar el descuento.';
+    return;
+  }
 
   msgEl.textContent = 'Buscando descuento...';
 
-  const { data: discount, error } = await tiendaState.currentSupabase
-    .from('descuentos')
-    .select('*')
-    .eq('hotel_id', tiendaState.currentHotelId)
-    .eq('codigo', codigo)
-    .single();
+  try {
+    const descuentos = await consultarDescuentosElegibles({
+      supabase: tiendaState.currentSupabase,
+      hotelId: tiendaState.currentHotelId,
+      codigoManual: codigo
+    });
+    const discount = descuentos.find((item) =>
+      item?.tipo_descuento_general === 'codigo' &&
+      normalizarCodigoDescuento(item?.codigo) === codigo
+    );
 
-  if (error || !discount) {
-    msgEl.textContent = 'Codigo de descuento no valido o no encontrado.';
-    descuentoAplicado = null;
+    if (!discount) {
+      msgEl.textContent = 'Codigo de descuento no valido, vencido o sin usos disponibles.';
+      descuentoAplicado = null;
+      renderCarritoPOS();
+      return;
+    }
+
+    const resumen = calcularResumenDescuentoTienda(posCarrito, discount);
+    if (resumen.baseDescuento <= 0 || resumen.montoDescuento <= 0) {
+      msgEl.textContent = 'El codigo no aplica a los productos en tu carrito.';
+      descuentoAplicado = null;
+      renderCarritoPOS();
+      return;
+    }
+
+    descuentoAplicado = discount;
+    msgEl.textContent = `Descuento "${discount.nombre}" aplicado.`;
     renderCarritoPOS();
-    return;
+  } catch (error) {
+    console.error('[POS Tienda] Error validando descuento:', error);
+    descuentoAplicado = null;
+    msgEl.textContent = 'No fue posible validar el codigo de descuento.';
+    renderCarritoPOS();
   }
-
-  if (!discount.activo) {
-    msgEl.textContent = 'Este codigo de descuento ya no esta activo.';
-    return;
-  }
-  if (discount.usos_maximos > 0 && (discount.usos_actuales || 0) >= discount.usos_maximos) {
-    msgEl.textContent = 'Este codigo alcanzo su limite de usos.';
-    return;
-  }
-
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  if (discount.fecha_inicio && new Date(discount.fecha_inicio) > hoy) {
-    msgEl.textContent = 'Este descuento aun no es valido.';
-    return;
-  }
-  if (discount.fecha_fin && new Date(discount.fecha_fin) < hoy) {
-    msgEl.textContent = 'Este descuento ha expirado.';
-    return;
-  }
-
-  const baseDescuento = getDiscountableBase(discount, posCarrito);
-  if (baseDescuento <= 0) {
-    msgEl.textContent = 'El codigo no aplica a los productos en tu carrito.';
-    return;
-  }
-
-  descuentoAplicado = discount;
-  msgEl.textContent = `Descuento "${discount.nombre}" aplicado.`;
-  renderCarritoPOS();
 }
 
 export function removerDescuentoPOS() {
@@ -450,11 +429,9 @@ function renderCarritoPOS() {
   const cartItemsCountEl = document.getElementById('cartItemsCountPOS');
   const cartUnitsCountEl = document.getElementById('cartUnitsCountPOS');
 
-  let subtotal = 0;
   let unidades = 0;
   posCarrito.forEach((item) => {
     const itemSubtotal = item.cantidad * item.precio_venta;
-    subtotal += itemSubtotal;
     unidades += item.cantidad;
 
     const card = document.createElement('div');
@@ -497,31 +474,21 @@ function renderCarritoPOS() {
     `;
   }
 
-  let montoDescuento = 0;
-  let totalFinal = subtotal;
-
-  if (descuentoAplicado && subtotal > 0) {
-    const baseDescuento = getDiscountableBase(descuentoAplicado, posCarrito);
-    if (baseDescuento > 0) {
-      montoDescuento = descuentoAplicado.tipo === 'porcentaje'
-        ? baseDescuento * (descuentoAplicado.valor / 100)
-        : descuentoAplicado.valor;
-      montoDescuento = Math.min(montoDescuento, baseDescuento);
-      totalFinal = subtotal - montoDescuento;
-    } else {
-      descuentoAplicado = null;
-    }
+  let resumen = calcularResumenDescuentoTienda(posCarrito, descuentoAplicado);
+  if (descuentoAplicado && resumen.montoDescuento <= 0) {
+    descuentoAplicado = null;
+    resumen = calcularResumenDescuentoTienda(posCarrito, null);
   }
 
-  subtotalEl.textContent = formatCurrency(subtotal);
-  totalEl.textContent = formatCurrency(totalFinal);
+  subtotalEl.textContent = formatCurrency(resumen.subtotal);
+  totalEl.textContent = formatCurrency(resumen.total);
   if (cartItemsCountEl) cartItemsCountEl.textContent = String(posCarrito.length);
   if (cartUnitsCountEl) cartUnitsCountEl.textContent = String(unidades);
 
-  if (descuentoAplicado && montoDescuento > 0) {
+  if (descuentoAplicado && resumen.montoDescuento > 0) {
     lineaDescuentoEl.style.display = 'flex';
     nombreDescuentoEl.textContent = descuentoAplicado.nombre;
-    montoDescuentoEl.textContent = formatCurrency(montoDescuento);
+    montoDescuentoEl.textContent = formatCurrency(resumen.montoDescuento);
     btnAplicar.style.display = 'none';
     btnRemover.style.display = 'block';
     codigoInput.disabled = true;
@@ -587,12 +554,17 @@ export async function registrarVentaPOS() {
     if (modo === 'inmediato') {
       const metodo_pago_id = document.getElementById('metodoPOS').value;
       cliente_temporal = document.getElementById('clientePOS').value || null;
-      const total = posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
+      const resumen = calcularResumenDescuentoTienda(posCarrito, descuentoAplicado);
+      const total = resumen.total;
+
+      if (total <= 0) {
+        throw new Error('El descuento deja la venta en $0. Usa un flujo de cortesia autorizado en lugar del cobro POS.');
+      }
 
       if (metodo_pago_id === 'mixto') {
         await mostrarModalPagoMixto(total, async (pagos) => {
           if (!pagos) return;
-          await procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo, total });
+          await procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, modo });
         });
         return;
       }
@@ -602,7 +574,6 @@ export async function registrarVentaPOS() {
         habitacion_id,
         cliente_temporal,
         modo,
-        total,
       });
       return;
     }
@@ -612,7 +583,7 @@ export async function registrarVentaPOS() {
       document.getElementById('msgPOS').textContent = 'Selecciona una habitacion';
       return;
     }
-    await procesarVentaConPagos({ pagos: [], habitacion_id, cliente_temporal, modo, total: null });
+    await procesarVentaConPagos({ pagos: [], habitacion_id, cliente_temporal, modo });
   } catch (err) {
     document.getElementById('msgPOS').textContent = err.message;
   } finally {
@@ -732,20 +703,10 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
     precio: item.precio_venta,
     total: item.cantidad * item.precio_venta
   }));
-  const subtotalVenta = posCarrito.reduce((a, b) => a + b.precio_venta * b.cantidad, 0);
-  let montoDescuento = 0;
-  let totalVentaFinal = subtotalVenta;
-
-  if (descuentoAplicado) {
-    const baseDescuento = getDiscountableBase(descuentoAplicado, posCarrito);
-    if (baseDescuento > 0) {
-      montoDescuento = descuentoAplicado.tipo === 'porcentaje'
-        ? baseDescuento * (descuentoAplicado.valor / 100)
-        : descuentoAplicado.valor;
-      montoDescuento = Math.min(montoDescuento, baseDescuento);
-      totalVentaFinal = subtotalVenta - montoDescuento;
-    }
-  }
+  const resumenLocal = calcularResumenDescuentoTienda(posCarrito, descuentoAplicado);
+  let subtotalVenta = resumenLocal.subtotal;
+  let montoDescuento = resumenLocal.montoDescuento;
+  let totalVentaFinal = resumenLocal.total;
 
   let reservaId = null;
   if (habitacion_id) {
@@ -763,7 +724,13 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
 
   const turnoId = turnoService.getActiveTurnId();
   if (modo === 'inmediato' && !turnoId) throw new Error('No hay un turno de caja activo. No se guardo ningun cambio.');
-  const operationPayload = { items: posCarrito.map((item) => ({ producto_id: item.id, cantidad: item.cantidad })), pagos, modo, reservaId };
+  const operationPayload = {
+    items: posCarrito.map((item) => ({ producto_id: item.id, cantidad: item.cantidad })),
+    pagos,
+    modo,
+    reservaId,
+    descuentoId: descuentoAplicado?.id || null
+  };
   const operationScope = buildOperationScope('tienda-venta', operationPayload);
   const { data: ventaResult, error } = await tiendaState.currentSupabase.rpc('procesar_venta_tienda_atomica', {
     p_items: operationPayload.items,
@@ -780,7 +747,9 @@ async function procesarVentaConPagos({ pagos, habitacion_id, cliente_temporal, m
   if (error || !ventaResult?.venta_id) throw new Error(`Error guardando venta atomica: ${error?.message || 'respuesta invalida'}`);
   completeStableOperation(operationScope);
   const ventaId = ventaResult.venta_id;
-  totalVentaFinal = Number(ventaResult.total);
+  subtotalVenta = Number(ventaResult.subtotal ?? subtotalVenta);
+  montoDescuento = Number(ventaResult.descuento ?? montoDescuento);
+  totalVentaFinal = Number(ventaResult.total ?? totalVentaFinal);
   msgPOSEl.textContent = modo === 'inmediato' ? 'Venta registrada.' : 'Consumo cargado a la cuenta de la habitacion.';
 
   posCarrito = [];
