@@ -25,25 +25,16 @@
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
   <style>
-    /* Asegura que el sidebar y la barra superior móvil tengan un z-index menor que los modales */
     #sidebar,
     #mobile-topbar {
       z-index: 40;
     }
   </style>
-  <!-- Link al Manifest -->
   <link rel="manifest" href="../js/manifest.json">
-
-  <!-- Color de barra superior para Android -->
   <meta name="theme-color" content="#1d4ed8">
-
-  <!-- Apple Touch Icon -->
-
-  <!-- Web App Settings -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-  <!-- Google Tag Manager -->
   <script>
       (function (w, d, s, l, i) {
         w[l] = w[l] || []; w[l].push({
@@ -54,18 +45,14 @@
             'https://www.googletagmanager.com/gtm.js?id=GTM-NDC7DNLK' + dl; f.parentNode.insertBefore(j, f);
       })(window, document, 'script', 'dataLayer', 'GTM-NDC7DNLK');
   </script>
-  <!-- End Google Tag Manager -->
-
 </head>
 
 <body>
   <a class="skip-link" href="#app-container">Saltar al contenido principal</a>
-  <!-- Google Tag Manager (noscript) -->
   <noscript>
     <iframe src="https://www.googletagmanager.com/ns.html?id=GTM-NDC7DNLK" height="0" width="0"
       style="display:none;visibility:hidden"></iframe>
   </noscript>
-  <!-- End Google Tag Manager (noscript) -->
 
   <div id="main-wrapper" class="flex min-h-screen">
     <div id="mobile-topbar"
@@ -133,6 +120,7 @@
   </script>
   <script src="/js/energy-module-recovery.js?v=20260902-1"></script>
   <script type="module" src="/js/main.js?v=20260902-energy-loader-1"></script>
+  <script type="module" src="/js/habitaciones-tarifas-bootstrap.js?v=20260903-tarifas-1"></script>
   <script type="module" src="/js/mapa-saldo-enhancer.js?v=20260902-mapa-saldo-1"></script>
   <script type="module" src="/js/mapa-fechas-abonos-inline.js?v=20260902-fechas-abonos-4"></script>
   <script type="module" src="/js/user-active-session-guard.js?v=20260902-user-archive-1"></script>
