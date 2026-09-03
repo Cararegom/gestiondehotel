@@ -7,7 +7,7 @@ function loadConflictService() {
   let source = fs.readFileSync('js/services/tarifasProgramadasConflictosService.js', 'utf8');
   source = source.replace(/export\s+function\s+/g, 'function ');
   source += `\nmodule.exports = { tarifaAplicaHabitacionScope, compararPrecedenciaTarifas, detectarConflictosTarifaProgramada };`;
-  const sandbox = { module: { exports: {} }, exports: {}, Number, String, Array, Set };
+  const sandbox = { module: { exports: {} }, exports: {}, Number, String, Array, Set, Date };
   vm.runInNewContext(source, sandbox, { filename: 'tarifasProgramadasConflictosService.js' });
   return sandbox.module.exports;
 }
@@ -60,6 +60,25 @@ test('una regla de temporada con mayor prioridad puede superponerse de forma con
   assert.equal(conflicts.length, 1);
   assert.equal(conflicts[0].ambigua, false);
   assert.equal(conflicts[0].gana, 'candidata');
+});
+
+test('un rango de un solo día no choca con un weekday que no ocurre ese día', () => {
+  const christmasFriday = {
+    ...weekday,
+    id: 'christmas',
+    dias_semana: [],
+    fecha_inicio: '2026-12-25',
+    fecha_fin: '2026-12-25'
+  };
+  const mondayOnly = {
+    ...weekday,
+    id: 'monday',
+    dias_semana: [1],
+    fecha_inicio: '2026-12-20',
+    fecha_fin: '2026-12-31'
+  };
+  const conflicts = service.detectarConflictosTarifaProgramada(christmasFriday, [mondayOnly], rooms);
+  assert.equal(conflicts.length, 0);
 });
 
 test('una tarifa exclusiva de la habitación VIP no choca con una tarifa que la excluye', () => {
