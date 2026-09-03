@@ -54,9 +54,9 @@ function escapeHtml(value: unknown): string {
     .replaceAll("'", '&#039;');
 }
 
-function formatBogota(value: string): string {
+function formatHotelDate(value: string, timeZone: string): string {
   return new Intl.DateTimeFormat('es-CO', {
-    timeZone: 'America/Bogota',
+    timeZone,
     dateStyle: 'short',
     timeStyle: 'short'
   }).format(new Date(value));
@@ -81,10 +81,24 @@ Deno.serve(async (request) => {
   }
 
   const claims = (data || []) as EnergyAlertClaim[];
+  const timeZoneByHotel = new Map<string, string>();
   let notifications = 0;
   let emailsSent = 0;
   let retryableFailures = 0;
   let permanentFailures = 0;
+
+  const resolveHotelTimeZone = async (hotelId: string): Promise<string> => {
+    const cached = timeZoneByHotel.get(hotelId);
+    if (cached) return cached;
+    const { data: timeZone, error: timeZoneError } = await admin.rpc('hotel_time_zone', { p_hotel_id: hotelId });
+    if (timeZoneError || !timeZone) {
+      console.error('[process-energy-alerts] timezone_lookup_failed', { code: timeZoneError?.code });
+      throw new Error('hotel_timezone_unavailable');
+    }
+    const resolved = String(timeZone);
+    timeZoneByHotel.set(hotelId, resolved);
+    return resolved;
+  };
 
   const finish = async (
     claim: EnergyAlertClaim,
@@ -148,6 +162,17 @@ Deno.serve(async (request) => {
       continue;
     }
 
+    let hotelTimeZone: string;
+    try {
+      hotelTimeZone = await resolveHotelTimeZone(claim.hotel_id);
+    } catch {
+      const permanent = Number(claim.attempt || 0) >= 5;
+      if (permanent) permanentFailures += 1;
+      else retryableFailures += 1;
+      await finish(claim, permanent ? 'failed_permanent' : 'timezone_failed', permanent);
+      continue;
+    }
+
     try {
       const response = await fetch(webhook, {
         method: 'POST',
@@ -156,7 +181,7 @@ Deno.serve(async (request) => {
           to: recipients.join(','),
           from: 'no-reply@gestiondehotel.com',
           subject: `⚡ Control de energía pendiente — Habitación ${claim.room_name || ''}`,
-          html: `<h2>Control de energía pendiente</h2><p><b>Hotel:</b> ${escapeHtml(claim.hotel_name)}</p><p><b>Habitación:</b> ${escapeHtml(claim.room_name)}</p><p><b>Enviada a limpieza:</b> ${escapeHtml(formatBogota(claim.created_at))}</p><p><b>Tiempo transcurrido:</b> ${minutes} minutos</p><p><b>Movimiento realizado por:</b> ${escapeHtml(claim.source_user_name || 'Sin identificar')}</p><p><b>Estado actual:</b> Sin revisión de energía</p>`
+          html: `<h2>Control de energía pendiente</h2><p><b>Hotel:</b> ${escapeHtml(claim.hotel_name)}</p><p><b>Habitación:</b> ${escapeHtml(claim.room_name)}</p><p><b>Enviada a limpieza:</b> ${escapeHtml(formatHotelDate(claim.created_at, hotelTimeZone))}</p><p><b>Tiempo transcurrido:</b> ${minutes} minutos</p><p><b>Movimiento realizado por:</b> ${escapeHtml(claim.source_user_name || 'Sin identificar')}</p><p><b>Estado actual:</b> Sin revisión de energía</p>`
         })
       });
 
