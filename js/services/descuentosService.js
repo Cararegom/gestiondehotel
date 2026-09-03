@@ -119,6 +119,18 @@ export function serviciosAplicablesAlDescuento(descuento, servicios = []) {
   });
 }
 
+export function productosTiendaAplicablesAlDescuento(descuento, productos = []) {
+  const lista = Array.isArray(productos) ? productos : [];
+  const aplicabilidad = String(descuento?.aplicabilidad || '');
+
+  if (aplicabilidad === 'reserva_total') return lista;
+  if (aplicabilidad !== 'productos_tienda') return [];
+
+  const items = idsAplicables(descuento);
+  if (!items.length) return [];
+  return lista.filter((producto) => producto?.id && items.includes(String(producto.id)));
+}
+
 export function seleccionarDescuentoPreferido(descuentos = [], contexto = {}, predicate = () => true) {
   const lista = Array.isArray(descuentos) ? descuentos : [];
   const candidatos = lista.filter((descuento) => predicate(descuento));
@@ -141,4 +153,27 @@ export function calcularMontoDescuento(descuento, base) {
     : valor;
 
   return Math.min(baseSegura, Math.max(0, monto));
+}
+
+function totalProductoTienda(producto) {
+  const cantidad = Math.max(0, Number(producto?.cantidad) || 0);
+  const precio = Math.max(0, Number(producto?.precio_venta ?? producto?.precio) || 0);
+  return cantidad * precio;
+}
+
+export function calcularResumenDescuentoTienda(productos = [], descuento = null) {
+  const lista = Array.isArray(productos) ? productos : [];
+  const subtotal = lista.reduce((sum, producto) => sum + totalProductoTienda(producto), 0);
+  const afectados = descuento ? productosTiendaAplicablesAlDescuento(descuento, lista) : [];
+  const baseDescuento = afectados.reduce((sum, producto) => sum + totalProductoTienda(producto), 0);
+  const montoDescuento = calcularMontoDescuento(descuento, baseDescuento);
+  const total = Math.max(0, subtotal - montoDescuento);
+
+  return {
+    subtotal,
+    baseDescuento,
+    montoDescuento,
+    total,
+    productosAfectados: afectados
+  };
 }
