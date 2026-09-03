@@ -2,9 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-const source = fs.readFileSync('js/modules/configuracion/configuracion.js', 'utf8');
+const facade = fs.readFileSync('js/modules/configuracion/configuracion.js', 'utf8');
+const source = fs.readFileSync('js/modules/configuracion/configuracion-core.js', 'utf8');
 
-test('Configuracion ofrece un interruptor accesible para Control de Energia', () => {
+test('Configuracion conserva el interruptor accesible para Control de Energia', () => {
+  assert.match(facade, /configuracion-core\.js/);
   assert.match(source, /id="energy_control_enabled"/);
   assert.match(source, /role="switch"/);
   assert.match(source, /peer-checked:bg-emerald-500/);
