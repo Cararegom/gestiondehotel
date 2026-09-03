@@ -84,7 +84,9 @@ test('ver consumos muestra fechas de pagos y las incluye en la factura POS', () 
   assert.match(saldoMapa, /import '\.\/mapa-consumos-pagos-enhancer\.js'/);
   assert.match(pagosConsumos, /Historial de pagos y abonos/);
   assert.match(pagosConsumos, /select\('id, monto, fecha_pago, concepto'\)/);
-  assert.match(pagosConsumos, /America\/Bogota/);
+  assert.match(pagosConsumos, /getRuntimeHotelTimeZone/);
+  assert.match(pagosConsumos, /formatInTimeZone/);
+  assert.doesNotMatch(pagosConsumos, /America\/Bogota/);
   assert.match(pagosConsumos, /Último pago:/);
   assert.match(pagosConsumos, /btn-imprimir-pos-local/);
   assert.match(pagosConsumos, /PAGOS \/ ABONOS/);
