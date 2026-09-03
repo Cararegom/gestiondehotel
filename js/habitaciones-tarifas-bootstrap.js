@@ -65,6 +65,69 @@ function formatDays(days) {
   return WEEKDAYS.filter((day) => days.map(Number).includes(day.value)).map((day) => labels.get(day.value)).join(', ');
 }
 
+function normalizeRoomIds(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => String(item || '').trim()).filter(Boolean))];
+}
+
+function roomScopeMode(tariff) {
+  if (tariff?.habitacion_id || normalizeRoomIds(tariff?.habitaciones_aplicables).length > 0) return 'seleccionadas';
+  if (normalizeRoomIds(tariff?.habitaciones_excluidas).length > 0) return 'excepto';
+  return 'todas';
+}
+
+function roomScopeIds(tariff) {
+  if (tariff?.habitacion_id) return [String(tariff.habitacion_id)];
+  if (roomScopeMode(tariff) === 'seleccionadas') return normalizeRoomIds(tariff?.habitaciones_aplicables);
+  if (roomScopeMode(tariff) === 'excepto') return normalizeRoomIds(tariff?.habitaciones_excluidas);
+  return [];
+}
+
+function roomScopeSummary(tariff, roomNames) {
+  const mode = roomScopeMode(tariff);
+  const ids = roomScopeIds(tariff);
+  if (mode === 'todas') return 'Todas las habitaciones';
+
+  const labels = ids.map((id) => roomNames.get(String(id)) || 'Habitación').filter(Boolean);
+  const compact = labels.length <= 3 ? labels.join(', ') : `${labels.slice(0, 2).join(', ')} y ${labels.length - 2} más`;
+  return mode === 'excepto' ? `Todas excepto: ${compact}` : `Solo: ${compact}`;
+}
+
+function renderRoomChecks(selected = []) {
+  const selectedSet = new Set(normalizeRoomIds(selected));
+  if (!rooms.length) {
+    return '<p class="text-sm text-slate-500">No hay habitaciones activas para seleccionar.</p>';
+  }
+  return rooms.map((room) => `
+    <label class="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+      <input type="checkbox" name="habitaciones_scope" value="${room.id}" ${selectedSet.has(String(room.id)) ? 'checked' : ''}>
+      <span>${room.nombre}</span>
+    </label>
+  `).join('');
+}
+
+function selectedRoomScopeIds(form) {
+  return [...form.querySelectorAll('[name="habitaciones_scope"]:checked')].map((input) => String(input.value));
+}
+
+function updateRoomScopeUI(section) {
+  const form = section.querySelector('#tarifa-programada-form');
+  const container = section.querySelector('#tarifa-room-scope-container');
+  const label = section.querySelector('#tarifa-room-scope-label');
+  const hint = section.querySelector('#tarifa-room-scope-hint');
+  if (!form || !container || !label || !hint) return;
+
+  const mode = form.elements.aplicacion_habitaciones.value || 'todas';
+  container.classList.toggle('hidden', mode === 'todas');
+  if (mode === 'seleccionadas') {
+    label.textContent = 'Habitaciones incluidas';
+    hint.textContent = 'La tarifa solo se aplicará a las habitaciones marcadas.';
+  } else if (mode === 'excepto') {
+    label.textContent = 'Habitaciones excluidas';
+    hint.textContent = 'La tarifa se aplicará a todas las habitaciones menos las marcadas.';
+  }
+}
+
 function priceSummary(tariff) {
   if (tariff.precio_final !== null && tariff.precio_final !== undefined) {
     return `Precio final ${formatCurrency(Number(tariff.precio_final) || 0)}`;
@@ -97,7 +160,7 @@ function renderTariffList(section) {
             <h4 class="text-lg font-bold text-slate-900">${tariff.nombre}</h4>
             <span class="rounded-full px-2.5 py-1 text-xs font-semibold ${tariff.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${tariff.activo ? 'Activa' : 'Inactiva'}</span>
           </div>
-          <p class="mt-1 text-sm text-slate-600">${roomNames.get(String(tariff.habitacion_id)) || 'Todas las habitaciones'} · ${formatDays(tariff.dias_semana)}</p>
+          <p class="mt-1 text-sm text-slate-600">${roomScopeSummary(tariff, roomNames)} · ${formatDays(tariff.dias_semana)}</p>
           <p class="mt-1 font-semibold text-indigo-700">${priceSummary(tariff)}</p>
           <p class="mt-1 text-xs text-slate-500">${tariff.fecha_inicio || tariff.fecha_fin ? `Vigencia: ${tariff.fecha_inicio || 'sin inicio'} → ${tariff.fecha_fin || 'sin fin'}` : 'Vigencia permanente'} · Prioridad ${Number(tariff.prioridad) || 0}</p>
         </div>
@@ -118,10 +181,12 @@ function resetForm(section) {
   form.elements.tarifa_id.value = '';
   form.elements.prioridad.value = '10';
   form.elements.activo.checked = true;
+  form.elements.aplicacion_habitaciones.value = 'todas';
   form.querySelector('#tarifa-form-title').textContent = 'Nueva tarifa programada';
   form.querySelector('#tarifa-submit').textContent = 'Guardar tarifa';
   form.querySelector('#tarifa-cancel').classList.add('hidden');
-  form.querySelectorAll('[name="dias_semana"]').forEach((input) => { input.checked = false; });
+  form.querySelectorAll('[name="dias_semana"], [name="habitaciones_scope"]').forEach((input) => { input.checked = false; });
+  updateRoomScopeUI(section);
 }
 
 function fillForm(section, tariff) {
@@ -129,7 +194,7 @@ function fillForm(section, tariff) {
   if (!form || !tariff) return;
   form.elements.tarifa_id.value = tariff.id;
   form.elements.nombre.value = tariff.nombre || '';
-  form.elements.habitacion_id.value = tariff.habitacion_id || '';
+  form.elements.aplicacion_habitaciones.value = roomScopeMode(tariff);
   form.elements.fecha_inicio.value = tariff.fecha_inicio || '';
   form.elements.fecha_fin.value = tariff.fecha_fin || '';
   form.elements.precio_final.value = tariff.precio_final ?? '';
@@ -138,8 +203,14 @@ function fillForm(section, tariff) {
   form.elements.precio_huesped_adicional.value = tariff.precio_huesped_adicional ?? '';
   form.elements.prioridad.value = String(Number(tariff.prioridad) || 0);
   form.elements.activo.checked = tariff.activo !== false;
+
   const days = new Set((tariff.dias_semana || []).map(Number));
   form.querySelectorAll('[name="dias_semana"]').forEach((input) => { input.checked = days.has(Number(input.value)); });
+
+  const selectedRooms = new Set(roomScopeIds(tariff));
+  form.querySelectorAll('[name="habitaciones_scope"]').forEach((input) => { input.checked = selectedRooms.has(String(input.value)); });
+  updateRoomScopeUI(section);
+
   form.querySelector('#tarifa-form-title').textContent = 'Editar tarifa programada';
   form.querySelector('#tarifa-submit').textContent = 'Actualizar tarifa';
   form.querySelector('#tarifa-cancel').classList.remove('hidden');
@@ -147,6 +218,8 @@ function fillForm(section, tariff) {
 }
 
 async function reloadData(section) {
+  const form = section.querySelector('#tarifa-programada-form');
+  const previousSelection = form ? selectedRoomScopeIds(form) : [];
   const [roomResult, tariffResult] = await Promise.all([
     supabase.from('habitaciones').select('id, nombre').eq('hotel_id', activeHotelId).eq('activo', true).order('nombre'),
     supabase.from('tarifas_programadas_habitacion').select('*').eq('hotel_id', activeHotelId).eq('modalidad', 'noche').order('prioridad', { ascending: false }).order('creado_en', { ascending: false })
@@ -156,12 +229,8 @@ async function reloadData(section) {
   rooms = roomResult.data || [];
   tariffs = tariffResult.data || [];
 
-  const roomSelect = section.querySelector('[name="habitacion_id"]');
-  if (roomSelect) {
-    const current = roomSelect.value;
-    roomSelect.innerHTML = '<option value="">Todas las habitaciones</option>' + rooms.map((room) => `<option value="${room.id}">${room.nombre}</option>`).join('');
-    roomSelect.value = current;
-  }
+  const roomGrid = section.querySelector('#tarifa-room-scope-grid');
+  if (roomGrid) roomGrid.innerHTML = renderRoomChecks(previousSelection);
   renderTariffList(section);
 }
 
@@ -189,9 +258,13 @@ async function handleSubmit(event, section) {
 
   try {
     const days = [...form.querySelectorAll('[name="dias_semana"]:checked')].map((input) => Number(input.value));
+    const scopeMode = String(form.elements.aplicacion_habitaciones.value || 'todas');
+    const scopeRooms = selectedRoomScopeIds(form);
     const payload = {
       hotel_id: activeHotelId,
-      habitacion_id: form.elements.habitacion_id.value || null,
+      habitacion_id: null,
+      habitaciones_aplicables: scopeMode === 'seleccionadas' ? scopeRooms : [],
+      habitaciones_excluidas: scopeMode === 'excepto' ? scopeRooms : [],
       tiempo_estancia_id: null,
       nombre: String(form.elements.nombre.value || '').trim(),
       modalidad: 'noche',
@@ -208,6 +281,7 @@ async function handleSubmit(event, section) {
     };
 
     if (!payload.nombre) throw new Error('Escribe un nombre para la tarifa.');
+    if (scopeMode !== 'todas' && scopeRooms.length === 0) throw new Error('Selecciona al menos una habitación para este alcance.');
     if ([payload.precio_final, payload.precio_1_persona, payload.precio_2_personas].every((value) => value === null)) {
       throw new Error('Define un precio final o al menos un precio para 1 o 2 personas.');
     }
@@ -319,7 +393,28 @@ async function mountTariffs() {
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label class="form-label">Nombre*</label><input class="form-control" name="nombre" required placeholder="Ej. Amanecida lunes a viernes"></div>
-        <div><label class="form-label">Habitación</label><select class="form-control" name="habitacion_id"><option value="">Todas las habitaciones</option></select></div>
+        <div>
+          <label class="form-label">Aplicar a</label>
+          <select class="form-control" name="aplicacion_habitaciones">
+            <option value="todas">Todas las habitaciones</option>
+            <option value="seleccionadas">Solo habitaciones seleccionadas</option>
+            <option value="excepto">Todas excepto habitaciones seleccionadas</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="tarifa-room-scope-container" class="hidden rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p id="tarifa-room-scope-label" class="text-sm font-bold text-slate-800">Habitaciones incluidas</p>
+            <p id="tarifa-room-scope-hint" class="text-xs text-slate-500">La tarifa solo se aplicará a las habitaciones marcadas.</p>
+          </div>
+          <div class="flex gap-2">
+            <button type="button" class="button button-outline button-small" data-room-scope-action="all">Marcar todas</button>
+            <button type="button" class="button button-neutral button-small" data-room-scope-action="clear">Limpiar</button>
+          </div>
+        </div>
+        <div id="tarifa-room-scope-grid" class="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2"></div>
       </div>
 
       <div>
@@ -366,9 +461,17 @@ async function mountTariffs() {
   section.querySelector('#tarifa-programada-form').addEventListener('submit', (event) => handleSubmit(event, section));
   section.querySelector('#tarifa-cancel').addEventListener('click', () => resetForm(section));
   section.querySelector('#tarifas-programadas-list').addEventListener('click', (event) => handleListAction(event, section));
+  section.querySelector('[name="aplicacion_habitaciones"]').addEventListener('change', () => updateRoomScopeUI(section));
+  section.querySelectorAll('[data-room-scope-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const checked = button.dataset.roomScopeAction === 'all';
+      section.querySelectorAll('[name="habitaciones_scope"]').forEach((input) => { input.checked = checked; });
+    });
+  });
 
   try {
     await reloadData(section);
+    updateRoomScopeUI(section);
   } catch (error) {
     showFeedback(section, `No se pudieron cargar las tarifas: ${error.message}`, 'error');
   }
