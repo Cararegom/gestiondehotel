@@ -1,8 +1,8 @@
 import {
   clearAppFeedback,
-  formatDateTime,
   showAppFeedback
 } from '../../uiUtils.js';
+import { formatInTimeZone } from '../../services/hotelTimeZoneService.js';
 
 let activeListeners = [];
 let hotelIdGlobal = null;
@@ -94,9 +94,23 @@ function formatBitacoraDetalles(detalles) {
 }
 
 function getActorName(entry) {
-  return entry.usuarios?.nombre
+  return entry.usuario_nombre
+    || entry.usuario_correo
+    || entry.usuarios?.nombre
     || entry.usuarios?.correo
     || (entry.usuario_id ? `ID: ${String(entry.usuario_id).slice(0, 8)}...` : 'Sistema');
+}
+
+function formatBitacoraDateTime(entry) {
+  const formatted = formatInTimeZone(
+    entry?.creado_en_instante,
+    entry?.zona_horaria,
+    'es-CO',
+    { dateStyle: 'medium', timeStyle: 'short' }
+  );
+
+  if (currentScope !== 'soporte-global') return formatted;
+  return `${formatted}<div class="mt-1 text-[11px] font-semibold text-gray-400">${entry?.zona_horaria || 'Zona del hotel'}</div>`;
 }
 
 async function cargarYRenderizarBitacora(page = 1) {
@@ -105,8 +119,9 @@ async function cargarYRenderizarBitacora(page = 1) {
     return;
   }
 
+  const tableColumnCount = currentScope === 'soporte-global' ? 7 : 6;
   setLoadingState('Cargando registros de bitacora...');
-  tBodyEl.innerHTML = `<tr><td colspan="6" class="p-4 text-center">Cargando...</td></tr>`;
+  tBodyEl.innerHTML = `<tr><td colspan="${tableColumnCount}" class="p-4 text-center">Cargando...</td></tr>`;
 
   const fechaInicio = filterFechaInicioEl?.value || '';
   const fechaFin = filterFechaFinEl?.value || '';
@@ -115,17 +130,20 @@ async function cargarYRenderizarBitacora(page = 1) {
 
   try {
     let query = currentSupabaseInstance
-      .from('bitacora')
+      .from('bitacora_operativa')
       .select(`
         hotel_id,
-        creado_en,
+        creado_en_instante,
+        business_date,
+        zona_horaria,
         modulo,
         accion,
         detalles,
         usuario_id,
-        usuarios (nombre, correo)
+        usuario_nombre,
+        usuario_correo
       `, { count: 'exact' })
-      .order('creado_en', { ascending: false });
+      .order('creado_en_instante', { ascending: false });
 
     if (currentScope !== 'soporte-global') {
       query = query.eq('hotel_id', hotelIdGlobal);
@@ -135,8 +153,8 @@ async function cargarYRenderizarBitacora(page = 1) {
       query = query.in('accion', getIncidentActionsForScope());
     }
 
-    if (fechaInicio) query = query.gte('creado_en', `${fechaInicio}T00:00:00.000Z`);
-    if (fechaFin) query = query.lte('creado_en', `${fechaFin}T23:59:59.999Z`);
+    if (fechaInicio) query = query.gte('business_date', fechaInicio);
+    if (fechaFin) query = query.lte('business_date', fechaFin);
     if (usuarioId) query = query.eq('usuario_id', usuarioId);
     if (moduloFiltro) query = query.ilike('modulo', `%${moduloFiltro}%`);
 
@@ -152,13 +170,13 @@ async function cargarYRenderizarBitacora(page = 1) {
     tBodyEl.innerHTML = '';
 
     if (!registros?.length) {
-      tBodyEl.innerHTML = `<tr><td colspan="6" class="p-4 text-center">No se encontraron registros con los filtros aplicados.</td></tr>`;
+      tBodyEl.innerHTML = `<tr><td colspan="${tableColumnCount}" class="p-4 text-center">No se encontraron registros con los filtros aplicados.</td></tr>`;
     } else {
       registros.forEach((entry) => {
         const tr = document.createElement('tr');
         tr.className = 'border-b hover:bg-gray-50';
         tr.innerHTML = `
-          <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">${formatDateTime(entry.creado_en)}</td>
+          <td class="px-4 py-2 text-sm text-gray-600 whitespace-nowrap">${formatBitacoraDateTime(entry)}</td>
           ${currentScope === 'soporte-global' ? `<td class="px-4 py-2 text-sm text-gray-700">${hotelNamesByIdCache[entry.hotel_id] || entry.hotel_id || 'Sin hotel'}</td>` : ''}
           <td class="px-4 py-2 text-sm text-gray-700">${getActorName(entry)}</td>
           <td class="px-4 py-2 text-sm text-gray-700">${entry.modulo || 'N/A'}</td>
@@ -177,7 +195,7 @@ async function cargarYRenderizarBitacora(page = 1) {
   } catch (error) {
     console.error('Error al cargar bitacora:', error);
     showAppFeedback(`Error al cargar bitacora: ${error.message}`, 'error');
-    tBodyEl.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-red-500">Error cargando datos. Intenta de nuevo.</td></tr>`;
+    tBodyEl.innerHTML = `<tr><td colspan="${tableColumnCount}" class="p-4 text-center text-red-500">Error cargando datos. Intenta de nuevo.</td></tr>`;
     if (pagContainerEl) pagContainerEl.style.display = 'none';
   } finally {
     setLoadingState('');
@@ -268,7 +286,7 @@ export async function mount(container, sbInstance, user, hotelId) {
       ? 'Incidencias de Soporte'
       : 'Bitacora de Actividad del Sistema';
   const headingDescription = isGlobalSupportScope
-    ? 'Aqui veras, como encargado del SaaS, los reportes de fallas y danos registrados desde todos los hoteles.'
+    ? 'Aqui veras, como encargado del SaaS, los reportes de fallas y danos registrados desde todos los hoteles. Cada registro usa la zona horaria configurada en su propio hotel.'
     : isSupportScope
       ? 'Aqui veras los reportes de fallas, danos y evidencias cargadas desde soporte.'
       : 'Consulta la actividad registrada del hotel y aplica filtros por fecha, usuario o modulo.';
