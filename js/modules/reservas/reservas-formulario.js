@@ -21,12 +21,15 @@ export function gatherReservaFormData(ui) {
                 id: selectedOption.value,
                 nombre: selectedOption.getAttribute('data-nombre') || selectedOption.textContent?.split('(')[0]?.trim() || '',
                 precio_general: parseFloat(selectedOption.getAttribute('data-precio') || '0'),
+                precio: parseFloat(selectedOption.getAttribute('data-precio') || '0'),
                 precio_1_persona: parseFloat(selectedOption.getAttribute('data-precio-1') || '0'),
                 precio_2_personas: parseFloat(selectedOption.getAttribute('data-precio-2') || '0'),
                 tipo_habitacion_id: selectedOption.getAttribute('data-tipo-habitacion-id') || null,
                 capacidad_base: parseFloat(selectedOption.getAttribute('data-capacidad-base') || '2'),
                 capacidad_maxima: parseFloat(selectedOption.getAttribute('data-capacidad-maxima') || '10'),
-                precio_huesped_adicional: parseFloat(selectedOption.getAttribute('data-precio-extra') || '0')
+                precio_huesped_adicional: parseFloat(selectedOption.getAttribute('data-precio-extra') || '0'),
+                permite_reservas_por_horas: selectedOption.getAttribute('data-permite-horas') === 'true',
+                precio_base_hora: parseFloat(selectedOption.getAttribute('data-precio-base-hora') || '0')
             };
         }
     }

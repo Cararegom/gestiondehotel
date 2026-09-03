@@ -2,6 +2,7 @@ import {
   formatCurrency,
   formatMinutesToHoursMinutes
 } from '../../uiUtils.js';
+import { cargarTarifasProgramadas } from '../../services/tarifasProgramadasService.js';
 
 export async function cargarHabitaciones({
   supabase,
@@ -16,7 +17,7 @@ export async function cargarHabitaciones({
 
   const { data: rooms, error } = await supabase
     .from('habitaciones')
-    .select('id, nombre, tipo, estado, precio, capacidad_base, capacidad_maxima, precio_huesped_adicional, precio_1_persona, precio_2_personas, tipo_habitacion_id')
+    .select('id, nombre, tipo, estado, precio, capacidad_base, capacidad_maxima, precio_huesped_adicional, precio_1_persona, precio_2_personas, tipo_habitacion_id, permite_reservas_por_horas, precio_base_hora')
     .eq('hotel_id', hotelId)
     .eq('activo', true)
     .order('nombre', { ascending: true });
@@ -53,6 +54,8 @@ export async function cargarHabitaciones({
         data-capacidad-maxima="${capMax}"
         data-precio-extra="${room.precio_huesped_adicional || 0}"
         data-tipo-habitacion-id="${room.tipo_habitacion_id || ''}"
+        data-permite-horas="${room.permite_reservas_por_horas ? 'true' : 'false'}"
+        data-precio-base-hora="${room.precio_base_hora || 0}"
         ${disabledAttribute}
       >
         ${room.nombre} (${formatCurrency(room.precio_2_personas || room.precio, state.configHotel?.moneda_local_simbolo || '$')})${statusLabel}
@@ -182,7 +185,8 @@ export async function loadInitialData({
         moneda_decimales_info,
         minutos_tolerancia_llegada,
         minutos_alerta_reserva,
-        minutos_alerta_checkout
+        minutos_alerta_checkout,
+        zona_horaria
       `)
       .eq('hotel_id', hotelId)
       .single();
@@ -207,6 +211,7 @@ export async function loadInitialData({
       state.configHotel.minutos_tolerancia_llegada = Number(config.minutos_tolerancia_llegada) || 60;
       state.configHotel.minutos_alerta_reserva = Number(config.minutos_alerta_reserva) || 120;
       state.configHotel.minutos_alerta_checkout = Number(config.minutos_alerta_checkout) || 30;
+      state.configHotel.zona_horaria = config.zona_horaria || state.configHotel.zona_horaria || 'America/Bogota';
     } else {
       console.warn(`[Reservas] No se encontro configuracion para el hotel ${hotelId}. Usando valores predeterminados.`);
     }
@@ -240,6 +245,15 @@ export async function loadInitialData({
     console.warn('[Reservas] Carga de reglas dinamicas omitida:', error.message);
     state.pricingRules = [];
     state.pricingRulesAvailable = false;
+  }
+
+  try {
+    state.tarifasProgramadas = await cargarTarifasProgramadas(supabase, hotelId);
+    state.tarifasProgramadasAvailable = true;
+  } catch (error) {
+    console.warn('[Reservas] Carga de tarifas programadas omitida:', error.message);
+    state.tarifasProgramadas = [];
+    state.tarifasProgramadasAvailable = false;
   }
 
   await Promise.all([
