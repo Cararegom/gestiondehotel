@@ -9,9 +9,25 @@ test('Ver consumos muestra la fecha del pago junto a cada servicio pagado', () =
   assert.match(enhancer, /pago_reserva_id/);
   assert.match(enhancer, /fecha_servicio/);
   assert.match(enhancer, /\.from\('pagos_reserva'\)/);
-  assert.match(enhancer, /\.select\('id, fecha_pago'\)/);
+  assert.match(enhancer, /\.select\('id, fecha_pago, monto, concepto'\)/);
   assert.match(enhancer, /Pagado: \$\{paymentDate\}/);
   assert.match(enhancer, /paymentDateInline/);
+});
+
+test('Ver consumos agrega un historial visible con fecha, concepto y monto', () => {
+  assert.match(enhancer, /Historial de pagos y abonos/);
+  assert.match(enhancer, /dataPaymentHistorySection|paymentHistorySection/);
+  assert.match(enhancer, /cleanConcept/);
+  assert.match(enhancer, /formatMoney/);
+  assert.match(enhancer, /fecha_pago/);
+});
+
+test('el parche reintenta si el modal o los globals aun no estan disponibles', () => {
+  assert.match(enhancer, /setInterval/);
+  assert.match(enhancer, /POLL_MS/);
+  assert.match(enhancer, /RETRY_MS/);
+  assert.match(enhancer, /window\.supabase/);
+  assert.match(enhancer, /window\.hotelIdGlobal/);
 });
 
 test('las fechas se consultan por hotel y reserva y no crean movimientos', () => {
@@ -22,6 +38,6 @@ test('las fechas se consultan por hotel y reserva y no crean movimientos', () =>
   assert.doesNotMatch(enhancer, /\.delete\(/);
 });
 
-test('el asset de fechas tiene cache bust dedicado', () => {
-  assert.match(appIndex, /\/js\/mapa-fechas-abonos-inline\.js\?v=20260902-fechas-abonos-2/);
+test('el asset de fechas tiene cache bust dedicado v3', () => {
+  assert.match(appIndex, /\/js\/mapa-fechas-abonos-inline\.js\?v=20260902-fechas-abonos-3/);
 });
