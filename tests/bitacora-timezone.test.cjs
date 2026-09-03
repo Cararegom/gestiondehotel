@@ -20,7 +20,7 @@ test('Bitacora filtra por business_date y formatea cada fila con la zona de su h
   assert.match(bitacora, /gte\('business_date', fechaInicio\)/);
   assert.match(bitacora, /lte\('business_date', fechaFin\)/);
   assert.match(bitacora, /formatInTimeZone\(/);
-  assert.match(bitacora, /entry\.zona_horaria/);
+  assert.match(bitacora, /entry\?\.zona_horaria/);
   assert.match(bitacora, /creado_en_instante/);
   assert.doesNotMatch(bitacora, /T00:00:00\.000Z/);
   assert.doesNotMatch(bitacora, /T23:59:59\.999Z/);
