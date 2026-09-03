@@ -30,8 +30,8 @@ test('los rangos soportan zonas con horario de verano', async () => {
   assert.equal((Date.parse(fall.endExclusiveIso) - Date.parse(fall.startIso)) / 3600000, 25);
 });
 
-test('el centro de Reportes corrige los límites UTC legacy usando la zona del hotel', () => {
-  const source = fs.readFileSync(path.join(root, 'js/modules/reportes/reportes-centro.js'), 'utf8');
+test('el motor interno de Reportes sigue corrigiendo límites legacy con la zona del hotel', () => {
+  const source = fs.readFileSync(path.join(root, 'js/modules/reportes/reportes-centro-core.js'), 'utf8');
   assert.match(source, /hotelTimeZoneService\.js/);
   assert.match(source, /select\('zona_horaria'\)/);
   assert.match(source, /adjustLegacyReportBoundary/);
@@ -41,12 +41,21 @@ test('el centro de Reportes corrige los límites UTC legacy usando la zona del h
   assert.match(source, /UTC_DAY_END_RE/);
 });
 
-test('un administrador puede configurar la zona IANA del hotel desde Reportes', () => {
-  const source = fs.readFileSync(path.join(root, 'js/modules/reportes/reportes-centro.js'), 'utf8');
+test('la zona horaria se administra desde Configuracion y no desde Reportes', () => {
+  const config = fs.readFileSync(path.join(root, 'js/modules/configuracion/configuracion.js'), 'utf8');
+  const reportes = fs.readFileSync(path.join(root, 'js/modules/reportes/reportes-centro.js'), 'utf8');
   const migration = fs.readFileSync(path.join(root, 'supabase/migrations/20260903042000_hotel_timezone_reportes.sql'), 'utf8');
-  assert.match(source, /id="reportes-zona-horaria"/);
-  assert.match(source, /update\(\{ zona_horaria: nextZone/);
-  assert.match(source, /Corte diario según zona horaria del hotel/);
+
+  assert.match(config, /id="zona_horaria"/);
+  assert.match(config, /upsert\(\{/);
+  assert.match(config, /zona_horaria: nextTimeZone/);
+  assert.match(config, /hotel:timezone-changed/);
+  assert.match(config, /Todo el sistema debe usar esta referencia/);
+
+  assert.match(reportes, /reportes-centro-core\.js/);
+  assert.match(reportes, /Se administra únicamente desde Configuración del hotel/);
+  assert.doesNotMatch(reportes, /update\(\{ zona_horaria/);
+
   assert.match(migration, /ADD COLUMN IF NOT EXISTS zona_horaria text/);
   assert.match(migration, /hotel_business_date/);
 });
