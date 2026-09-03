@@ -112,6 +112,41 @@ test('una regla de habitación específica gana a una general con la misma prior
   assert.equal(result.tarifaAplicada.id, 'specific');
 });
 
+test('una tarifa para habitaciones seleccionadas no afecta habitaciones fuera de la selección', () => {
+  const selected = {
+    ...weekendTariff,
+    id: 'selected',
+    habitaciones_aplicables: ['room-1', 'room-2'],
+    precio_final: 65000
+  };
+  const otherRoom = { ...room, id: 'room-special', precio_2_personas: 95000 };
+
+  assert.equal(service.resolverPrecioNoche({ room, huespedes: 2, fecha: '2026-09-05', tarifas: [selected] }).total, 65000);
+  assert.equal(service.resolverPrecioNoche({ room: otherRoom, huespedes: 2, fecha: '2026-09-05', tarifas: [selected] }).total, 95000);
+});
+
+test('una tarifa general puede excluir habitaciones especiales y conservar su precio base', () => {
+  const standardOnly = {
+    ...weekendTariff,
+    id: 'standard-only',
+    habitaciones_excluidas: ['room-special'],
+    precio_2_personas: 70000,
+    precio_final: null
+  };
+  const specialRoom = { ...room, id: 'room-special', precio_2_personas: 95000 };
+
+  assert.equal(service.resolverPrecioNoche({ room, huespedes: 2, fecha: '2026-09-05', tarifas: [standardOnly] }).total, 70000);
+  assert.equal(service.resolverPrecioNoche({ room: specialRoom, huespedes: 2, fecha: '2026-09-05', tarifas: [standardOnly] }).total, 95000);
+});
+
+test('una selección de habitaciones gana a una regla global con la misma prioridad', () => {
+  const general = { ...weekendTariff, id: 'general', precio_final: 70000 };
+  const selected = { ...weekendTariff, id: 'selected', habitaciones_aplicables: ['room-1'], precio_final: 65000 };
+  const result = service.resolverPrecioNoche({ room, huespedes: 2, fecha: '2026-09-05', tarifas: [general, selected] });
+  assert.equal(result.total, 65000);
+  assert.equal(result.tarifaAplicada.id, 'selected');
+});
+
 test('la prioridad explícita domina cuando dos reglas se superponen', () => {
   const normal = { ...weekendTariff, id: 'normal', prioridad: 10, precio_final: 70000 };
   const special = { ...weekendTariff, id: 'special', prioridad: 100, precio_final: 90000 };
@@ -157,6 +192,21 @@ test('huéspedes adicionales usan override programado o fallback de Habitación'
   const fallback = service.resolverPrecioNoche({ room, huespedes: 3, fecha: '2026-09-05', tarifas: [weekendTariff] });
   assert.equal(programmed.total, 90000);
   assert.equal(fallback.total, 85000);
+});
+
+test('la interfaz administra alcance total, selección e exclusión de habitaciones', () => {
+  const source = fs.readFileSync('js/habitaciones-tarifas-bootstrap.js', 'utf8');
+  assert.match(source, /aplicacion_habitaciones/);
+  assert.match(source, /habitaciones_aplicables/);
+  assert.match(source, /habitaciones_excluidas/);
+  assert.match(source, /Todas excepto habitaciones seleccionadas/);
+});
+
+test('la migración evita mezclar habitaciones incluidas y excluidas', () => {
+  const source = fs.readFileSync('supabase/migrations/20260903181500_tarifas_programadas_alcance_habitaciones.sql', 'utf8');
+  assert.match(source, /habitaciones_aplicables uuid\[\]/i);
+  assert.match(source, /habitaciones_excluidas uuid\[\]/i);
+  assert.match(source, /not \(habitaciones_aplicables && habitaciones_excluidas\)/i);
 });
 
 test('el motor usa la zona horaria central del hotel y no la del navegador', () => {
