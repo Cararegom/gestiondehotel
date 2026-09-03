@@ -104,7 +104,8 @@ function filterInactiveZeroSalesRows(root) {
   visibleRows.forEach((row, index) => {
     const positionCell = row.children?.[0];
     if (!positionCell) return;
-    positionCell.textContent = index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`;
+    const nextPosition = index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`;
+    if (positionCell.textContent !== nextPosition) positionCell.textContent = nextPosition;
   });
 }
 
