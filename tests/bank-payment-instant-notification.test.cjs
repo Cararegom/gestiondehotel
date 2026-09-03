@@ -48,6 +48,13 @@ test('evita avisos ajenos o repetidos para el usuario conectado', () => {
   assert.match(service, /onChange\?\.\(notification\)/);
 });
 
+test('administrador conserva alertas globales pero no carga copias personales de otros usuarios', () => {
+  assert.match(service, /if \(isAdministrativeRole\(context\.role\)\)/);
+  assert.match(service, /usuario_id\.eq\.\$\{context\.userId\},usuario_id\.is\.null/);
+  assert.match(service, /\.or\(buildNotificationMatchFilter\(context\)\)/);
+  assert.doesNotMatch(service, /if \(!isAdministrativeRole\(context\.role\)\) \{\s*query = query\.or/s);
+});
+
 test('la notificacion incluye llave, remitente, fecha y hora y llega solo a operacion', () => {
   assert.match(migration, /llave @hotelok/);
   assert.match(migration, /Remitente:/);
