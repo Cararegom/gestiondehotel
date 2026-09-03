@@ -17,6 +17,7 @@ Este documento resume las acciones sensibles que ahora quedan registradas en `bi
 - `CHECKOUT_SUSCRIPCION_FALLIDO`
 - `ACTUALIZAR_CORREO_CUENTA`
 - `ACTUALIZAR_PASSWORD_CUENTA`
+- `SOLICITAR_RESET_PASSWORD_CUENTA`
 
 ### Operacion SaaS
 
