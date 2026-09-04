@@ -67,6 +67,18 @@ test('native-camera hash deep links are consumed instead of opening a second sca
   assert.match(moduleSource, /new URLSearchParams\(hash\.slice\(queryIndex \+ 1\)\)/);
 });
 
+test('QR scan reaches backend even if camera shutdown stalls and exposes a retry path', () => {
+  assert.match(moduleSource, /ENERGY_SCANNER_STOP_TIMEOUT_MS = 1500/);
+  assert.match(moduleSource, /ENERGY_SCAN_TIMEOUT_MS = 12000/);
+  assert.match(moduleSource, /QR detectado\. Verificando habitación/);
+  assert.match(moduleSource, /void stopScanner\(\);[\s\S]{0,500}db\.rpc\('energy_scan'/);
+  assert.match(moduleSource, /withTimeout\([\s\S]{0,120}db\.rpc\('energy_scan'/);
+  assert.match(moduleSource, /ENERGY_SCAN_TIMEOUT/);
+  assert.match(moduleSource, /renderScanRetry/);
+  assert.match(moduleSource, /HotelMonitoring\?\.captureException/);
+  assert.match(moduleSource, /ENERGY_QR_CAMERA_OPEN_FAILED/);
+});
+
 test('admin can prepare QR while feature is disabled and worker cannot list secrets', () => {
   const regenerateBody = hardening.match(
     /create or replace function public\.energy_regenerate_qr\(p_room_id uuid\)[\s\S]*?\$function\$;/i

@@ -10,6 +10,10 @@ let capabilities = null;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ENERGY_QR_PRINT_SIZE_IN = 1.5;
 const ENERGY_QR_PRINT_PER_PAGE = 20;
+const ENERGY_SCANNER_STOP_TIMEOUT_MS = 1500;
+const ENERGY_SCAN_TIMEOUT_MS = 12000;
+const ENERGY_CONFIRM_TIMEOUT_MS = 12000;
+const ENERGY_LIBRARY_TIMEOUT_MS = 10000;
 
 const friendlyError = (error) => {
   const value = String(error?.message || error || '');
@@ -22,6 +26,26 @@ const friendlyError = (error) => {
 const formatDate = (value) => value
   ? new Date(value).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
   : '—';
+
+function reportEnergyError(code, error) {
+  try {
+    const detail = String(error?.message || error || '')
+      .replace(/https?:\/\/\S+/gi, '[url]')
+      .slice(0, 240);
+    globalThis.HotelMonitoring?.captureException(new Error(detail ? `${code}: ${detail}` : code));
+  } catch {}
+}
+
+function withTimeout(promise, timeoutMs, code) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = globalThis.setTimeout(() => reject(new Error(code)), timeoutMs);
+  });
+  return Promise.race([Promise.resolve(promise), timeout])
+    .finally(() => {
+      if (timeoutId !== null) globalThis.clearTimeout(timeoutId);
+    });
+}
 
 function loadScript(src, globalName) {
   if (window[globalName]) return Promise.resolve();
@@ -36,10 +60,19 @@ function loadScript(src, globalName) {
 }
 
 async function stopScanner() {
-  if (!scanner) return;
-  try { await scanner.stop(); } catch {}
-  try { scanner.clear(); } catch {}
+  const current = scanner;
   scanner = null;
+  if (!current) return;
+
+  // Pausar la decodificación de inmediato evita dobles lecturas mientras se cierra la cámara.
+  try { current.pause?.(true); } catch {}
+
+  try {
+    await withTimeout(current.stop(), ENERGY_SCANNER_STOP_TIMEOUT_MS, 'ENERGY_SCANNER_STOP_TIMEOUT');
+  } catch (error) {
+    reportEnergyError('ENERGY_QR_SCANNER_STOP_FAILED', error);
+  }
+  try { current.clear(); } catch {}
 }
 
 async function readCapabilities() {
@@ -101,6 +134,15 @@ function clearTokenFromAddressBar() {
   } catch {}
 }
 
+function renderScanRetry(view, message = 'No pudimos procesar el QR. Toca para reintentar.') {
+  if (!view) return;
+  view.innerHTML = `<div class="rounded-2xl bg-white p-6 text-center shadow">
+    <p class="mb-4 font-semibold text-slate-700">${escapeHtml(message)}</p>
+    <button id="energy-retry" class="rounded-xl bg-orange-600 px-5 py-3 font-bold text-white">Volver a escanear</button>
+  </div>`;
+  view.querySelector('#energy-retry')?.addEventListener('click', () => renderScanner());
+}
+
 function renderShell(config) {
   const canPrepareQr = capabilities?.can_admin || capabilities?.can_print_qr;
   const preparationDetail = capabilities?.can_admin
@@ -153,14 +195,38 @@ async function processToken(token) {
   const view = root.querySelector('#energy-view');
   if (!token || activeToken) return;
   activeToken = token;
-  await stopScanner();
 
-  const { data, error } = await db.rpc('energy_scan', { p_token: token });
+  // El backend debe recibir el escaneo aunque html5-qrcode tarde o se bloquee al cerrar la cámara.
+  view.innerHTML = `<div class="mx-auto max-w-lg rounded-2xl bg-blue-50 p-7 text-center shadow">
+    <div class="text-3xl">📷</div>
+    <p class="mt-3 text-lg font-black text-blue-950">QR detectado. Verificando habitación…</p>
+    <p class="mt-2 text-sm text-blue-800">No cierres esta pantalla. Esto normalmente tarda solo unos segundos.</p>
+  </div>`;
+  feedback('QR detectado. Verificando habitación…', 'info');
+  void stopScanner();
+
+  let scanResult;
+  try {
+    scanResult = await withTimeout(
+      db.rpc('energy_scan', { p_token: token }),
+      ENERGY_SCAN_TIMEOUT_MS,
+      'ENERGY_SCAN_TIMEOUT'
+    );
+  } catch (error) {
+    reportEnergyError('ENERGY_QR_SCAN_TIMEOUT_OR_NETWORK', error);
+    feedback('El QR fue detectado, pero la verificación tardó demasiado. Revisa la conexión y vuelve a intentarlo.');
+    activeToken = null;
+    renderScanRetry(view, 'La verificación no respondió a tiempo. Vuelve a escanear el QR.');
+    return;
+  }
+
+  const { data, error } = scanResult || {};
   if (error) {
+    const expected = /QR_INVALIDO|SIN_CONTROL_PENDIENTE|NO_AUTORIZADO/.test(String(error?.message || error));
+    if (!expected) reportEnergyError('ENERGY_QR_SCAN_RPC_FAILED', error);
     feedback(friendlyError(error));
     activeToken = null;
-    view.innerHTML = '<div class="rounded-2xl bg-white p-6 text-center shadow"><button id="energy-retry" class="rounded-xl bg-orange-600 px-5 py-3 font-bold text-white">Volver a escanear</button></div>';
-    view.querySelector('#energy-retry')?.addEventListener('click', () => renderScanner());
+    renderScanRetry(view);
     return;
   }
 
@@ -187,8 +253,25 @@ async function processToken(token) {
     const button = event.currentTarget;
     button.disabled = true;
     button.textContent = 'Confirmando…';
-    const result = await db.rpc('energy_confirm', { p_token: activeToken });
+
+    let result;
+    try {
+      result = await withTimeout(
+        db.rpc('energy_confirm', { p_token: activeToken }),
+        ENERGY_CONFIRM_TIMEOUT_MS,
+        'ENERGY_CONFIRM_TIMEOUT'
+      );
+    } catch (error) {
+      reportEnergyError('ENERGY_QR_CONFIRM_TIMEOUT_OR_NETWORK', error);
+      feedback('La confirmación tardó demasiado. Revisa la conexión y vuelve a intentarlo.');
+      button.disabled = false;
+      button.textContent = '✅ Confirmar Control de Energía';
+      return;
+    }
+
     if (result.error) {
+      const expected = /QR_INVALIDO|SIN_CONTROL_PENDIENTE|NO_AUTORIZADO/.test(String(result.error?.message || result.error));
+      if (!expected) reportEnergyError('ENERGY_QR_CONFIRM_RPC_FAILED', result.error);
       feedback(friendlyError(result.error));
       button.disabled = false;
       button.textContent = '✅ Confirmar Control de Energía';
@@ -214,19 +297,31 @@ async function renderScanner() {
   </div>`;
 
   try {
-    await loadScript('https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js', 'Html5Qrcode');
-    scanner = new window.Html5Qrcode('energy-reader');
-    await scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 240, height: 240 } },
-      async (decoded) => {
-        const token = tokenFromValue(decoded);
-        if (!token) return;
-        await processToken(token);
-      }
+    await withTimeout(
+      loadScript('https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js', 'Html5Qrcode'),
+      ENERGY_LIBRARY_TIMEOUT_MS,
+      'ENERGY_QR_LIBRARY_TIMEOUT'
     );
-  } catch {
-    feedback('No fue posible abrir la cámara. Verifica el permiso, usa HTTPS y confirma que haya una cámara disponible.');
+    const nextScanner = new window.Html5Qrcode('energy-reader');
+    scanner = nextScanner;
+    await withTimeout(
+      nextScanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 240, height: 240 } },
+        async (decoded) => {
+          const token = tokenFromValue(decoded);
+          if (!token) return;
+          await processToken(token);
+        }
+      ),
+      ENERGY_LIBRARY_TIMEOUT_MS,
+      'ENERGY_QR_CAMERA_START_TIMEOUT'
+    );
+  } catch (error) {
+    reportEnergyError('ENERGY_QR_CAMERA_OPEN_FAILED', error);
+    void stopScanner();
+    feedback('No fue posible abrir la cámara. Verifica el permiso, la conexión y que haya una cámara disponible.');
+    renderScanRetry(view, 'No se pudo iniciar el escáner. Revisa los permisos de cámara e inténtalo de nuevo.');
   }
 }
 
@@ -619,6 +714,7 @@ export async function mount(container, supabase, _user, currentHotelId) {
     else if (capabilities.can_admin || capabilities.can_print_qr) await openTab('settings', config);
   } catch (error) {
     const unauthorized = String(error?.message || error).includes('NO_AUTORIZADO');
+    if (!unauthorized) reportEnergyError('ENERGY_CONTROL_MOUNT_FAILED', error);
     root.innerHTML = `<p class="m-6 rounded p-4 ${unauthorized ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'}">${unauthorized ? 'No tienes permiso para usar Control de Energía.' : 'No fue posible cargar Control de Energía.'}</p>`;
   }
 }
