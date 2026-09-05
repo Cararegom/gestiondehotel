@@ -13,6 +13,10 @@ import {
   mountMaintenanceCalendarGoogleStyle,
   unmountMaintenanceCalendarGoogleStyle
 } from './mantenimiento-calendario-google-ui.js';
+import {
+  mountMaintenanceRoomChecklists,
+  unmountMaintenanceRoomChecklists
+} from './mantenimiento-habitaciones-ui.js';
 
 let activeContainer = null;
 let activeSupabase = null;
@@ -246,6 +250,7 @@ export async function mount(container, supabase, currentUser, hotelId) {
     console.error('No se pudo montar el calendario de mantenimiento:', error);
   });
   mountMaintenanceCalendarGoogleStyle(container);
+  mountMaintenanceRoomChecklists(container, supabase, currentUser, hotelId);
   document.addEventListener('maintenanceChanged', scheduleRefresh);
   await refreshMetrics(true);
   refreshInterval = setInterval(() => refreshMetrics(false), 60000);
@@ -257,6 +262,7 @@ export function unmount() {
   clearInterval(refreshInterval);
   refreshTimer = null;
   refreshInterval = null;
+  unmountMaintenanceRoomChecklists();
   unmountMaintenanceCalendarGoogleStyle();
   unmountMaintenanceCalendar();
   baseUnmount();
