@@ -50,7 +50,6 @@ DECLARE
   v_max_anticipacion integer;
   v_fecha date;
   v_siguiente date;
-  v_frecuencia public.frecuencia_tarea_enum;
   v_inserted uuid;
   v_total integer := 0;
   v_guard integer;
@@ -79,14 +78,6 @@ BEGIN
       IF v_guard > 500 THEN
         RAISE EXCEPTION 'Se excedio el limite de ocurrencias para el plan %', v_plan.id;
       END IF;
-
-      v_frecuencia := CASE
-        WHEN v_plan.recurrencia_unidad = 'ninguna' THEN 'unica'::public.frecuencia_tarea_enum
-        WHEN v_plan.recurrencia_unidad = 'dia' AND v_plan.recurrencia_intervalo = 1 THEN 'diaria'::public.frecuencia_tarea_enum
-        WHEN v_plan.recurrencia_unidad = 'semana' AND v_plan.recurrencia_intervalo = 1 THEN 'semanal'::public.frecuencia_tarea_enum
-        WHEN v_plan.recurrencia_unidad = 'mes' AND v_plan.recurrencia_intervalo = 1 THEN 'mensual'::public.frecuencia_tarea_enum
-        ELSE 'personalizada'::public.frecuencia_tarea_enum
-      END;
 
       v_inserted := NULL;
       INSERT INTO public.tareas_mantenimiento(
@@ -118,7 +109,10 @@ BEGIN
         'programado'::public.tipo_tarea_enum,
         v_fecha,
         NULL,
-        v_frecuencia,
+        -- Los planes tienen su propio motor de recurrencia y alertas. Se marcan
+        -- personalizada para que la automatizacion preventiva legacy no emita
+        -- un segundo aviso por la misma ocurrencia.
+        'personalizada'::public.frecuencia_tarea_enum,
         NULL,
         v_plan.creada_por,
         v_plan.asignada_a,
@@ -411,8 +405,7 @@ REVOKE ALL ON FUNCTION public.mantenimiento_calendario_tick(timestamptz)
 GRANT EXECUTE ON FUNCTION public.mantenimiento_calendario_tick(timestamptz)
   TO service_role;
 
--- El mismo nombre de job mantiene la programacion idempotente si la migracion
--- se vuelve a ejecutar. La logica usa la zona horaria oficial de cada hotel.
+-- El nombre estable hace idempotente la programacion del job en Supabase Cron.
 SELECT cron.schedule(
   'mantenimiento-calendario-planes',
   '*/15 * * * *',
