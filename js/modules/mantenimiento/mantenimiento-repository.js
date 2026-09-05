@@ -4,6 +4,32 @@ import {
   normalizeTaskRecord
 } from './mantenimiento-domain.js';
 
+export const MAINTENANCE_PLAN_SELECT_COLUMNS = [
+  'id',
+  'hotel_id',
+  'clase',
+  'titulo',
+  'descripcion',
+  'ubicacion',
+  'categoria_mantenimiento',
+  'prioridad',
+  'habitacion_id',
+  'asignada_a',
+  'creada_por',
+  'activo',
+  'fecha_inicio',
+  'hora_programada',
+  'recurrencia_unidad',
+  'recurrencia_intervalo',
+  'fecha_fin',
+  'anticipaciones_dias',
+  'requiere_evidencia',
+  'checklist',
+  'proxima_fecha',
+  'creado_en',
+  'actualizado_en'
+].join(', ');
+
 function throwIfError(error) {
   if (error) throw error;
 }
@@ -181,4 +207,64 @@ export async function createNextPreventiveTask(supabase, payload) {
 
   throwIfError(error);
   return normalizeTaskRecord(data);
+}
+
+export async function listMaintenancePlans(supabase, hotelId) {
+  const { data, error } = await supabase
+    .from('mantenimiento_planes')
+    .select(MAINTENANCE_PLAN_SELECT_COLUMNS)
+    .eq('hotel_id', hotelId)
+    .order('activo', { ascending: false })
+    .order('fecha_inicio', { ascending: true })
+    .order('titulo', { ascending: true });
+
+  throwIfError(error);
+  return data || [];
+}
+
+export async function createMaintenancePlan(supabase, hotelId, payload) {
+  const { data, error } = await supabase
+    .from('mantenimiento_planes')
+    .insert([{ ...payload, hotel_id: hotelId }])
+    .select(MAINTENANCE_PLAN_SELECT_COLUMNS)
+    .single();
+
+  throwIfError(error);
+  return data;
+}
+
+export async function updateMaintenancePlan(supabase, hotelId, planId, payload) {
+  const { data, error } = await supabase
+    .from('mantenimiento_planes')
+    .update(payload)
+    .eq('hotel_id', hotelId)
+    .eq('id', planId)
+    .select(MAINTENANCE_PLAN_SELECT_COLUMNS)
+    .single();
+
+  throwIfError(error);
+  return data;
+}
+
+export async function deleteMaintenancePlan(supabase, hotelId, planId) {
+  const { error } = await supabase
+    .from('mantenimiento_planes')
+    .delete()
+    .eq('hotel_id', hotelId)
+    .eq('id', planId);
+
+  throwIfError(error);
+}
+
+export async function canManageMaintenancePlans(supabase, hotelId, currentUser = null) {
+  try {
+    const { data, error } = await supabase.rpc('usuario_actual_es_admin_hotel', {
+      p_hotel_id: hotelId
+    });
+    if (!error) return Boolean(data);
+  } catch (error) {
+    console.warn('No se pudo validar permiso de administracion para mantenimiento:', error);
+  }
+
+  return ['admin', 'superadmin'].includes(String(currentUser?.rol || '').toLowerCase());
 }

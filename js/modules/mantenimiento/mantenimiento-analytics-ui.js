@@ -4,6 +4,11 @@ import {
   showModalTarea as baseShowModalTarea
 } from './mantenimiento-workflow-ui.js';
 import { getMaintenanceMetrics } from './mantenimiento-repository.js';
+import {
+  mountMaintenanceCalendar,
+  refreshMaintenanceCalendar,
+  unmountMaintenanceCalendar
+} from './mantenimiento-calendario-ui.js';
 
 let activeContainer = null;
 let activeSupabase = null;
@@ -48,8 +53,11 @@ function ensureShell() {
   shell.className = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm';
   shell.innerHTML = '<p class="text-sm text-slate-500">Cargando control de mantenimiento...</p>';
 
+  const calendar = activeContainer.querySelector('#mant-calendar-shell');
   const summary = activeContainer.querySelector('#mant-resumen');
-  if (summary?.parentElement) {
+  if (calendar?.parentElement) {
+    calendar.insertAdjacentElement('afterend', shell);
+  } else if (summary?.parentElement) {
     summary.insertAdjacentElement('afterend', shell);
   } else {
     activeContainer.prepend(shell);
@@ -218,13 +226,21 @@ async function refreshMetrics(showLoading = false) {
 
 function scheduleRefresh() {
   clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => refreshMetrics(false), 250);
+  refreshTimer = setTimeout(() => {
+    refreshMetrics(false);
+    refreshMaintenanceCalendar(false).catch((error) => {
+      console.warn('No se pudo refrescar el calendario de mantenimiento:', error);
+    });
+  }, 250);
 }
 
 export async function mount(container, supabase, currentUser, hotelId) {
   activeContainer = container;
   activeSupabase = supabase;
   await baseMount(container, supabase, currentUser, hotelId);
+  await mountMaintenanceCalendar(container, supabase, currentUser, hotelId).catch((error) => {
+    console.error('No se pudo montar el calendario de mantenimiento:', error);
+  });
   document.addEventListener('maintenanceChanged', scheduleRefresh);
   await refreshMetrics(true);
   refreshInterval = setInterval(() => refreshMetrics(false), 60000);
@@ -236,6 +252,7 @@ export function unmount() {
   clearInterval(refreshInterval);
   refreshTimer = null;
   refreshInterval = null;
+  unmountMaintenanceCalendar();
   baseUnmount();
   activeContainer = null;
   activeSupabase = null;
