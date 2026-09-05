@@ -24,6 +24,20 @@ test('Sentry excluye datos de usuario, peticiones y contexto sensible del evento
   assert.equal(event.breadcrumbs, undefined);
 });
 
+test('Sentry ignora AbortError benigno cuando audio desaparece al cambiar de vista', async () => {
+  const { isBenignBrowserLifecycleError, sanitizeSentryEvent } = await policy;
+  const benign = {
+    message: 'AbortError: The play() request was interrupted because the media was removed from the document. https://goo.gl/LdLk22',
+    exception: { values: [{ type: 'Error', value: 'AbortError: The play() request was interrupted because the media was removed from the document.' }] },
+  };
+  assert.equal(isBenignBrowserLifecycleError(benign), true);
+  assert.equal(sanitizeSentryEvent(benign), null);
+
+  const realFailure = { exception: { values: [{ type: 'TypeError', value: 'Cannot read properties of null' }] } };
+  assert.equal(isBenignBrowserLifecycleError(realFailure), false);
+  assert.notEqual(sanitizeSentryEvent(realFailure), null);
+});
+
 test('Sentry redacta tokens, correos e identificadores dentro del mensaje', async () => {
   const { cleanText } = await policy;
   const clean = cleanText('Correo guest@example.test telefono 3001234567 Bearer secreto-token password=secreto-pass sntrys_ABCdef123 https://site.test/callback?token=secreto-query#secreto-fragment');
