@@ -51,7 +51,28 @@ async function renderTiendaTabs(tab) {
   renderTiendaTabsShell(activeTab);
 
   if (activeTab === 'POS') {
-    await renderPOS();
+    const renderContext = {
+      containerEl: tiendaState.currentContainerEl,
+      supabase: tiendaState.currentSupabase,
+      hotelId: tiendaState.currentHotelId,
+      userId: tiendaState.currentUser?.id || null,
+    };
+
+    try {
+      await renderPOS();
+    } catch (error) {
+      const contextChanged =
+        tiendaState.currentContainerEl !== renderContext.containerEl ||
+        tiendaState.currentSupabase !== renderContext.supabase ||
+        tiendaState.currentHotelId !== renderContext.hotelId ||
+        (tiendaState.currentUser?.id || null) !== renderContext.userId;
+
+      if (contextChanged) {
+        console.debug('[Tienda] Carga del POS cancelada por cambio de contexto.');
+        return;
+      }
+      throw error;
+    }
     return;
   }
   if (activeTab === 'Inventario') {
