@@ -1,4 +1,4 @@
-// Fachada estable del módulo de mantenimiento.
+// Contrato público estable: mount, unmount, showModalTarea.
 import { mount as baseMount, unmount as baseUnmount, showModalTarea } from './mantenimiento-analytics-ui.js';
 import { mountMaintenanceIncidentActions, unmountMaintenanceIncidentActions } from './mantenimiento-incidencias-ui.js';
 
