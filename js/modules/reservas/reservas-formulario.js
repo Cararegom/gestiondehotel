@@ -123,8 +123,10 @@ export async function submitReservaForm({
     event.preventDefault();
     if (!ui.form || !ui.feedbackDiv || !ui.submitButton) return;
 
-    const originalButtonText = ui.submitButton.textContent;
-    setFormLoadingState(ui.form, true, ui.submitButton, originalButtonText, state.isEditMode ? 'Actualizando...' : 'Registrando...');
+    const formEl = ui.form;
+    const submitButtonEl = ui.submitButton;
+    const originalButtonText = submitButtonEl.textContent;
+    setFormLoadingState(formEl, true, submitButtonEl, originalButtonText, state.isEditMode ? 'Actualizando...' : 'Registrando...');
     clearFeedback(ui.feedbackDiv);
 
     try {
@@ -148,7 +150,7 @@ export async function submitReservaForm({
 
         if (!state.isEditMode && state.configHotel.cobro_al_checkin && tipoPago === 'completo' && montoTotalCosto > 0) {
             if (metodoPagoId === 'mixto') {
-                setFormLoadingState(ui.form, false, ui.submitButton, originalButtonText);
+                setFormLoadingState(formEl, false, submitButtonEl, originalButtonText);
 
                 const { data: metodosPagoDB, error: errDB } = await state.supabase
                     .from('metodos_pago')
@@ -203,8 +205,9 @@ export async function submitReservaForm({
         console.error('Error en submit:', err);
         showError(ui.feedbackDiv, err.message);
     } finally {
-        if (ui.form.elements.metodo_pago_id.value !== 'mixto' || state.isEditMode) {
-            setFormLoadingState(ui.form, false, ui.submitButton, originalButtonText);
+        const metodoPagoValue = formEl?.elements?.metodo_pago_id?.value || '';
+        if (metodoPagoValue !== 'mixto' || state.isEditMode) {
+            setFormLoadingState(formEl, false, submitButtonEl, originalButtonText);
         }
     }
 }
