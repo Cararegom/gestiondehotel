@@ -8,7 +8,7 @@ function loadService() {
   source = source
     .replace(/export\s+async\s+function\s+/g, 'async function ')
     .replace(/export\s+function\s+/g, 'function ');
-  source += `\nmodule.exports = {\n    normalizarCodigoDescuento,\n    descuentoEstaVigente,\n    descuentoCoincideConAcceso,\n    descuentoAplicaAReserva,\n    serviciosAplicablesAlDescuento,\n    seleccionarDescuentoPreferido,\n    calcularMontoDescuento\n  };`;
+  source += `\nmodule.exports = {\n    normalizarCodigoDescuento,\n    descuentoEstaVigente,\n    descuentoCoincideConAcceso,\n    descuentoAplicaAReserva,\n    serviciosAplicablesAlDescuento,\n    productosTiendaAplicablesAlDescuento,\n    seleccionarDescuentoPreferido,\n    calcularMontoDescuento,\n    calcularResumenDescuentoTienda\n  };`;
 
   const sandbox = {
     module: { exports: {} },
@@ -93,6 +93,38 @@ test('servicios adicionales usan los ids actuales y calculan porcentaje con tipo
   assert.equal(afectados.length, 1);
   assert.equal(afectados[0].servicio_id, 'spa');
   assert.equal(service.calcularMontoDescuento(descuento, 100000), 10000);
+});
+
+test('tienda calcula subtotal descuento y total desde una sola fuente', () => {
+  const carrito = [
+    { id: 'agua', cantidad: 2, precio_venta: 5000 },
+    { id: 'cerveza', cantidad: 1, precio_venta: 10000 }
+  ];
+  const descuento = discount({
+    aplicabilidad: 'productos_tienda',
+    habitaciones_aplicables: ['cerveza'],
+    tipo: 'porcentaje',
+    valor: 20
+  });
+  const resumen = service.calcularResumenDescuentoTienda(carrito, descuento);
+  assert.equal(resumen.subtotal, 20000);
+  assert.equal(resumen.baseDescuento, 10000);
+  assert.equal(resumen.montoDescuento, 2000);
+  assert.equal(resumen.total, 18000);
+  assert.deepEqual(Array.from(resumen.productosAfectados).map((item) => item.id), ['cerveza']);
+});
+
+test('tienda no reutiliza categorías de restaurante como alcance de tienda', () => {
+  const carrito = [{ id: 'agua', categoria_id: 'bebidas', cantidad: 1, precio_venta: 5000 }];
+  const descuento = discount({
+    aplicabilidad: 'categorias_restaurante',
+    habitaciones_aplicables: ['bebidas'],
+    valor: 50
+  });
+  const resumen = service.calcularResumenDescuentoTienda(carrito, descuento);
+  assert.equal(resumen.baseDescuento, 0);
+  assert.equal(resumen.montoDescuento, 0);
+  assert.equal(resumen.total, 5000);
 });
 
 test('descuento fijo nunca supera la base cobrada', () => {
