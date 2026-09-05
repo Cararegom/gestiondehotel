@@ -12,8 +12,8 @@
     "rls:audit": "node scripts/generate-rls-audit.js",
     "fase1:legacy-gate": "node scripts/fase1-legacy-gate.mjs",
     "check:syntax": "node scripts/check-syntax.js",
-    "typecheck": "npx --yes deno check --config supabase/functions/deno.json supabase/functions/bank-email-api/index.ts supabase/functions/bank-payment-relation-api/index.ts supabase/functions/gmail-oauth-callback/index.ts supabase/functions/gmail-webhook/index.ts supabase/functions/gmail-watch-renew/index.ts supabase/functions/process-energy-alerts/index.ts supabase/functions/horario-engine/index.ts",
-    "lint": "npx --yes deno lint --config supabase/functions/deno.json supabase/functions/_shared/bank-email supabase/functions/bank-email-api supabase/functions/bank-payment-relation-api supabase/functions/gmail-oauth-callback supabase/functions/gmail-webhook supabase/functions/gmail-watch-renew supabase/functions/process-energy-alerts && npx --yes deno lint --config supabase/functions/deno.json --rules-exclude=no-explicit-any,no-unversioned-import,no-import-prefix supabase/functions/horario-engine",
+    "typecheck": "npx --yes deno check --config supabase/functions/deno.json supabase/functions/bank-email-api/index.ts supabase/functions/bank-payment-relation-api/index.ts supabase/functions/gmail-oauth-callback/index.ts supabase/functions/gmail-webhook/index.ts supabase/functions/gmail-watch-renew/index.ts supabase/functions/process-energy-alerts/index.ts supabase/functions/horario-engine/index.ts supabase/functions/horario-operations/index.ts",
+    "lint": "npx --yes deno lint --config supabase/functions/deno.json supabase/functions/_shared/bank-email supabase/functions/bank-email-api supabase/functions/bank-payment-relation-api supabase/functions/gmail-oauth-callback supabase/functions/gmail-webhook supabase/functions/gmail-watch-renew supabase/functions/process-energy-alerts && npx --yes deno lint --config supabase/functions/deno.json --rules-exclude=no-explicit-any,no-unversioned-import,no-import-prefix supabase/functions/horario-engine supabase/functions/horario-operations",
     "test": "node --test \"tests/**/*.test.cjs\""
   },
   "dependencies": {
