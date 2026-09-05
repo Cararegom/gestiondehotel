@@ -13,6 +13,7 @@ export const MAINTENANCE_PLAN_SELECT_COLUMNS = [
   'ubicacion',
   'categoria_mantenimiento',
   'prioridad',
+  'alcance',
   'habitacion_id',
   'asignada_a',
   'creada_por',
@@ -38,8 +39,9 @@ export async function loadMaintenanceReferenceData(supabase, hotelId) {
   const [habitacionesResult, usuariosResult] = await Promise.all([
     supabase
       .from('habitaciones')
-      .select('id, nombre, estado')
+      .select('id, nombre, estado, activo')
       .eq('hotel_id', hotelId)
+      .eq('activo', true)
       .order('nombre'),
     supabase
       .from('usuarios')
@@ -267,4 +269,32 @@ export async function canManageMaintenancePlans(supabase, hotelId, currentUser =
   }
 
   return ['admin', 'superadmin'].includes(String(currentUser?.rol || '').toLowerCase());
+}
+
+export async function listMaintenanceTaskRooms(supabase, hotelId, taskId) {
+  const { data, error } = await supabase
+    .from('mantenimiento_tarea_habitaciones')
+    .select('id, hotel_id, tarea_id, habitacion_id, habitacion_nombre_snapshot, estado, checklist, observacion, evidencias, revisada_por, revisada_en, actualizado_en')
+    .eq('hotel_id', hotelId)
+    .eq('tarea_id', taskId)
+    .order('habitacion_nombre_snapshot', { ascending: true });
+
+  throwIfError(error);
+  return data || [];
+}
+
+export async function updateMaintenanceTaskRoom(
+  supabase,
+  itemId,
+  { estado, checklist = null, observacion = null } = {}
+) {
+  const { data, error } = await supabase.rpc('mantenimiento_actualizar_habitacion_tarea', {
+    p_item_id: itemId,
+    p_estado: estado,
+    p_checklist: checklist,
+    p_observacion: observacion
+  });
+
+  throwIfError(error);
+  return data;
 }
