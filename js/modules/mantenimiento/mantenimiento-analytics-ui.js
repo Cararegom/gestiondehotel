@@ -9,6 +9,10 @@ import {
   refreshMaintenanceCalendar,
   unmountMaintenanceCalendar
 } from './mantenimiento-calendario-ui.js';
+import {
+  mountMaintenanceCalendarGoogleStyle,
+  unmountMaintenanceCalendarGoogleStyle
+} from './mantenimiento-calendario-google-ui.js';
 
 let activeContainer = null;
 let activeSupabase = null;
@@ -241,6 +245,7 @@ export async function mount(container, supabase, currentUser, hotelId) {
   await mountMaintenanceCalendar(container, supabase, currentUser, hotelId).catch((error) => {
     console.error('No se pudo montar el calendario de mantenimiento:', error);
   });
+  mountMaintenanceCalendarGoogleStyle(container);
   document.addEventListener('maintenanceChanged', scheduleRefresh);
   await refreshMetrics(true);
   refreshInterval = setInterval(() => refreshMetrics(false), 60000);
@@ -252,6 +257,7 @@ export function unmount() {
   clearInterval(refreshInterval);
   refreshTimer = null;
   refreshInterval = null;
+  unmountMaintenanceCalendarGoogleStyle();
   unmountMaintenanceCalendar();
   baseUnmount();
   activeContainer = null;
