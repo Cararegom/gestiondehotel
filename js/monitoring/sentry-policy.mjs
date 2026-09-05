@@ -34,9 +34,25 @@ function cleanFrames(frames) {
   }));
 }
 
+export function isBenignBrowserLifecycleError(event) {
+  const messages = [
+    event?.message,
+    ...(event?.exception?.values || []).map((exception) => exception?.value),
+  ].filter(Boolean).map((value) => String(value));
+
+  return messages.some((message) =>
+    /AbortError:\s*The play\(\) request was interrupted because the media was removed from the document/i.test(message)
+  );
+}
+
 // Allow only diagnostics: no users, form values, headers, cookies, console
 // breadcrumbs, request bodies, extra contexts or arbitrary application tags.
 export function sanitizeSentryEvent(event) {
+  // Chrome puede rechazar play() durante una navegacion si el elemento de audio
+  // desaparece del DOM. Es un evento de ciclo de vida del navegador, no un fallo
+  // funcional de Gestion de Hotel, asi que no debe generar una alerta de produccion.
+  if (isBenignBrowserLifecycleError(event)) return null;
+
   const clean = {};
   for (const key of ['event_id', 'timestamp', 'platform', 'level', 'environment', 'release']) {
     if (event[key] !== undefined) clean[key] = event[key];
