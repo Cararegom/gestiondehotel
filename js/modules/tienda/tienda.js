@@ -3,7 +3,8 @@ import { renderCategorias, showModalCategoria, toggleEstadoCategoria } from './c
 import { renderModuloCompras, eliminarItemCompra, agregarProductoCompra, verDetallesCompra, resetComprasModuleState } from './compras.js';
 import { renderComprasPendientes, recibirPedido, showModalEditarCompra, guardarCambiosCompra, cancelarCompra, resetComprasPendientesState } from './compras-pendientes.js';
 import { closeModal, getTiendaTabsForCurrentUser, injectTiendaStyles, renderTiendaTabsShell } from './helpers.js';
-import { renderInventario, confirmarEliminarProducto, reactivarProducto, showModalProducto, showModalHistorial, showModalMovimiento, resetInventarioState } from './inventario.js';
+import { showModalHistorial } from './historial-movimientos.js';
+import { renderInventario, confirmarEliminarProducto, reactivarProducto, showModalProducto, showModalMovimiento, resetInventarioState } from './inventario.js';
 import { renderListaCompras } from './lista-compras.js';
 import { renderPedidosWeb, resetPedidosWebState } from './pedidos-web.js';
 import { renderPOS, updateQtyPOS, removeCartPOS, resetPOSState } from './pos.js';
@@ -77,9 +78,11 @@ async function renderTiendaTabs(tab) {
   }
   if (activeTab === 'Inventario') {
     await renderInventario();
+    const historialButton = document.getElementById('btnVerMovimientos');
+    if (historialButton) historialButton.onclick = () => showModalHistorial();
     return;
   }
-  if (activeTab === 'Categor\u00edas') {
+  if (activeTab === 'Categorías') {
     await renderCategorias();
     return;
   }
