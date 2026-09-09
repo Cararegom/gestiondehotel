@@ -38,6 +38,38 @@ test('Sentry ignora AbortError benigno cuando audio desaparece al cambiar de vis
   assert.notEqual(sanitizeSentryEvent(realFailure), null);
 });
 
+test('Sentry ignora solo el null benigno del resumen si el modal de alquiler ya fue desmontado', async () => {
+  const { isBenignBrowserLifecycleError, sanitizeSentryEvent } = await policy;
+  const benign = {
+    exception: {
+      values: [{
+        type: 'TypeError',
+        value: "Cannot set properties of null (setting 'innerHTML')",
+        stacktrace: { frames: [{
+          filename: 'https://gestiondehotel.com/js/modules/mapa-habitaciones/modales-alquiler.js',
+          function: 'recalcularYActualizarTotalAlquiler',
+          lineno: 640,
+          colno: 35,
+        }] },
+      }],
+    },
+  };
+  assert.equal(isBenignBrowserLifecycleError(benign), true);
+  assert.equal(sanitizeSentryEvent(benign), null);
+
+  const sameMessageElsewhere = {
+    exception: {
+      values: [{
+        type: 'TypeError',
+        value: "Cannot set properties of null (setting 'innerHTML')",
+        stacktrace: { frames: [{ filename: 'https://gestiondehotel.com/js/otro-modulo.js', function: 'renderOtroModulo' }] },
+      }],
+    },
+  };
+  assert.equal(isBenignBrowserLifecycleError(sameMessageElsewhere), false);
+  assert.notEqual(sanitizeSentryEvent(sameMessageElsewhere), null);
+});
+
 test('Sentry redacta tokens, correos e identificadores dentro del mensaje', async () => {
   const { cleanText } = await policy;
   const clean = cleanText('Correo guest@example.test telefono 3001234567 Bearer secreto-token password=secreto-pass sntrys_ABCdef123 https://site.test/callback?token=secreto-query#secreto-fragment');
