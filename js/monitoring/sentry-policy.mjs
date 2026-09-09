@@ -34,23 +34,40 @@ function cleanFrames(frames) {
   }));
 }
 
+function hasFrame(event, predicate) {
+  return (event?.exception?.values || []).some((exception) =>
+    (exception?.stacktrace?.frames || []).some(predicate)
+  );
+}
+
 export function isBenignBrowserLifecycleError(event) {
   const messages = [
     event?.message,
     ...(event?.exception?.values || []).map((exception) => exception?.value),
   ].filter(Boolean).map((value) => String(value));
 
-  return messages.some((message) =>
+  const mediaRemoved = messages.some((message) =>
     /AbortError:\s*The play\(\) request was interrupted because the media was removed from the document/i.test(message)
   );
+  if (mediaRemoved) return true;
+
+  const alquilerModalRemoved = messages.some((message) =>
+    /Cannot set properties of null \(setting ['"]innerHTML['"]\)/i.test(message)
+  ) && hasFrame(event, (frame) =>
+    frame?.function === 'recalcularYActualizarTotalAlquiler' &&
+    /\/js\/modules\/mapa-habitaciones\/modales-alquiler\.js(?:$|[?#])/i.test(String(frame?.filename || ''))
+  );
+
+  return alquilerModalRemoved;
 }
 
 // Allow only diagnostics: no users, form values, headers, cookies, console
 // breadcrumbs, request bodies, extra contexts or arbitrary application tags.
 export function sanitizeSentryEvent(event) {
   // Chrome puede rechazar play() durante una navegacion si el elemento de audio
-  // desaparece del DOM. Es un evento de ciclo de vida del navegador, no un fallo
-  // funcional de Gestion de Hotel, asi que no debe generar una alerta de produccion.
+  // desaparece del DOM. Tambien puede terminar una recalculacion asincrona del modal
+  // de alquiler despues de que el usuario ya lo cerro. Ambos son eventos de ciclo de
+  // vida del navegador y no fallos funcionales que deban alertar en produccion.
   if (isBenignBrowserLifecycleError(event)) return null;
 
   const clean = {};
