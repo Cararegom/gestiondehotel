@@ -1,5 +1,5 @@
 -- Ranking privado de desempeño para Control de Energía.
--- Solo administradores del hotel pueden consultar este RPC.
+-- Solo el creador/propietario del hotel puede consultar este RPC.
 
 create or replace function public.energy_admin_performance_ranking(p_days integer default 30)
 returns table (
@@ -22,12 +22,9 @@ declare
   v_hotel_id uuid;
   v_days integer;
 begin
-  if not public.energy_actor_allowed(true) then
-    raise exception 'NO_AUTORIZADO';
-  end if;
-
   select u.hotel_id into v_hotel_id
   from public.usuarios u
+  join public.hoteles h on h.id = u.hotel_id and h.creado_por = u.id
   where u.id = auth.uid() and u.activo = true;
 
   if v_hotel_id is null then
@@ -43,7 +40,7 @@ begin
   select
     e.completed_by_user_id as user_id,
     coalesce(nullif(trim(u.nombre), ''), 'Usuario')::text as nombre,
-    coalesce(nullif(trim(e.completed_by_role), ''), nullif(trim(u.rol), ''), 'usuario')::text as rol,
+    coalesce(nullif(trim(u.rol), ''), max(nullif(trim(e.completed_by_role), '')), 'usuario')::text as rol,
     count(*)::bigint as total_checks,
     round(avg(extract(epoch from (e.completed_at - e.created_at)))::numeric, 1) as avg_seconds,
     round(min(extract(epoch from (e.completed_at - e.created_at)))::numeric, 1) as fastest_seconds,
@@ -57,7 +54,7 @@ begin
     and e.completed_at is not null
     and e.completed_by_user_id is not null
     and (v_days is null or e.completed_at >= now() - make_interval(days => v_days))
-  group by e.completed_by_user_id, u.nombre, u.rol, e.completed_by_role
+  group by e.completed_by_user_id, u.nombre, u.rol
   order by count(*) desc,
            avg(extract(epoch from (e.completed_at - e.created_at))) asc,
            max(e.completed_at) desc;
