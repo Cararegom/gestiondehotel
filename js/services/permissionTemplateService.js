@@ -1,4 +1,4 @@
-import '../modules/usuarios/horarios-profesionales-fase3.js';
+import '../modules/usuarios/horarios-profesionales-fase4.js';
 
 function normalize(value) {
   return String(value || '')
