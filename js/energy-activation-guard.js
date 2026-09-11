@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient.js';
 
 let validating = false;
 let rankingInstallInFlight = false;
+let rankingAccess = null;
 
 async function showAlert(options) {
   if (window.Swal?.fire) return window.Swal.fire(options);
@@ -95,7 +96,7 @@ function rankingLayout() {
     <div class="space-y-5">
       <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-950">
         <div class="font-black">🏆 Top privado de Control de Energía</div>
-        <p class="mt-1 text-sm">Solo administración puede ver este ranking. Se mide cuántas verificaciones hizo cada persona y cuánto tardó en promedio en completarlas.</p>
+        <p class="mt-1 text-sm">Este ranking es exclusivo para el propietario del hotel. Se mide cuántas verificaciones hizo cada persona y cuánto tardó en promedio en completarlas.</p>
       </div>
 
       <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-4 shadow">
@@ -211,15 +212,18 @@ async function openEnergyRanking(button) {
 }
 
 async function installEnergyRankingButton() {
-  if (rankingInstallInFlight || !String(location.hash || '').startsWith('#/control-energia')) return;
+  if (rankingInstallInFlight || rankingAccess === false || !String(location.hash || '').startsWith('#/control-energia')) return;
   const app = document.querySelector('#app-container');
   const nav = app?.querySelector('section nav');
   if (!app || !nav || nav.querySelector('[data-energy-ranking="true"]')) return;
 
   rankingInstallInFlight = true;
   try {
-    const { data: capabilities, error } = await supabase.rpc('energy_capabilities');
-    if (error || !capabilities?.can_admin) return;
+    if (rankingAccess !== true) {
+      const { error } = await supabase.rpc('energy_admin_performance_ranking', { p_days: 30 });
+      rankingAccess = !error;
+    }
+    if (!rankingAccess) return;
 
     const button = document.createElement('button');
     button.type = 'button';
