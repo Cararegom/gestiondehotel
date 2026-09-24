@@ -20,6 +20,7 @@ const friendlyError = (error) => {
   if (value.includes('QR_INVALIDO')) return 'El QR es inválido, antiguo o pertenece a otro hotel.';
   if (value.includes('SIN_CONTROL_PENDIENTE')) return 'Esta habitación no tiene un control de energía pendiente.';
   if (value.includes('NO_AUTORIZADO')) return 'Tu usuario no tiene permiso para realizar esta acción.';
+  if (value.includes('ENERGY_SCAN_MOBILE_REQUIRED')) return 'Por seguridad, recepción debe realizar este control desde un celular dentro de la habitación.';
   if (value.includes('MOTIVO_REQUERIDO')) return 'Debes escribir un motivo de cancelación de al menos 3 caracteres.';
   return 'No fue posible completar la operación. Revisa tu conexión e inténtalo de nuevo.';
 };
@@ -134,6 +135,10 @@ function clearTokenFromAddressBar() {
   } catch {}
 }
 
+function isMobileEnergyDevice() {
+  return /(android|iphone|ipad|ipod|mobile|tablet)/i.test(String(navigator.userAgent || ''));
+}
+
 function renderScanRetry(view, message = 'No pudimos procesar el QR. Toca para reintentar.') {
   if (!view) return;
   view.innerHTML = `<div class="rounded-2xl bg-white p-6 text-center shadow">
@@ -194,6 +199,12 @@ async function openTab(tab, config) {
 async function processToken(token) {
   const view = root.querySelector('#energy-view');
   if (!token || activeToken) return;
+  if (capabilities?.scan_mobile_only && !isMobileEnergyDevice()) {
+    clearTokenFromAddressBar();
+    feedback('Por seguridad, recepción debe realizar el Control de Energía desde un celular dentro de la habitación.', 'info');
+    view.innerHTML = '<div class="mx-auto max-w-lg rounded-2xl border border-amber-300 bg-amber-50 p-6 text-center text-amber-950"><b>Escaneo bloqueado en computador.</b><p class="mt-2">Abre Gestión de Hotel desde el celular y escanea el QR instalado dentro de la habitación.</p></div>';
+    return;
+  }
   activeToken = token;
 
   // El backend debe recibir el escaneo aunque html5-qrcode tarde o se bloquee al cerrar la cámara.
@@ -288,6 +299,10 @@ async function renderScanner() {
   const view = root.querySelector('#energy-view');
   if (!capabilities?.enabled || !capabilities?.can_control) {
     view.innerHTML = '<div class="rounded-2xl bg-amber-50 p-6 text-amber-900">El escáner estará disponible cuando el Control de Energía esté activado para este hotel.</div>';
+    return;
+  }
+  if (capabilities?.scan_mobile_only && !isMobileEnergyDevice()) {
+    view.innerHTML = '<div class="mx-auto max-w-lg rounded-2xl border border-amber-300 bg-amber-50 p-6 text-center text-amber-950"><b>Escaneo bloqueado en computador.</b><p class="mt-2">Por seguridad, recepción debe abrir Gestión de Hotel desde un celular y escanear el QR instalado dentro de la habitación.</p></div>';
     return;
   }
 
