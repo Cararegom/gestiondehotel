@@ -196,7 +196,7 @@ async function handleClick(event) {
     } else if (button.dataset.action === 'pedido-estado') {
       const estado = button.dataset.estado;
       if (estado === 'entregado') {
-        const ok = await confirmAction('Entregar pedido', 'Se descontara el inventario y se registrara una venta de tienda pendiente/cargada a la habitacion.', 'Entregar');
+        const ok = await confirmAction('Entregar pedido', 'Se verificara que la habitacion tenga una reserva activa. Luego se descontara el inventario y se cargara la venta pendiente a esa reserva.', 'Entregar');
         if (!ok) return;
       }
       await actualizarEstadoPedido(pedidoId, estado);

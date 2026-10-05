@@ -10,6 +10,7 @@ import { escapeAttribute, escapeHtml, normalizeLegacyText } from '../../security
 import { confirmAction, seleccionarMetodoPago, solicitarMotivoCambioMetodo } from './caja-turnos.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 import { getBankPaymentCashStatuses, getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
 
 export function createInitialMovementTableState() {
   return {
@@ -95,31 +96,37 @@ export function getTurnElapsedLabel(fechaApertura) {
   return `${hours}h ${String(minutes).padStart(2, '0')} min abierto`;
 }
 
-export function getMovementOriginMeta(movement) {
-  const concept = normalizeLegacyText(movement?.concepto || '').toLowerCase();
+export function getMovementOriginKey(movement = {}) {
+  const movementType = String(movement?.tipo || '').toLowerCase();
+  const source = String(movement?.source || '').toLowerCase();
 
-  if (concept.includes('propina')) {
-    return { label: 'Propina', className: 'bg-amber-100 text-amber-700' };
-  }
-  if (concept.includes('tienda') || concept.includes('producto')) {
-    return { label: 'Tienda', className: 'bg-cyan-100 text-cyan-700' };
-  }
-  if (concept.includes('terraza')) {
-    return { label: 'Terraza', className: 'bg-emerald-100 text-emerald-700' };
-  }
-  if (concept.includes('restaurante') || concept.includes('cocina')) {
-    return { label: 'Restaurante', className: 'bg-orange-100 text-orange-700' };
-  }
-  if (concept.includes('habitaci') || concept.includes('alquiler') || concept.includes('reserva') || concept.includes('extensi')) {
-    return { label: 'Habitaciones', className: 'bg-blue-100 text-blue-700' };
-  }
-  if (movement?.tipo === 'egreso') {
-    return { label: 'Egreso', className: 'bg-rose-100 text-rose-700' };
-  }
-  if (movement?.tipo === 'apertura') {
-    return { label: 'Apertura', className: 'bg-violet-100 text-violet-700' };
-  }
-  return { label: 'General', className: 'bg-slate-100 text-slate-700' };
+  if (movementType === 'apertura') return 'apertura';
+  if (movementType === 'egreso') return 'egreso';
+  if (movementType !== 'ingreso') return 'general';
+
+  if (source === 'terrace_tip' || source === 'terrace_tip_mixed') return 'propinas';
+  if (movement?.venta_tienda_id || source === 'store_atomic' || source === 'store_web_order') return 'tienda';
+  if (movement?.venta_restaurante_id || source === 'restaurant_atomic') return 'cocina';
+  if (movement?.venta_terraza_id || source === 'terrace_sale' || source === 'terrace_sale_mixed') return 'terraza';
+  if (movement?.pago_reserva_id || movement?.reserva_id || source === 'reservation_payment') return 'habitaciones';
+
+  return 'otros';
+}
+
+export function getMovementOriginMeta(movement) {
+  const origins = {
+    propinas: { label: 'Propina', className: 'bg-amber-100 text-amber-700' },
+    tienda: { label: 'Tienda', className: 'bg-cyan-100 text-cyan-700' },
+    terraza: { label: 'Terraza', className: 'bg-emerald-100 text-emerald-700' },
+    cocina: { label: 'Restaurante', className: 'bg-orange-100 text-orange-700' },
+    habitaciones: { label: 'Habitaciones', className: 'bg-blue-100 text-blue-700' },
+    egreso: { label: 'Egreso', className: 'bg-rose-100 text-rose-700' },
+    apertura: { label: 'Apertura', className: 'bg-violet-100 text-violet-700' },
+    otros: { label: 'Otros ingresos', className: 'bg-slate-100 text-slate-700' },
+    general: { label: 'General', className: 'bg-slate-100 text-slate-700' }
+  };
+
+  return origins[getMovementOriginKey(movement)] || origins.general;
 }
 
 export function getMovementTypeBadge(movementType) {
@@ -201,10 +208,7 @@ export function renderMovementRows({
   allMovements.forEach((movement) => {
     if (movement.tipo === 'ingreso') ingresos += Number(movement.monto || 0);
     if (movement.tipo === 'egreso') egresos += Number(movement.monto || 0);
-    if (
-      movement.tipo === 'ingreso' &&
-      normalizeLegacyText(movement.concepto || '').toLowerCase().includes('propina')
-    ) {
+    if (getMovementOriginKey(movement) === 'propinas') {
       propinas += Number(movement.monto || 0);
     }
   });
@@ -478,7 +482,7 @@ export async function loadAndRenderMovements({
       const pilotStatus = await getBankPaymentPilotStatus(supabase, hotelId);
       showBankStatus = pilotStatus.eligible === true && pilotStatus.canViewOperationalStatus === true;
     } catch (statusError) {
-      console.warn('Caja: no se pudo validar la funcion bancaria; se oculta de forma segura.', statusError);
+      reportHandledError('caja', 'bank_feature_status_failed', statusError);
     }
     movementTableState.showBankStatus = showBankStatus;
     movementTableState.bankFeatureEnabled = showBankStatus;
@@ -545,6 +549,6 @@ export async function loadAndRenderMovements({
     });
   } catch (err) {
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error cargando movimientos: ${err.message}`);
-    console.error('Error en loadAndRenderMovements:', err);
+    reportHandledError('caja', 'movements_load_failed', err);
   }
 }

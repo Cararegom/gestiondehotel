@@ -9,4 +9,16 @@ js/runtime-config.local.js
 supabase/.env
 supabase/.temp/
 .codex-staging-deploy/
+.codex-production-backup/
 .codex-remote-schema-audit.sql
+.claude/
+.codex/
+.graphifyignore
+graphify-out/
+/deno.lock
+docs/auditoria-integral-2026.zip
+.vercel
+.env.local
+.env.*.local
+*.rar
+js/modules/faq/* - copia.mp4

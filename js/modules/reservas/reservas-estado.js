@@ -1,5 +1,9 @@
 import { notificarHabitacionLiberada } from '../../services/NotificationService.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
+import {
+    finalizarEstanciaReservaAtomica,
+    realizarCheckinReservaAtomico
+} from '../../services/reservationLifecycleService.js';
 
 async function cancelarConReversion(supabase, reservaId, reason) {
     const scope = buildOperationScope('cancelar-reserva', { reservaId, reason });
@@ -72,36 +76,27 @@ export async function handleReservaEstadoUpdate({
     if (!ui.feedbackDiv) return;
     showLoading(ui.feedbackDiv, `Actualizando estado a ${nuevoEstadoReserva}...`);
 
-    const updatesReserva = { estado: nuevoEstadoReserva, actualizado_en: new Date().toISOString() };
-
-    if (nuevoEstadoReserva === 'activa') {
-        const { data: reservaOriginal, error: errFetchOriginal } = await state.supabase
-            .from('reservas')
-            .select('fecha_inicio, fecha_fin')
-            .eq('id', reservaId)
-            .single();
-
-        if (errFetchOriginal || !reservaOriginal) {
-            clearFeedback(ui.feedbackDiv);
-            throw new Error('Error obteniendo datos originales de la reserva para el check-in.');
+    let lifecycleResult = null;
+    let directTransition = false;
+    try {
+        if (nuevoEstadoReserva === 'activa') {
+            lifecycleResult = await realizarCheckinReservaAtomico(state.supabase, reservaId);
+        } else if (nuevoEstadoReserva === 'completada') {
+            lifecycleResult = await finalizarEstanciaReservaAtomica(state.supabase, {
+                reservaId,
+                estadoFinal: 'completada'
+            });
+        } else {
+            directTransition = true;
+            const { error: errRes } = await state.supabase
+                .from('reservas')
+                .update({ estado: nuevoEstadoReserva, actualizado_en: new Date().toISOString() })
+                .eq('id', reservaId);
+            if (errRes) throw new Error(`Error actualizando estado de la reserva: ${errRes.message}`);
         }
-
-        const fechaInicioOriginal = new Date(reservaOriginal.fecha_inicio);
-        const fechaFinOriginal = new Date(reservaOriginal.fecha_fin);
-        const duracionOriginalMs = fechaFinOriginal.getTime() - fechaInicioOriginal.getTime();
-
-        const nuevaFechaInicio = new Date();
-        updatesReserva.fecha_inicio = nuevaFechaInicio.toISOString();
-        updatesReserva.fecha_fin = new Date(nuevaFechaInicio.getTime() + duracionOriginalMs).toISOString();
+    } finally {
+        clearFeedback(ui.feedbackDiv);
     }
-
-    if (nuevoEstadoReserva === 'completada') {
-        updatesReserva.fecha_fin = new Date().toISOString();
-    }
-
-    const { error: errRes } = await state.supabase.from('reservas').update(updatesReserva).eq('id', reservaId);
-    clearFeedback(ui.feedbackDiv);
-    if (errRes) throw new Error(`Error actualizando estado de la reserva: ${errRes.message}`);
 
     const successLabels = {
         confirmada: 'Reserva confirmada correctamente.',
@@ -113,7 +108,23 @@ export async function handleReservaEstadoUpdate({
     let msgExito = successLabels[nuevoEstadoReserva] || `Reserva actualizada a ${nuevoEstadoReserva}.`;
     let habActualizada = false;
 
-    if (habitacionIdReserva && nuevoEstadoHabitacion) {
+    if (lifecycleResult?.habitacion) {
+        habActualizada = lifecycleResult.habitacion;
+        msgExito += ` Estado de habitacion actualizado a ${lifecycleResult.habitacion.estado}.`;
+
+        if (nuevoEstadoReserva === 'completada') {
+            try {
+                await notificarHabitacionLiberada(state.supabase, {
+                    hotelId: state.hotelId,
+                    habitacion: lifecycleResult.habitacion,
+                    actor: state.currentUser
+                });
+            } catch (notificationError) {
+                console.error('El checkout se completó, pero falló la notificación:', notificationError);
+                msgExito += ' No se pudo enviar la notificacion al equipo de limpieza.';
+            }
+        }
+    } else if (habitacionIdReserva && nuevoEstadoHabitacion) {
         const { data: habitacionActualizada, error: errHab } = await state.supabase
             .from('habitaciones')
             .update({ estado: nuevoEstadoHabitacion })
@@ -121,7 +132,7 @@ export async function handleReservaEstadoUpdate({
             .select('id, nombre')
             .single();
         if (errHab) {
-            msgExito += ` (Pero hubo un error actualizando la habitacion: ${errHab.message})`;
+            throw new Error(`Error actualizando el estado de la habitacion: ${errHab.message}`);
         } else {
             habActualizada = true;
             msgExito += ` Estado de habitacion actualizado a ${nuevoEstadoHabitacion}.`;
@@ -137,19 +148,21 @@ export async function handleReservaEstadoUpdate({
     }
 
     showSuccess(ui.feedbackDiv, msgExito);
-    await registrarEnBitacora({
-        supabase: state.supabase,
-        hotel_id: state.hotelId,
-        usuario_id: state.currentUser.id,
-        modulo: 'Reservas',
-        accion: `CAMBIO_ESTADO_RESERVA_${nuevoEstadoReserva.toUpperCase()}`,
-        detalles: {
-            reserva_id: reservaId,
-            nuevo_estado_reserva: nuevoEstadoReserva,
-            habitacion_id: habitacionIdReserva,
-            nuevo_estado_hab: nuevoEstadoHabitacion
-        }
-    });
+    if (directTransition) {
+        await registrarEnBitacora({
+            supabase: state.supabase,
+            hotel_id: state.hotelId,
+            usuario_id: state.currentUser.id,
+            modulo: 'Reservas',
+            accion: `CAMBIO_ESTADO_RESERVA_${nuevoEstadoReserva.toUpperCase()}`,
+            detalles: {
+                reserva_id: reservaId,
+                nuevo_estado_reserva: nuevoEstadoReserva,
+                habitacion_id: habitacionIdReserva,
+                nuevo_estado_hab: nuevoEstadoHabitacion
+            }
+        });
+    }
 
     resetFormToCreateMode();
     await renderReservas();

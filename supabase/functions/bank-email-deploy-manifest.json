@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "scope": "bank-email-pilot",
   "requiredEnvironment": [
     "BANK_EMAIL_INTEGRATION_ENABLED",
@@ -11,25 +11,46 @@
       "name": "bank-email-api",
       "entrypoint": "supabase/functions/bank-email-api/index.ts",
       "verifyJwt": true,
-      "authentication": "supabase-jwt"
+      "authentication": "supabase-jwt",
+      "methods": ["OPTIONS", "POST"],
+      "errorMode": "json-safe-code",
+      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "server.ts"]
+    },
+    {
+      "name": "bank-payment-relation-api",
+      "entrypoint": "supabase/functions/bank-payment-relation-api/index.ts",
+      "verifyJwt": true,
+      "authentication": "supabase-jwt",
+      "methods": ["OPTIONS", "POST"],
+      "errorMode": "json-safe-code",
+      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "sale-reconciliation.ts", "server.ts"]
     },
     {
       "name": "gmail-oauth-callback",
       "entrypoint": "supabase/functions/gmail-oauth-callback/index.ts",
       "verifyJwt": false,
-      "authentication": "oauth-state"
+      "authentication": "oauth-state",
+      "methods": ["GET"],
+      "errorMode": "oauth-redirect-safe-code",
+      "requiredSharedModules": ["config.ts", "http.ts", "oauth-state.ts", "pilot-hotel.ts", "server.ts"]
     },
     {
       "name": "gmail-webhook",
       "entrypoint": "supabase/functions/gmail-webhook/index.ts",
       "verifyJwt": false,
-      "authentication": "google-pubsub-oidc"
+      "authentication": "google-pubsub-oidc",
+      "methods": ["POST"],
+      "errorMode": "empty-ack-or-safe-code",
+      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "pubsub-oidc.ts", "queue.ts", "server.ts"]
     },
     {
       "name": "gmail-watch-renew",
       "entrypoint": "supabase/functions/gmail-watch-renew/index.ts",
       "verifyJwt": false,
-      "authentication": "cron-secret"
+      "authentication": "cron-secret",
+      "methods": ["POST"],
+      "errorMode": "json-safe-code",
+      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "queue.ts", "server.ts"]
     }
   ]
 }

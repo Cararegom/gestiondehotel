@@ -1,27 +1,76 @@
 # Integración con Caja
 
-`caja` es la fuente operativa del turno. La conciliación no inserta, revierte ni modifica montos de Caja. El trigger `fase2_project_caja_to_account_trg` proyecta inserciones al ledger y `fase1_guard_caja_hotel_trg` protege referencias de hotel.
+## Estado actual
 
-## Diseño
+La relación nueva entre una transferencia bancaria y Caja se guarda de forma explícita en `bank_payment_allocations.caja_id`.
 
-Una relación persistida, no una coincidencia permanente por fecha/monto/concepto, debe resolver el estado bancario del movimiento. Para métodos de transferencia: pendiente, verificado o revisión; para efectivo: no aplica. El enlace puede derivarse inicialmente por entidad operativa, pero debe terminar en una clave explícita y auditable.
+Ese identificador apunta al movimiento exacto de `caja` que representa el ingreso. La conciliación no depende de volver a inferir la relación por monto, fecha, reserva o venta después de guardarla.
 
-## Fase 9 aplicada
+Las relaciones históricas que no tienen `caja_id` conservan una compatibilidad de lectura limitada. Si una relación histórica produce más de un candidato, el sistema falla de forma cerrada y la envía a revisión manual.
 
-Caja consulta al backend protegido solo cuando el `hotel_id` activo es el UUID del piloto. El backend vuelve a validar usuario, rol operativo y tenant, y relaciona cada movimiento mediante sus claves persistidas (`pago_reserva_id`/`reserva_id`, `venta_tienda_id`, `venta_restaurante_id` o `venta_terraza_id`) con `bank_payment_allocations` y su evento. No compara monto, fecha ni concepto y no escribe en Caja.
+## Cadena de trazabilidad
 
-La columna queda completamente oculta para otros hoteles y no se invoca el backend bancario. En Marena, efectivo, egresos y reversiones muestran `No aplica`; una transferencia sin evento confirmado muestra `Esperando verificación`; `confirmed` muestra `Confirmado por banco`; `manual_review` muestra `Revisión administrativa`.
+```text
+bank_payment_events
+  -> bank_payment_allocations
+  -> bank_payment_allocations.caja_id
+  -> caja
+  -> account_movements.caja_id
+```
 
-## Cierre
+La transferencia sigue siendo la evidencia bancaria. Caja sigue siendo el registro operativo del ingreso. La conciliación agrega el vínculo entre ambos registros y no crea un segundo movimiento monetario.
 
-Efectivo conserva arqueo ciego. Banco muestra registrado por sistema, confirmado, pendiente y diferencia. Es informativo y no bloquea mientras Gmail esté caído.
+## Condiciones para relacionar un movimiento
 
-## Método de pago
+El backend acepta una relación únicamente cuando se cumplen todas estas condiciones:
 
-La Fase 10 reemplazó la escritura directa por `actualizar_metodo_pago_caja`. El RPC bloquea el movimiento, valida actor, rol, tenant y método activo, resuelve la cuenta financiera y actualiza Caja y `account_movements` en la misma transacción. Registra before/after de ambos registros en auditoría. El grant directo `UPDATE (metodo_pago_id)` fue revocado.
+- la transferencia pertenece al hotel piloto;
+- su estado permite relación: `detected` o `manual_review`;
+- se seleccionan entre 1 y 20 movimientos de Caja;
+- cada movimiento pertenece al mismo hotel y es de tipo `ingreso`;
+- el método de pago es bancario, está activo y corresponde a una cuenta bancaria habilitada;
+- el movimiento no es una reversión ni está relacionado con otra transferencia;
+- la reserva o venta de la asignación coincide exactamente con el destino persistido en Caja;
+- la suma de los movimientos seleccionados coincide exactamente con el monto de la transferencia;
+- el usuario autenticado tiene un rol operativo admitido y pertenece al hotel piloto.
 
-La reparación productiva se limitó a asientos con relación explícita `account_movements.caja_id`: pasó de 5 métodos y 6 cuentas divergentes a cero. No cambió montos, direcciones, fechas, conceptos, turnos, autores ni creó movimientos.
+La operación se ejecuta mediante `replace_bank_payment_allocations_from_caja`. El RPC vuelve a validar los datos dentro de la transacción, actualiza las asignaciones, guarda cada `caja_id` y registra la acción en auditoría. Su ejecución directa está reservada al backend con `service_role`.
 
-## Pruebas
+## Restricciones de integridad
 
-Confirmar no aumenta ingresos ni ledger; cambiar método no altera monto, concepto, hotel, turno o autor; otro hotel no obtiene estado. Rollback: retirar join/badges informativos, sin borrar conciliaciones.
+- `bank_payment_allocations.caja_id` tiene una clave foránea hacia `caja` con `ON DELETE RESTRICT`.
+- Existe una restricción única parcial: un movimiento de Caja no puede respaldar dos transferencias.
+- La validación se repite en base de datos para evitar depender solo del navegador o de la Edge Function.
+- `bank_payment_has_valid_caja_link` comprueba que todas las asignaciones tengan un movimiento válido, que los montos cuadren y que hotel, tipo, método y destino coincidan.
+
+## Uso desde recepción
+
+Recepción realiza la relación desde Caja mediante `bank-payment-relation-api`. Esa API ofrece únicamente las acciones necesarias para este flujo:
+
+- consultar el estado del servicio;
+- listar transferencias pendientes con campos sanitizados;
+- consultar el estado de conciliación de movimientos de Caja;
+- buscar candidatos dentro de una ventana de ±48 horas;
+- relacionar la transferencia con los movimientos seleccionados.
+
+La API no expone el cuerpo del correo, referencias privadas de Gmail ni las acciones administrativas de confirmar, rechazar o redistribuir libremente. La relación exige un motivo operativo y el monto debe cuadrar antes de confirmar.
+
+## Convivencia con el flujo administrativo
+
+El panel administrativo conserva el detalle completo y las acciones avanzadas mediante `bank-email-api`. Las asignaciones creadas desde el flujo específico de Caja usan el vínculo exacto por `caja_id`; las asignaciones administrativas o históricas pueden no tenerlo y no se presentan como conciliación exacta de Caja.
+
+## Checkout y cambios posteriores
+
+El checkout no rompe una conciliación que ya tenga un vínculo de Caja válido. Antes de modificar el estado se consulta `bank_payment_has_valid_caja_link`.
+
+La reparación posterior también cubre datos heredados:
+
+- vuelve a reconocer como conciliada una transferencia con relación exacta y válida;
+- mantiene en revisión manual cualquier relación histórica ambigua;
+- nunca elige silenciosamente entre varios movimientos candidatos.
+
+## Compatibilidad histórica
+
+La primera implementación de Fase 9 resolvía el estado mediante referencias operativas como `pago_reserva_id`, `reserva_id`, `venta_id` y asignaciones por reserva o venta. Ese mecanismo se conserva solo como respaldo para filas antiguas sin `caja_id`.
+
+Para toda relación nueva, la fuente de verdad es `bank_payment_allocations.caja_id`.

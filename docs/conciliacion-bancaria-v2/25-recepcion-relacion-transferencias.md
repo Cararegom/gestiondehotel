@@ -1,29 +1,62 @@
-# Ajuste: recepción relaciona transferencias desde Caja
+# Fase 25 — Recepción relaciona transferencias desde Caja
 
 ## Objetivo
-Permitir que recepción relacione una transferencia bancaria con movimientos operativos ya registrados en Caja, manteniendo separados los privilegios de confirmación bancaria.
 
-## Permisos
-- Recepción puede ejecutar únicamente la acción `link` para relacionar/distribuir una transferencia.
-- Recepción no puede ejecutar `confirm`, `reject` ni `mark_reviewed`.
-- La suma de las asignaciones debe coincidir exactamente con el valor de la transferencia.
-- Toda acción manual exige motivo y queda auditada con actor, acción y motivo.
-- La interfaz operativa no expone pagador, referencia bancaria, Gmail ni contenido del correo.
+Permitir que recepción relacione una transferencia bancaria con movimientos operativos ya registrados en Caja, manteniendo separados los privilegios de confirmación bancaria y evitando un segundo registro monetario.
 
-## Validación de staging — 2026-08-28
-- GitHub Actions CI #112: PASS completo (dependency audit, syntax, Deno typecheck, lint, tests y build).
-- Migración `recepcion_relacion_pagos_bancarios` registrada en staging como versión `20260828065711`.
-- Edge Function `bank-payment-relation-api` v1: ACTIVE, `verify_jwt=true`, SHA256 `1c2ea995bb01b0a418e650a9a4191a2c4fe4dd26d9be9516628e7c11c0f79eef`.
-- Suite transaccional de comportamiento: 5/5 PASS y `ROLLBACK`.
-  1. Recepción relaciona COP 60.000 de habitación + COP 22.500 de tienda contra transferencia COP 82.500.
-  2. Auditoría normalizada persiste actor, acción `link` y motivo.
-  3. Recepción recibe SQLSTATE `42501` al intentar `confirm` y el evento sigue sin confirmar.
-  4. Motivo vacío para `link` recibe SQLSTATE `22023` y no modifica el evento.
-  5. Snapshot de auditoría manual no incluye campos bancarios sensibles comprobados.
-- Verificación post-rollback: 0 hoteles, usuarios, habitaciones, reservas, ventas, eventos, allocations y auditorías del fixture.
-- Security Advisor: 0 ERROR atribuibles al ajuste; continúan WARN/INFO históricos del proyecto.
-- Performance Advisor: 0 ERROR atribuibles al ajuste; continúan WARN/INFO históricos del proyecto.
-- Logs de Edge Functions posteriores al despliegue: sin entradas de error registradas al momento del gate.
+## Contrato actual de la API
 
-## Estado de release
-Staging validado. Producción permanece sin cambios hasta autorización explícita para merge y despliegue.
+La Edge Function `bank-payment-relation-api` exige JWT y acepta estas acciones:
+
+| Acción | Resultado |
+|---|---|
+| `status` | Confirma si la integración está disponible para el usuario y hotel actuales. |
+| `list` | Devuelve transferencias pendientes con un conjunto mínimo de campos. |
+| `movement-statuses` | Resuelve el estado bancario de movimientos de Caja. |
+| `cash-candidates` | Busca movimientos compatibles dentro de una ventana de ±48 horas. |
+| `relate` | Relaciona la transferencia con movimientos exactos de Caja. |
+
+El servidor valida sesión, perfil activo, rol operativo y pertenencia al hotel piloto. Solo se pueden relacionar eventos en estado `detected` o `manual_review`.
+
+## Reglas de relación
+
+- Se seleccionan entre 1 y 20 movimientos.
+- Todos pertenecen al hotel piloto y son ingresos no revertidos.
+- El método de pago es bancario, está activo y apunta a una cuenta bancaria habilitada.
+- Cada movimiento coincide con el destino operativo de su asignación.
+- Ningún movimiento está relacionado con otra transferencia.
+- La suma seleccionada coincide exactamente con `bank_payment_events.amount_cop`.
+- La acción es siempre `link` y exige un motivo de hasta 500 caracteres.
+
+La API invoca `replace_bank_payment_allocations_from_caja`. El RPC repite las validaciones dentro de la transacción, guarda `bank_payment_allocations.caja_id` y registra actor, acción y motivo. El navegador no puede ejecutar ese RPC directamente.
+
+## Datos visibles para recepción
+
+La respuesta limita cada transferencia a su identificador operativo, monto, estado, remitente truncado y fechas necesarias. No expone el cuerpo del correo, referencias o identificadores de Gmail ni metadata bancaria privada.
+
+Recepción no puede ejecutar `confirm`, `reject`, `mark_reviewed` ni las acciones avanzadas de redistribución disponibles en el panel administrativo.
+
+## Lectura del estado en Caja
+
+Para relaciones nuevas, `movement-statuses` consulta primero el vínculo exacto por `bank_payment_allocations.caja_id`. El mecanismo histórico por destino, monto y ventana temporal se usa únicamente cuando la asignación heredada no tiene `caja_id`.
+
+Si el respaldo histórico encuentra más de un candidato, no elige uno: devuelve revisión manual. De esta manera el flujo falla de forma cerrada.
+
+## Validación histórica de staging — 2026-08-28
+
+La primera versión de la fase quedó validada con:
+
+- GitHub Actions CI #112 completo;
+- migración `recepcion_relacion_pagos_bancarios` aplicada en staging;
+- `bank-payment-relation-api` v1 activa con `verify_jwt=true`;
+- suite transaccional de 5 casos con `ROLLBACK`;
+- rechazo de `confirm` para recepción;
+- rechazo de motivo vacío;
+- auditoría sin campos bancarios sensibles;
+- fixture eliminado sin datos residuales.
+
+Esta evidencia corresponde a la implementación inicial. Las migraciones posteriores agregaron el vínculo exacto por `caja_id`, su restricción única, la verificación de integridad y la preservación durante checkout.
+
+## Estado actual de release
+
+El contrato actual está cubierto por `tests/recepcion-bank-relation.test.cjs` y `tests/conciliacion-caja-id.test.cjs`. La aceptación manual con datos reales del hotel de prueba continúa aplazada. Producción permanece sin cambios hasta una autorización explícita de despliegue.

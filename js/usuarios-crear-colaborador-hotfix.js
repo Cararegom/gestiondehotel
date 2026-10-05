@@ -59,7 +59,7 @@ async function createCollaborator(form) {
   try {
     const hotelId = await resolveCurrentHotelId();
     const { data, error } = await supabase.functions.invoke('crear_colaborador', {
-      body: { nombre, correo, password, hotel_id: hotelId, roles },
+      body: { nombre, correo, password, hotel_id: hotelId, roles, activo },
     });
 
     if (error) {
@@ -74,15 +74,6 @@ async function createCollaborator(form) {
       throw new Error(message);
     }
     if (data?.error) throw new Error(data.error);
-
-    if (!activo && data?.userId) {
-      const { error: activeError } = await supabase
-        .from('usuarios')
-        .update({ activo: false })
-        .eq('id', data.userId)
-        .eq('hotel_id', hotelId);
-      if (activeError) console.warn('Usuario creado, pero no se pudo marcar como inactivo:', activeError);
-    }
 
     setFeedback('Usuario creado correctamente. Actualizando la lista...', 'success');
     form.reset();

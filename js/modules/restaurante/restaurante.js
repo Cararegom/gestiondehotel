@@ -22,6 +22,25 @@ let ventaItems = []; // Current POS cart/order items
 let ventasHistorialCache = []; // Cache for sales history
 let activeSubmodule = null; // Para manejar submódulos como inventario
 let restauranteDraftRestored = false;
+let pendingRecipeFocus = null;
+
+function readRestaurantIntent() {
+    const hash = String(globalThis.location?.hash || '');
+    const queryIndex = hash.indexOf('?');
+    const params = queryIndex >= 0 ? new URLSearchParams(hash.slice(queryIndex + 1)) : new URLSearchParams();
+    let stored = null;
+    try { stored = JSON.parse(globalThis.sessionStorage?.getItem('gestionhotel.restaurante.focusRecipe') || 'null'); } catch { stored = null; }
+    const platoId = params.get('plato') || stored?.platoId || '';
+    pendingRecipeFocus = platoId ? { platoId, source: params.get('from') || stored?.source || 'costeo' } : null;
+    return { initialTab: params.get('tab') || (platoId ? 'platos' : 'registrar-venta'), platoId };
+}
+
+function consumeRecipeFocus() {
+    globalThis.sessionStorage?.removeItem('gestionhotel.restaurante.focusRecipe');
+    const focus = pendingRecipeFocus;
+    pendingRecipeFocus = null;
+    return focus;
+}
 
 function getRestauranteDraftContext() {
     return {
@@ -977,6 +996,17 @@ if (categorias?.length) {
                 </tbody>
             </table>`;
 
+        const focus = pendingRecipeFocus?.platoId ? pendingRecipeFocus : null;
+        if (focus) {
+            const targetRow = Array.from(container.querySelectorAll('tr[data-id]'))
+                .find(row => row.dataset.id === focus.platoId);
+            if (targetRow) {
+                targetRow.classList.add('ring-2', 'ring-red-400', 'bg-red-50');
+                targetRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                showRestauranteFeedback(platosFeedbackEl, 'Completa la receta real del plato señalado y guarda. Después vuelve a Costeo y margen para recalcular el CMV.', 'warning-indicator', 0);
+            }
+        }
+
         container.querySelectorAll('.btn-editar-plato').forEach(btn => {
             btn.onclick = () => {
                 const plato = platosCache.find(p => p.id === btn.closest('tr').dataset.id);
@@ -997,6 +1027,15 @@ if (categorias?.length) {
     if (error) throw error;
             platosCache = data || [];
             renderTablaPlatos(platosCache);
+            const focus = pendingRecipeFocus?.platoId ? consumeRecipeFocus() : null;
+            if (focus) {
+                const plato = platosCache.find(p => p.id === focus.platoId);
+                if (plato) {
+                    setTimeout(() => openPlatoModal(plato), 0);
+                } else {
+                    showRestauranteFeedback(platosFeedbackEl, 'No encontré el plato señalado en este hotel. Revisa que el pendiente pertenezca al hotel activo.', 'error-indicator', 0);
+                }
+            }
         } catch (err) {
             showRestauranteFeedback(platosFeedbackEl, `Error: ${err.message}`, 'error-indicator', 0);
         } finally {
@@ -1908,6 +1947,7 @@ export async function mount(container, sbInstance, user) {
         return;
     }
 
+    const routeIntent = readRestaurantIntent();
     const tabContentEl = container.querySelector('#restaurante-tab-content');
     const tabButtons = container.querySelectorAll('.module-tabs .tab-button');
 
@@ -1954,7 +1994,7 @@ export async function mount(container, sbInstance, user) {
         moduleRootListeners.push({ element: button, type: 'click', handler: tabButtonHandler });
     });
 
-    switchTab('registrar-venta');
+    switchTab(routeIntent.initialTab || 'registrar-venta');
 }
 
 export function unmount(container) {

@@ -12,9 +12,14 @@
     "rls:audit": "node scripts/generate-rls-audit.js",
     "fase1:legacy-gate": "node scripts/fase1-legacy-gate.mjs",
     "check:syntax": "node scripts/check-syntax.js",
-    "typecheck": "npx --yes deno check --config supabase/functions/deno.json supabase/functions/bank-email-api/index.ts supabase/functions/bank-payment-relation-api/index.ts supabase/functions/gmail-oauth-callback/index.ts supabase/functions/gmail-webhook/index.ts supabase/functions/gmail-watch-renew/index.ts supabase/functions/process-energy-alerts/index.ts supabase/functions/horario-engine/index.ts",
-    "lint": "npx --yes deno lint --config supabase/functions/deno.json supabase/functions/_shared/bank-email supabase/functions/bank-email-api supabase/functions/bank-payment-relation-api supabase/functions/gmail-oauth-callback supabase/functions/gmail-webhook supabase/functions/gmail-watch-renew supabase/functions/process-energy-alerts && npx --yes deno lint --config supabase/functions/deno.json --rules-exclude=no-explicit-any,no-unversioned-import,no-import-prefix supabase/functions/horario-engine",
-    "test": "node --test \"tests/**/*.test.cjs\""
+    "check:module-budgets": "node scripts/check-module-size-budgets.cjs",
+    "typecheck": "npx --yes deno check --config supabase/functions/deno.json supabase/functions/bank-email-api/index.ts supabase/functions/bank-payment-relation-api/index.ts supabase/functions/gmail-oauth-callback/index.ts supabase/functions/gmail-webhook/index.ts supabase/functions/gmail-watch-renew/index.ts supabase/functions/process-energy-alerts/index.ts supabase/functions/crear_colaborador/index.ts supabase/functions/actualizar_permisos_usuario/index.ts supabase/functions/send-cash-close-report/index.ts supabase/functions/alegra-save-config/index.ts supabase/functions/alegra-test-connection/index.ts supabase/functions/alegra-crear-factura/index.ts supabase/functions/alegra-zapier-notify/index.ts supabase/functions/horario-engine/index.ts",
+    "lint": "npx --yes deno lint --config supabase/functions/deno.json supabase/functions/_shared/bank-email supabase/functions/_shared/user-management.ts supabase/functions/_shared/alegra-security.ts supabase/functions/bank-email-api supabase/functions/bank-payment-relation-api supabase/functions/gmail-oauth-callback supabase/functions/gmail-webhook supabase/functions/gmail-watch-renew supabase/functions/process-energy-alerts supabase/functions/crear_colaborador supabase/functions/actualizar_permisos_usuario supabase/functions/send-cash-close-report supabase/functions/alegra-save-config supabase/functions/alegra-test-connection supabase/functions/alegra-crear-factura supabase/functions/alegra-zapier-notify && npx --yes deno lint --config supabase/functions/deno.json --rules-exclude=no-explicit-any,no-unversioned-import,no-import-prefix supabase/functions/horario-engine",
+    "test": "node --test \"tests/**/*.test.cjs\"",
+    "test:p0": "node --test tests/p0-user-management.test.cjs tests/p0-user-management-http.test.cjs",
+    "typecheck:p0": "npx --yes deno check --config supabase/functions/deno.json supabase/functions/crear_colaborador/index.ts supabase/functions/actualizar_permisos_usuario/index.ts",
+    "lint:p0": "npx --yes deno lint --config supabase/functions/deno.json supabase/functions/_shared/user-management.ts supabase/functions/crear_colaborador/index.ts supabase/functions/actualizar_permisos_usuario/index.ts",
+    "vercel:staging:preflight": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/vercel-staging-preflight.ps1"
   },
   "dependencies": {
     "@sentry/browser": "10.73.0",
@@ -22,6 +27,7 @@
     "tailwindcss": "^4.1.10"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "esbuild": "0.25.5",
     "tailwindcss3": "npm:tailwindcss@3.4.17"
   },

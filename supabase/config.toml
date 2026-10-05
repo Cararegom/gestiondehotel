@@ -77,5 +77,29 @@ verify_jwt = false
 [functions.bank-email-api]
 verify_jwt = true
 
+[functions.bank-payment-relation-api]
+verify_jwt = true
+
+[functions.crear_colaborador]
+verify_jwt = true
+
+[functions.actualizar_permisos_usuario]
+verify_jwt = true
+
+[functions.send-cash-close-report]
+verify_jwt = true
+
+[functions.alegra-save-config]
+verify_jwt = true
+
+[functions.alegra-test-connection]
+verify_jwt = true
+
+[functions.alegra-crear-factura]
+verify_jwt = true
+
+[functions.alegra-zapier-notify]
+verify_jwt = true
+
 [functions.process-energy-alerts]
 verify_jwt = false

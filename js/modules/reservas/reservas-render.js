@@ -1,3 +1,9 @@
+import {
+    getReservaStateLabel,
+    RESERVA_HISTORY_STATES,
+    RESERVA_OPERATIONAL_STATES
+} from './reservas-operacion.js';
+
 export function renderReservasGrupo({
     titulo,
     grupo,
@@ -29,7 +35,7 @@ export function renderReservasGrupo({
     html += `<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">`;
 
     grupo.forEach((r) => {
-        const estadoActual = (r.estado || 'N/A').toUpperCase().replace(/_/g, ' ');
+        const estadoActual = getReservaStateLabel(r.estado).toUpperCase();
         const monedaSimbolo = state.configHotel?.moneda_local_simbolo || '$';
         const monedaISO = state.configHotel?.moneda_codigo_iso_info || 'COP';
         const monedaDecimales = parseInt(state.configHotel?.moneda_decimales_info || 0, 10);
@@ -154,7 +160,7 @@ export function buildReservasListHtml({
     }
 
     const reservasActivas = reservasEnriquecidas
-        .filter((reserva) => ['reservada', 'confirmada', 'activa'].includes(reserva.estado))
+        .filter((reserva) => RESERVA_OPERATIONAL_STATES.includes(reserva.estado))
         .sort((a, b) => getDateMsSafe(a.fecha_inicio) - getDateMsSafe(b.fecha_inicio));
 
     const reservasHistorial = reservasEnriquecidas
@@ -164,7 +170,10 @@ export function buildReservasListHtml({
             const fechaA = getReservaRegistroISO(a) || a.fecha_cancelacion || a.fecha_fin;
             return getDateMsSafe(fechaB) - getDateMsSafe(fechaA);
         });
-    const reservasCompletadasOcultas = reservasEnriquecidas.filter((reserva) => ['completada', 'finalizada_auto'].includes(reserva.estado)).length;
+    const reservasCompletadasOcultas = reservasEnriquecidas.filter((reserva) => (
+        RESERVA_HISTORY_STATES.includes(reserva.estado)
+        && !estadosHistorialPorDefecto.includes(reserva.estado)
+    )).length;
 
     htmlGeneral += `<div class="mb-10"><div class="mb-5"><p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Operacion</p><h2 class="text-2xl font-black tracking-tight text-slate-900">Reservas actuales y proximas</h2></div>`;
     if (reservasActivas.length > 0) {
@@ -173,9 +182,9 @@ export function buildReservasListHtml({
             return acc;
         }, {});
 
-        ['reservada', 'confirmada', 'activa'].forEach((estado) => {
+        RESERVA_OPERATIONAL_STATES.forEach((estado) => {
             if (groupedActivas[estado]?.length) {
-                htmlGeneral += renderReservasGrupo(estado.charAt(0).toUpperCase() + estado.slice(1), groupedActivas[estado]);
+                htmlGeneral += renderReservasGrupo(getReservaStateLabel(estado), groupedActivas[estado]);
             }
         });
     } else {
@@ -185,7 +194,7 @@ export function buildReservasListHtml({
 
     htmlGeneral += `<div class="mb-10"><div class="mb-5"><p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Seguimiento</p><h2 class="text-2xl font-black tracking-tight text-slate-900">Historial de reservas</h2></div>`;
     if (reservasCompletadasOcultas > 0) {
-        htmlGeneral += `<div class="mb-4 rounded-[20px] border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Las reservas completadas solo se muestran cuando usas el formulario de busqueda o filtros.</div>`;
+        htmlGeneral += `<div class="mb-4 rounded-[20px] border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">Las reservas completadas o finalizadas se muestran cuando usas el formulario de busqueda o filtros.</div>`;
     }
     if (reservasHistorial.length > 0) {
         const groupedHistorial = reservasHistorial.reduce((acc, reserva) => {
@@ -195,7 +204,7 @@ export function buildReservasListHtml({
 
         estadosHistorialPorDefecto.forEach((estado) => {
             if (groupedHistorial[estado]?.length) {
-                htmlGeneral += renderReservasGrupo(estado.toUpperCase().replace(/_/g, ' '), groupedHistorial[estado]);
+                htmlGeneral += renderReservasGrupo(getReservaStateLabel(estado), groupedHistorial[estado]);
             }
         });
     } else {

@@ -2,12 +2,16 @@ import {
   listMaintenanceTaskRooms,
   updateMaintenanceTaskRoom
 } from './mantenimiento-repository.js';
+import {
+  MAINTENANCE_UI_RENDERED_EVENT,
+  MAINTENANCE_UI_SURFACES,
+  emitMaintenanceUiRendered,
+  isMaintenanceUiSurface
+} from './mantenimiento-ui-events.js';
 
 let activeContainer = null;
 let activeSupabase = null;
 let activeHotelId = null;
-let observer = null;
-let enhanceTimer = null;
 let selectedPlanId = null;
 let selectedTaskId = null;
 let pendingPlanScope = null;
@@ -49,35 +53,6 @@ function getStatusMeta(status) {
       return { label: 'No aplica', badge: 'bg-slate-200 text-slate-700', card: 'border-slate-200 bg-slate-50' };
     default:
       return { label: 'Pendiente', badge: 'bg-amber-100 text-amber-800', card: 'border-amber-200 bg-white' };
-  }
-}
-
-function scheduleEnhance() {
-  clearTimeout(enhanceTimer);
-  enhanceTimer = setTimeout(() => {
-    enhancePlanForm().catch((error) => console.warn('No se pudo preparar alcance de mantenimiento:', error));
-    enhanceTaskRoomChecklist().catch((error) => console.warn('No se pudo preparar checklist por habitaciones:', error));
-    syncCloseGuard();
-  }, 20);
-}
-
-function handleContainerClick(event) {
-  const planTarget = event.target.closest?.('[data-plan-id]');
-  if (planTarget?.dataset.planId) {
-    selectedPlanId = planTarget.dataset.planId;
-  } else if (event.target.closest?.('#mant-calendar-new, [data-calendar-date]')) {
-    selectedPlanId = null;
-  }
-
-  const taskTarget = event.target.closest?.('[data-task-id]');
-  if (taskTarget?.dataset.taskId) {
-    selectedTaskId = taskTarget.dataset.taskId;
-    currentTaskRowsId = null;
-    currentTaskRows = [];
-  } else if (event.target.closest?.('#btn-nueva-tarea, #btn-nueva-tarea-mobile')) {
-    selectedTaskId = null;
-    currentTaskRowsId = null;
-    currentTaskRows = [];
   }
 }
 
@@ -344,6 +319,11 @@ function renderRoomChecklistSection(form, rows) {
       }
     });
   });
+
+  emitMaintenanceUiRendered(activeContainer, MAINTENANCE_UI_SURFACES.roomChecklist, {
+    taskId: selectedTaskId,
+    reviewCount: rows.length
+  });
 }
 
 async function refreshTaskRoomChecklist(taskId, force = false) {
@@ -385,7 +365,7 @@ function syncCloseGuard() {
   if (!form || !selectedTaskId || String(currentTaskRowsId) !== String(selectedTaskId) || !currentTaskRows.length) return;
   const pending = currentTaskRows.filter((item) => item.estado === 'pendiente').length;
   const button = form.querySelector('#mant-f3-modal-action');
-  if (!button || !/cerr/i.test(String(button.textContent || ''))) return;
+  if (!button || button.dataset.maintenanceTransition !== 'cerrado') return;
 
   if (pending > 0) {
     button.dataset.roomChecklistGuard = '1';
@@ -397,6 +377,21 @@ function syncCloseGuard() {
     button.disabled = false;
     button.title = '';
     button.classList.remove('opacity-50', 'cursor-not-allowed');
+  }
+}
+
+function handleMaintenanceUiRendered(event) {
+  if (isMaintenanceUiSurface(event, MAINTENANCE_UI_SURFACES.planModal)) {
+    selectedPlanId = event.detail.planId || null;
+    enhancePlanForm().catch((error) => console.warn('No se pudo preparar alcance de mantenimiento:', error));
+    return;
+  }
+
+  if (isMaintenanceUiSurface(event, MAINTENANCE_UI_SURFACES.taskModal)) {
+    selectedTaskId = event.detail.taskId || null;
+    currentTaskRowsId = null;
+    currentTaskRows = [];
+    enhanceTaskRoomChecklist().catch((error) => console.warn('No se pudo preparar checklist por habitaciones:', error));
   }
 }
 
@@ -423,22 +418,13 @@ export function mountMaintenanceRoomChecklists(container, supabase, currentUser,
   currentTaskRows = [];
   currentTaskRowsId = null;
 
-  container.addEventListener('click', handleContainerClick, true);
+  container.addEventListener(MAINTENANCE_UI_RENDERED_EVENT, handleMaintenanceUiRendered);
   document.addEventListener('maintenanceChanged', handleMaintenanceChanged);
-
-  observer?.disconnect();
-  observer = new MutationObserver(scheduleEnhance);
-  observer.observe(container, { childList: true, subtree: true });
-  scheduleEnhance();
 }
 
 export function unmountMaintenanceRoomChecklists() {
-  if (activeContainer) activeContainer.removeEventListener('click', handleContainerClick, true);
+  activeContainer?.removeEventListener(MAINTENANCE_UI_RENDERED_EVENT, handleMaintenanceUiRendered);
   document.removeEventListener('maintenanceChanged', handleMaintenanceChanged);
-  observer?.disconnect();
-  observer = null;
-  clearTimeout(enhanceTimer);
-  enhanceTimer = null;
   activeContainer = null;
   activeSupabase = null;
   activeHotelId = null;

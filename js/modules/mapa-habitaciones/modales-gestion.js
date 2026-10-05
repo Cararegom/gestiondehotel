@@ -24,6 +24,12 @@ import { turnoService } from '../../services/turnoService.js';
 import { notificarHabitacionLiberada } from '../../services/NotificationService.js';
 import { escapeHtml } from '../../security.js';
 import { procesarPagoReservaAtomico } from '../../services/fase1OperationService.js';
+import {
+  finalizarEstanciaReservaAtomica,
+  forzarLimpiezaHabitacionAtomica,
+  realizarCheckinReservaAtomico
+} from '../../services/reservationLifecycleService.js';
+import { emitMapaAccountModalRendered } from './mapa-ui-events.js';
 
 function refreshMapaHabitaciones() {
   document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
@@ -770,39 +776,25 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
 
   // --- ACCIÓN: CHECK-IN RESERVA ---
   if (reservaFutura) {
-    setupButtonListener('btn-checkin-reserva', async () => {
-      // Validar si requiere pago
-      const ok = await puedeHacerCheckIn(reservaFutura.id, hotelId, window.hotelConfigGlobal, supabase, mostrarInfoModalGlobal);
-      if (!ok) return;
+    setupButtonListener('btn-checkin-reserva', async (btn) => {
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.textContent = 'Procesando check-in...';
+      try {
+        const ok = await puedeHacerCheckIn(reservaFutura.id, hotelId, window.hotelConfigGlobal, supabase, mostrarInfoModalGlobal);
+        if (!ok) return;
 
-      // Calcular nueva fecha fin basada en la duración original
-      const duracionMs = new Date(reservaFutura.fecha_fin) - new Date(reservaFutura.fecha_inicio);
-      const nuevoInicio = new Date();
-      const nuevoFin = new Date(nuevoInicio.getTime() + duracionMs);
-
-      // Actualizar Reserva
-      await supabase.from('reservas').update({
-        estado: 'activa',
-        fecha_inicio: nuevoInicio.toISOString(),
-        fecha_fin: nuevoFin.toISOString()
-      }).eq('id', reservaFutura.id);
-
-      // Actualizar Habitación
-      await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
-
-      // Crear Cronómetro
-      await supabase.from('cronometros').insert([{
-        hotel_id: hotelId,
-        reserva_id: reservaFutura.id,
-        habitacion_id: room.id,
-        fecha_inicio: nuevoInicio.toISOString(),
-        fecha_fin: nuevoFin.toISOString(),
-        activo: true
-      }]);
-
-      closeRoomOptionsModal();
-      document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
-      mostrarInfoModalGlobal("Check-in realizado con éxito.", "Bienvenido");
+        await realizarCheckinReservaAtomico(supabase, reservaFutura.id);
+        closeRoomOptionsModal();
+        document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
+        mostrarInfoModalGlobal("Check-in realizado con éxito.", "Bienvenido");
+      } catch (error) {
+        console.error('Error al realizar check-in:', error);
+        mostrarInfoModalGlobal(error.message || 'No se pudo realizar el check-in.', 'Error de check-in');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
     });
   }
 
@@ -1004,6 +996,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
 
       if (errReserva) {
         console.error('Error buscando reserva activa al liberar:', errReserva);
+        throw new Error('No se pudo verificar la reserva activa de la habitación. Intenta nuevamente.');
       }
 
       // ========================================================================
@@ -1025,21 +1018,16 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
         });
 
         if (isConfirmed) {
-          // 1. Forzar estado a limpieza
-          await supabase.from('habitaciones')
-            .update({ estado: 'limpieza' })
-            .eq('id', room.id);
-
-          await notificarHabitacionLiberada(supabase, {
-            hotelId,
-            habitacion: room,
-            actor: currentUser
-          });
-
-          // 2. Matar cualquier cronómetro huérfano (si lo hubiera)
-          await supabase.from('cronometros')
-            .update({ activo: false, fecha_fin: new Date().toISOString() })
-            .eq('habitacion_id', room.id);
+          const limpieza = await forzarLimpiezaHabitacionAtomica(supabase, room.id);
+          try {
+            await notificarHabitacionLiberada(supabase, {
+              hotelId,
+              habitacion: limpieza.habitacion || room,
+              actor: currentUser
+            });
+          } catch (notificationError) {
+            console.error('La limpieza forzada se completó, pero falló la notificación:', notificationError);
+          }
 
           // 3. Cerrar modal y refrescar
           modalContainer.style.display = 'none';
@@ -1069,7 +1057,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
 
       if (errHist) {
         console.error('Error consultando historial de artículos prestados:', errHist);
-        // Continuamos aunque haya error de consulta, por seguridad
+        throw new Error('No se pudo verificar si hay artículos prestados pendientes. No se liberó la habitación.');
       }
 
       // Calculamos saldo por artículo
@@ -1148,32 +1136,24 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
 
       const ahoraISO = new Date().toISOString();
 
-      // 5. Cerrar reserva: estado finalizada
-      await supabase.from('reservas')
-        .update({
-          estado: 'finalizada',
-          fecha_fin: ahoraISO,
-          monto_pagado: totalDeTodosLosCargos,
-          actualizado_en: ahoraISO
-        })
-        .eq('id', reservaActiva.id);
-
-      // 6. Detener cronómetro
-      await supabase.from('cronometros')
-        .update({ activo: false, fecha_fin: ahoraISO })
-        .eq('habitacion_id', room.id)
-        .eq('reserva_id', reservaActiva.id);
-
-      // 7. Pasar habitación a estado "limpieza"
-      await supabase.from('habitaciones')
-        .update({ estado: 'limpieza', actualizado_en: ahoraISO })
-        .eq('id', room.id);
-
-      await notificarHabitacionLiberada(supabase, {
-        hotelId,
-        habitacion: room,
-        actor: currentUser
+      const checkout = await finalizarEstanciaReservaAtomica(supabase, {
+        reservaId: reservaActiva.id,
+        finishedAt: ahoraISO,
+        montoPagadoFinal: totalDeTodosLosCargos,
+        estadoFinal: 'finalizada'
       });
+
+      let advertenciaNotificacion = '';
+      try {
+        await notificarHabitacionLiberada(supabase, {
+          hotelId,
+          habitacion: checkout.habitacion || room,
+          actor: currentUser
+        });
+      } catch (notificationError) {
+        console.error('El checkout se completó, pero falló la notificación:', notificationError);
+        advertenciaNotificacion = ' No se pudo enviar la notificación al equipo de limpieza.';
+      }
 
       // 8. Registrar en bitácora (opcional)
       // ... tu lógica de bitácora ...
@@ -1186,7 +1166,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
       await Swal.fire({
         icon: 'success',
         title: 'Habitación liberada',
-        text: 'La habitación se ha pasado a estado Limpieza.',
+        text: `La habitación se ha pasado a estado Limpieza.${advertenciaNotificacion}`,
         timer: 1500,
         showConfirmButton: false
       });
@@ -1196,7 +1176,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
       await Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: 'Ocurrió un error al liberar la habitación.'
+        text: e.message || 'Ocurrió un error al liberar la habitación.'
       });
     } finally {
       btn.innerHTML = originalText;
@@ -2210,6 +2190,15 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
         console.error(e);
         if (hasSwal) Swal.fire('Error', e.message || 'No se pudo imprimir.', 'error');
       }
+    });
+
+    const renderedAccountModal = modalContainer.firstElementChild;
+    if (renderedAccountModal) {
+      renderedAccountModal.dataset.inlinePaymentDates = 'true';
+    }
+    emitMapaAccountModalRendered({
+      modalRoot: renderedAccountModal,
+      reservationId: reserva.id,
     });
 
   } catch (error) {
