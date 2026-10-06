@@ -1,25 +1,50 @@
 import { formatCurrency, formatDateTime } from '../../uiUtils.js';
-import { applyPricingRule } from './reservas-operacion.js';
+import { applyPricingRule, RESERVA_CONFLICT_STATES } from './reservas-operacion.js';
 import {
   calcularEstanciaNochesProgramada,
   resolverPrecioTiempoEstancia
 } from '../../services/tarifasProgramadasService.js';
+import {
+  getNearestCheckoutDateInTimeZone,
+  getRuntimeHotelTimeZone,
+  parseDateTimeInTimeZone
+} from '../../services/hotelTimeZoneService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
 
-function calculateNearestCheckoutDate(fechaEntrada, checkoutHoraConfig, cantidadNoches = 1) {
-  const fechaSalida = new Date(fechaEntrada);
-  const [hh, mm] = (checkoutHoraConfig || '12:00').split(':').map(Number);
-  fechaSalida.setHours(hh || 0, mm || 0, 0, 0);
+export const BOOKING_AVAILABILITY_CHECK_ERROR =
+  'No se pudo verificar la disponibilidad de la habitacion. Intente nuevamente.';
+export const BOOKING_CONFLICT_ERROR =
+  'Conflicto: La habitacion NO esta disponible para estas fechas.';
 
-  if (fechaEntrada.getTime() >= fechaSalida.getTime()) {
-    fechaSalida.setDate(fechaSalida.getDate() + 1);
+export async function assertBookingAvailability({
+  supabase,
+  habitacionId,
+  fechaEntrada,
+  fechaSalida,
+  reservaIdExcluida = null
+}) {
+  let rpcResult;
+
+  try {
+    rpcResult = await supabase.rpc('validar_cruce_reserva', {
+      p_habitacion_id: habitacionId,
+      p_entrada: fechaEntrada,
+      p_salida: fechaSalida,
+      p_reserva_id_excluida: reservaIdExcluida
+    });
+  } catch (error) {
+    reportHandledError('reservas', 'booking_conflict_validation_failed', error);
+    throw new Error(BOOKING_AVAILABILITY_CHECK_ERROR);
   }
 
-  const nochesExtra = Math.max(0, (Number(cantidadNoches) || 1) - 1);
-  if (nochesExtra > 0) {
-    fechaSalida.setDate(fechaSalida.getDate() + nochesExtra);
+  if (rpcResult?.error || typeof rpcResult?.data !== 'boolean') {
+    reportHandledError('reservas', 'booking_conflict_validation_failed', rpcResult?.error);
+    throw new Error(BOOKING_AVAILABILITY_CHECK_ERROR);
   }
 
-  return fechaSalida;
+  if (rpcResult.data === true) {
+    throw new Error(BOOKING_CONFLICT_ERROR);
+  }
 }
 
 export function calculateFechasEstancia(
@@ -28,10 +53,13 @@ export function calculateFechasEstancia(
   cantidadNochesStr,
   tiempoEstanciaId,
   checkoutHoraConfig,
-  tiemposEstanciaDisponibles = []
+  tiemposEstanciaDisponibles = [],
+  timeZone = getRuntimeHotelTimeZone()
 ) {
-  const fechaEntrada = new Date(fechaEntradaStr);
-  if (Number.isNaN(fechaEntrada.getTime())) {
+  let fechaEntrada;
+  try {
+    fechaEntrada = parseDateTimeInTimeZone(fechaEntradaStr, timeZone);
+  } catch {
     return { errorFechas: 'La fecha de entrada no es valida.' };
   }
 
@@ -45,7 +73,16 @@ export function calculateFechasEstancia(
       return { errorFechas: 'La cantidad de noches debe ser al menos 1.' };
     }
 
-    fechaSalida = calculateNearestCheckoutDate(fechaEntrada, checkoutHoraConfig, cantidadDuracionOriginal);
+    try {
+      fechaSalida = getNearestCheckoutDateInTimeZone(
+        fechaEntrada,
+        checkoutHoraConfig,
+        cantidadDuracionOriginal,
+        timeZone
+      );
+    } catch {
+      return { errorFechas: 'La hora de checkout configurada no es valida.' };
+    }
   } else {
     if (!tiempoEstanciaId) {
       return { errorFechas: 'No se selecciono un tiempo de estancia.' };
@@ -199,7 +236,8 @@ export async function validateAndCalculateBooking({
     formData.cantidad_noches,
     formData.tiempo_estancia_id,
     state.configHotel.checkout_hora_config,
-    state.tiemposEstanciaDisponibles
+    state.tiemposEstanciaDisponibles,
+    state.configHotel.zona_horaria
   );
   if (errorFechas) throw new Error(errorFechas);
 
@@ -241,7 +279,7 @@ export async function validateAndCalculateBooking({
     .from('reservas')
     .select('id, fecha_inicio')
     .eq('habitacion_id', formData.habitacion_id)
-    .in('estado', ['reservada', 'confirmada', 'activa'])
+    .in('estado', RESERVA_CONFLICT_STATES)
     .gte('fecha_inicio', fechaEntrada.toISOString());
 
   if (state.isEditMode && state.editingReservaId) {
@@ -261,20 +299,13 @@ export async function validateAndCalculateBooking({
     }
   }
 
-  try {
-    const { data: hayCruce } = await state.supabase.rpc('validar_cruce_reserva', {
-      p_habitacion_id: formData.habitacion_id,
-      p_entrada: fechaEntrada.toISOString(),
-      p_salida: fechaSalida.toISOString(),
-      p_reserva_id_excluida: state.isEditMode ? state.editingReservaId : null
-    });
-
-    if (hayCruce === true) {
-      throw new Error('Conflicto: La habitacion NO esta disponible para estas fechas.');
-    }
-  } catch (error) {
-    console.warn('Validacion de cruce RPC omitida o fallida:', error.message);
-  }
+  await assertBookingAvailability({
+    supabase: state.supabase,
+    habitacionId: formData.habitacion_id,
+    fechaEntrada: fechaEntrada.toISOString(),
+    fechaSalida: fechaSalida.toISOString(),
+    reservaIdExcluida: state.isEditMode ? state.editingReservaId : null
+  });
 
   let notasFinales = formData.notas.trim() || null;
   if (formData.precio_libre_toggle) {

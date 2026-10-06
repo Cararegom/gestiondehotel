@@ -20,6 +20,15 @@ import {
   recurrenceFromPreset
 } from './mantenimiento-calendario-domain.js';
 import { QUICK_MAINTENANCE_CATEGORIES } from './mantenimiento-quick-report.js';
+import {
+  MAINTENANCE_UI_SURFACES,
+  emitMaintenanceUiRendered
+} from './mantenimiento-ui-events.js';
+import {
+  getRuntimeHotelTimeZone,
+  getTodayInTimeZone,
+  loadRequiredHotelTimeZone
+} from '../../services/hotelTimeZoneService.js';
 
 let activeContainer = null;
 let activeSupabase = null;
@@ -52,19 +61,7 @@ function toIsoDate(year, month, day) {
 }
 
 function hotelTodayIso() {
-  const timeZone = window.hotelConfigGlobal?.zona_horaria || 'America/Bogota';
-  try {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      timeZone,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    }).formatToParts(new Date());
-    const map = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-    return `${map.year}-${map.month}-${map.day}`;
-  } catch {
-    return new Date().toISOString().slice(0, 10);
-  }
+  return getTodayInTimeZone(getRuntimeHotelTimeZone());
 }
 
 function firstOfMonth(value) {
@@ -213,25 +210,25 @@ function renderCalendar() {
       <h4 class="text-base font-black text-slate-900">${escapeHtml(formatMonthTitle(monthCursor))}</h4>
     </div>
 
-    <div class="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
-      <div class="min-w-[700px] bg-white">
-        <div class="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-[11px] font-black uppercase tracking-wide text-slate-500">
+    <div data-google-calendar-viewport="1" class="mt-3 overflow-x-auto rounded-2xl border border-slate-200">
+      <div data-google-calendar-inner="1" class="min-w-[700px] bg-white">
+        <div data-google-calendar-header="1" class="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center text-[11px] font-black uppercase tracking-wide text-slate-500">
           ${['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'].map((day) => `<div class="px-2 py-2">${day}</div>`).join('')}
         </div>
-        <div class="grid grid-cols-7">
+        <div data-google-calendar-grid="1" class="grid grid-cols-7">
           ${days.map((date) => {
             const parsed = parseIsoDate(date);
             const inMonth = date.slice(0, 7) === monthCursor.slice(0, 7);
             const events = byDate.get(date) || [];
             const isToday = date === today;
-            return `<button type="button" data-calendar-date="${date}" class="min-h-[108px] border-b border-r border-slate-100 p-2 text-left align-top ${inMonth ? 'bg-white' : 'bg-slate-50/70'} ${canManage ? 'hover:bg-blue-50/40' : ''}">
-              <span class="inline-flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-xs font-black ${isToday ? 'bg-slate-900 text-white' : (inMonth ? 'text-slate-700' : 'text-slate-400')}">${parsed?.day || ''}</span>
-              <span class="mt-1 block space-y-1">
+            return `<button type="button" data-calendar-date="${date}" data-google-calendar-day="1" class="min-h-[108px] border-b border-r border-slate-100 p-2 text-left align-top ${inMonth ? 'bg-white' : 'bg-slate-50/70'} ${canManage ? 'hover:bg-blue-50/40' : ''}">
+              <span data-google-calendar-day-number="1" class="inline-flex h-7 min-w-7 items-center justify-center rounded-full px-1 text-xs font-black ${isToday ? 'bg-slate-900 text-white' : (inMonth ? 'text-slate-700' : 'text-slate-400')}">${parsed?.day || ''}</span>
+              <span data-google-calendar-events="1" class="mt-1 block space-y-1">
                 ${events.slice(0, 3).map((event) => {
                   const visual = getClassVisual(event.clase);
-                  return `<span role="button" tabindex="0" data-plan-id="${escapeHtml(event.planId || '')}" class="block truncate rounded-lg border px-1.5 py-1 text-[10px] font-bold ${visual.chip}" title="${escapeHtml(event.titulo)}">${visual.icon} ${escapeHtml(event.titulo)}</span>`;
+                  return `<span role="button" tabindex="0" data-plan-id="${escapeHtml(event.planId || '')}" data-google-calendar-event="${escapeHtml(event.clase || MAINTENANCE_PLAN_CLASSES.tarea)}" class="block truncate rounded-lg border px-1.5 py-1 text-[10px] font-bold ${visual.chip}" title="${escapeHtml(event.titulo)}" aria-label="${escapeHtml(event.titulo)}">${visual.icon} ${escapeHtml(event.titulo)}</span>`;
                 }).join('')}
-                ${events.length > 3 ? `<span class="block px-1 text-[10px] font-bold text-slate-400">+${events.length - 3} más</span>` : ''}
+                ${events.length > 3 ? `<span data-google-calendar-more="1" class="block px-1 text-[10px] font-bold text-slate-400">+${events.length - 3} más</span>` : ''}
               </span>
             </button>`;
           }).join('')}
@@ -268,6 +265,9 @@ function renderCalendar() {
     </div>`;
 
   bindCalendarEvents(shell);
+  emitMaintenanceUiRendered(activeContainer, MAINTENANCE_UI_SURFACES.calendar, {
+    month: monthCursor
+  });
 }
 
 function bindCalendarEvents(shell) {
@@ -511,6 +511,10 @@ function showPlanModal(plan = null, seedDate = null) {
       if (submit) { submit.disabled = false; submit.textContent = isEditing ? 'Guardar cambios' : 'Guardar programación'; }
     }
   });
+
+  emitMaintenanceUiRendered(activeContainer, MAINTENANCE_UI_SURFACES.planModal, {
+    planId: plan?.id || null
+  });
 }
 
 export async function refreshMaintenanceCalendar(force = false) {
@@ -538,9 +542,19 @@ export async function mountMaintenanceCalendar(container, supabase, currentUser,
   activeSupabase = supabase;
   activeUser = currentUser;
   activeHotelId = hotelId;
-  monthCursor = firstOfMonth(hotelTodayIso());
 
-  ensureShell();
+  const shell = ensureShell();
+  try {
+    await loadRequiredHotelTimeZone(supabase, hotelId);
+    monthCursor = firstOfMonth(hotelTodayIso());
+  } catch (error) {
+    console.error('Error cargando zona horaria del calendario de mantenimiento:', error);
+    if (shell) {
+      shell.innerHTML = `<div class="rounded-xl border border-amber-200 bg-amber-50 p-3"><p class="text-sm font-black text-amber-900">El calendario necesita la zona horaria del hotel.</p><p class="mt-1 text-xs text-amber-800">${escapeHtml(error?.message || 'Configura una zona horaria válida e intenta de nuevo.')}</p></div>`;
+    }
+    return;
+  }
+
   const [refs, permission] = await Promise.all([
     loadMaintenanceReferenceData(supabase, hotelId),
     canManageMaintenancePlans(supabase, hotelId, currentUser)

@@ -1,109 +1,62 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js";
+import { body, dependencies, type Dependencies, endpoint, json, RequestError, rpcError } from "../_shared/user-management.ts";
 
-// 1. Define los encabezados CORS
-// Para producción, es más seguro reemplazar '*' con la URL de tu sitio web
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-serve(async (req) => {
-  // 2. Maneja la solicitud "preflight" de OPTIONS
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  try {
-    // Variables de entorno
-    const supabaseUrl = Deno.env.get("PROJECT_URL");
-    const supabaseServiceRoleKey = Deno.env.get("SERVICE_ROLE_KEY");
-
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-        throw new Error("Missing Supabase environment variables.");
+export function createHandler(deps: Dependencies = dependencies) {
+  return endpoint(async (req) => {
+    const actor = await deps.authenticate(req);
+    const input = await body(req, ["correo", "password", "nombre", "hotel_id", "roles", "activo"]);
+    const { correo, password, nombre, roles } = input;
+    const activo = input.activo ?? true;
+    if (typeof correo !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo) || correo.length > 254 ||
+        typeof nombre !== "string" || nombre.trim().length < 3 || nombre.length > 200 ||
+        typeof password !== "string" || password.length < 8 || password.length > 1024 || typeof activo !== "boolean") {
+      throw new RequestError(400, "Datos inválidos.");
     }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-
-    // Recibe el body
-    // Ojo: En tu frontend lo envías como `roles`, aquí lo esperas como `roles_ids`. Ajusté el código para que espere `roles`
-    const { correo, password, nombre, hotel_id, roles } = await req.json();
-
-    if (!correo || !password || !nombre || !hotel_id || !roles?.length) {
-      return new Response(JSON.stringify({ error: "Datos incompletos." }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400
-      });
-    }
-
-    // 1. Crear usuario en Auth
-    const { data: userData, error: authError } = await supabase.auth.admin.createUser({
-      email: correo,
-      password: password,
-      email_confirm: true, // Se recomienda confirmar el email
-      user_metadata: { nombre: nombre }
+    const { data: hotelId, error: authorizationError } = await actor.client.rpc("p0_autorizar_colaborador", {
+      p_hotel_id: input.hotel_id ?? null, p_roles: roles ?? null,
     });
-
-    if (authError) {
-      // Devolvemos el error específico de Supabase
-      return new Response(JSON.stringify({ error: authError.message }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400
-      });
-    }
-
-    const userId = userData.user.id;
-
-    // 2. Crear perfil en la tabla 'usuarios'
-    const { error: perfilError } = await supabase.from('usuarios').insert({
-      id: userId,
-      nombre,
-      correo,
-      hotel_id,
-      activo: true
-      // No es necesario 'creado_en', Supabase puede manejarlo automáticamente con un `default`
+    rpcError(authorizationError);
+    if (typeof hotelId !== "string") throw new RequestError(403, "Operación no autorizada.");
+    // El cliente privilegiado solo se obtiene después de autenticar Y autorizar.
+    const admin = deps.admin();
+    const { data, error } = await admin.auth.admin.createUser({
+      email: correo.trim(), password, email_confirm: true, ban_duration: "876000h",
+      user_metadata: { nombre: nombre.trim() },
+      app_metadata: { p0_created_by: actor.id, p0_hotel_id: hotelId },
     });
-
-    if (perfilError) {
-      // Si esto falla, es buena idea eliminar el usuario de Auth para no dejar datos inconsistentes
-      await supabase.auth.admin.deleteUser(userId);
-      return new Response(JSON.stringify({ error: `Error creando perfil: ${perfilError.message}` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
+    if (error || !data.user?.id) throw new RequestError(400, "No se pudo crear el usuario con los datos indicados.");
+    const userId = data.user.id;
+    try {
+      // Reautoriza dentro de la transacción; app_metadata solo lo escribe Auth Admin.
+      const { error: profileError } = await actor.client.rpc("p0_finalizar_colaborador", {
+        p_usuario_id: userId, p_hotel_id: hotelId, p_roles: roles,
+        p_nombre: nombre.trim(), p_activo: activo,
       });
+      rpcError(profileError);
+      if (activo) {
+        const { error: enableError } = await admin.auth.admin.updateUserById(userId, { ban_duration: "none" });
+        if (enableError) throw new RequestError(500, "No se pudo habilitar el acceso.");
+      }
+    } catch (failure) {
+      // configuracion_turnos is created by a profile trigger and has no cascading FK.
+      // Attempt every compensation even if one transport request throws.
+      let rollbackFailed = false;
+      for (const cleanup of [
+        () => admin.from("configuracion_turnos").delete().eq("usuario_id", userId).eq("hotel_id", hotelId),
+        () => admin.auth.admin.deleteUser(userId),
+        () => admin.from("usuarios").delete().eq("id", userId).eq("hotel_id", hotelId),
+      ]) {
+        try {
+          const { error: cleanupError } = await cleanup();
+          if (cleanupError) rollbackFailed = true;
+        } catch { rollbackFailed = true; }
+      }
+      if (rollbackFailed) {
+        console.error("[crear_colaborador] ROLLBACK_INCOMPLETE");
+        throw new RequestError(500, "No se completó la creación. Se requiere revisión del administrador del sistema.");
+      }
+      throw failure;
     }
-
-    // 3. Asignar roles
-    const rolesData = roles.map((rolId) => ({
-      usuario_id: userId,
-      rol_id: rolId,
-      hotel_id: hotel_id
-    }));
-
-    const { error: rolesError } = await supabase.from('usuarios_roles').insert(rolesData);
-
-    if (rolesError) {
-      // Si esto falla, eliminamos el usuario y su perfil
-      await supabase.auth.admin.deleteUser(userId);
-      await supabase.from('usuarios').delete().eq('id', userId);
-      return new Response(JSON.stringify({ error: `Error asignando roles: ${rolesError.message}` }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 500
-      });
-    }
-
-    // Si todo sale bien
-    return new Response(JSON.stringify({ message: "Usuario creado exitosamente", userId: userId }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 200
-    });
-
-  } catch (error) {
-    // Captura cualquier otro error inesperado
-    return new Response(JSON.stringify({ error: error.message }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      status: 500
-    });
-  }
-});
+    return json({ message: "Usuario creado exitosamente", userId });
+  });
+}
+if (import.meta.main) Deno.serve(createHandler());

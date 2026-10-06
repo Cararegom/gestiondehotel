@@ -1,3 +1,5 @@
+import { reportHandledError } from '../../services/handledErrorReporter.js';
+
 export async function handleReservaListActions({
     event,
     ui,
@@ -120,10 +122,10 @@ export async function handleReservaListActions({
                 break;
 
             default:
-                console.warn('Accion no reconocida en lista de reservas:', action);
+                reportHandledError('reservas', 'unknown_list_action');
         }
     } catch (err) {
-        console.error(`Error en accion '${action}' para reserva ${reservaId}:`, err);
+        reportHandledError('reservas', 'list_action_failed', err);
         if (ui.feedbackDiv) {
             ui.feedbackDiv.innerHTML = `<div class="error-indicator">${err.message}</div>`;
         }

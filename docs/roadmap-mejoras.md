@@ -26,7 +26,7 @@ Leyenda:
 ## Prioridad 2: Deuda tecnica y estabilidad del producto
 
 - [x] 11. Limpiar deuda tecnica y archivos viejos dentro de modulos vivos. Estado actual: respaldos, parches manuales y utilidades legacy de `caja`, `reservas`, `tienda` y `mapa-habitaciones` quedaron archivados en `archive/legacy/`, con trazabilidad en `docs/legacy-cleanup.md`.
-- [x] 12. Terminar de fraccionar los modulos monoliticos que siguen pesados. Estado actual: `Mi Cuenta` dejo de concentrar carga de datos y parte de la logica SaaS; ahora usa `accountDataService`, `pricing.js` y `checkoutSuscripcionService`, reduciendo mezcla de consultas, pricing y checkout dentro del modulo.
+- [ ] 12. Continuar fraccionando los modulos monoliticos que siguen pesados. Estado actual: `Mi Cuenta` ya delega carga de datos, pricing y checkout; `Caja` tambien fue dividida. `Reservas` delega varias responsabilidades, pero su orquestador mide 3289 lineas al 2026-09-30 y la particion no se considera terminada. CI ejecuta `npm run check:module-budgets` para impedir que vuelva a crecer por encima de esa linea base mientras las extracciones futuras reducen el limite.
 - [x] 13. Normalizar textos, encoding y mensajes del sistema. Estado actual: se limpio el texto visible critico de `Mi Cuenta`, checkout SaaS y varios archivos base, y se agrego `scripts/normalize-source-text.js` para seguir corrigiendo mojibake de forma reproducible.
 - [x] 14. Rehacer la capa de pagos SaaS de forma profesional. Estado actual: el checkout SaaS ya devuelve metadata operativa (`provider_display_name`, `checkout_reference`, `issued_at`, `customer_email`), muestra resumen mas claro antes del pago y queda documentado en `docs/payments-saas-checkout.md`.
 - [x] 15. Anadir trazabilidad completa de cambios sensibles. Estado actual: se agrego `js/services/sensitiveAuditService.js` y ya quedan auditados checkout SaaS iniciado/cancelado/fallido, cambio de correo, cambio de contrasena y exportacion SaaS de backups por hotel.
@@ -77,14 +77,14 @@ Nota operativa: este bloque ya quedo implementado del lado de la app y el repo. 
 - [x] 46. Guardar leads del chatbot comercial en base de datos. Estado actual: el panel comercial de Laura ya permite guardar contactos en `landing_leads` mediante `landing-save-lead`, enlazando tambien el evento `lead_submitted`.
 - [x] 47. Anadir panel de uso por hotel para pricing futuro. Estado actual: `#/ops-saas` ya consume `saas_usage_by_hotel`, mostrando reservas, usuarios, caja, POS, incidencias y errores por hotel para futuras decisiones de pricing.
 - [x] 48. Crear documentacion interna viva del producto. Estado actual: el repo ya incluye `docs/producto-vivo.md`, `docs/channel-manager-evaluacion.md`, `docs/multi-propiedad-plan.md` e `docs/investment-readiness.md`.
-- [x] 49. Preparar el sistema para multi-propiedad o cadena hotelera. Estado actual: se versionaron `grupos_hoteleros` y `grupo_hoteles`, el panel SaaS ya resume grupos activos y quedo definido el plan funcional en `docs/multi-propiedad-plan.md`.
+- [ ] 49. Preparar el sistema para multi-propiedad o cadena hotelera. Estado actual: preparacion tecnica parcial. Ya se versionaron `grupos_hoteleros` y `grupo_hoteles`, y el panel exclusivo de superadmin muestra un resumen numerico de grupos y hoteles asociados. Para considerarlo completado faltan la gestion funcional de grupos, acceso de usuarios a varios hoteles, cambio de sede, permisos por grupo y reportes consolidados por cadena. El alcance pendiente esta definido en `docs/multi-propiedad-plan.md`.
 - [x] 50. Prepararlo para venta o inversion. Estado actual: existe una lista viva en `docs/investment-readiness.md`, junto con mejor trazabilidad SaaS, tracking comercial, documentacion de producto y panel global mas presentable para due diligence.
 
 ## Modulos que merecen revision especial
 
 Nota: la auditoria inicial y el orden recomendado quedaron documentados en `docs/revision-modulos-especial.md`.
 
-- [ ] Revisar a fondo `reservas`. Estado actual: limpieza arquitectonica completada; `reservas.js` ya bajo a `2853` lineas y delega pagos/abonos, historial/filtros, render, acciones, formulario, UI y estados a modulos separados. Ya no conserva renders legacy ni cuerpos duplicados, pero aun conviene una pasada final de regresion funcional en crear/editar/abonar/check-in/check-out/cancelar.
+- [ ] Revisar a fondo `reservas`. Estado actual: particion arquitectonica parcial; `reservas.js` mide `3289` lineas al 2026-09-30 y delega pagos/abonos, historial/filtros, render, acciones, formulario, UI y estados a modulos separados. El presupuesto automático impide superar esa cifra, pero todavía deben extraerse lista de espera y tarifas programadas y hacerse regresión funcional de crear/editar/abonar/check-in/check-out/cancelar.
 - [ ] Revisar a fondo `caja`. Estado actual: refactor arquitectonico completado; `caja.js` ya bajo a `740` lineas y delega turnos, movimientos, cierre/reporte y paneles auxiliares a modulos separados (`caja-turnos.js`, `caja-movimientos.js`, `caja-cierre.js`, `caja-paneles.js`). Lo que falta ya no es particion tecnica sino regresion funcional manual de apertura, movimientos, arqueo, supervision, impresion y correo.
 - [ ] Revisar a fondo `reportes`.
 - [ ] Revisar a fondo `restaurante`.
@@ -97,4 +97,4 @@ Nota: la auditoria inicial y el orden recomendado quedaron documentados en `docs
 
 - [x] Fase 1: seguridad, backend, pagos, secretos, funciones faltantes y pruebas minimas.
 - [x] Fase 2: estabilidad operativa, soporte, reportes, mantenimiento preventivo y trazabilidad.
-- [x] Fase 3: crecimiento comercial, CRM, automatizaciones, integraciones grandes y escalabilidad.
+- [ ] Fase 3: crecimiento comercial, CRM, automatizaciones, integraciones grandes y escalabilidad. Estado actual: avance parcial; CRM, automatizaciones y varias bases SaaS estan implementadas, pero multi-propiedad funcional sigue pendiente en el item 49.

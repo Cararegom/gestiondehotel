@@ -6,6 +6,7 @@ import { supabase } from '../../supabaseClient.js';
 import { registrarAccionSensible } from '../../services/sensitiveAuditService.js';
 import { confirmDestructiveAction } from '../../services/destructiveConfirmationService.js';
 import { applyPermissionTemplate, getPermissionTemplates, suggestTemplateFromRoles } from '../../services/permissionTemplateService.js';
+import { escapeAttribute, escapeHtml } from '../../security.js';
 
 let currentContainerEl = null;
 let currentModuleUser = null;
@@ -50,15 +51,6 @@ function clearUsuariosFeedback(feedbackEl) {
   setTimeout(() => {
     if (feedbackEl.textContent === '') feedbackEl.style.display = 'none';
   }, 300);
-}
-
-function escapeUsuariosHtml(value) {
-  return String(value ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#039;');
 }
 
 function formatUsuariosCurrency(value) {
@@ -200,7 +192,7 @@ async function renderTopVentasRecepcionistas(monthValue = getCurrentMonthValue()
               ${ranking.map((item, index) => `
                 <tr class="${index === 0 && item.total > 0 ? 'bg-yellow-50' : ''}">
                   <td class="p-3 text-center font-bold text-gray-700">${index < 3 ? ['🥇', '🥈', '🥉'][index] : `#${index + 1}`}</td>
-                  <td class="p-3 font-semibold text-gray-800">${escapeUsuariosHtml(item.nombre)}${item.activo ? '' : ' <span class="text-xs text-gray-400">(inactivo)</span>'}</td>
+                  <td class="p-3 font-semibold text-gray-800">${escapeHtml(item.nombre)}${item.activo ? '' : ' <span class="text-xs text-gray-400">(inactivo)</span>'}</td>
                   <td class="p-3 text-right">${formatUsuariosCurrency(item.alojamiento)}</td>
                   <td class="p-3 text-right">${formatUsuariosCurrency(item.tienda)}</td>
                   <td class="p-3 text-right">${formatUsuariosCurrency(item.restaurante)}</td>
@@ -218,7 +210,7 @@ async function renderTopVentasRecepcionistas(monthValue = getCurrentMonthValue()
     monthInput?.addEventListener('change', monthChangeHandler, { once: true });
   } catch (error) {
     console.error('[Usuarios] Error cargando top mensual de ventas:', error);
-    container.innerHTML = `<div class="mt-8 bg-red-100 border border-red-300 text-red-800 p-4 rounded-xl">No se pudo cargar el top de ventas: ${escapeUsuariosHtml(error.message)}</div>`;
+    container.innerHTML = `<div class="mt-8 bg-red-100 border border-red-300 text-red-800 p-4 rounded-xl">No se pudo cargar el top de ventas: ${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -401,13 +393,13 @@ async function renderHorarioTurnosSemanal() {
                         <thead>
                             <tr>
                                 <th class="p-3 text-left text-sm font-semibold text-gray-600 bg-gray-100 rounded-tl-lg">Usuario</th>
-                                ${semana.map(d => `<th class="p-3 text-center text-sm font-semibold text-gray-600 bg-gray-100 capitalize">${d.label}</th>`).join('')}
+                                ${semana.map(d => `<th class="p-3 text-center text-sm font-semibold text-gray-600 bg-gray-100 capitalize">${escapeHtml(d.label)}</th>`).join('')}
                             </tr>
                         </thead>
                         <tbody>`;
 
         usuarios.forEach(u => {
-            tablaHTML += `<tr class="border-b border-gray-200 last:border-b-0"><td class="p-3 font-medium text-gray-700 whitespace-nowrap">${u.nombre}</td>`;
+            tablaHTML += `<tr class="border-b border-gray-200 last:border-b-0"><td class="p-3 font-medium text-gray-700 whitespace-nowrap">${escapeHtml(u.nombre)}</td>`;
             semana.forEach(d => {
                 const fecha = d.fechaISO;
                 const turnoAsignado = turnos.find(t => t.fecha === fecha && t.usuario_id === u.id);
@@ -415,8 +407,8 @@ async function renderHorarioTurnosSemanal() {
                 const claseActual = opciones.find(o => o.valor === valor)?.clase || 'bg-gray-100';
 
                 tablaHTML += `<td class="p-1 align-middle">
-                    <select class="w-full p-2 border-0 rounded-md text-center font-semibold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-blue-500 ${claseActual}" 
-                            onchange="actualizarTurnoUsuario(this, '${u.id}', '${fecha}')">
+                    <select class="w-full p-2 border-0 rounded-md text-center font-semibold cursor-pointer transition-all duration-200 focus:ring-2 focus:ring-blue-500 ${claseActual}"
+                            data-turno-usuario-id="${escapeAttribute(u.id)}" data-turno-fecha="${escapeAttribute(fecha)}">
                         ${opciones.map(opt => `
                             <option value="${opt.valor}" ${valor === opt.valor ? 'selected' : ''} class="${opt.clase}">${opt.texto}</option>
                         `).join('')}
@@ -428,9 +420,16 @@ async function renderHorarioTurnosSemanal() {
 
         tablaHTML += `</tbody></table></div></div>`;
         container.innerHTML = tablaHTML;
+        container.querySelectorAll('select[data-turno-usuario-id][data-turno-fecha]').forEach((selectEl) => {
+            selectEl.onchange = () => actualizarTurnoUsuario(
+                selectEl,
+                selectEl.dataset.turnoUsuarioId,
+                selectEl.dataset.turnoFecha
+            );
+        });
 
     } catch (error) {
-        container.innerHTML = `<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert"><strong>Error:</strong> ${error.message}</div>`;
+        container.innerHTML = `<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert"><strong>Error:</strong> ${escapeHtml(error.message)}</div>`;
         console.error("Error en renderHorarioTurnosSemanal:", error);
     }
 }
@@ -447,7 +446,8 @@ window.imprimirHorarioTurnos = function() {
     // Usamos el color de fondo de la opción para la celda
     const bgColor = window.getComputedStyle(selectedOption).backgroundColor;
     cell.style.backgroundColor = bgColor;
-    cell.innerHTML = `<span style="font-weight:600;">${texto}</span>`;
+    cell.textContent = texto;
+    cell.style.fontWeight = '600';
   });
   const printWindow = window.open('', '_blank');
   printWindow.document.write('<html><head><title>Horario Semanal</title><style>body{font-family:sans-serif;padding:20px} table{width:100%;border-collapse:collapse} th,td{border:1px solid #ccc;padding:8px;text-align:center} th{background-color:#f2f2f2}</style></head><body>');
@@ -534,9 +534,9 @@ async function abrirModalPermisos(usuario) {
     const renderPermissions = () => {
       listaDiv.innerHTML = permisosUsuario.map(p => `
         <label class="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-md">
-        <input type="checkbox" name="permiso" value="${p.id}" ${p.checked ? 'checked' : ''} class="form-check-input h-4 w-4">
-        <span class="font-medium text-gray-800">${p.nombre}</span>
-        <span class="text-xs text-gray-500 ml-auto text-right">${p.descripcion || ''}</span>
+        <input type="checkbox" name="permiso" value="${escapeAttribute(p.id)}" ${p.checked ? 'checked' : ''} class="form-check-input h-4 w-4">
+        <span class="font-medium text-gray-800">${escapeHtml(p.nombre)}</span>
+        <span class="text-xs text-gray-500 ml-auto text-right">${escapeHtml(p.descripcion || '')}</span>
         </label>
       `).join('');
     };
@@ -552,12 +552,12 @@ async function abrirModalPermisos(usuario) {
               <div class="text-sm font-semibold text-slate-800">Plantillas rápidas</div>
               <div class="text-xs text-slate-500">Aplica una base sugerida y luego ajusta permisos puntuales.</div>
             </div>
-            ${suggestedTemplate ? `<span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Sugerida: ${templates.find((template) => template.key === suggestedTemplate)?.label || 'Personalizada'}</span>` : ''}
+            ${suggestedTemplate ? `<span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-700">Sugerida: ${escapeHtml(templates.find((template) => template.key === suggestedTemplate)?.label || 'Personalizada')}</span>` : ''}
           </div>
           <div class="flex flex-wrap gap-2">
             ${templates.map((template) => `
-              <button type="button" class="button button-outline button-small" data-template-key="${template.key}">
-                ${template.label}
+              <button type="button" class="button button-outline button-small" data-template-key="${escapeAttribute(template.key)}">
+                ${escapeHtml(template.label)}
               </button>
             `).join('')}
           </div>
@@ -626,7 +626,7 @@ async function cargarRolesDisponibles(selectEl, supabaseInstance) {
     if (error) throw error;
     rolesDisponiblesCache = roles || [];
     if (rolesDisponiblesCache.length > 0) {
-      selectEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
+      selectEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${escapeAttribute(r.id)}">${escapeHtml(r.nombre)}</option>`).join('');
     } else {
       selectEl.innerHTML = `<option value="" disabled>No hay roles configurados</option>`;
     }
@@ -659,27 +659,27 @@ async function cargarYRenderizarUsuarios(tbodyEl, supabaseInstance, hotelIdParaC
       const rolesNombres = u.usuarios_roles.map(ur => ur.roles?.nombre).filter(Boolean).join(', ') || 'Sin rol';
       const tr = document.createElement('tr');
       tr.className = "hover:bg-gray-50 transition-colors duration-150";
-      tr.dataset.usuarioId = u.id;
+      tr.dataset.usuarioId = String(u.id || '');
       tr.innerHTML = `
-        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 font-medium">${u.nombre || 'N/A'}</td>
-        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${u.correo || 'N/A'}</td>
-        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${rolesNombres}</td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-700 font-medium">${escapeHtml(u.nombre || 'N/A')}</td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${escapeHtml(u.correo || 'N/A')}</td>
+        <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${escapeHtml(rolesNombres)}</td>
         <td class="px-4 py-3 whitespace-nowrap text-sm">
           <span class="px-2.5 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${u.activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
             ${u.activo ? 'Activo' : 'Inactivo'}
           </span>
         </td>
         <td class="px-4 py-3 whitespace-nowrap text-sm font-medium space-x-2">
-          <button class="button button-outline button-small text-xs" data-accion="editar" data-id="${u.id}">Editar</button>
-          <button class="button button-small text-xs ${u.activo ? 'button-warning' : 'button-success'}" data-accion="toggle-activo" data-id="${u.id}" data-estado-actual="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>
-          <button class="button button-accent button-small text-xs" data-accion="reset-password" data-id="${u.id}" data-correo="${u.correo}">Reset Pass</button>
-          <button class="button button-outline button-small text-xs" style="color:#2563eb;border-color:#2563eb" data-accion="permisos" data-id="${u.id}" data-nombre="${u.nombre || ''}" data-correo="${u.correo}" data-roles="${rolesNombres}">Permisos</button>
-          <button class="button button-danger button-small text-xs" data-accion="eliminar" data-id="${u.id}" data-nombre="${u.nombre || u.correo}" ${u.id === currentModuleUser.id ? 'disabled' : ''}>Eliminar</button>
+          <button class="button button-outline button-small text-xs" data-accion="editar" data-id="${escapeAttribute(u.id)}">Editar</button>
+          <button class="button button-small text-xs ${u.activo ? 'button-warning' : 'button-success'}" data-accion="toggle-activo" data-id="${escapeAttribute(u.id)}" data-estado-actual="${u.activo}">${u.activo ? 'Desactivar' : 'Activar'}</button>
+          <button class="button button-accent button-small text-xs" data-accion="reset-password" data-id="${escapeAttribute(u.id)}" data-correo="${escapeAttribute(u.correo)}">Reset Pass</button>
+          <button class="button button-outline button-small text-xs" style="color:#2563eb;border-color:#2563eb" data-accion="permisos" data-id="${escapeAttribute(u.id)}" data-nombre="${escapeAttribute(u.nombre || '')}" data-correo="${escapeAttribute(u.correo)}" data-roles="${escapeAttribute(rolesNombres)}">Permisos</button>
+          <button class="button button-danger button-small text-xs" data-accion="eliminar" data-id="${escapeAttribute(u.id)}" data-nombre="${escapeAttribute(u.nombre || u.correo)}" ${u.id === currentModuleUser.id ? 'disabled' : ''}>Eliminar</button>
           </td>`;
       tbodyEl.appendChild(tr);
     });
   } catch (err) {
-    tbodyEl.innerHTML = `<tr><td colspan="5" class="text-red-600 text-center p-4">Error al cargar usuarios: ${err.message}</td></tr>`;
+    tbodyEl.innerHTML = `<tr><td colspan="5" class="text-red-600 text-center p-4">Error al cargar usuarios: ${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
@@ -692,7 +692,7 @@ function resetearFormularioUsuario(formEl, formTitleEl, passwordGroupEl, btnCanc
     formEl.elements.correo.disabled = false;
     if (passwordGroupEl) passwordGroupEl.style.display = 'block';
     if (selectRolesEl) {
-        selectRolesEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${r.id}">${r.nombre}</option>`).join('');
+        selectRolesEl.innerHTML = rolesDisponiblesCache.map(r => `<option value="${escapeAttribute(r.id)}">${escapeHtml(r.nombre)}</option>`).join('');
         selectRolesEl.value = "";
     }
     formEl.elements.activo.checked = true;
@@ -725,20 +725,18 @@ async function formSubmitHandler(event, formUsuarioEl, selectRolesEl, feedbackGl
   try {
     let usuarioId = usuarioIdEdit;
     if (!usuarioIdEdit) {
-      const { data: authData, error: authError } = await currentSupabaseInstance.auth.signUp({ email: correo, password, options: { data: { nombre, hotel_id: currentHotelId } } });
-      if (authError) throw authError;
-      usuarioId = authData.user.id;
-      const { error: dbError } = await currentSupabaseInstance.from('usuarios').insert({ id: usuarioId, nombre, correo, hotel_id: currentHotelId, activo });
-      if (dbError) throw dbError;
+      const { data, error } = await currentSupabaseInstance.functions.invoke('crear_colaborador', {
+        body: { nombre, correo, password, hotel_id: currentHotelId, roles, activo }
+      });
+      if (error || data?.error) throw new Error(data?.error || 'No se pudo crear el usuario.');
+      usuarioId = data.userId;
     } else {
-      const { error: updateError } = await currentSupabaseInstance.from('usuarios').update({ nombre, activo }).eq('id', usuarioId);
+      const { error: updateError } = await currentSupabaseInstance.rpc('p0_editar_colaborador', {
+        p_usuario_id: usuarioId, p_hotel_id: currentHotelId, p_roles: roles,
+        p_nombre: nombre, p_activo: activo
+      });
       if (updateError) throw updateError;
     }
-
-    await currentSupabaseInstance.from('usuarios_roles').delete().eq('usuario_id', usuarioId);
-    const rolesData = roles.map(rol_id => ({ usuario_id: usuarioId, rol_id, hotel_id: currentHotelId }));
-    const { error: rolesError } = await currentSupabaseInstance.from('usuarios_roles').insert(rolesData);
-    if (rolesError) throw rolesError;
 
     await registrarAccionSensible({
       supabase: currentSupabaseInstance,
@@ -959,7 +957,7 @@ const tableClickHandler = async (event) => {
         const email = button.dataset.correo;
         const result = await Swal.fire({
             title: '¿Enviar enlace de reseteo?',
-            html: `Se enviará un correo a <b>${email}</b> con las instrucciones para restablecer la contraseña.`,
+            html: `Se enviará un correo a <b>${escapeHtml(email)}</b> con las instrucciones para restablecer la contraseña.`,
             icon: 'question',
             showCancelButton: true,
             confirmButtonText: 'Sí, enviar enlace',

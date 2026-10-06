@@ -1,9 +1,5 @@
 const STYLE_ID = 'mant-google-calendar-style';
 
-let activeContainer = null;
-let observer = null;
-let enhanceTimer = null;
-
 function ensureStyles() {
   if (document.getElementById(STYLE_ID)) return;
 
@@ -106,7 +102,7 @@ function ensureStyles() {
         padding: 4px 2px !important;
       }
 
-      #mant-calendar-shell [data-google-calendar-day] > span:first-child {
+      #mant-calendar-shell [data-google-calendar-day-number] {
         height: 22px !important;
         min-width: 22px !important;
         padding-left: 3px !important;
@@ -147,69 +143,8 @@ function ensureStyles() {
   document.head.appendChild(style);
 }
 
-function getEventKind(node) {
-  const text = String(node?.textContent || '').trim();
-  if (text.startsWith('🔄')) return 'preventivo';
-  if (text.startsWith('⏰')) return 'vencimiento';
-  return 'tarea';
-}
-
-function enhanceCalendar() {
-  if (!activeContainer) return;
-  const shell = activeContainer.querySelector('#mant-calendar-shell');
-  if (!shell) return;
-
+export function mountMaintenanceCalendarGoogleStyle() {
   ensureStyles();
-
-  const days = [...shell.querySelectorAll('[data-calendar-date]')];
-  if (!days.length) return;
-
-  const grid = days[0].parentElement;
-  const inner = grid?.parentElement;
-  const viewport = inner?.parentElement;
-  const header = grid?.previousElementSibling;
-
-  if (viewport) viewport.dataset.googleCalendarViewport = '1';
-  if (inner) inner.dataset.googleCalendarInner = '1';
-  if (grid) grid.dataset.googleCalendarGrid = '1';
-  if (header) header.dataset.googleCalendarHeader = '1';
-
-  days.forEach((day) => {
-    day.dataset.googleCalendarDay = '1';
-    const eventsContainer = day.querySelector(':scope > span:nth-child(2)');
-    if (eventsContainer) eventsContainer.dataset.googleCalendarEvents = '1';
-
-    day.querySelectorAll('[data-plan-id]').forEach((eventNode) => {
-      const kind = getEventKind(eventNode);
-      eventNode.dataset.googleCalendarEvent = kind;
-      eventNode.setAttribute('aria-label', eventNode.getAttribute('title') || eventNode.textContent.trim());
-    });
-
-    [...day.querySelectorAll('span')]
-      .filter((node) => /^\+\d+\s+m[aá]s$/i.test(String(node.textContent || '').trim()))
-      .forEach((node) => { node.dataset.googleCalendarMore = '1'; });
-  });
 }
 
-function scheduleEnhance() {
-  clearTimeout(enhanceTimer);
-  enhanceTimer = setTimeout(enhanceCalendar, 20);
-}
-
-export function mountMaintenanceCalendarGoogleStyle(container) {
-  activeContainer = container;
-  ensureStyles();
-  enhanceCalendar();
-
-  observer?.disconnect();
-  observer = new MutationObserver(scheduleEnhance);
-  observer.observe(container, { childList: true, subtree: true });
-}
-
-export function unmountMaintenanceCalendarGoogleStyle() {
-  observer?.disconnect();
-  observer = null;
-  clearTimeout(enhanceTimer);
-  enhanceTimer = null;
-  activeContainer = null;
-}
+export function unmountMaintenanceCalendarGoogleStyle() {}

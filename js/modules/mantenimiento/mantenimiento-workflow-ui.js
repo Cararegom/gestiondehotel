@@ -5,29 +5,28 @@ import {
 } from './mantenimiento-mobile-ui.js';
 import {
   TASK_STATES,
-  calculateNextScheduledDate,
-  createRequestId,
   getSlaMeta,
   getStatusMeta,
   getWorkflowAction,
   isOpenTaskState,
-  normalizeTaskFrequency,
   normalizeTaskState
 } from './mantenimiento-domain.js';
 import {
   addMaintenanceComment,
-  createNextPreventiveTask,
-  findOpenPreventiveTask,
   listMaintenanceHistory,
   transitionMaintenanceTask
 } from './mantenimiento-repository.js';
+import {
+  MAINTENANCE_UI_RENDERED_EVENT,
+  MAINTENANCE_UI_SURFACES,
+  emitMaintenanceUiRendered,
+  isMaintenanceUiSurface
+} from './mantenimiento-ui-events.js';
 
 let activeContainer = null;
 let activeSupabase = null;
 let activeUser = null;
 let activeHotelId = null;
-let observer = null;
-let enhanceTimer = null;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -67,42 +66,6 @@ function getHistoryTitle(item) {
     return `${getStatusMeta(item.estado_anterior).text} → ${getStatusMeta(item.estado_nuevo).text}`;
   }
   return item.evento || 'Actividad';
-}
-
-async function ensureNextPreventive(task) {
-  const frecuencia = normalizeTaskFrequency(task?.frecuencia);
-  if (!['diaria', 'semanal', 'mensual'].includes(frecuencia)) return null;
-  if (normalizeTaskState(task?.estado) !== TASK_STATES.cerrado) return null;
-
-  const nextDate = calculateNextScheduledDate(task);
-  if (!nextDate) return null;
-  const existing = await findOpenPreventiveTask(activeSupabase, task, nextDate);
-  if (existing) return existing;
-
-  return createNextPreventiveTask(activeSupabase, {
-    hotel_id: task.hotel_id,
-    titulo: task.titulo,
-    descripcion: task.descripcion || null,
-    estado: TASK_STATES.pendiente,
-    tipo: task.tipo,
-    categoria_mantenimiento: task.categoria_mantenimiento || 'general',
-    frecuencia,
-    fecha_programada: nextDate,
-    fecha_completada: null,
-    ultima_realizacion: task.fecha_completada || task.cerrada_en || new Date().toISOString(),
-    creada_por: task.realizada_por || task.creada_por || task.asignada_a || activeUser?.id || null,
-    asignada_a: task.asignada_a || null,
-    realizada_por: null,
-    habitacion_id: task.habitacion_id || null,
-    prioridad: Number(task.prioridad) || 0,
-    adjuntos: [],
-    solicitud_id: createRequestId()
-  });
-}
-
-function scheduleEnhance() {
-  clearTimeout(enhanceTimer);
-  enhanceTimer = setTimeout(() => enhanceMaintenanceUi(), 30);
 }
 
 function renderWorkflowSummary() {
@@ -151,9 +114,7 @@ function addSlaToCard(card, task) {
   if (!card || card.querySelector('[data-f3-sla]')) return;
   const sla = getSlaMeta(task);
   if (!sla.text) return;
-  // No incluir clases Tailwind con decimales (p. ej. gap-1.5) en querySelector:
-  // el punto tiene semántica CSS y puede convertir el selector en inválido.
-  const statusRow = card.querySelector('.mb-2.flex.flex-wrap.items-center');
+  const statusRow = card.querySelector('[data-task-status-row]');
   if (!statusRow) return;
   const span = document.createElement('span');
   span.dataset.f3Sla = '1';
@@ -253,21 +214,6 @@ function renderModalWorkflowSection(task) {
   const form = activeContainer?.querySelector('#mant-full-form');
   if (!form || form.querySelector('#mant-f3-workflow')) return;
 
-  const stateSelect = form.querySelector('[name="estado"]');
-  if (stateSelect) {
-    const currentState = normalizeTaskState(task?.estado || TASK_STATES.pendiente);
-    stateSelect.innerHTML = `
-      <option value="${currentState}">${escapeHtml(getStatusMeta(currentState).text)}</option>`;
-    stateSelect.value = currentState;
-    stateSelect.disabled = true;
-    stateSelect.classList.add('bg-slate-100', 'text-slate-500');
-    const hidden = document.createElement('input');
-    hidden.type = 'hidden';
-    hidden.name = 'estado';
-    hidden.value = currentState;
-    stateSelect.insertAdjacentElement('afterend', hidden);
-  }
-
   const errorTarget = form.querySelector('#mant-full-error');
   const section = document.createElement('section');
   section.id = 'mant-f3-workflow';
@@ -289,7 +235,7 @@ function renderModalWorkflowSection(task) {
     </div>
     ${task?.id ? `
       <div class="mt-3 flex flex-wrap gap-2">
-        ${action ? `<button type="button" id="mant-f3-modal-action" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white">${escapeHtml(action.label)}</button>` : ''}
+        ${action ? `<button type="button" id="mant-f3-modal-action" data-maintenance-transition="${escapeHtml(action.nextState)}" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white">${escapeHtml(action.label)}</button>` : ''}
         ${canAssign ? '<button type="button" id="mant-f3-assign" class="rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2 text-sm font-black text-indigo-700">Asignar responsable</button>' : ''}
         ${canCancel ? '<button type="button" id="mant-f3-cancel" class="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-black text-red-700">Cancelar tarea</button>' : ''}
         ${taskState === TASK_STATES.cerrado ? '<button type="button" id="mant-f3-reopen" class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-black text-amber-800">Reabrir</button>' : ''}
@@ -385,10 +331,6 @@ async function runWorkflowAction(task, forcedAction = null) {
     assigneeId: action.claim ? activeUser?.id || null : null
   });
 
-  if (normalizeTaskState(updated.estado) === TASK_STATES.cerrado) {
-    await ensureNextPreventive(updated).catch((error) => console.warn('No se pudo programar el siguiente preventivo:', error));
-  }
-
   document.dispatchEvent(new CustomEvent('maintenanceChanged', {
     detail: { taskId: updated.id, action: action.nextState, source: 'fase3-workflow' }
   }));
@@ -445,6 +387,12 @@ function enhanceMaintenanceUi() {
   enhanceCardsAndRows();
 }
 
+function handleMaintenanceUiRendered(event) {
+  if (isMaintenanceUiSurface(event, MAINTENANCE_UI_SURFACES.taskList)) {
+    enhanceMaintenanceUi();
+  }
+}
+
 export async function mount(container, supabase, currentUser, hotelId) {
   activeContainer = container;
   activeSupabase = supabase;
@@ -453,16 +401,13 @@ export async function mount(container, supabase, currentUser, hotelId) {
 
   await baseMount(container, supabase, currentUser, hotelId);
   container.addEventListener('click', interceptTaskClick, true);
-  observer = new MutationObserver(scheduleEnhance);
-  observer.observe(container, { childList: true, subtree: true });
+  container.addEventListener(MAINTENANCE_UI_RENDERED_EVENT, handleMaintenanceUiRendered);
   enhanceMaintenanceUi();
 }
 
 export function unmount() {
   if (activeContainer) activeContainer.removeEventListener('click', interceptTaskClick, true);
-  observer?.disconnect();
-  observer = null;
-  clearTimeout(enhanceTimer);
+  activeContainer?.removeEventListener(MAINTENANCE_UI_RENDERED_EVENT, handleMaintenanceUiRendered);
   baseUnmount();
   activeContainer = null;
   activeSupabase = null;
@@ -473,6 +418,9 @@ export function unmount() {
 export async function showModalTarea(container, supabase, hotelId, currentUser, tarea = null) {
   const result = await baseShowModalTarea(container, supabase, hotelId, currentUser, tarea);
   const normalizedTask = tarea?.id ? { ...tarea, estado: normalizeTaskState(tarea.estado) } : null;
-  setTimeout(() => renderModalWorkflowSection(normalizedTask), 0);
+  renderModalWorkflowSection(normalizedTask);
+  emitMaintenanceUiRendered(container, MAINTENANCE_UI_SURFACES.taskModal, {
+    taskId: normalizedTask?.id || null
+  });
   return result;
 }

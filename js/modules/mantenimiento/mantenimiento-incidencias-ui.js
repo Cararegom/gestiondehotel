@@ -1,11 +1,16 @@
+import {
+  MAINTENANCE_UI_RENDERED_EVENT,
+  MAINTENANCE_UI_SURFACES,
+  isMaintenanceUiSurface
+} from './mantenimiento-ui-events.js';
+
 let activeContainer = null;
 let activeSupabase = null;
 let activeHotelId = null;
-let observer = null;
-let enhanceTimer = null;
 let enhancing = false;
 let rerunRequested = false;
 let currentRows = [];
+let renderGeneration = 0;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -124,7 +129,7 @@ function renderIncidentAction(card, row) {
           roomId: row.habitacion_id
         }
       }));
-      scheduleEnhance();
+      renderIncidentSummary(currentRows);
     } catch (error) {
       if (errorTarget) {
         errorTarget.textContent = error?.message || 'No se pudo crear la incidencia.';
@@ -166,7 +171,7 @@ function renderIncidentSummary(rows) {
   }
 }
 
-async function enhanceIncidentActions() {
+async function enhanceIncidentActions(generation = renderGeneration) {
   if (!activeContainer || !activeSupabase || !activeHotelId) return;
   if (enhancing) {
     rerunRequested = true;
@@ -188,6 +193,7 @@ async function enhanceIncidentActions() {
       .eq('hotel_id', activeHotelId)
       .in('id', ids);
     if (error) throw error;
+    if (generation !== renderGeneration) return;
 
     currentRows = data || [];
     const byId = new Map(currentRows.map((row) => [String(row.id), row]));
@@ -202,19 +208,27 @@ async function enhanceIncidentActions() {
     enhancing = false;
     if (rerunRequested) {
       rerunRequested = false;
-      scheduleEnhance();
+      void enhanceIncidentActions(renderGeneration);
     }
   }
 }
 
-function scheduleEnhance() {
-  clearTimeout(enhanceTimer);
-  enhanceTimer = setTimeout(() => enhanceIncidentActions(), 35);
+function handleMaintenanceUiRendered(event) {
+  if (isMaintenanceUiSurface(event, MAINTENANCE_UI_SURFACES.taskModal)) {
+    renderGeneration += 1;
+    currentRows = [];
+    rerunRequested = false;
+    return;
+  }
+
+  if (isMaintenanceUiSurface(event, MAINTENANCE_UI_SURFACES.roomChecklist)) {
+    void enhanceIncidentActions(renderGeneration);
+  }
 }
 
 function interceptCloseWithUnresolvedIncidents(event) {
   const button = event.target.closest?.('#mant-f3-modal-action');
-  if (!button || !activeContainer?.contains(button) || !/cerr/i.test(String(button.textContent || ''))) return;
+  if (!button || !activeContainer?.contains(button) || button.dataset.maintenanceTransition !== 'cerrado') return;
 
   const unresolved = currentRows.filter((row) => row.estado === 'novedad' && !row.incidencia_tarea_id);
   if (!unresolved.length) return;
@@ -229,24 +243,20 @@ export function mountMaintenanceIncidentActions(container, supabase, currentUser
   activeSupabase = supabase;
   activeHotelId = hotelId;
   currentRows = [];
+  renderGeneration += 1;
 
   container.addEventListener('click', interceptCloseWithUnresolvedIncidents, true);
-  observer?.disconnect();
-  observer = new MutationObserver(scheduleEnhance);
-  observer.observe(container, { childList: true, subtree: true });
-  scheduleEnhance();
+  container.addEventListener(MAINTENANCE_UI_RENDERED_EVENT, handleMaintenanceUiRendered);
 }
 
 export function unmountMaintenanceIncidentActions() {
   if (activeContainer) activeContainer.removeEventListener('click', interceptCloseWithUnresolvedIncidents, true);
-  observer?.disconnect();
-  observer = null;
-  clearTimeout(enhanceTimer);
-  enhanceTimer = null;
+  activeContainer?.removeEventListener(MAINTENANCE_UI_RENDERED_EVENT, handleMaintenanceUiRendered);
   activeContainer = null;
   activeSupabase = null;
   activeHotelId = null;
   currentRows = [];
+  renderGeneration += 1;
   enhancing = false;
   rerunRequested = false;
 }

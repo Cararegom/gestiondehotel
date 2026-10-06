@@ -1,4 +1,5 @@
 import { formatCurrency } from '../../uiUtils.js';
+import { getRuntimeHotelTimeZone, normalizeTimeZone } from '../../services/hotelTimeZoneService.js';
 
 function resolveSupabase(arg1, arg2) {
   if (arg1 && typeof arg1.from === 'function') return { supabase: arg1, hotelId: arg2 };
@@ -209,18 +210,20 @@ export async function getHorariosHotel(arg1, arg2, arg3) {
 
   let checkin = hotelConfig?.checkin_hora_config || '15:00';
   let checkout = hotelConfig?.checkout_hora_config || '12:00';
+  let timeZone = normalizeTimeZone(hotelConfig?.zona_horaria, getRuntimeHotelTimeZone());
   let applyLimits = true;
 
   if ((!hotelConfig || Object.keys(hotelConfig).length === 0) && supabase && hotelId) {
     const { data, error } = await supabase
       .from('configuracion_hotel')
-      .select('checkin_hora_config, checkout_hora_config')
+      .select('checkin_hora_config, checkout_hora_config, zona_horaria')
       .eq('hotel_id', hotelId)
       .maybeSingle();
 
     if (!error && data) {
       checkin = data.checkin_hora_config || checkin;
       checkout = data.checkout_hora_config || checkout;
+      timeZone = normalizeTimeZone(data.zona_horaria, timeZone);
     }
   }
 
@@ -229,6 +232,8 @@ export async function getHorariosHotel(arg1, arg2, arg3) {
     checkout,
     checkInTime: checkin,
     checkOutTime: checkout,
+    timeZone,
+    zona_horaria: timeZone,
     applyLimits
   };
 }

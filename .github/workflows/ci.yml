@@ -28,6 +28,9 @@ jobs:
       - name: Syntax check
         run: npm run check:syntax
 
+      - name: Module size budgets
+        run: npm run check:module-budgets
+
       - name: Type check bank email functions
         run: npm run typecheck
 

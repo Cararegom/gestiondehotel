@@ -1,34 +1,51 @@
 # Permisos y seguridad
 
-## Matriz objetivo
+## Matriz actual
 
-| Acción | Recepcionista Marena | Admin Marena | Usuario otro hotel | `anon` |
+| Acción | Recepción Marena | Admin Marena | Usuario otro hotel | `anon` |
 |---|---:|---:|---:|---:|
-| Operar reservas/ventas/Caja según rol actual | Sí | Sí | Solo su hotel, sin piloto | No |
-| Ver estado bancario mínimo de su operación | Sí, read-only | Sí | No | No |
-| Ver correo/referencia sensible | No | Solo datos enmascarados necesarios | No | No |
-| Relacionar, redistribuir, confirmar, rechazar | No | Sí | No | No |
-| Modificar evento/auditoría directamente | No | No; solo RPC | No | No |
+| Operar reservas, ventas y Caja según su rol | Sí | Sí | Solo su hotel, sin piloto | No |
+| Ver el estado bancario mínimo de movimientos propios | Sí | Sí | No | No |
+| Relacionar una transferencia con movimientos exactos de Caja | Sí, solo `link` | Sí | No | No |
+| Ver correo, referencia bancaria o metadata de Gmail | No | Solo datos enmascarados necesarios | No | No |
+| Redistribuir libremente, confirmar, rechazar o marcar revisada | No | Sí | No | No |
+| Modificar eventos, asignaciones o auditoría directamente | No | No; solo mediante API/RPC | No | No |
 
-## Estado auditado
+## Perímetro del flujo administrativo
 
-`bank_payment_allocations` y auditoría usan RLS y revocación de acceso directo. `replace_bank_payment_allocations` solo permite `service_role`; `bank-email-api` valida al usuario admin antes de invocarlo. El patrón es correcto y se conserva.
+`bank_payment_allocations` y la auditoría usan RLS y revocación de acceso directo. `replace_bank_payment_allocations` solo permite `service_role`; `bank-email-api` valida al usuario administrador antes de invocarlo.
 
-Fase 5 añadió `bank_email_sale_is_reconcilable` como `SECURITY DEFINER` con `search_path` fijo, validación explícita del UUID piloto y ejecución exclusiva de `service_role`. `PUBLIC`, `anon` y `authenticated` no pueden invocarla. El helper legacy `bank_email_sale_is_payable` conserva su contrato para flujos antiguos.
+Los helpers de venta y disponibilidad se ejecutan con `SECURITY DEFINER`, `search_path` fijo, validación del UUID piloto y permisos mínimos. `PUBLIC`, `anon` y `authenticated` no pueden ejecutarlos directamente.
 
-Fase 6 aplica el mismo perímetro a `bank_email_sale_available_amount_cop`: solo `service_role`, `search_path` fijo y retorno nulo fuera del UUID piloto. El RPC conserva validación de administrador en la API y suma exacta antes de reemplazar allocations.
+`bank-email-api` exige un administrador activo del hotel piloto para `list`, `detail`, `candidates` y toda `manual-action`. La ruta administrativa y los enlaces de notificaciones aplican la misma restricción. El endpoint `operational-summary` entrega solo conteos agregados y sanitizados.
 
-Fase 8 exige administrador de Marena en servidor para `list`, `detail`, `candidates` y toda `manual-action`. La ruta y los enlaces de notificaciones aplican la misma restricción como defensa de UX. Recepción solo puede invocar `operational-summary`, que entrega conteos `pending`, `verified` y `review` de siete días sin montos, pagadores, referencias, IDs ni cuerpo del correo. Los roles directos y asignados mediante `usuarios_roles → roles` se validan con el perfil activo y el UUID piloto.
+## Perímetro del flujo de recepción
 
-## Reglas
+La relación desde Caja usa la API separada `bank-payment-relation-api`. El servidor verifica:
+
+- sesión autenticada y perfil activo;
+- pertenencia al hotel piloto;
+- rol operativo permitido, incluido recepción;
+- que la acción solicitada esté dentro del contrato reducido;
+- que la transferencia y todos los movimientos pertenezcan al mismo hotel;
+- que el monto y los destinos operativos coincidan exactamente.
+
+Recepción puede consultar estados sanitizados, buscar candidatos y ejecutar únicamente la acción `link`. No puede invocar desde esta API las acciones administrativas `confirm`, `reject`, `mark_reviewed` ni una redistribución arbitraria.
+
+La respuesta para recepción limita los datos de la transferencia a monto, estado, nombre truncado del remitente y fechas operativas. No devuelve el cuerpo del correo, referencias de Gmail ni metadata bancaria privada.
+
+La escritura se realiza en servidor mediante `replace_bank_payment_allocations_from_caja`. El RPC vuelve a validar cada movimiento, persiste `bank_payment_allocations.caja_id`, registra actor, acción y motivo, y solo puede ejecutarse con `service_role`.
+
+## Reglas permanentes
 
 - Nunca exponer `service_role` al navegador.
-- RLS y GRANT son capas distintas; ambas deben probarse.
-- Ninguna autorización usa nombre del hotel ni `user_metadata` editable.
-- RPC privilegiado valida `auth.uid`/actor, hotel, rol y entidad antes de escribir.
-- Otro hotel obtiene ausencia/denegación, no información inferible.
-- Referencias, metadata y logs permanecen mínimos; nunca tokens ni cuerpo completo del correo.
+- RLS y GRANT son capas distintas y ambas se prueban.
+- Ninguna autorización usa el nombre del hotel ni `user_metadata` editable.
+- Todo RPC privilegiado valida actor, hotel, rol y entidades antes de escribir.
+- Un usuario de otro hotel recibe ausencia o denegación, sin información inferible.
+- Referencias, metadata y logs permanecen mínimos; nunca incluyen tokens ni el cuerpo completo del correo.
+- Las acciones avanzadas siguen separadas del flujo operativo de Caja.
 
 ## Rollback de permisos
 
-Cada migración guardará los grants previos en su documento de despliegue. El rollback restaura funciones/grants específicos; nunca se concede UPDATE general a tablas financieras para resolver un 403.
+Cada migración conserva su procedimiento de rollback. El rollback restaura funciones o grants específicos; nunca concede `UPDATE` general a tablas financieras para resolver un error de autorización.

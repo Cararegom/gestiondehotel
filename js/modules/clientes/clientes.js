@@ -2,6 +2,7 @@
 
 // Importaciones de utilidades UI
 import { showError, showSuccess, showLoading, clearFeedback } from '../../uiUtils.js';
+import { escapeAttribute, escapeHtml } from '../../security.js';
 import {
     buildCampaignActivityRows,
     buildCampaignSuggestions,
@@ -10,6 +11,10 @@ import {
 } from '../../services/crmCommercialService.js';
 import { confirmDestructiveAction } from '../../services/destructiveConfirmationService.js';
 import { registrarAccionSensible } from '../../services/sensitiveAuditService.js';
+import {
+    getRuntimeHotelTimeZone,
+    getUtcRangeForHotelDates
+} from '../../services/hotelTimeZoneService.js';
 
 // NOTA IMPORTANTE sobre Chart.js y SheetJS:
 // Si no estás usando un 'bundler' como Webpack o Vite que maneje las importaciones de npm,
@@ -75,8 +80,8 @@ function renderClienteDescuentos(descuentos) {
         <div class="mb-3 p-4 border border-blue-200 rounded-lg bg-blue-50 shadow-sm">
             <div class="flex justify-between items-start">
                 <div>
-                    <h5 class="font-bold text-blue-800 text-lg">${d.nombre}</h5>
-                    ${d.codigo ? `<p class="font-mono text-sm bg-blue-100 text-blue-700 px-2 py-0.5 rounded inline-block my-1">${d.codigo}</p>` : '<p class="text-sm text-gray-600">Automático</p>'}
+                    <h5 class="font-bold text-blue-800 text-lg">${escapeHtml(d.nombre)}</h5>
+                    ${d.codigo ? `<p class="font-mono text-sm bg-blue-100 text-blue-700 px-2 py-0.5 rounded inline-block my-1">${escapeHtml(d.codigo)}</p>` : '<p class="text-sm text-gray-600">Automático</p>'}
                 </div>
                 <span class="text-xl font-bold text-blue-600">${d.tipo === 'porcentaje' ? `${d.valor}%` : formatCurrency(d.valor)}</span>
             </div>
@@ -236,14 +241,14 @@ function renderCRMInsightsHeader() {
                     <div class="rounded-xl border border-white bg-white px-4 py-4 shadow-sm">
                         <div class="flex items-start justify-between gap-3">
                             <div>
-                                <div class="font-semibold text-slate-800">${campaign.title}</div>
-                                <div class="text-sm text-slate-500 mt-1">${campaign.description}</div>
+                                <div class="font-semibold text-slate-800">${escapeHtml(campaign.title)}</div>
+                                <div class="text-sm text-slate-500 mt-1">${escapeHtml(campaign.description)}</div>
                             </div>
                             <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">${campaign.targetEntries.length} cliente(s)</span>
                         </div>
                         <div class="mt-3 flex items-center justify-between gap-3">
-                            <div class="text-xs text-slate-500">Canal sugerido: <b>${campaign.channel}</b></div>
-                            <button class="button button-primary button-small" data-action="run-crm-campaign" data-campaign-id="${campaign.id}" ${campaign.targetEntries.length === 0 ? 'disabled' : ''}>Generar tareas</button>
+                            <div class="text-xs text-slate-500">Canal sugerido: <b>${escapeHtml(campaign.channel)}</b></div>
+                            <button class="button button-primary button-small" data-action="run-crm-campaign" data-campaign-id="${escapeAttribute(campaign.id)}" ${campaign.targetEntries.length === 0 ? 'disabled' : ''}>Generar tareas</button>
                         </div>
                     </div>
                 `).join('')}
@@ -268,7 +273,7 @@ async function ejecutarCampanaCRM(campaignId) {
         ? await Swal.fire({
             icon: 'question',
             title: campaign.title,
-            html: `Se crearán <b>${campaign.targetEntries.length}</b> actividades CRM pendientes usando el canal sugerido <b>${campaign.channel}</b>.`,
+            html: `Se crearán <b>${campaign.targetEntries.length}</b> actividades CRM pendientes usando el canal sugerido <b>${escapeHtml(campaign.channel)}</b>.`,
             showCancelButton: true,
             confirmButtonText: 'Generar tareas',
             cancelButtonText: 'Cancelar'
@@ -423,6 +428,31 @@ function getFechaFiltro() {
 // --- OPERACIONES DE DATOS CON SUPABASE ---
 
 /**
+ * Convierte el rango de fechas del formulario en límites UTC de la zona del hotel.
+ * El límite final es exclusivo para incluir completo el último día seleccionado.
+ */
+export function getClientCreatedAtUtcRange(dateRange = {}, timeZone = getRuntimeHotelTimeZone()) {
+    const startDate = String(dateRange?.inicio || '').trim();
+    const endDate = String(dateRange?.fin || '').trim();
+
+    if (!startDate && !endDate) {
+        return { timeZone, startIso: null, endExclusiveIso: null };
+    }
+
+    const range = getUtcRangeForHotelDates(
+        startDate || endDate,
+        endDate || startDate,
+        timeZone
+    );
+
+    return {
+        timeZone: range.timeZone,
+        startIso: startDate ? range.startIso : null,
+        endExclusiveIso: endDate ? range.endExclusiveIso : null
+    };
+}
+
+/**
  * Obtiene todos los clientes para el hotel actual, con opciones de búsqueda y filtrado por rango de fechas.
  * @param {object} params - Objeto que contiene hotelId, cadena de búsqueda y rango de fechas.
  * @returns {Array} Un array de objetos de cliente.
@@ -448,14 +478,12 @@ export async function getClientes({ hotelId, search = '', dateRange = {} } = {})
             query = query.or(`nombre.ilike.%${searchLower}%,email.ilike.%${searchLower}%,documento.ilike.%${searchLower}%,telefono.ilike.%${searchLower}%`);
         }
 
-        if (dateRange.inicio) {
-            query = query.gte('fecha_creado', dateRange.inicio);
+        const createdAtRange = getClientCreatedAtUtcRange(dateRange);
+        if (createdAtRange.startIso) {
+            query = query.gte('fecha_creado', createdAtRange.startIso);
         }
-        if (dateRange.fin) {
-            // Añadir un día a la fecha fin para incluir todos los registros de ese día
-            const endDatePlusOne = new Date(dateRange.fin);
-            endDatePlusOne.setDate(endDatePlusOne.getDate() + 1);
-            query = query.lt('fecha_creado', endDatePlusOne.toISOString().split('T')[0]);
+        if (createdAtRange.endExclusiveIso) {
+            query = query.lt('fecha_creado', createdAtRange.endExclusiveIso);
         }
 
         let { data, error } = await query.order('fecha_creado', { ascending: false });
@@ -584,7 +612,7 @@ async function cargarYRenderizarClientes() {
 async function toggleEstadoCliente(clienteId, clienteNombre, nuevoEstado) {
     const accionTexto = nuevoEstado ? 'activar' : 'inactivar';
     const titulo = nuevoEstado ? '¿Activar Cliente?' : '¿Inactivar Cliente?';
-    const html = `¿Estás seguro de que quieres <b>${accionTexto}</b> al cliente "<b>${clienteNombre}</b>"?`;
+    const html = `¿Estás seguro de que quieres <b>${accionTexto}</b> al cliente "<b>${escapeHtml(clienteNombre)}</b>"?`;
 
     const result = await Swal.fire({
         title: titulo,
@@ -665,13 +693,13 @@ function renderTablaClientes(clientes) {
                         : '<span class="px-2 py-1 text-xs font-semibold leading-5 text-red-800 bg-red-100 rounded-full">Inactivo</span>';
 
                     const botonToggle = esActivo
-                        ? `<button class="button button-danger button-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md" data-id="${cli.id}" data-nombre="${cli.nombre}" data-action="toggle-estado" data-estado-actual="true">Inactivar</button>`
-                        : `<button class="button button-success button-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md" data-id="${cli.id}" data-nombre="${cli.nombre}" data-action="toggle-estado" data-estado-actual="false">Activar</button>`;
+                        ? `<button class="button button-danger button-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md" data-id="${escapeAttribute(cli.id)}" data-nombre="${escapeAttribute(cli.nombre)}" data-action="toggle-estado" data-estado-actual="true">Inactivar</button>`
+                        : `<button class="button button-success button-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-md" data-id="${escapeAttribute(cli.id)}" data-nombre="${escapeAttribute(cli.nombre)}" data-action="toggle-estado" data-estado-actual="false">Activar</button>`;
                     // --- FIN DE LA LÓGICA DINÁMICA ---
 
                     return `
                         <tr class="hover:bg-blue-50 transition-colors duration-150 ease-in-out ${filaEstilo}">
-                            <td class="py-2 px-4 border-b border-gray-200">${cli.nombre || ''}</td>
+                            <td class="py-2 px-4 border-b border-gray-200">${escapeHtml(cli.nombre || '')}</td>
                             <td class="py-2 px-4 border-b border-gray-200">
                                 <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${insight.badgeClass}">${insight.label}</span>
                                 <div class="text-[11px] text-gray-500 mt-1">${insight.visitsCount} visita(s) • ${insight.pendingActivities} pendiente(s)</div>
@@ -680,12 +708,12 @@ function renderTablaClientes(clientes) {
                                 <div class="font-semibold text-slate-700">${formatCurrency(insight.totalSpend)}</div>
                                 <div class="text-[11px] text-gray-500">Última visita: ${formatInsightDate(insight.lastVisitDate)}</div>
                             </td>
-                            <td class="py-2 px-4 border-b border-gray-200">${cli.documento || ''}</td>
-                            <td class="py-2 px-4 border-b border-gray-200">${cli.telefono || ''}</td>
+                            <td class="py-2 px-4 border-b border-gray-200">${escapeHtml(cli.documento || '')}</td>
+                            <td class="py-2 px-4 border-b border-gray-200">${escapeHtml(cli.telefono || '')}</td>
                             <td class="py-2 px-4 border-b border-gray-200 text-center">${estadoBadge}</td>
                             <td class="py-2 px-4 border-b border-gray-200 whitespace-nowrap">
-                                <button class="button button-accent button-sm bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-md mr-2" data-id="${cli.id}" data-action="ver">Ver</button>
-                                <button class="button button-primary button-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md mr-2" data-id="${cli.id}" data-action="editar">Editar</button>
+                                <button class="button button-accent button-sm bg-purple-500 hover:bg-purple-600 text-white px-3 py-1 rounded-md mr-2" data-id="${escapeAttribute(cli.id)}" data-action="ver">Ver</button>
+                                <button class="button button-primary button-sm bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-md mr-2" data-id="${escapeAttribute(cli.id)}" data-action="editar">Editar</button>
                                 ${botonToggle}
                             </td>
                         </tr>
@@ -777,32 +805,32 @@ export function mostrarFormularioCliente(clienteId = null, supabase, hotelId, op
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div class="form-group mb-3 md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Nombre *</label>
-                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="nombre" required value="${cliente?.nombre || ''}">
+                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="nombre" required value="${escapeAttribute(cliente?.nombre || '')}">
                     </div>
                     <div class="form-group mb-3">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Documento</label>
-                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="documento" value="${cliente?.documento || ''}">
+                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="documento" value="${escapeAttribute(cliente?.documento || '')}">
                     </div>
                     <div class="form-group mb-3">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="email" type="email" value="${cliente?.email || ''}">
+                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="email" type="email" value="${escapeAttribute(cliente?.email || '')}">
                     </div>
                     <div class="form-group mb-3">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
-                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="telefono" value="${cliente?.telefono || ''}">
+                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="telefono" value="${escapeAttribute(cliente?.telefono || '')}">
                     </div>
                     <div class="form-group mb-3">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
-                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="direccion" value="${cliente?.direccion || ''}">
+                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="direccion" value="${escapeAttribute(cliente?.direccion || '')}">
                     </div>
                     <div class="form-group mb-3 md:col-span-2">
                         <label class="block text-sm font-medium text-gray-700 mb-1">Fecha de nacimiento</label>
-                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="fecha_nacimiento" type="date" value="${cliente?.fecha_nacimiento ? cliente.fecha_nacimiento.substr(0, 10) : ''}">
+                        <input class="form-control w-full p-2 border border-gray-300 rounded-md" name="fecha_nacimiento" type="date" value="${escapeAttribute(cliente?.fecha_nacimiento ? cliente.fecha_nacimiento.substr(0, 10) : '')}">
                     </div>
                 </div>
                 <div class="form-group mb-4">
                     <label class="block text-sm font-medium text-gray-700 mb-1">Notas</label>
-                    <textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-24" name="notas">${cliente?.notas || ''}</textarea>
+                    <textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-24" name="notas">${escapeHtml(cliente?.notas || '')}</textarea>
                 </div>
                 <div id="feedback-form-cliente" class="mb-3 text-center"></div>
                 <div class="flex justify-end gap-2 mt-4">
@@ -922,7 +950,7 @@ async function mostrarHistorialCliente(clienteId) {
     modal.innerHTML = `
         <div class="modal-content bg-white rounded-xl shadow-2xl p-6 max-w-4xl mx-auto w-full relative h-5/6 flex flex-col">
             <button class="modal-close-button absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl font-bold">&times;</button>
-            <h3 class="text-2xl font-bold mb-4 border-b pb-2">Detalles de Cliente: ${cliente.nombre}</h3>
+            <h3 class="text-2xl font-bold mb-4 border-b pb-2">Detalles de Cliente: ${escapeHtml(cliente.nombre)}</h3>
             <div class="tabs flex border-b border-gray-200 mb-4 bg-gray-50 rounded-t-lg overflow-hidden">
                 <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="datos-generales">Datos Generales</button>
                 <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="historial-visitas">Historial de Visitas</button>
@@ -938,10 +966,10 @@ async function mostrarHistorialCliente(clienteId) {
                                 <div class="text-xs uppercase tracking-wide text-slate-500 font-semibold">Perfil comercial</div>
                                 <div class="mt-2 flex items-center gap-2">
                                     <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${clienteInsight.badgeClass}">${clienteInsight.label}</span>
-                                    <span class="text-sm text-slate-500">Canal sugerido: <b>${clienteInsight.preferredChannel}</b></span>
+                                    <span class="text-sm text-slate-500">Canal sugerido: <b>${escapeHtml(clienteInsight.preferredChannel)}</b></span>
                                 </div>
                             </div>
-                            <div class="text-sm text-slate-500">Próxima acción sugerida: <b class="text-slate-700">${getNextCRMAction(clienteInsight)}</b></div>
+                            <div class="text-sm text-slate-500">Próxima acción sugerida: <b class="text-slate-700">${escapeHtml(getNextCRMAction(clienteInsight))}</b></div>
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mt-4">
                             <div class="rounded-xl bg-white border border-slate-200 px-3 py-3">
@@ -964,14 +992,14 @@ async function mostrarHistorialCliente(clienteId) {
                     </div>
                     <form id="form-cliente-detail">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="nombre" value="${cliente.nombre || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Documento</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="documento" value="${cliente.documento || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Email</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="email" type="email" value="${cliente.email || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="telefono" value="${cliente.telefono || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="direccion" value="${cliente.direccion || ''}"></div>
-                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Fecha de nacimiento</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="fecha_nacimiento" type="date" value="${cliente.fecha_nacimiento ? cliente.fecha_nacimiento.substr(0, 10) : ''}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="nombre" value="${escapeAttribute(cliente.nombre || '')}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Documento</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="documento" value="${escapeAttribute(cliente.documento || '')}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Email</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="email" type="email" value="${escapeAttribute(cliente.email || '')}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="telefono" value="${escapeAttribute(cliente.telefono || '')}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="direccion" value="${escapeAttribute(cliente.direccion || '')}"></div>
+                            <div class="form-group"><label class="block text-sm font-medium text-gray-700 mb-1">Fecha de nacimiento</label><input class="form-control w-full p-2 border border-gray-300 rounded-md" name="fecha_nacimiento" type="date" value="${escapeAttribute(cliente.fecha_nacimiento ? cliente.fecha_nacimiento.substr(0, 10) : '')}"></div>
                         </div>
-                        <div class="form-group mt-4"><label class="block text-sm font-medium text-gray-700 mb-1">Notas</label><textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-24" name="notas">${cliente.notas || ''}</textarea></div>
+                        <div class="form-group mt-4"><label class="block text-sm font-medium text-gray-700 mb-1">Notas</label><textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-24" name="notas">${escapeHtml(cliente.notas || '')}</textarea></div>
                         <div id="feedback-form-cliente-detail" class="mt-3 text-center"></div>
                         <div class="flex justify-end gap-2 mt-4"><button type="submit" class="button button-success bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md">Guardar Cambios</button></div>
                     </form>
@@ -1165,15 +1193,15 @@ function setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventas
                 listItem.innerHTML = `
                     <div class="space-y-3">
                         <h6 class="font-bold text-base">Editando Actividad</h6>
-                        <textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-20" id="edit-desc-${activity.id}">${activity.descripcion}</textarea>
+                        <textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-20" id="edit-desc-${escapeAttribute(activity.id)}">${escapeHtml(activity.descripcion)}</textarea>
                         <div class="flex gap-3">
-                            <select class="form-control flex-grow p-2 border border-gray-300 rounded-md" id="edit-estado-${activity.id}">
+                            <select class="form-control flex-grow p-2 border border-gray-300 rounded-md" id="edit-estado-${escapeAttribute(activity.id)}">
                                 <option value="pendiente" ${activity.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
                                 <option value="completada" ${activity.estado === 'completada' ? 'selected' : ''}>Completada</option>
                                 <option value="reagendada" ${activity.estado === 'reagendada' ? 'selected' : ''}>Reagendada</option>
                                 <option value="cancelada" ${activity.estado === 'cancelada' ? 'selected' : ''}>Cancelada</option>
                             </select>
-                            <button class="button button-success py-1 px-3" data-action="save-crm-edit" data-id="${activity.id}">Guardar</button>
+                            <button class="button button-success py-1 px-3" data-action="save-crm-edit" data-id="${escapeAttribute(activity.id)}">Guardar</button>
                             <button class="button button-neutral py-1 px-3" data-action="cancel-crm-edit">Cancelar</button>
                         </div>
                     </div>
@@ -1237,7 +1265,7 @@ function renderReservas(reservas) {
     return reservas.map(r => `
         <li class="mb-1 p-2 bg-gray-50 rounded border border-gray-200">
             <strong>Fecha:</strong> ${formatDate(r.fecha_inicio)} -
-            <strong>Habitación:</strong> ${r.habitaciones?.nombre || 'N/A'} -
+            <strong>Habitación:</strong> ${escapeHtml(r.habitaciones?.nombre || 'N/A')} -
             <strong>Total:</strong> ${formatCurrency(r.monto_total || 0)}
         </li>
     `).join('');
@@ -1260,21 +1288,21 @@ function renderActividades(arr) {
     };
 
     return arr.map(a => `
-        <li class="actividad-item mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-sm" data-activity-id="${a.id}">
+        <li class="actividad-item mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-sm" data-activity-id="${escapeAttribute(a.id)}">
             <div class="flex justify-between items-start">
                 <div class="flex-grow">
                     <div class="flex items-center gap-3 mb-1">
-                        <span class="font-bold text-blue-800 text-base">${a.tipo}</span>
-                        <span class="px-2 py-0.5 text-xs font-semibold rounded-full ${estadoColores[a.estado] || 'bg-gray-100 text-gray-800'}">${a.estado || 'Pendiente'}</span>
+                        <span class="font-bold text-blue-800 text-base">${escapeHtml(a.tipo)}</span>
+                        <span class="px-2 py-0.5 text-xs font-semibold rounded-full ${estadoColores[a.estado] || 'bg-gray-100 text-gray-800'}">${escapeHtml(a.estado || 'Pendiente')}</span>
                     </div>
-                    <p class="text-gray-700 text-sm mb-2">${a.descripcion || ''}</p>
+                    <p class="text-gray-700 text-sm mb-2">${escapeHtml(a.descripcion || '')}</p>
                     <p class="text-xs text-gray-500">Registrado: ${formatDate(a.fecha)}</p>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0 ml-4">
-                    <button data-action="edit-crm" data-id="${a.id}" title="Editar Actividad" class="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-md">
+                    <button data-action="edit-crm" data-id="${escapeAttribute(a.id)}" title="Editar Actividad" class="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-md">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
                     </button>
-                    <button data-action="delete-crm" data-id="${a.id}" title="Eliminar Actividad" class="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded-md">
+                    <button data-action="delete-crm" data-id="${escapeAttribute(a.id)}" title="Eliminar Actividad" class="p-1.5 text-gray-500 hover:text-red-600 hover:bg-gray-100 rounded-md">
                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
                     </button>
                 </div>
@@ -1342,8 +1370,8 @@ function renderDetalleGastos(reservas, ventas, ventasTienda, ventasRestaurante) 
                 ${allTransactions.map(t => `
                     <tr class="hover:bg-gray-50">
                         <td class="py-2 px-3 border-b border-gray-200">${formatDate(t.date)}</td>
-                        <td class="py-2 px-3 border-b border-gray-200">${t.type}</td>
-                        <td class="py-2 px-3 border-b border-gray-200">${t.description}</td>
+                        <td class="py-2 px-3 border-b border-gray-200">${escapeHtml(t.type)}</td>
+                        <td class="py-2 px-3 border-b border-gray-200">${escapeHtml(t.description)}</td>
                         <td class="py-2 px-3 border-b border-gray-200 text-right font-medium">${formatCurrency(t.amount)}</td>
                     </tr>
                 `).join('')}
@@ -1515,12 +1543,12 @@ export async function showClienteSelectorModal(supabaseManual, hotelIdManual, op
 
     listaDiv.innerHTML = filtrados.map(c => `
       <div class="p-4 bg-white hover:bg-green-50 cursor-pointer transition-colors duration-150"
-           data-id="${c.id}"
-           data-nombre="${c.nombre}"
-           data-documento="${c.documento || ''}"
-           data-telefono="${c.telefono || ''}">
-        <div class="font-medium text-gray-800">${c.nombre}</div>
-        <div class="text-sm text-gray-500">${c.documento || 'Sin documento'} • ${c.telefono || 'Sin teléfono'}</div>
+           data-id="${escapeAttribute(c.id)}"
+           data-nombre="${escapeAttribute(c.nombre)}"
+           data-documento="${escapeAttribute(c.documento || '')}"
+           data-telefono="${escapeAttribute(c.telefono || '')}">
+        <div class="font-medium text-gray-800">${escapeHtml(c.nombre)}</div>
+        <div class="text-sm text-gray-500">${escapeHtml(c.documento || 'Sin documento')} • ${escapeHtml(c.telefono || 'Sin teléfono')}</div>
       </div>
     `).join('');
 

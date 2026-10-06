@@ -68,6 +68,11 @@ test('restaurant refuses recipe-less plates and supports repairing affected COGS
   assert.match(restaurantUi, /Sin receta · no vendible/);
   assert.match(restaurantUi, /Un plato activo debe tener al menos un ingrediente/);
   assert.match(ui, /reprocesar_cmv_restaurante/);
+  assert.match(ui, /Configura la receta real del plato y vuelve a recalcular/);
+  assert.match(ui, /gestionhotel\.costeo\.filter/);
+  assert.match(ui, /gestionhotel\.costeo\.returnTo/);
+  assert.match(ui, /Volver al estado de resultados/);
+  assert.match(ui, /#\/restaurante\?tab=platos&plato=/);
 });
 
 test('restaurant recipes are replaced atomically through an authorized RPC', () => {
@@ -76,6 +81,8 @@ test('restaurant recipes are replaced atomically through an authorized RPC', () 
   assert.match(recipeWriteSql, /DELETE FROM public\.platos_recetas/);
   assert.match(recipeWriteSql, /No repitas ingredientes/);
   assert.match(restaurantUi, /rpc\('guardar_receta_plato_atomica'/);
+  assert.match(restaurantUi, /gestionhotel\.restaurante\.focusRecipe/);
+  assert.match(restaurantUi, /Completa la receta real del plato señalado/);
   assert.doesNotMatch(restaurantUi, /from\('platos_recetas'\)\.delete/);
 });
 

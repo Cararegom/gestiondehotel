@@ -32,5 +32,8 @@ test('Control de Energía parsea como módulo ES real', () => {
 
 test('asset publicado usa cache-bust posterior al hotfix', () => {
   const html = readFileSync(join(ROOT, 'app/index.html'), 'utf8');
-  assert.match(html, /control-energia-20260902\.js\?v=2/);
+  const main = readFileSync(join(ROOT, 'js/main.js'), 'utf8');
+  assert.doesNotMatch(html, /control-energia-20260902\.js/);
+  assert.match(html, /\/js\/main\.js\?v=20260910-c6-camera-1/);
+  assert.match(main, /control-energia\.js\?v=20260910-c6-camera-1/);
 });

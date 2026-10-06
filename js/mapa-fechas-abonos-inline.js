@@ -1,13 +1,12 @@
 import { formatInTimeZone, getRuntimeHotelTimeZone } from './services/hotelTimeZoneService.js';
+import { MAPA_ACCOUNT_MODAL_RENDERED_EVENT } from './modules/mapa-habitaciones/mapa-ui-events.js';
 
-const ACTIVE_RESERVATION_STATES = ['activa', 'ocupada', 'tiempo agotado'];
 const PATCH_VERSION = 'v4';
 const ROW_MARKER = 'paymentDateInlineReady';
-const RETRY_MS = 1200;
-const POLL_MS = 500;
 
-const lastAttemptByModal = new WeakMap();
-let pollTimer = null;
+let renderedListener = null;
+let renderGeneration = 0;
+let runtimeContext = null;
 
 function normalizeText(value) {
   return String(value || '')
@@ -35,20 +34,6 @@ function formatPaymentDate(value) {
     minute: '2-digit',
     hour12: true
   });
-}
-
-function getVisibleAccountModal() {
-  const buttons = Array.from(document.querySelectorAll('#btn-imprimir-pos-local'));
-  for (const button of buttons) {
-    const modal = button.closest('.bg-white') || button.closest('#modal-container > div');
-    if (modal && document.body.contains(modal)) return modal;
-  }
-  return null;
-}
-
-function getRoomName(modalRoot) {
-  const title = modalRoot?.querySelector('h3')?.textContent?.trim() || '';
-  return title.replace(/^Detalle de Cuenta:\s*/i, '').trim();
 }
 
 function getServiceRows(modalRoot) {
@@ -139,51 +124,20 @@ function removeDuplicatePaymentLists(modalRoot) {
   ).forEach((element) => element.remove());
 }
 
-async function resolveRoom(supabase, hotelId, roomName) {
-  const { data, error } = await supabase
-    .from('habitaciones')
-    .select('id, nombre')
-    .eq('hotel_id', hotelId);
-
-  if (error) throw error;
-  const normalizedTarget = normalizeText(roomName);
-  return (data || []).find((room) => normalizeText(room?.nombre) === normalizedTarget) || null;
-}
-
-async function loadPaymentContext(modalRoot) {
-  const supabase = window.supabase;
-  const hotelId = window.hotelIdGlobal;
-  const roomName = getRoomName(modalRoot);
-
-  if (!supabase || !hotelId || !roomName) return null;
-
-  const room = await resolveRoom(supabase, hotelId, roomName);
-  if (!room?.id) return null;
-
-  const { data: reservation, error: reservationError } = await supabase
-    .from('reservas')
-    .select('id, fecha_inicio')
-    .eq('hotel_id', hotelId)
-    .eq('habitacion_id', room.id)
-    .in('estado', ACTIVE_RESERVATION_STATES)
-    .order('fecha_inicio', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (reservationError) throw reservationError;
-  if (!reservation?.id) return null;
+export async function loadPaymentContext(supabase, hotelId, reservationId) {
+  if (!supabase || !hotelId || !reservationId) return null;
 
   const [servicesResult, paymentsResult] = await Promise.all([
     supabase
       .from('servicios_x_reserva')
       .select('id, descripcion_manual, precio_cobrado, estado_pago, pago_reserva_id, fecha_servicio, creado_en, servicio:servicios_adicionales(nombre)')
       .eq('hotel_id', hotelId)
-      .eq('reserva_id', reservation.id),
+      .eq('reserva_id', reservationId),
     supabase
       .from('pagos_reserva')
       .select('id, fecha_pago')
       .eq('hotel_id', hotelId)
-      .eq('reserva_id', reservation.id)
+      .eq('reserva_id', reservationId)
   ]);
 
   if (servicesResult.error) throw servicesResult.error;
@@ -195,23 +149,25 @@ async function loadPaymentContext(modalRoot) {
   };
 }
 
-async function patchVisibleAccountModal() {
-  const modalRoot = getVisibleAccountModal();
-  if (!modalRoot) return;
-
+async function patchAccountModal(modalRoot, reservationId, generation) {
   removeDuplicatePaymentLists(modalRoot);
 
   const serviceRows = getServiceRows(modalRoot);
   if (serviceRows.length === 0) return;
   if (serviceRows.every((row) => row.dataset[ROW_MARKER] === PATCH_VERSION)) return;
 
-  const lastAttempt = lastAttemptByModal.get(modalRoot) || 0;
-  if (Date.now() - lastAttempt < RETRY_MS) return;
-  lastAttemptByModal.set(modalRoot, Date.now());
-
   try {
-    const context = await loadPaymentContext(modalRoot);
-    if (!context || !document.body.contains(modalRoot)) return;
+    const context = await loadPaymentContext(
+      runtimeContext?.supabase,
+      runtimeContext?.hotelId,
+      reservationId,
+    );
+    if (
+      !context
+      || generation !== renderGeneration
+      || !runtimeContext
+      || !document.body.contains(modalRoot)
+    ) return;
 
     const paymentById = new Map(context.payments.map((payment) => [payment.id, payment]));
     const paidServices = context.services.filter((service) => (
@@ -236,26 +192,29 @@ async function patchVisibleAccountModal() {
   }
 }
 
-function startReliableWatcher() {
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(() => {
-    patchVisibleAccountModal();
-  }, POLL_MS);
-
-  if (typeof MutationObserver !== 'undefined' && document.body) {
-    const observer = new MutationObserver(() => {
-      patchVisibleAccountModal();
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+export function unmountMapaPaymentDates() {
+  if (renderedListener && typeof document !== 'undefined') {
+    document.removeEventListener(MAPA_ACCOUNT_MODAL_RENDERED_EVENT, renderedListener);
   }
 
-  patchVisibleAccountModal();
+  renderedListener = null;
+  runtimeContext = null;
+  renderGeneration += 1;
 }
 
-if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startReliableWatcher, { once: true });
-  } else {
-    startReliableWatcher();
-  }
+export function mountMapaPaymentDates({ supabase, hotelId } = {}) {
+  unmountMapaPaymentDates();
+  if (!supabase || !hotelId || typeof document === 'undefined') return;
+
+  runtimeContext = { supabase, hotelId };
+  renderedListener = (event) => {
+    const modalRoot = event?.detail?.modalRoot;
+    const reservationId = event?.detail?.reservationId;
+    if (!modalRoot || !reservationId) return;
+
+    const generation = ++renderGeneration;
+    void patchAccountModal(modalRoot, reservationId, generation);
+  };
+
+  document.addEventListener(MAPA_ACCOUNT_MODAL_RENDERED_EVENT, renderedListener);
 }

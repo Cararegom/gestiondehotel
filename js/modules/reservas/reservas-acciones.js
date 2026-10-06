@@ -1,9 +1,11 @@
+import { RESERVA_OPERATIONAL_STATES } from './reservas-operacion.js';
+
 export function getAccionesReservaHTML(reserva, currentUser) {
     let actions = '';
     const baseClass = 'button text-xs px-3 py-2 rounded-xl shadow-sm font-semibold disabled:opacity-50';
     const estado = reserva.estado;
 
-    if (['reservada', 'confirmada', 'activa'].includes(estado) && reserva.pendiente > 0) {
+    if (RESERVA_OPERATIONAL_STATES.includes(estado) && reserva.pendiente > 0) {
         actions += `<button class="${baseClass} bg-green-500 hover:bg-green-600 text-white" data-action="abonar" data-id="${reserva.id}">Abonar</button>`;
     }
     if (['reservada', 'confirmada'].includes(estado)) {
@@ -41,6 +43,8 @@ export function getAccionesReservaHTML(reserva, currentUser) {
         }
 
         case 'activa':
+        case 'ocupada':
+        case 'tiempo agotado':
             actions += `<button class="${baseClass} bg-teal-500 hover:bg-teal-600 text-white" data-action="checkout" data-id="${reserva.id}" data-habitacion-id="${reserva.habitacion_id}">Check-out</button>`;
             break;
 

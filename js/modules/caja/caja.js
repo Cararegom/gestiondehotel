@@ -8,6 +8,7 @@ import {
   showSuccess
 } from '../../uiUtils.js';
 import { escapeHtml } from '../../security.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
 import {
   createInitialMovementTableState,
   getFilteredMovements as getFilteredMovementsData,
@@ -34,7 +35,7 @@ import {
   procesarMovimientosParaReporte
 } from './caja-cierre.js';
 import {
-  mostrarLogEliminados as mostrarLogEliminadosPanel,
+  mostrarHistorialReversiones as mostrarHistorialReversionesPanel,
   mostrarTurnosAbiertos as mostrarTurnosAbiertosPanel
 } from './caja-paneles.js';
 
@@ -196,9 +197,10 @@ async function loadAndRenderMovements(tBodyEl, summaryEls, turnoId, movementRefs
   });
 }
 
-async function mostrarLogEliminados() {
-  return mostrarLogEliminadosPanel({
-    supabase: currentSupabaseInstance
+async function mostrarHistorialReversiones() {
+  return mostrarHistorialReversionesPanel({
+    supabase: currentSupabaseInstance,
+    hotelId: currentHotelId
   });
 }
 
@@ -240,7 +242,7 @@ async function renderizarUIAbierta() {
     const turnoParaMostrar = turnoEnSupervision || turnoActivo;
     
     if (!turnoParaMostrar) {
-        console.error("Se intentó renderizar UI abierta sin un turno válido.");
+        reportHandledError('caja', 'open_ui_without_shift');
         renderizarUICerrada();
         return;
     }
@@ -302,7 +304,7 @@ async function renderizarUIAbierta() {
             <div class="flex flex-wrap items-center gap-2 xl:justify-end">
             ${isAdmin ? `
               <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver turnos abiertos</button>
-              <button id="btn-ver-eliminados" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver eliminados</button>
+              <button id="btn-ver-reversiones" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver reversiones</button>
             ` : ''}
               <button id="btn-cerrar-turno" class="button ${esModoSupervision ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold py-2.5 px-5 rounded-2xl shadow-lg shadow-black/10">
                 ${esModoSupervision ? 'Forzar cierre de este turno' : 'Preparar corte de caja'}
@@ -556,11 +558,11 @@ async function renderizarUIAbierta() {
             verTurnosBtn.addEventListener('click', handler);
             moduleListeners.push({ element: verTurnosBtn, type: 'click', handler });
         }
-        const verEliminadosBtn = currentContainerEl.querySelector('#btn-ver-eliminados');
-        if (verEliminadosBtn) {
-            const handler = () => mostrarLogEliminados();
-            verEliminadosBtn.addEventListener('click', handler);
-            moduleListeners.push({ element: verEliminadosBtn, type: 'click', handler: handler });
+        const verReversionesBtn = currentContainerEl.querySelector('#btn-ver-reversiones');
+        if (verReversionesBtn) {
+            const handler = () => mostrarHistorialReversiones();
+            verReversionesBtn.addEventListener('click', handler);
+            moduleListeners.push({ element: verReversionesBtn, type: 'click', handler });
         }
     }
     

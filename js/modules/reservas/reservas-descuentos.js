@@ -4,6 +4,7 @@ import {
   normalizarCodigoDescuento,
   seleccionarDescuentoPreferido
 } from '../../services/descuentosService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
 
 export async function buscarDescuentoParaReserva({
   supabase,
@@ -38,7 +39,7 @@ export async function buscarDescuentoParaReserva({
       })
     );
   } catch (error) {
-    console.error('Error buscando descuentos de reserva:', error);
+    reportHandledError('reservas', 'discount_lookup_failed', error);
     return null;
   }
 }
