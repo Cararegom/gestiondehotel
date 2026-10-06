@@ -8,6 +8,12 @@ import { escapeHtml, installLegacyTextNormalizer } from './security.js';
 import { initInternalSupportChat, destroyInternalSupportChat } from './app-support-chat.js';
 import { initPWAExperience } from './services/pwaService.js';
 import { getBankPaymentPilotStatus } from './services/bankPaymentService.js';
+import {
+  ASEO_DEFAULT_HASH,
+  ASEO_ROLE_KEY,
+  isAseoModuleAllowed,
+  isAseoRoleName
+} from './services/aseoRoleService.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -188,6 +194,10 @@ function isRecepcionistaRole(value) {
   return normalizeRoleKey(value) === 'recepcionista';
 }
 
+function isAseoRole(value) {
+  return value === ASEO_ROLE_KEY;
+}
+
 function canCurrentUserPrepareEnergy(user = getCurrentUser()) {
   if (!user || !currentActiveHotel) return false;
   return Boolean(
@@ -216,6 +226,7 @@ function resolveOperationalRole(perfil = null, isSuperadmin = false) {
   if (assignedRoleNames.some((roleName) => roleName === 'administrador' || roleName === 'admin')) return 'admin';
   if (assignedRoleNames.some(isMeseroRole)) return 'mesero';
   if (assignedRoleNames.some((roleName) => roleName === 'recepcionista')) return 'recepcionista';
+  if (isAseoRoleName(directRole) || assignedRoleNames.some(isAseoRoleName)) return ASEO_ROLE_KEY;
 
   return directRole || 'usuario';
 }
@@ -255,6 +266,7 @@ function getDefaultHashForCurrentRole() {
   if (currentUserRole === 'superadmin') return '#/ops-saas';
   if (isMeseroRole(currentUserRole) && isTerrazaEnabledForActiveHotel()) return '#/terraza';
   if (isMeseroRole(currentUserRole)) return '#/caja';
+  if (isAseoRole(currentUserRole)) return ASEO_DEFAULT_HASH;
   return '#/dashboard';
 }
 
@@ -317,7 +329,9 @@ function scheduleModuleWarmup(currentRole = null) {
     ? ['/ops-saas', '/bitacora', '/soporte']
     : isMeseroRole(currentRole)
       ? ['/terraza', '/caja']
-      : ['/dashboard', '/operacion-hoy', '/reservas', '/mapa-habitaciones', '/caja', '/onboarding'];
+      : isAseoRole(currentRole)
+        ? ['/limpieza', '/mapa-habitaciones']
+        : ['/dashboard', '/operacion-hoy', '/reservas', '/mapa-habitaciones', '/caja', '/onboarding'];
 
   const runner = () => {
     preloadRoutes.forEach((path) => {
@@ -429,6 +443,19 @@ function renderNavigation(user) {
     navLinksConfig.forEach((linkConfig) => {
       if (!MESERO_ALLOWED_MODULES.has(linkConfig.moduleKey)) return;
       if (linkConfig.moduleKey === 'terraza' && !isTerrazaEnabledForActiveHotel()) return;
+
+      const a = buildNavLinkElement(linkConfig);
+      if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
+    });
+    return;
+  }
+
+  // Aseo: solo Mapa (lectura), Limpieza y el escaner de energia si esta activo.
+  if (isAseoRole(currentUserRole)) {
+    if (isSubscriptionFueraDeGracia) return;
+    navLinksConfig.forEach((linkConfig) => {
+      if (!isAseoModuleAllowed(linkConfig.moduleKey)) return;
+      if (linkConfig.energyOnly && !currentEnergyControlEnabled) return;
 
       const a = buildNavLinkElement(linkConfig);
       if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
@@ -682,6 +709,13 @@ async function router() {
 
     if (userForModule && isMeseroRole(currentUserRole) && !MESERO_ALLOWED_MODULES.has(moduleKeyFromRoute)) {
       window.location.hash = canCurrentUserAccessTerraza(hotelIdForModule) ? '#/terraza' : '#/caja';
+      hideGlobalLoading();
+      routerBusy = false;
+      return;
+    }
+
+    if (userForModule && isAseoRole(currentUserRole) && !isAseoModuleAllowed(moduleKeyFromRoute)) {
+      window.location.hash = ASEO_DEFAULT_HASH;
       hideGlobalLoading();
       routerBusy = false;
       return;

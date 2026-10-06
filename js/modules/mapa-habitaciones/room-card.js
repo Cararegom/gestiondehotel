@@ -2,6 +2,7 @@ import { estadoColores, getAmenityIcon, playPopSound } from './helpers.js';
 import { clearTodosLosCronometros, startCronometro } from './cronometro-habitacion.js';
 import { showHabitacionOpcionesModal } from './modales-gestion.js';
 import { escapeAttribute, escapeHtml, sanitizeUrl } from '../../security.js';
+import { isAseoReadOnlyUser } from '../../services/aseoRoleService.js';
 
 function resolveRoomFloor(room) {
     const pisoRaw = room?.piso;
@@ -287,11 +288,12 @@ export function renderFloorFilters(currentRooms, filterContainer, toolbarContain
             return;
         }
 
+        const readOnly = isAseoReadOnlyUser(currentUser);
         roomsToRender.forEach((room) => {
             const card = roomCard(room, supabase, currentUser, hotelId, mainAppContainer);
             gridEl.appendChild(card);
 
-            if (room.estado === 'ocupada' || room.estado === 'tiempo agotado') {
+            if (!readOnly && (room.estado === 'ocupada' || room.estado === 'tiempo agotado')) {
                 const reservaActiva = getActiveReservation(room);
                 startCronometro(room, reservaActiva, gridEl, playPopSound);
             }
@@ -570,6 +572,8 @@ function buildAmenitiesHtml(room) {
 }
 
 export function roomCard(room, supabase, currentUser, hotelId, mainAppContainer) {
+    if (isAseoReadOnlyUser(currentUser)) return readOnlyRoomCard(room);
+
     const colorClass = estadoColores[room.estado] || estadoColores.default;
     const tipoLabel = getRoomTypeLabel(room);
     const safeRoomName = escapeHtml(room.nombre || 'Habitacion');
@@ -638,6 +642,32 @@ export function roomCard(room, supabase, currentUser, hotelId, mainAppContainer)
         </div>
     `;
 
+    return div;
+}
+
+// Tarjeta para personal de aseo: solo nombre, tipo y estado. No abre el modal
+// de gestion ni muestra huespedes, reservas, cobros o alertas.
+export function readOnlyRoomCard(room) {
+    const colorClass = estadoColores[room.estado] || estadoColores.default;
+    const div = document.createElement('div');
+    div.className = `room-card room-card-readonly relative bg-white rounded-xl shadow-sm border-2 ${colorClass} cursor-default overflow-hidden min-h-[110px] flex flex-col justify-between`;
+    div.dataset.readOnly = 'true';
+    div.innerHTML = `
+        <div class="p-3 flex-grow flex flex-col">
+            <div class="flex justify-between items-start">
+                <div>
+                    <h3 class="font-bold text-gray-900 text-xl tracking-tight leading-none">${escapeHtml(room.nombre || 'Habitacion')}</h3>
+                    <div class="flex items-center text-xs text-slate-500 font-medium mt-1">
+                        ${getTipoIcon(room)}
+                        <span class="truncate max-w-[140px]">${escapeHtml(getRoomTypeLabel(room))}</span>
+                    </div>
+                </div>
+                <span class="badge ${getBadgeBackgroundColor(room.estado)} ml-2 px-2 py-1 text-[10px] uppercase font-bold rounded shadow-sm border border-black/5">
+                    ${escapeHtml(room.estado || 'N/A')}
+                </span>
+            </div>
+        </div>
+    `;
     return div;
 }
 
