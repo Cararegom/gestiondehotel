@@ -22,6 +22,7 @@
     "tailwindcss": "^4.1.10"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "esbuild": "0.25.5",
     "tailwindcss3": "npm:tailwindcss@3.4.17"
   },
