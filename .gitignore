@@ -10,3 +10,6 @@ supabase/.env
 supabase/.temp/
 .codex-staging-deploy/
 .codex-remote-schema-audit.sql
+
+# Configuracion personal de Claude Code
+.claude/settings.local.json
