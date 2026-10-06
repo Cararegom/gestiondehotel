@@ -1,6 +1,6 @@
 # Auditoria RLS y Permisos
 
-Generado: 2026-10-05T20:16:09.792Z
+Generado: 2026-10-06T01:49:36.097Z
 
 ## Resumen
 
