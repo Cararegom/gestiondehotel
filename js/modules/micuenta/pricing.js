@@ -10,17 +10,17 @@ export const PROMO_BIENVENIDA_DESCUENTO = 0.5;
 
 export function alertaVencimientoHTML(diasRestantes, estado, enGracia) {
   if (enGracia) {
-    return `<div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 mb-6 rounded">
+    return `<div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 mb-6 rounded-sm">
       <b>Tu ciclo terminó.</b> El hotel sigue operativo por <b>${diasRestantes}</b> días de gracia. Renueva antes del bloqueo.
     </div>`;
   }
   if (estado === 'vencido') {
-    return `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 mb-6 rounded">
+    return `<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 mb-6 rounded-sm">
       <b>Tu suscripción está vencida y el período de gracia terminó.</b> Renueva para reactivar el acceso completo del hotel.
     </div>`;
   }
   if (diasRestantes <= 3 && estado !== 'trial') {
-    return `<div class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-900 p-3 mb-6 rounded">
+    return `<div class="bg-yellow-50 border-l-4 border-yellow-400 text-yellow-900 p-3 mb-6 rounded-sm">
       <b>Tu suscripción vence pronto.</b> Quedan <b>${diasRestantes}</b> días para renovar o cambiar de plan.
     </div>`;
   }
@@ -123,14 +123,14 @@ export function getPromoBienvenidaHTML(promoStatus, periodoActual) {
     : `El ${promoStatus.porcentaje}% OFF aplica solo en pagos mensuales. Si eliges anual, se mantienen los 2 meses gratis del plan anual.`;
 
   return `
-    <div class="mb-6 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 via-white to-lime-50 p-4 shadow-sm">
+    <div class="mb-6 rounded-2xl border border-amber-200 bg-linear-to-r from-amber-50 via-white to-lime-50 p-4 shadow-xs">
       <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
         <div>
           <div class="text-sm font-semibold uppercase tracking-wide text-amber-700">Promoción de bienvenida activa</div>
           <div class="mt-1 text-base font-semibold text-slate-800">Primer mes gratis + 3 meses al 50% para cuentas nuevas.</div>
           <div class="mt-1 text-sm text-slate-600">${mensajePeriodo}</div>
         </div>
-        <div class="rounded-xl bg-white px-4 py-3 text-sm shadow-sm border border-amber-100">
+        <div class="rounded-xl bg-white px-4 py-3 text-sm shadow-xs border border-amber-100">
           <div class="font-semibold text-slate-800">Te quedan ${promoStatus.mesesRestantes} de ${PROMO_BIENVENIDA_MESES} meses promocionales</div>
           <div class="text-slate-500">El siguiente sería tu mes promocional ${promoStatus.siguienteMesPromo}.</div>
         </div>

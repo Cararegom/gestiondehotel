@@ -28,7 +28,7 @@ function renderReservaForm(deps) {
   const fechaDefault = formatDateInputValue(new Date(Date.now() + 60 * 60 * 1000));
 
   return `
-    <form id="terraza-reserva-form" class="overflow-hidden rounded-xl border border-purple-100 bg-white shadow-sm">
+    <form id="terraza-reserva-form" class="overflow-hidden rounded-xl border border-purple-100 bg-white shadow-xs">
       <div class="border-b border-purple-100 bg-purple-50 px-5 py-4 md:px-6">
         <div class="flex flex-col justify-between gap-3 md:flex-row md:items-center">
           <div>
@@ -141,7 +141,7 @@ function renderReservasList(deps) {
   }
 
   return `
-    <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div class="rounded-xl border border-slate-200 bg-white shadow-xs">
       <div class="border-b border-slate-200 p-4">
         <h3 class="font-bold text-slate-800">Reservas registradas</h3>
         <p class="mt-1 text-xs text-slate-500">Activa la reserva cuando el cliente llegue para abrir la cuenta con el anticipo consumible.</p>

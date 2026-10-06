@@ -65,7 +65,7 @@ function renderPendientes(pendientes, listEl, feedbackEl) {
   listEl.innerHTML = `
     <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
       ${pendientes.map(room => `
-        <div class="limpieza-card animate-fadeIn p-5 bg-blue-50 rounded-xl shadow flex flex-col md:flex-row items-center gap-4 border border-blue-100">
+        <div class="limpieza-card animate-fadeIn p-5 bg-blue-50 rounded-xl shadow-sm flex flex-col md:flex-row items-center gap-4 border border-blue-100">
           <div class="flex flex-col items-center justify-center">
             <div class="bg-blue-200 rounded-full p-4 text-4xl mb-1 shadow-inner">🧹</div>
             <div class="text-xs text-blue-500 mt-1 uppercase tracking-wide">PENDIENTE</div>
@@ -78,7 +78,7 @@ function renderPendientes(pendientes, listEl, feedbackEl) {
           <button 
             data-id="${room.id}" 
             data-nombre="${room.nombre}" 
-            data-tipo-id="${room.tipo_habitacion_id || ''}" class="btn-confirm-clean bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 rounded-lg text-base shadow transition-all duration-150 hover:scale-105"
+            data-tipo-id="${room.tipo_habitacion_id || ''}" class="btn-confirm-clean bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-2 rounded-lg text-base shadow-sm transition-all duration-150 hover:scale-105"
           >
             ✔ Confirmar Limpieza
           </button>
@@ -185,7 +185,7 @@ function formatDateTime(dateStr, locale = 'es-CO', options = { dateStyle: 'mediu
 async function showHistorialArticulosModal() {
     const modalEl = document.createElement('div');
     modalEl.id = 'historial-articulos-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     modalEl.innerHTML = `
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-3xl p-6 m-auto relative animate-fadeIn" style="animation: fadeIn 0.2s;">
             <div class="flex justify-between items-center mb-4 pb-3 border-b">
@@ -295,7 +295,7 @@ async function showModalConfirmarLimpieza(roomId, roomNombre, tipoHabitacionId, 
     
     const modalEl = document.createElement('div');
     modalEl.id = 'registro-inventario-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     
     const amenidadesHtml = itemsAmenidades.length > 0 ? `
         <div id="tab-amenidades" class="tab-content space-y-3">
@@ -347,7 +347,7 @@ async function showModalConfirmarLimpieza(roomId, roomNombre, tipoHabitacionId, 
                 <div class="mt-4 grid gap-3">
                     ${CLEANING_CHECKLIST_ITEMS.map((item) => `
                         <label class="flex items-center gap-3 rounded-lg border border-teal-100 bg-white px-3 py-2 text-sm text-slate-700">
-                            <input type="checkbox" name="checklist_${item.key}" class="h-4 w-4 rounded border-slate-300 text-teal-600" checked>
+                            <input type="checkbox" name="checklist_${item.key}" class="h-4 w-4 rounded-sm border-slate-300 text-teal-600" checked>
                             <span>${item.label}</span>
                         </label>
                     `).join('')}
@@ -491,7 +491,7 @@ async function showModalGestionLavanderia() {
 
     const modalEl = document.createElement('div');
     modalEl.id = 'gestion-lavanderia-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     modalEl.innerHTML = `
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl p-6 m-auto relative animate-fadeIn"> 
             <div class="flex justify-between items-center mb-4 pb-3 border-b">
@@ -502,12 +502,12 @@ async function showModalGestionLavanderia() {
             
             <div class="mb-6">
                 <h4 class="font-semibold text-lg text-gray-800 mb-2">Estado del Inventario</h4>
-                <div id="stock-lenceria-container" class="max-h-[30vh] overflow-y-auto pr-2 border rounded p-3 bg-gray-50">
+                <div id="stock-lenceria-container" class="max-h-[30vh] overflow-y-auto pr-2 border rounded-sm p-3 bg-gray-50">
                     <p class="text-center text-gray-500">Cargando stock...</p>
                 </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <form id="form-crear-lenceria" class="p-4 border rounded shadow-sm bg-green-50 relative">
+                <form id="form-crear-lenceria" class="p-4 border rounded-sm shadow-xs bg-green-50 relative">
                     ${!isAdmin ? '<div class="absolute inset-0 bg-gray-100/50 flex items-center justify-center text-gray-500 font-bold z-10">Solo Admin</div>' : ''}
                     <h4 class="font-semibold text-lg text-green-800 mb-3">✨ Crear Lencería</h4>
                     <div class="mb-3"><label>Nombre:</label><input type="text" name="nombre_item" class="form-control" required></div>
@@ -515,13 +515,13 @@ async function showModalGestionLavanderia() {
                     <div class="mb-3"><label>Mínimo:</label><input type="number" name="stock_minimo" class="form-control" required></div>
                     <button type="submit" class="button button-success w-full" ${!isAdmin ? 'disabled' : ''}>Crear</button>
                 </form>
-                <form id="form-recibir-lavanderia" class="p-4 border rounded shadow-sm bg-blue-50">
+                <form id="form-recibir-lavanderia" class="p-4 border rounded-sm shadow-xs bg-blue-50">
                     <h4 class="font-semibold text-lg text-blue-800 mb-3">✅ Recibir Limpio</h4>
                     <div class="mb-3"><label>Item:</label><select id="select-item-recibir" name="item_id" class="form-control" required></select></div>
                     <div class="mb-3"><label>Cantidad:</label><input type="number" name="cantidad" class="form-control" required></div>
                     <button type="submit" class="button button-info w-full">Confirmar</button>
                 </form>
-                <form id="form-reportar-perdida" class="p-4 border rounded shadow-sm bg-red-50">
+                <form id="form-reportar-perdida" class="p-4 border rounded-sm shadow-xs bg-red-50">
                     <h4 class="font-semibold text-lg text-red-800 mb-3">🚨 Reportar Pérdida</h4>
                     <div class="mb-3"><label>Item:</label><select id="select-item-perdida" name="item_id" class="form-control" required></select></div>
                     <div class="mb-3"><label>Cantidad:</label><input type="number" name="cantidad" class="form-control" required></div>
@@ -620,7 +620,7 @@ async function showModalGestionInventario() {
 
     const modalEl = document.createElement('div');
     modalEl.id = 'gestion-inventario-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     
     modalEl.innerHTML = `
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl p-6 m-auto relative animate-fadeIn">
@@ -633,13 +633,13 @@ async function showModalGestionInventario() {
 
             <div class="mb-6">
                 <h4 class="font-semibold text-lg text-gray-800 mb-2">Stock Actual</h4>
-                <div id="stock-actual-container" class="max-h-[35vh] overflow-y-auto pr-2 border rounded p-3 bg-gray-50">
+                <div id="stock-actual-container" class="max-h-[35vh] overflow-y-auto pr-2 border rounded-sm p-3 bg-gray-50">
                     <p class="text-center text-gray-500">Cargando stock...</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <form id="form-add-stock" class="p-4 border rounded shadow-sm bg-blue-50">
+                <form id="form-add-stock" class="p-4 border rounded-sm shadow-xs bg-blue-50">
                     <h4 class="font-semibold text-lg text-blue-800 mb-3">⚖️ Ajuste de Stock (Admin)</h4>
                     <div class="mb-3">
                         <label class="form-label">Artículo:</label>
@@ -659,7 +659,7 @@ async function showModalGestionInventario() {
                     </button>
                 </form>
 
-                <form id="form-create-item" class="p-4 border rounded shadow-sm">
+                <form id="form-create-item" class="p-4 border rounded-sm shadow-xs">
                     <h4 class="font-semibold text-lg text-gray-800 mb-3">✨ Crear Nueva Amenidad</h4>
                     <div class="mb-3">
                         <label class="form-label">Nombre del Artículo:</label>
@@ -809,7 +809,7 @@ async function showModalGestionInventario() {
 async function showModalReporteConsumo() {
     const modalEl = document.createElement('div');
     modalEl.id = 'reporte-consumo-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     const hoy = new Date(), hace30Dias = new Date(new Date().setDate(hoy.getDate() - 30));
     const fechaFinDefault = hoy.toISOString().split('T')[0], fechaInicioDefault = hace30Dias.toISOString().split('T')[0];
     modalEl.innerHTML = `
@@ -903,7 +903,7 @@ async function showModalReporteConsumo() {
 async function showModalReporteLenceria() {
     const modalEl = document.createElement('div');
     modalEl.id = 'reporte-lenceria-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     const hoy = new Date(), hace30Dias = new Date(new Date().setDate(hoy.getDate() - 30));
     const fechaFinDefault = hoy.toISOString().split('T')[0], fechaInicioDefault = hace30Dias.toISOString().split('T')[0];
     modalEl.innerHTML = `
@@ -1010,7 +1010,7 @@ async function showModalReporteLenceria() {
 async function showModalReporteInventario() {
     const modalEl = document.createElement('div');
     modalEl.id = 'reporte-inventario-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     modalEl.innerHTML = `<div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 m-auto relative animate-fadeIn"><p class="text-center text-gray-500 py-8">Cargando reporte de stock...</p></div>`;
     document.body.appendChild(modalEl);
     try {
@@ -1195,7 +1195,7 @@ async function showModalGestionPrestables() {
 
     const modalEl = document.createElement('div');
     modalEl.id = 'gestion-prestables-modal';
-    modalEl.className = "fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto";
+    modalEl.className = "fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto";
     modalEl.innerHTML = `
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-4xl p-6 m-auto relative animate-fadeIn">
             <div class="flex justify-between items-center mb-4 pb-3 border-b">
@@ -1206,19 +1206,19 @@ async function showModalGestionPrestables() {
             
             <div class="mb-6">
                 <h4 class="font-semibold text-lg text-gray-800 mb-2">Stock Actual</h4>
-                <div id="stock-prestables-container" class="max-h-[30vh] overflow-y-auto pr-2 border rounded p-3 bg-gray-50">
+                <div id="stock-prestables-container" class="max-h-[30vh] overflow-y-auto pr-2 border rounded-sm p-3 bg-gray-50">
                     <p class="text-center text-gray-500">Cargando stock...</p>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <form id="form-add-stock-prestable" class="p-4 border rounded shadow-sm bg-indigo-50">
+                <form id="form-add-stock-prestable" class="p-4 border rounded-sm shadow-xs bg-indigo-50">
                     <h4 class="font-semibold text-lg text-indigo-800 mb-3">🛠️ Ajustar Stock</h4>
                     <div class="mb-3"><label>Item:</label><select id="select-item-stock-prestable" name="item_id" class="form-control" required></select></div>
                     <div class="mb-3"><label>Cantidad:</label><input type="number" name="cantidad" class="form-control" required placeholder="Positivo/Negativo"></div>
                     <button type="submit" class="button button-accent w-full" ${!isAdmin?'disabled':''}>Ajustar</button>
                 </form>
-                <form id="form-create-item-prestable" class="p-4 border rounded shadow-sm">
+                <form id="form-create-item-prestable" class="p-4 border rounded-sm shadow-xs">
                     <h4 class="font-semibold text-lg text-gray-800 mb-3">✨ Crear Nuevo</h4>
                     <div class="mb-3"><label>Nombre:</label><input type="text" name="nombre_item" class="form-control" required></div>
                     <div class="grid grid-cols-2 gap-4">
@@ -1323,7 +1323,7 @@ export async function mount(container, supabaseInst, currentUser) {
   console.log(`[Limpieza Module] Rol de usuario detectado: ${currentUserRole}`);
 
   if (!currentHotelId) {
-    container.innerHTML = `<p class="p-4 bg-red-100 text-red-700 rounded">Error: Hotel no identificado.</p>`;
+    container.innerHTML = `<p class="p-4 bg-red-100 text-red-700 rounded-sm">Error: Hotel no identificado.</p>`;
     return;
   }
 
@@ -1333,7 +1333,7 @@ export async function mount(container, supabaseInst, currentUser) {
   <div class="w-full px-2 py-8">
     <div class="bg-white rounded-2xl shadow-xl p-6 mb-4 flex flex-col md:flex-row items-center justify-between gap-4">
         
-        <div class="flex-grow text-center md:text-left">
+        <div class="grow text-center md:text-left">
             <h2 class="text-2xl font-bold text-blue-900 flex items-center gap-2">🧽 Gestión de Limpieza e Inventario</h2>
             <div class="text-blue-600 mt-2 font-medium text-sm">Confirme la limpieza y reporte el uso de inventario.</div>
         </div>

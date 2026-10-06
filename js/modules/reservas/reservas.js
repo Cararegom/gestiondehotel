@@ -481,7 +481,7 @@ function renderPricingRulesPanel() {
             ].filter(Boolean).join(' | ');
 
             return `
-                <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div>
                             <p class="text-sm font-bold text-slate-900">${escapeHtml(rule.nombre || 'Regla')}</p>
@@ -644,7 +644,7 @@ function renderWaitlistPanel() {
         const roomLabel = item.habitacion_id ? 'Habitacion deseada' : 'Sin habitacion fija';
 
         return `
-            <article class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm">
+            <article class="rounded-[24px] border border-slate-200 bg-white p-4 shadow-xs">
                 <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
                         <div class="flex flex-wrap items-center gap-2">
@@ -2609,13 +2609,13 @@ export async function mount(container, supabaseClient, user, hotelId) {
 
 container.innerHTML = `
     <div class="max-w-7xl mx-auto mt-8 px-4 pb-10">
-        <section class="relative overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.14),_transparent_34%),linear-gradient(135deg,_#ffffff,_#f8fbff_48%,_#f1f5f9)] p-6 shadow-[0_22px_80px_-36px_rgba(15,23,42,0.55)] md:p-8">
+        <section class="relative overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,rgba(37,99,235,0.14),transparent_34%),linear-gradient(135deg,#ffffff,#f8fbff_48%,#f1f5f9)] p-6 shadow-[0_22px_80px_-36px_rgba(15,23,42,0.55)] md:p-8">
             <div class="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-blue-200/30 blur-3xl"></div>
             <div class="absolute bottom-0 right-0 h-28 w-28 rounded-full bg-emerald-200/30 blur-2xl"></div>
             <div class="relative flex flex-col gap-6">
                 <div class="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div class="max-w-3xl">
-                        <div class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-blue-700 shadow-sm">
+                        <div class="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-blue-700 shadow-xs">
                             Centro de Reservas
                         </div>
                         <h2 id="form-title" class="mt-4 text-3xl font-black tracking-tight text-slate-900 md:text-4xl">Registrar Nueva Reserva</h2>
@@ -2624,12 +2624,12 @@ container.innerHTML = `
                         </p>
                     </div>
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:min-w-[360px]">
-                        <div class="rounded-2xl border border-white/70 bg-white/85 p-4 shadow-sm backdrop-blur">
+                        <div class="rounded-2xl border border-white/70 bg-white/85 p-4 shadow-xs backdrop-blur-sm">
                             <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Politica de cobro</p>
                             <p id="reservas-policy-pill" class="mt-2 text-lg font-bold text-slate-900">Cargando...</p>
                             <p class="mt-1 text-xs text-slate-500">Se actualiza segun la configuracion del hotel.</p>
                         </div>
-                        <div class="rounded-2xl border border-white/70 bg-slate-900 p-4 text-white shadow-sm">
+                        <div class="rounded-2xl border border-white/70 bg-slate-900 p-4 text-white shadow-xs">
                             <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-300">Ultima actualizacion</p>
                             <p id="reservas-last-update" class="mt-2 text-lg font-bold">Sin datos</p>
                             <p class="mt-1 text-xs text-slate-300">La vista se refresca al guardar o filtrar.</p>
@@ -2638,22 +2638,22 @@ container.innerHTML = `
                 </div>
 
                 <div class="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
+                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-xs backdrop-blur-sm">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Activas</p>
                         <p id="reservas-kpi-activas" class="mt-2 text-3xl font-black text-slate-900">0</p>
                         <p class="mt-1 text-xs text-slate-500">Reservadas, confirmadas y activas</p>
                     </article>
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
+                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-xs backdrop-blur-sm">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Llegan Hoy</p>
                         <p id="reservas-kpi-llegadas" class="mt-2 text-3xl font-black text-blue-700">0</p>
                         <p class="mt-1 text-xs text-slate-500">Check-ins programados para hoy</p>
                     </article>
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
+                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-xs backdrop-blur-sm">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Con Saldo</p>
                         <p id="reservas-kpi-pendientes" class="mt-2 text-3xl font-black text-amber-600">0</p>
                         <p class="mt-1 text-xs text-slate-500">Reservas con pago pendiente</p>
                     </article>
-                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm backdrop-blur">
+                    <article class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-xs backdrop-blur-sm">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Historial</p>
                         <p id="reservas-kpi-historial" class="mt-2 text-3xl font-black text-emerald-700">0</p>
                         <p class="mt-1 text-xs text-slate-500">Completadas, canceladas y no show</p>
@@ -2662,8 +2662,8 @@ container.innerHTML = `
             </div>
         </section>
 
-        <form id="reserva-form" class="relative mt-8 space-y-8 overflow-hidden rounded-[32px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,_rgba(37,99,235,0.12),_transparent_24%),linear-gradient(180deg,_#ffffff,_#f8fbff)] p-6 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.45)] md:p-8">
-            <div class="grid gap-4 rounded-[26px] border border-slate-200 bg-white/85 p-5 shadow-sm lg:grid-cols-[1.15fr_0.85fr]">
+        <form id="reserva-form" class="relative mt-8 space-y-8 overflow-hidden rounded-[32px] border border-slate-200 bg-[radial-gradient(circle_at_top_right,rgba(37,99,235,0.12),transparent_24%),linear-gradient(180deg,#ffffff,#f8fbff)] p-6 shadow-[0_24px_80px_-36px_rgba(15,23,42,0.45)] md:p-8">
+            <div class="grid gap-4 rounded-[26px] border border-slate-200 bg-white/85 p-5 shadow-xs lg:grid-cols-[1.15fr_0.85fr]">
                 <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-blue-700">Reserva Studio</p>
                     <h3 class="mt-2 text-2xl font-black tracking-tight text-slate-900">Una vista mas limpia para registrar reservas sin perder contexto</h3>
@@ -2685,38 +2685,38 @@ container.innerHTML = `
                 </div>
             </div>
             <div class="grid gap-4 md:grid-cols-3">
-                <div class="rounded-[24px] border border-blue-100 bg-[linear-gradient(180deg,_#ffffff,_#eef5ff)] px-4 py-4 shadow-sm">
+                <div class="rounded-[24px] border border-blue-100 bg-[linear-gradient(180deg,#ffffff,#eef5ff)] px-4 py-4 shadow-xs">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Paso 1</p>
                     <p class="mt-2 text-base font-bold text-slate-900">Selecciona o crea el cliente</p>
                     <p class="mt-1 text-sm text-slate-500">Busca uno existente o diligencia los datos manualmente.</p>
                 </div>
-                <div class="rounded-[24px] border border-indigo-100 bg-[linear-gradient(180deg,_#ffffff,_#f4f3ff)] px-4 py-4 shadow-sm">
+                <div class="rounded-[24px] border border-indigo-100 bg-[linear-gradient(180deg,#ffffff,#f4f3ff)] px-4 py-4 shadow-xs">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Paso 2</p>
                     <p class="mt-2 text-base font-bold text-slate-900">Configura estancia y valor</p>
                     <p class="mt-1 text-sm text-slate-500">Define fechas, habitacion, cantidad de huespedes y descuentos.</p>
                 </div>
-                <div class="rounded-[24px] border border-emerald-100 bg-[linear-gradient(180deg,_#ffffff,_#ecfdf5)] px-4 py-4 shadow-sm">
+                <div class="rounded-[24px] border border-emerald-100 bg-[linear-gradient(180deg,#ffffff,#ecfdf5)] px-4 py-4 shadow-xs">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Paso 3</p>
                     <p class="mt-2 text-base font-bold text-slate-900">Registra el pago</p>
                     <p class="mt-1 text-sm text-slate-500">Aplica el metodo correspondiente y guarda la reserva.</p>
                 </div>
             </div>
 
-            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fafcff)] p-6 shadow-sm">
+            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#fafcff)] p-6 shadow-xs">
                 <legend class="px-3 text-lg font-bold text-slate-700">1. Datos del Cliente</legend>
                 <p class="mb-4 text-sm text-slate-500">Manten la ficha del huesped ordenada desde el inicio para agilizar futuras reservas y check-ins.</p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
                     <div class="md:col-span-2">
                         <label for="cliente_search_input" class="font-semibold text-sm text-gray-700 block mb-1">Buscar Cliente Existente</label>
                         <div class="flex items-center gap-2">
-                            <input name="cliente_search_input" id="cliente_search_input" class="form-control flex-grow" placeholder="Click en 'Buscar' para abrir el selector" readonly/>
+                            <input name="cliente_search_input" id="cliente_search_input" class="form-control grow" placeholder="Click en 'Buscar' para abrir el selector" readonly/>
                             <button type="button" id="btn_buscar_cliente" class="button button-info">Buscar</button>
                             <button type="button" id="btn_crear_cliente" class="button button-success p-2 rounded-full" title="Crear Nuevo Cliente">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
                             </button>
                         </div>
                         <input type="hidden" name="cliente_id_hidden" id="cliente_id_hidden" />
-                        <div id="cliente_nombre_display" class="mt-3 hidden flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-800 shadow-sm">
+                        <div id="cliente_nombre_display" class="mt-3 hidden flex items-center justify-between rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-800 shadow-xs">
                             <div><strong class="mr-2">Cliente:</strong> <span id="selected_client_name"></span></div>
                             <button type="button" id="btn_clear_cliente" class="text-red-500 font-bold text-lg leading-none" title="Deseleccionar cliente">&times;</button>
                         </div>
@@ -2741,7 +2741,7 @@ container.innerHTML = `
                 </div>
             </fieldset>
 
-           <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fbff)] p-6 shadow-sm">
+           <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#f8fbff)] p-6 shadow-xs">
     <legend class="px-3 text-lg font-bold text-slate-700">2. Detalles de la Reserva</legend>
     <p class="mb-4 text-sm text-slate-500">Calcula la estancia con mayor claridad y deja visibles las decisiones clave para recepcion.</p>
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
@@ -2793,23 +2793,23 @@ container.innerHTML = `
         </div>
 </fieldset>
             
-            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fcfffe)] p-6 shadow-sm">
+            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#fcfffe)] p-6 shadow-xs">
                 <legend class="px-3 text-lg font-bold text-slate-700">Descuento</legend>
                 <p class="mb-4 text-sm text-slate-500">Aplica promociones manuales o valida descuentos del cliente antes de confirmar.</p>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 items-center">
                     <div>
                         <label for="codigo-descuento-reserva" class="font-semibold text-sm text-gray-700">Codigo de descuento (opcional)</label>
                         <div class="flex items-center gap-2 mt-1">
-                            <input type="text" id="codigo-descuento-reserva" class="form-control flex-grow" placeholder="PROMO2025">
+                            <input type="text" id="codigo-descuento-reserva" class="form-control grow" placeholder="PROMO2025">
                             <button type="button" id="btn-aplicar-descuento-reserva" class="button button-info">Aplicar</button>
                         </div>
                         <div id="feedback-descuento-reserva" class="text-xs mt-1 h-4"></div>
                     </div>
-                    <div id="descuento-resumen-reserva" class="text-sm text-green-600 bg-green-50 p-3 rounded-2xl border border-green-200 shadow-sm" style="display: none;">
+                    <div id="descuento-resumen-reserva" class="text-sm text-green-600 bg-green-50 p-3 rounded-2xl border border-green-200 shadow-xs" style="display: none;">
                         </div>
                 </div>
             </fieldset>
-            <div class="overflow-hidden rounded-[28px] border border-blue-200 bg-[linear-gradient(135deg,_#eff6ff,_#ffffff_55%,_#ecfeff)] shadow-[0_24px_60px_-34px_rgba(37,99,235,0.45)]">
+            <div class="overflow-hidden rounded-[28px] border border-blue-200 bg-[linear-gradient(135deg,#eff6ff,#ffffff_55%,#ecfeff)] shadow-[0_24px_60px_-34px_rgba(37,99,235,0.45)]">
                 <div class="grid gap-4 p-5 md:grid-cols-[1.1fr_0.9fr] md:items-center">
                     <div>
                         <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-blue-700">Resumen en vivo</p>
@@ -2823,11 +2823,11 @@ container.innerHTML = `
                 </div>
             </div>
 
-            <div id="payment-message-checkout" class="hidden rounded-[22px] border border-orange-200 bg-orange-50 p-4 text-center text-sm text-orange-700 shadow-sm">
+            <div id="payment-message-checkout" class="hidden rounded-[22px] border border-orange-200 bg-orange-50 p-4 text-center text-sm text-orange-700 shadow-xs">
                 La politica del hotel es <strong class="font-semibold">Cobro al Check-out</strong>. Los detalles del pago se gestionaran al finalizar la estancia.
             </div>
 
-            <fieldset id="fieldset-pago-adicionales" class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fefefe)] p-6 shadow-sm">
+            <fieldset id="fieldset-pago-adicionales" class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#fefefe)] p-6 shadow-xs">
                  <legend class="px-3 text-lg font-bold text-slate-700">3. Pago y adicionales</legend>
                  <p class="mb-4 text-sm text-slate-500">Deja claro si la reserva entra con abono, pago completo o si el cobro queda para salida.</p>
                  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
@@ -2854,7 +2854,7 @@ container.innerHTML = `
                  </div>
             </fieldset>
 
-            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#fafafa)] p-6 shadow-sm">
+            <fieldset class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#fafafa)] p-6 shadow-xs">
                 <legend class="px-3 text-lg font-bold text-slate-700">4. Notas</legend>
                 <p class="mb-4 text-sm text-slate-500">Usa este espacio para observaciones operativas relevantes para recepcion y limpieza.</p>
                 <div>
@@ -2872,7 +2872,7 @@ container.innerHTML = `
         <div id="reserva-feedback" class="mt-6"></div>
 
         <section class="mt-10 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <div class="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fbff)] p-6 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.42)]">
+            <div class="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#f8fbff)] p-6 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.42)]">
                 <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                         <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Revenue control</p>
@@ -2952,7 +2952,7 @@ container.innerHTML = `
             </section>
         </section>
 
-        <section class="mt-10 overflow-hidden rounded-[32px] border border-slate-200 bg-[linear-gradient(180deg,_#fffdf7,_#ffffff)] p-6 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.42)]">
+        <section class="mt-10 overflow-hidden rounded-[32px] border border-slate-200 bg-[linear-gradient(180deg,#fffdf7,#ffffff)] p-6 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.42)]">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Operacion comercial</p>
@@ -2968,13 +2968,13 @@ container.innerHTML = `
             <div id="reservas-waitlist-list" class="mt-5 space-y-4"></div>
         </section>
 
-        <section class="mt-10 overflow-hidden rounded-[32px] border border-slate-200 bg-[linear-gradient(180deg,_#f8fafc,_#ffffff)] p-6 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.42)]">
+        <section class="mt-10 overflow-hidden rounded-[32px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc,#ffffff)] p-6 shadow-[0_18px_60px_-36px_rgba(15,23,42,0.42)]">
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h3 class="text-2xl font-bold text-slate-800">Historial y busqueda de reservas</h3>
                     <p class="text-sm text-slate-600">Filtra por fecha, recepcionista, fuente comercial o turno para revisar reservas registradas y encontrar rapido cualquier movimiento.</p>
                 </div>
-                <div id="reservas-history-summary" class="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm"></div>
+                <div id="reservas-history-summary" class="rounded-[22px] border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-xs"></div>
             </div>
 
             <div class="mt-5 grid gap-4 md:grid-cols-3">
@@ -3039,16 +3039,16 @@ container.innerHTML = `
                     </select>
                 </div>
                 <div class="flex items-end gap-3 xl:col-span-4">
-                    <button type="submit" class="button button-info rounded-2xl px-5 py-3 shadow-sm">Buscar</button>
+                    <button type="submit" class="button button-info rounded-2xl px-5 py-3 shadow-xs">Buscar</button>
                     <button type="button" id="btn-limpiar-filtros-reservas" class="button button-neutral rounded-2xl px-5 py-3">Limpiar filtros</button>
                 </div>
             </form>
         </section>
 
-        <div id="reservas-list" class="mt-8 rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"></div>
+        <div id="reservas-list" class="mt-8 rounded-[28px] border border-slate-200 bg-white p-5 shadow-xs"></div>
     </div>
     
-    <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4" style="display:none;"></div>
+    <div id="modal-container-secondary" class="fixed inset-0 z-200 flex items-center justify-center bg-black/60 p-4" style="display:none;"></div>
 `;
 
     // --- 3. INICIALIZAR REFERENCIAS A LA UI ---

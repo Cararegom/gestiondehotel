@@ -94,7 +94,7 @@ export function getIntegrationStatusChip(status) {
 
 export function renderCatalogCards(items = []) {
   return items.map((item) => `
-    <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
       <div class="flex items-start justify-between gap-3">
         <div>
           <p class="text-xs uppercase tracking-[0.22em] text-slate-400">${escapeHtml(item.category)}</p>
@@ -131,7 +131,7 @@ export function renderRequestList(requests = []) {
   return `
     <div class="space-y-3">
       ${requests.map((request) => `
-        <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p class="text-xs uppercase tracking-[0.22em] text-slate-400">${escapeHtml(request.categoria || 'integracion')}</p>

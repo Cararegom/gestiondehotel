@@ -161,7 +161,7 @@ function renderMobileCard(task, roomMap, userMap) {
   const overdue = isOverdue(task);
   const category = getQuickMaintenanceCategory(task.categoria_mantenimiento || 'otro');
   return `
-    <article class="rounded-2xl border ${isBlockingTask(task) && isOpenTaskState(task.estado) ? 'border-red-200 bg-red-50/30' : 'border-slate-200 bg-white'} p-4 shadow-sm" data-task-card="${task.id}">
+    <article class="rounded-2xl border ${isBlockingTask(task) && isOpenTaskState(task.estado) ? 'border-red-200 bg-red-50/30' : 'border-slate-200 bg-white'} p-4 shadow-xs" data-task-card="${task.id}">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <div data-task-status-row class="mb-2 flex flex-wrap items-center gap-1.5">
@@ -189,7 +189,7 @@ function renderMobileCard(task, roomMap, userMap) {
 
 function renderDesktopTable(tasks, roomMap, userMap) {
   return `
-    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm lg:block">
+    <div class="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-xs lg:block">
       <table class="min-w-full divide-y divide-slate-200 text-sm">
         <thead class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
           <tr><th class="px-3 py-3">Tarea</th><th class="px-3 py-3">Habitación</th><th class="px-3 py-3">Impacto</th><th class="px-3 py-3">Responsable</th><th class="px-3 py-3">Prioridad</th><th class="px-3 py-3">Estado</th><th class="px-3 py-3">Acciones</th></tr>
@@ -335,7 +335,7 @@ export async function mount(container, supabase, currentUser, hotelId) {
         <button type="button" data-quick-view="todas" class="shrink-0 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600">Historial</button>
       </div>
 
-      <details class="mb-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <details class="mb-4 rounded-2xl border border-slate-200 bg-white shadow-xs">
         <summary class="cursor-pointer list-none px-4 py-3 text-sm font-bold text-slate-700">⚙️ Más filtros y herramientas</summary>
         <div class="grid gap-2 border-t border-slate-100 p-3 sm:grid-cols-2 lg:grid-cols-4">
           <select id="filtro-estado" class="form-control w-full rounded-lg"><option value="">Todos los estados</option><option value="pendiente">Pendiente</option><option value="en_progreso">En progreso</option><option value="completada">Completada</option><option value="cancelada">Cancelada</option></select>
@@ -349,7 +349,7 @@ export async function mount(container, supabase, currentUser, hotelId) {
       <div id="mant-list"></div>
       <div id="mant-modal"></div>
 
-      <div class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur sm:hidden">
+      <div class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-sm sm:hidden">
         <div class="mx-auto flex max-w-lg gap-2"><button id="btn-nueva-tarea-mobile" class="min-h-[48px] flex-1 rounded-xl border border-slate-300 bg-white px-3 text-sm font-bold text-slate-700">Tarea completa</button><button id="btn-reporte-rapido-mobile" class="min-h-[48px] flex-[1.35] rounded-xl bg-emerald-600 px-3 text-sm font-black text-white">📷 Reportar problema</button></div>
       </div>
     </section>`;
@@ -415,9 +415,9 @@ async function showQuickReportModal(container, supabase, hotelId, currentUser, s
   let selectedFiles = [];
 
   target.innerHTML = `
-    <div class="fixed inset-0 z-[260] flex items-end bg-black/55 sm:items-center sm:justify-center sm:p-4">
+    <div class="fixed inset-0 z-260 flex items-end bg-black/55 sm:items-center sm:justify-center sm:p-4">
       <div class="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white shadow-2xl sm:max-w-lg sm:rounded-3xl">
-        <div class="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+        <div class="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur-sm">
           <div><p class="text-xs font-bold uppercase tracking-[0.16em] text-emerald-600">Reporte rápido</p><h3 class="text-xl font-black text-slate-900">¿Qué necesita mantenimiento?</h3></div>
           <button type="button" id="mant-quick-close" class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-500">&times;</button>
         </div>
@@ -557,7 +557,7 @@ async function showFullTaskModal(container, supabase, hotelId, currentUser, task
   let selectedFiles = [];
 
   target.innerHTML = `
-    <div class="fixed inset-0 z-[260] overflow-y-auto bg-black/55 p-3 sm:p-5"><div class="mx-auto max-w-2xl"><div class="relative rounded-3xl bg-white shadow-2xl"><button type="button" id="mant-full-close" class="absolute right-4 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-500">&times;</button><form id="mant-full-form" class="space-y-4 p-5 sm:p-6">
+    <div class="fixed inset-0 z-260 overflow-y-auto bg-black/55 p-3 sm:p-5"><div class="mx-auto max-w-2xl"><div class="relative rounded-3xl bg-white shadow-2xl"><button type="button" id="mant-full-close" class="absolute right-4 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-500">&times;</button><form id="mant-full-form" class="space-y-4 p-5 sm:p-6">
       <div class="pr-12"><p class="text-xs font-bold uppercase tracking-[0.16em] text-blue-600">Gestión completa</p><h3 class="text-2xl font-black text-slate-900">${isEditing ? 'Editar mantenimiento' : 'Nueva tarea'}</h3></div>
       <div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-sm font-bold">Habitación / ubicación</label><select name="habitacion_id" class="form-control w-full rounded-xl"><option value="">Área general</option>${habitaciones.map((room) => `<option value="${room.id}" ${String(normalized?.habitacion_id || '') === String(room.id) ? 'selected' : ''}>${escapeHtml(room.nombre)} · ${escapeHtml(room.estado || '-')}</option>`).join('')}</select></div><div><label class="mb-1 block text-sm font-bold">Responsable</label><select name="asignada_a" class="form-control w-full rounded-xl"><option value="">Sin asignar</option>${usuarios.filter((user) => user.activo !== false).map((user) => `<option value="${user.id}" ${String(normalized?.asignada_a || '') === String(user.id) ? 'selected' : ''}>${escapeHtml(getUserLabel(user))}</option>`).join('')}</select></div></div>
       <div><label class="mb-1 block text-sm font-bold">Título <span class="text-red-500">*</span></label><input name="titulo" required maxlength="180" class="form-control w-full rounded-xl" value="${escapeHtml(normalized?.titulo || '')}" placeholder="Ej. Aire acondicionado no enfría"></div>

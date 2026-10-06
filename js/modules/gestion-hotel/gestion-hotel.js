@@ -147,7 +147,7 @@ async function mapa_mount(tabContentContainer, supabase, currentUser, hotelId) {
         <div id="mapa-room-map-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-4 md:px-0"></div>
         <div class="mt-12 px-4 md:px-0">
             <h3 class="text-2xl font-bold text-gray-700 mb-4">Próximas Reservas</h3>
-            <div id="mapa-future-reservations-list" class="bg-white rounded-lg shadow p-4 space-y-3">
+            <div id="mapa-future-reservations-list" class="bg-white rounded-lg shadow-sm p-4 space-y-3">
                 <p class="text-gray-500">Cargando reservas futuras...</p>
             </div>
         </div>
@@ -211,10 +211,10 @@ async function adminHab_mount(tabContentContainer, supabase, currentUser, hotelI
           <div class="card-body p-4 md:p-6 space-y-8">
             <div id="adminHab-global-feedback" role="status" aria-live="polite" class="feedback-message mb-3" style="min-height: 24px;"></div>
             <div id="adminHab-config-horarios-hotel"></div>
-            <section id="adminHab-section-tiempos-estancia" class="p-4 border rounded-md bg-gray-50 shadow-sm">
+            <section id="adminHab-section-tiempos-estancia" class="p-4 border rounded-md bg-gray-50 shadow-xs">
               </section>
             <hr class="my-8 border-t-2 border-gray-300"/>
-            <section id="adminHab-section-habitaciones" class="p-4 border rounded-md bg-gray-50 shadow-sm">
+            <section id="adminHab-section-habitaciones" class="p-4 border rounded-md bg-gray-50 shadow-xs">
               </section>
           </div>
         </div>`;
@@ -422,7 +422,7 @@ export async function mountGestionHotel(mainContainer, supabase, currentUser, ho
             <div id="gestion-hotel-tab-content" class="tab-content">
                 </div>
         </div>
-        <div id="gestion-hotel-modal-container" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-y-auto" style="display:none;"></div>
+        <div id="gestion-hotel-modal-container" class="fixed inset-0 z-200 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 overflow-y-auto" style="display:none;"></div>
     `;
 
     const tabContentContainer = mainContainer.querySelector('#gestion-hotel-tab-content');

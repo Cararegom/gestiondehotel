@@ -82,7 +82,7 @@ function showInstantBankPaymentToast(notification = {}, supabase = null, bellUi 
   if (!host) {
     host = document.createElement('div');
     host.id = hostId;
-    host.className = 'fixed right-4 top-20 z-[10000] flex w-[min(92vw,420px)] flex-col gap-3';
+    host.className = 'fixed right-4 top-20 z-10000 flex w-[min(92vw,420px)] flex-col gap-3';
     host.setAttribute('aria-live', 'assertive');
     document.body.appendChild(host);
   }
@@ -91,7 +91,7 @@ function showInstantBankPaymentToast(notification = {}, supabase = null, bellUi 
   toast.className = 'overflow-hidden rounded-2xl border border-emerald-200 bg-white shadow-2xl ring-1 ring-black/5';
   toast.setAttribute('role', 'alert');
   toast.innerHTML = `
-    <div class="bg-gradient-to-r from-emerald-600 to-teal-500 px-5 py-4 text-white">
+    <div class="bg-linear-to-r from-emerald-600 to-teal-500 px-5 py-4 text-white">
       <div class="flex items-start justify-between gap-4">
         <div>
           <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-50">Pago recibido</p>
@@ -220,16 +220,16 @@ export async function inicializarCampanitaGlobal(bellContainer, supabase, curren
 
   bellContainer.innerHTML = `
     <div id="notificaciones-icono-wrapper" class="relative inline-block text-left">
-      <button id="notificaciones-toggle-btn" type="button" class="button-icon rounded-full p-2 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" aria-label="Notificaciones" aria-haspopup="true" aria-expanded="false">
+      <button id="notificaciones-toggle-btn" type="button" class="button-icon rounded-full p-2 hover:bg-gray-200 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2" aria-label="Notificaciones" aria-haspopup="true" aria-expanded="false">
         <svg class="h-6 w-6 text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" /></svg>
         <span id="notificaciones-badge-count" class="absolute right-0 top-0 flex h-4 w-4 translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-red-500 text-xs text-white" style="display:none;"></span>
       </button>
-      <div id="notificaciones-dropdown-menu" class="dropdown-menu absolute right-0 z-50 mt-2 hidden w-80 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
+      <div id="notificaciones-dropdown-menu" class="dropdown-menu absolute right-0 z-50 mt-2 hidden w-80 origin-top-right rounded-md bg-white shadow-lg ring-1 ring-black/5">
         <div class="py-1">
           <div class="border-b border-gray-200 px-4 py-2 text-sm font-medium text-gray-700">Notificaciones recientes</div>
           <ul id="notificaciones-dropdown-list" class="max-h-80 overflow-y-auto"></ul>
           <div class="flex items-center justify-between border-t border-gray-200 px-4 py-2">
-            <button id="btn-marcar-todas-leidas-campana" class="text-xs text-indigo-600 hover:text-indigo-800 focus:outline-none">Marcar todas como leidas</button>
+            <button id="btn-marcar-todas-leidas-campana" class="text-xs text-indigo-600 hover:text-indigo-800 focus:outline-hidden">Marcar todas como leidas</button>
             <a href="#/notificaciones" id="link-ver-todas-notificaciones" class="text-xs text-indigo-600 hover:text-indigo-800">Ver todas</a>
           </div>
         </div>
@@ -334,34 +334,34 @@ function renderHistoryTable(pageContainer, notifications = []) {
 
   pageContainer.innerHTML = `
     <div class="space-y-6">
-      <section class="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
+      <section class="rounded-[28px] bg-linear-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.35em] text-blue-200">Notificaciones</p>
             <h1 class="mt-2 text-3xl font-black">Centro de notificaciones</h1>
             <p class="mt-2 max-w-3xl text-sm text-blue-100">Revisa alertas operativas, marca pendientes como leidos y mantente al dia con lo que pasa en tu hotel.</p>
           </div>
-          <button id="notifications-mark-all-page" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20">
+          <button id="notifications-mark-all-page" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20">
             Marcar todas como leidas
           </button>
         </div>
         <div class="mt-6 grid gap-4 md:grid-cols-3">
-          <article class="rounded-2xl border border-blue-200 bg-white/10 p-4 backdrop-blur">
+          <article class="rounded-2xl border border-blue-200 bg-white/10 p-4 backdrop-blur-sm">
             <p class="text-xs uppercase tracking-[0.22em] text-blue-100">Total</p>
             <p class="mt-2 text-3xl font-black">${notifications.length}</p>
           </article>
-          <article class="rounded-2xl border border-amber-200 bg-white/10 p-4 backdrop-blur">
+          <article class="rounded-2xl border border-amber-200 bg-white/10 p-4 backdrop-blur-sm">
             <p class="text-xs uppercase tracking-[0.22em] text-blue-100">Sin leer</p>
             <p class="mt-2 text-3xl font-black">${unreadCount}</p>
           </article>
-          <article class="rounded-2xl border border-emerald-200 bg-white/10 p-4 backdrop-blur">
+          <article class="rounded-2xl border border-emerald-200 bg-white/10 p-4 backdrop-blur-sm">
             <p class="text-xs uppercase tracking-[0.22em] text-blue-100">Ultimas 24h</p>
             <p class="mt-2 text-3xl font-black">${last24hCount}</p>
           </article>
         </div>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200 text-sm">
             <thead class="bg-gray-50">
@@ -401,12 +401,12 @@ export async function mount(pageContainer, supabase, currentUser) {
   cleanupPageListeners();
 
   if (!currentUser?.id) {
-    pageContainer.innerHTML = '<p class="rounded bg-red-100 p-4 text-red-700">No se pudo cargar la pagina de notificaciones porque no hay un usuario valido.</p>';
+    pageContainer.innerHTML = '<p class="rounded-sm bg-red-100 p-4 text-red-700">No se pudo cargar la pagina de notificaciones porque no hay un usuario valido.</p>';
     return;
   }
 
   pageContainer.innerHTML = `
-    <div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">
+    <div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-xs">
       Cargando historial de notificaciones...
     </div>
   `;
@@ -414,7 +414,7 @@ export async function mount(pageContainer, supabase, currentUser) {
   try {
     const context = await resolveNotificationContext(supabase, currentUser);
     if (!context?.hotelId) {
-      pageContainer.innerHTML = '<p class="rounded bg-red-100 p-4 text-red-700">No se encontro el hotel del usuario actual.</p>';
+      pageContainer.innerHTML = '<p class="rounded-sm bg-red-100 p-4 text-red-700">No se encontro el hotel del usuario actual.</p>';
       return;
     }
 
@@ -466,7 +466,7 @@ export async function mount(pageContainer, supabase, currentUser) {
     });
   } catch (error) {
     console.error('Error cargando el historial de notificaciones:', error);
-    pageContainer.innerHTML = `<p class="rounded bg-red-100 p-4 text-red-700">Error al cargar el historial: ${escapeHtml(error.message)}</p>`;
+    pageContainer.innerHTML = `<p class="rounded-sm bg-red-100 p-4 text-red-700">Error al cargar el historial: ${escapeHtml(error.message)}</p>`;
   }
 }
 

@@ -308,21 +308,21 @@ export async function mount(container, sbInstance, user, hotelId) {
           <form id="form-bitacora-filtros" class="mb-6 grid grid-cols-1 items-end gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
             <div>
               <label for="bitacora-fecha-inicio" class="mb-1 block text-sm font-medium text-gray-700">Desde:</label>
-              <input type="date" id="bitacora-fecha-inicio" class="w-full rounded-md border border-gray-300 p-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
+              <input type="date" id="bitacora-fecha-inicio" class="w-full rounded-md border border-gray-300 p-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500" />
             </div>
             <div>
               <label for="bitacora-fecha-fin" class="mb-1 block text-sm font-medium text-gray-700">Hasta:</label>
-              <input type="date" id="bitacora-fecha-fin" class="w-full rounded-md border border-gray-300 p-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
+              <input type="date" id="bitacora-fecha-fin" class="w-full rounded-md border border-gray-300 p-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500" />
             </div>
             <div>
               <label for="bitacora-usuario" class="mb-1 block text-sm font-medium text-gray-700">Usuario:</label>
-              <select id="bitacora-usuario" class="w-full rounded-md border border-gray-300 p-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+              <select id="bitacora-usuario" class="w-full rounded-md border border-gray-300 p-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500">
                 <option value="">Todos</option>
               </select>
             </div>
             <div>
               <label for="bitacora-modulo-filtro" class="mb-1 block text-sm font-medium text-gray-700">Modulo:</label>
-              <input type="text" id="bitacora-modulo-filtro" class="w-full rounded-md border border-gray-300 p-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="Ej: Reservas" />
+              <input type="text" id="bitacora-modulo-filtro" class="w-full rounded-md border border-gray-300 p-2 shadow-xs focus:border-indigo-500 focus:ring-indigo-500" placeholder="Ej: Reservas" />
             </div>
             <div class="flex space-x-2">
               <button type="submit" class="button button-primary w-full px-4 py-2 sm:w-auto">Filtrar</button>

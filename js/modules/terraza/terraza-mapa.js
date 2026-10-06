@@ -68,7 +68,7 @@ function renderMesas(deps) {
     };
 
     return `
-      <article class="rounded-xl border ${state.selectedMesaId === mesa.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-4 shadow-sm transition hover:shadow-md">
+      <article class="rounded-xl border ${state.selectedMesaId === mesa.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-4 shadow-xs transition hover:shadow-md">
         <div class="mb-3 flex items-start justify-between gap-3">
           <div>
             <h3 class="text-base font-bold text-slate-800">${escapeHtml(mesa.nombre)}</h3>
@@ -125,7 +125,7 @@ function renderSillasSueltas(deps) {
   const seats = Array.from({ length: Number(grupo.sillas || 12) }, (_, index) => index + 1);
 
   return `
-    <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
       <div class="mb-3 flex flex-col justify-between gap-2 md:flex-row md:items-start">
         <div>
           <h3 class="text-base font-bold text-slate-800">Sillas sueltas</h3>
@@ -201,7 +201,7 @@ function renderProductos(deps) {
             const beerProduct = isBeerProduct(producto);
             const micheladaPrice = getMicheladaPrice();
             return `
-            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" data-product-card="${escapeAttribute(producto.id)}">
+            <article class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs" data-product-card="${escapeAttribute(producto.id)}">
               <div class="flex min-h-[72px] flex-col justify-between">
                 <div>
                   <div class="flex items-start justify-between gap-3">
@@ -280,7 +280,7 @@ function renderPedido(deps) {
   const metodosActivos = getMetodosPagoActivos();
 
   return `
-    <aside class="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <aside class="rounded-xl border border-slate-200 bg-white shadow-xs">
       <div class="border-b border-slate-200 p-4">
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Cuenta seleccionada</p>
         <h3 class="mt-1 text-xl font-extrabold text-slate-800">${escapeHtml(getSelectedLocationLabel())}</h3>
@@ -327,7 +327,7 @@ function renderPedido(deps) {
                         min="1"
                         step="1"
                         value="${escapeAttribute(String(item.cantidad || 1))}"
-                        class="w-14 border-x border-slate-200 px-1 py-1 text-center font-bold outline-none focus:bg-blue-50"
+                        class="w-14 border-x border-slate-200 px-1 py-1 text-center font-bold outline-hidden focus:bg-blue-50"
                         data-item-quantity
                         data-item-id="${escapeAttribute(item.id)}"
                         aria-label="Cantidad de ${escapeAttribute(getItemDisplayName(item))}"
@@ -369,7 +369,7 @@ function renderPedido(deps) {
             <p class="mt-1 text-xs">Usa el boton de la reserva para descontarlo de esta cuenta.</p>
           </div>
         ` : ''}
-        <div class="mb-4 rounded-xl border-2 border-emerald-400 bg-emerald-50 p-4 text-sm shadow-sm">
+        <div class="mb-4 rounded-xl border-2 border-emerald-400 bg-emerald-50 p-4 text-sm shadow-xs">
           <div class="mb-2 flex items-center justify-between text-emerald-800">
             <span class="font-semibold">Propina sugerida</span>
             <span class="font-bold">${money(suggestedTip)}</span>
@@ -448,7 +448,7 @@ export function renderMapaTab(deps) {
 
       <div class="space-y-4 xl:col-span-4">
         ${renderPedido(deps)}
-        <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
           <div class="mb-4 flex items-center justify-between gap-3">
             <div>
               <h2 class="text-lg font-bold text-slate-800">Bebidas y tragos</h2>

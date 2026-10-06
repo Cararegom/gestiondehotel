@@ -478,7 +478,7 @@ export async function showMantenimientoModal(room, supabase, currentUser, hotelI
     const fn = window.showModalTarea || importarMantenimientoUI;
     const modalTareaContainer = document.createElement('div');
     modalTareaContainer.id = 'mant-modal-temp-container';
-    modalTareaContainer.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4';
+    modalTareaContainer.className = 'fixed inset-0 z-200 flex items-center justify-center bg-black/60 p-4';
     document.body.appendChild(modalTareaContainer);
 
     const cleanupModalTarea = () => {
@@ -576,11 +576,11 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   let botonesHtml = '';
 
   // Estilos de botones (Tailwind)
-  const btnPrincipal = "w-full mb-2 py-2.5 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700 shadow-sm hover:shadow transition flex items-center justify-center gap-2";
-  const btnSecundario = "w-full mb-2 py-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium border border-blue-200 shadow-sm hover:shadow flex items-center justify-center gap-2";
-  const btnVerde = "w-full mb-2 py-2.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-800 font-medium border border-green-300 shadow-sm hover:shadow flex items-center justify-center gap-2";
-  const btnNaranja = "w-full mb-2 py-2.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-800 font-medium border border-orange-300 shadow-sm hover:shadow flex items-center justify-center gap-2";
-  const btnRojo = "w-full mt-4 py-2.5 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 shadow-sm hover:shadow transition flex items-center justify-center gap-2";
+  const btnPrincipal = "w-full mb-2 py-2.5 rounded-lg text-white font-semibold bg-blue-600 hover:bg-blue-700 shadow-xs hover:shadow-sm transition flex items-center justify-center gap-2";
+  const btnSecundario = "w-full mb-2 py-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium border border-blue-200 shadow-xs hover:shadow-sm flex items-center justify-center gap-2";
+  const btnVerde = "w-full mb-2 py-2.5 rounded-lg bg-green-100 hover:bg-green-200 text-green-800 font-medium border border-green-300 shadow-xs hover:shadow-sm flex items-center justify-center gap-2";
+  const btnNaranja = "w-full mb-2 py-2.5 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-800 font-medium border border-orange-300 shadow-xs hover:shadow-sm flex items-center justify-center gap-2";
+  const btnRojo = "w-full mt-4 py-2.5 rounded-lg text-white font-semibold bg-red-600 hover:bg-red-700 shadow-xs hover:shadow-sm transition flex items-center justify-center gap-2";
 
   // ---------------------------------------------------------------
   // 2. GENERAR HTML SEGÚN EL ESTADO DE LA HABITACIÓN
@@ -623,7 +623,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
       const diferenciaMin = (fechaInicio - ahora) / 60000;
 
       // Info visual
-      botonesHtml += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-sm text-blue-900 shadow-sm">
+      botonesHtml += `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-sm text-blue-900 shadow-xs">
                 <strong>Cliente:</strong> ${reservaFutura.cliente_nombre}<br>
                 <strong>Huéspedes:</strong> ${reservaFutura.cantidad_huespedes}<br>
                 <strong>Llegada:</strong> ${fechaInicio.toLocaleString('es-CO', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short' })}
@@ -633,12 +633,12 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
       if (diferenciaMin <= 120) {
         botonesHtml += `<button id="btn-checkin-reserva" class="${btnVerde}"><span style="font-size:1.2em">✅</span> Check-in (Entrada)</button>`;
       } else {
-        botonesHtml += `<div class="text-center text-xs text-orange-600 font-bold mb-2 bg-orange-50 p-2 rounded border border-orange-200">
+        botonesHtml += `<div class="text-center text-xs text-orange-600 font-bold mb-2 bg-orange-50 p-2 rounded-sm border border-orange-200">
                     ⏳ Check-in habilitado desde las ${new Date(fechaInicio.getTime() - 120 * 60000).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
                 </div>`;
       }
     } else {
-      botonesHtml += `<div class="text-xs text-red-500 mb-2 p-2 bg-red-50 rounded">No se encontró la reserva activa para check-in.</div>`;
+      botonesHtml += `<div class="text-xs text-red-500 mb-2 p-2 bg-red-50 rounded-sm">No se encontró la reserva activa para check-in.</div>`;
     }
 
     // Cambio de habitación permitido en reserva
@@ -664,7 +664,7 @@ export async function showHabitacionOpcionesModal(room, supabase, currentUser, h
   const modalContent = document.createElement('div');
   modalContent.className = "bg-white rounded-xl shadow-2xl w-full max-w-2xl p-6 m-auto relative animate-fade-in-up";
   modalContent.innerHTML = `
-        <button id="close-modal-quick" class="absolute right-4 top-4 rounded-full border border-slate-200 bg-white px-3 py-1 text-lg font-bold text-slate-500 shadow-sm transition hover:bg-slate-50 hover:text-slate-700" aria-label="Cerrar">
+        <button id="close-modal-quick" class="absolute right-4 top-4 rounded-full border border-slate-200 bg-white px-3 py-1 text-lg font-bold text-slate-500 shadow-xs transition hover:bg-slate-50 hover:text-slate-700" aria-label="Cerrar">
             ×
         </button>
         <h3 class="text-xl font-bold mb-5 text-blue-700 text-center">${room.nombre} (${room.estado ? room.estado.toUpperCase() : 'N/A'})</h3>
@@ -1204,12 +1204,12 @@ export function showEnhancedServiciosModal(roomDisplayInfo, availableServices, a
             <span class="text-xl text-green-500 font-medium">(${roomDisplayInfo.nombre})</span>
         </h3>
         
-        <form id="form-servicios-adicionales" class="space-y-4 overflow-y-auto flex-grow pr-2">
+        <form id="form-servicios-adicionales" class="space-y-4 overflow-y-auto grow pr-2">
             <label class="block text-lg font-semibold text-gray-700">Seleccione los servicios:</label>
             <div class="space-y-3">
                 ${availableServices.map(s => `
                     <div class="service-item group flex items-center gap-3 rounded-xl bg-green-50 border border-green-200 p-3 hover:border-green-400 transition-all">
-                        <input type="checkbox" id="servicio_${s.id}" name="servicio_ids" value="${s.id}" data-precio="${s.precio || 0}" class="form-checkbox h-5 w-5 text-green-600 rounded focus:ring-green-500 cursor-pointer">
+                        <input type="checkbox" id="servicio_${s.id}" name="servicio_ids" value="${s.id}" data-precio="${s.precio || 0}" class="form-checkbox h-5 w-5 text-green-600 rounded-sm focus:ring-green-500 cursor-pointer">
                         
                         <label for="servicio_${s.id}" class="flex-1 flex justify-between items-center cursor-pointer select-none">
                             <div class="flex items-center gap-2">
@@ -1320,7 +1320,7 @@ export function showEnhancedServiciosModal(roomDisplayInfo, availableServices, a
       title: 'Confirmar Servicios',
       html: `
                 <p class="mb-2">Total a cargar: <strong>${formatCurrency(totalPagar)}</strong></p>
-                <div class="text-left text-sm bg-gray-50 p-3 rounded mb-4">
+                <div class="text-left text-sm bg-gray-50 p-3 rounded-sm mb-4">
                     <ul class="list-disc ml-4">
                         ${itemsSeleccionados.map(i => `<li>${i.cantidad}x ${i.nombre}</li>`).join('')}
                     </ul>
@@ -1536,7 +1536,7 @@ export async function showSeguimientoArticulosModal(room, supabase, currentUser,
             <div class="mb-4">
                 <label class="form-label" for="select-articulo-prestable">Añadir artículo:</label>
                 <div class="flex gap-2">
-                    <select id="select-articulo-prestable" class="form-control flex-grow">
+                    <select id="select-articulo-prestable" class="form-control grow">
                         <option value="">-- Seleccione un artículo --</option>
                         ${opcionesSelect}
                     </select>
@@ -1545,7 +1545,7 @@ export async function showSeguimientoArticulosModal(room, supabase, currentUser,
             </div>
             <div class="mb-4">
                 <p class="font-semibold text-gray-700">Artículos prestados actualmente:</p>
-                <div id="lista-articulos-seguimiento" class="mt-2 space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded">
+                <div id="lista-articulos-seguimiento" class="mt-2 space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-50 rounded-sm">
                     </div>
             </div>
             <div class="flex gap-3 mt-6">
@@ -1565,7 +1565,7 @@ export async function showSeguimientoArticulosModal(room, supabase, currentUser,
         return;
       }
       listaEl.innerHTML = items.map(item => `
-                <div class="flex justify-between items-center bg-white p-2 rounded shadow-sm">
+                <div class="flex justify-between items-center bg-white p-2 rounded-sm shadow-xs">
                     <span class="text-gray-800">${item.articulo_nombre}</span>
                     
                     <button data-historial-id="${item.id}" data-item-id="${item.item_prestable_id}" 
@@ -1971,10 +1971,10 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
 
     const rowsHtml = listaItems.map(item => {
       const badge = item.estado === 'PAGADO'
-        ? `<span class="text-xs px-2 py-1 rounded bg-green-100 text-green-700 font-bold">PAGADO</span>`
+        ? `<span class="text-xs px-2 py-1 rounded-sm bg-green-100 text-green-700 font-bold">PAGADO</span>`
         : item.estado === 'ABONADO'
-          ? `<span class="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 font-bold">ABONADO</span>`
-          : `<span class="text-xs px-2 py-1 rounded bg-red-100 text-red-700 font-bold">PENDIENTE</span>`;
+          ? `<span class="text-xs px-2 py-1 rounded-sm bg-amber-100 text-amber-700 font-bold">ABONADO</span>`
+          : `<span class="text-xs px-2 py-1 rounded-sm bg-red-100 text-red-700 font-bold">PENDIENTE</span>`;
       return `
         <tr class="border-b border-gray-100 hover:bg-gray-50">
           <td class="p-2 text-xs text-gray-500 uppercase tracking-wide">${item.tipo}</td>
@@ -1992,7 +1992,7 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
 
     modalContainer.innerHTML = `
       <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden animate-fade-in-up flex flex-col max-h-[85vh]">
-        <div class="bg-gray-50 px-6 py-4 border-b flex justify-between items-center flex-shrink-0">
+        <div class="bg-gray-50 px-6 py-4 border-b flex justify-between items-center shrink-0">
           <div>
             <h3 class="text-lg font-bold text-gray-800">Detalle de Cuenta: ${room.nombre}</h3>
             <p class="text-sm text-gray-500">Cliente: <strong>${reserva.cliente_nombre || 'N/A'}</strong></p>
@@ -2000,9 +2000,9 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
           <button id="btn-cerrar-local" class="text-gray-400 hover:text-red-500 text-2xl transition">&times;</button>
         </div>
 
-        <div class="p-0 overflow-y-auto flex-grow custom-scrollbar">
+        <div class="p-0 overflow-y-auto grow custom-scrollbar">
           <table class="w-full text-left border-collapse">
-            <thead class="bg-blue-50 text-blue-800 uppercase text-xs sticky top-0 shadow-sm">
+            <thead class="bg-blue-50 text-blue-800 uppercase text-xs sticky top-0 shadow-xs">
               <tr>
                 <th class="p-3 font-semibold">Origen</th>
                 <th class="p-3 font-semibold">Descripción</th>
@@ -2014,7 +2014,7 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
           </table>
         </div>
 
-        <div class="bg-gray-50 px-6 py-4 border-t flex-shrink-0">
+        <div class="bg-gray-50 px-6 py-4 border-t shrink-0">
           <div class="flex justify-end flex-col items-end space-y-1 mb-4 border-b border-gray-200 pb-2">
             <div class="text-sm text-gray-600">Total de cargos:
               <span class="font-bold text-gray-900">${money(cuenta.deudaTotal)}</span>
@@ -2204,7 +2204,7 @@ export async function mostrarModalConsumosLocal(room, reserva, supabase, user, h
   } catch (error) {
     console.error('Error en mostrarModalConsumosLocal:', error);
     modalContainer.innerHTML = `
-      <div class="bg-white p-4 rounded text-red-600">
+      <div class="bg-white p-4 rounded-sm text-red-600">
         Error cargando consumos: ${error.message || error}
         <button id="btn-cerrar-error" class="ml-4 underline">Cerrar</button>
       </div>

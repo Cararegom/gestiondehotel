@@ -29,7 +29,7 @@ export function renderReservasGrupo({
                     <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Grupo</p>
                     <h3 class="text-2xl font-black tracking-tight text-slate-900">${tituloSeguro}</h3>
                 </div>
-                <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-sm">${grupo.length} reserva${grupo.length === 1 ? '' : 's'}</span>
+                <span class="inline-flex items-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 shadow-xs">${grupo.length} reserva${grupo.length === 1 ? '' : 's'}</span>
             </div>
     `;
     html += `<div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-5">`;
@@ -51,10 +51,10 @@ export function renderReservasGrupo({
         const tolerance = getReservaToleranceStatus(r, state.configHotel, new Date());
 
         html += `
-        <article class="group overflow-hidden rounded-[26px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fafc)] p-5 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.45)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_60px_-28px_rgba(37,99,235,0.28)] ${getBorderColorForEstado(r.estado)} border-l-4">
+        <article class="group overflow-hidden rounded-[26px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#f8fafc)] p-5 shadow-[0_16px_45px_-28px_rgba(15,23,42,0.45)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_22px_60px_-28px_rgba(37,99,235,0.28)] ${getBorderColorForEstado(r.estado)} border-l-4">
             <div class="flex items-start justify-between gap-4">
                 <div class="flex items-start gap-3">
-                    <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-lg font-black text-white shadow-sm">${inicialCliente}</div>
+                    <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-lg font-black text-white shadow-xs">${inicialCliente}</div>
                     <div>
                         <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Reserva</p>
                         <h4 class="text-lg font-bold text-slate-900">${clienteNombre}</h4>

@@ -1075,7 +1075,7 @@ function wireModuleEvents() {
 
 function renderClosedState(message) {
   state.container.innerHTML = `
-    <div class="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+    <div class="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-xs">
       <p class="text-xs font-semibold uppercase tracking-widest text-slate-400">Funcion no disponible</p>
       <h1 class="mt-3 text-2xl font-black text-slate-900">Pagos bancarios</h1>
       <p class="mt-3 text-sm text-slate-600">${escapeHtml(message)}</p>
@@ -1098,7 +1098,7 @@ export async function mount(container, supabase, user, hotelId) {
     return;
   }
 
-  container.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">Verificando acceso al piloto...</div>';
+  container.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-xs">Verificando acceso al piloto...</div>';
 
   try {
     state.pilotStatus = await getBankPaymentPilotStatus(supabase, hotelId);

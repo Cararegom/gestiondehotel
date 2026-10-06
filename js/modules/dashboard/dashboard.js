@@ -166,7 +166,7 @@ function renderPriorityStrip(containerEl, kpis, checkins, checkouts) {
   ];
 
   strip.innerHTML = cards.map(([label, value, helper]) => `
-    <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <article class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
       <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">${escapeHtml(String(label))}</p>
       <p class="mt-2 text-3xl font-black text-slate-800">${escapeHtml(String(value))}</p>
       <p class="mt-2 text-sm text-slate-500">${escapeHtml(String(helper))}</p>
@@ -301,7 +301,7 @@ function renderChecklist(containerEl, listId, items, type) {
     const fecha = type === 'check-in' ? item.fecha_inicio : item.fecha_fin;
     const habitacion = item.habitacion_nombre || item.habitaciones_nombre || item.habitaciones?.nombre || 'N/A';
     const meta = getScheduleMeta(item, type);
-    return `<li class="rounded-2xl border p-4 shadow-sm ${meta.cardClass}">
+    return `<li class="rounded-2xl border p-4 shadow-xs ${meta.cardClass}">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
           <span class="rounded-full px-2 py-1 text-[10px] font-bold uppercase ${meta.badgeClass}">${type === 'check-in' ? 'Check-in' : 'Check-out'}</span>
@@ -455,29 +455,29 @@ async function refreshDashboardData(containerEl, hotelId, supabaseInstance) {
 
 function renderDashboardShell(container) {
   container.innerHTML = `
-    <header class="main-header mb-6 overflow-hidden rounded-[28px] bg-gradient-to-br from-slate-900 via-blue-950 to-cyan-900 p-6 text-white shadow-xl">
+    <header class="main-header mb-6 overflow-hidden rounded-[28px] bg-linear-to-br from-slate-900 via-blue-950 to-cyan-900 p-6 text-white shadow-xl">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div><p class="mb-2 text-xs font-semibold uppercase tracking-[0.28em] text-cyan-200/80">Dashboard operativo</p><h1 class="text-3xl font-black">Panel de Control</h1><p class="mt-2 text-sm text-slate-200">Resumen del dia operativo según la zona horaria oficial del hotel.</p></div>
         <div class="flex flex-col items-start gap-2 lg:items-end"><span id="dashboard-last-updated" class="text-xs text-slate-300">Sin sincronizar</span><button id="dashboard-refresh-btn" class="rounded-2xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold">Actualizar</button></div>
       </div><div id="dashboard-main-error" class="feedback-message mt-4" role="alert" style="display:none;"></div>
     </header>
     <section id="dashboard-priority-strip" class="mb-6 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4"></section>
-    <section class="mb-6"><div class="mb-3"><p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Alertas automaticas</p><h2 class="text-2xl font-black text-slate-900">Radar operativo</h2></div><div id="dashboard-alerts-board" class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">Cargando...</div></section>
+    <section class="mb-6"><div class="mb-3"><p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Alertas automaticas</p><h2 class="text-2xl font-black text-slate-900">Radar operativo</h2></div><div id="dashboard-alerts-board" class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-xs">Cargando...</div></section>
     <section class="dashboard-cards mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       ${[
         ['card-reservas-activas', 'Reservas activas', '#/reservas'],
         ['card-ingresos-hoy', 'Ingresos de hoy', '#/caja'],
         ['card-ocupacion', 'Ocupacion actual', '#/mapa-habitaciones'],
         ['card-ventas-tienda', 'Tienda hoy', '#/tienda']
-      ].map(([id, label, route]) => `<article id="${id}" class="dashboard-card cursor-pointer rounded-3xl border border-slate-200 bg-white p-5 shadow-sm" data-navegar="${route}"><p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">${label}</p><p class="dashboard-metric-value mt-3 text-4xl font-black text-slate-900">Cargando...</p><p class="dashboard-metric-comparison mt-2 text-xs text-slate-400"></p></article>`).join('')}
+      ].map(([id, label, route]) => `<article id="${id}" class="dashboard-card cursor-pointer rounded-3xl border border-slate-200 bg-white p-5 shadow-xs" data-navegar="${route}"><p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">${label}</p><p class="dashboard-metric-value mt-3 text-4xl font-black text-slate-900">Cargando...</p><p class="dashboard-metric-comparison mt-2 text-xs text-slate-400"></p></article>`).join('')}
     </section>
     <section class="mb-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><h3 class="mb-4 text-lg font-bold text-slate-800">Check-ins de hoy</h3><ul id="list-next-checkins" class="space-y-3" style="padding-left:0"><li>Cargando...</li></ul></div>
-      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><h3 class="mb-4 text-lg font-bold text-slate-800">Check-outs de hoy</h3><ul id="list-next-checkouts" class="space-y-3" style="padding-left:0"><li>Cargando...</li></ul></div>
+      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-xs"><h3 class="mb-4 text-lg font-bold text-slate-800">Check-ins de hoy</h3><ul id="list-next-checkins" class="space-y-3" style="padding-left:0"><li>Cargando...</li></ul></div>
+      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-xs"><h3 class="mb-4 text-lg font-bold text-slate-800">Check-outs de hoy</h3><ul id="list-next-checkouts" class="space-y-3" style="padding-left:0"><li>Cargando...</li></ul></div>
     </section>
     <section class="dashboard-charts grid grid-cols-1 gap-6 xl:grid-cols-2">
-      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><h3 class="mb-3 text-lg font-bold text-slate-800">Ingresos Habitaciones · 7 dias</h3><div style="height:320px"><canvas id="chart-revenue"></canvas></div></div>
-      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm"><h3 class="mb-3 text-lg font-bold text-slate-800">Ocupacion · 7 dias</h3><div style="height:320px"><canvas id="chart-ocupacion"></canvas></div></div>
+      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-xs"><h3 class="mb-3 text-lg font-bold text-slate-800">Ingresos Habitaciones · 7 dias</h3><div style="height:320px"><canvas id="chart-revenue"></canvas></div></div>
+      <div class="rounded-[28px] border border-slate-200 bg-white p-5 shadow-xs"><h3 class="mb-3 text-lg font-bold text-slate-800">Ocupacion · 7 dias</h3><div style="height:320px"><canvas id="chart-ocupacion"></canvas></div></div>
     </section>`;
 }
 

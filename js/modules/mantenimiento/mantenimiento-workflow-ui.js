@@ -196,7 +196,7 @@ async function renderHistory(task) {
     }
     target.innerHTML = history.map((item) => `
       <div class="relative border-l-2 border-slate-200 pb-4 pl-4 last:pb-0">
-        <span class="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-slate-400"></span>
+        <span class="absolute left-[-5px] top-1 h-2 w-2 rounded-full bg-slate-400"></span>
         <div class="flex flex-wrap items-center justify-between gap-2">
           <p class="text-sm font-black text-slate-800">${escapeHtml(getHistoryTitle(item))}</p>
           <span class="text-[11px] text-slate-400">${escapeHtml(formatDateTime(item.creado_en))}</span>

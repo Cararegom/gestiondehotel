@@ -102,7 +102,7 @@ export async function showPagoMixtoModal({
     const newRow = document.createElement('div');
     newRow.className = 'pago-mixto-row flex items-center gap-2';
     newRow.innerHTML = `
-      <select class="form-control flex-grow">${opcionesMetodosHTML}</select>
+      <select class="form-control grow">${opcionesMetodosHTML}</select>
       <input type="number" class="form-control w-32 monto-pago-mixto" placeholder="Monto" min="0" step="any" value="${montoInicial > 0 ? montoInicial.toFixed(2) : ''}">
       <button type="button" class="btn-remover-pago-mixto text-red-500 hover:text-red-700 text-2xl font-bold">&times;</button>
     `;

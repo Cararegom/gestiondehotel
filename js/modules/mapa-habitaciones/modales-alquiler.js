@@ -421,14 +421,14 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
         <div class="w-full md:w-3/5 p-6 sm:p-8 space-y-6 bg-slate-50 md:rounded-l-xl max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center">
                 <h3 class="text-2xl md:text-3xl font-bold text-blue-700">Alquilar: ${room.nombre}</h3>
-                <button id="close-modal-alquilar" class="text-gray-500 hover:text-red-600 text-3xl leading-none focus:outline-none">&times;</button>
+                <button id="close-modal-alquilar" class="text-gray-500 hover:text-red-600 text-3xl leading-none focus:outline-hidden">&times;</button>
             </div>
             <form id="alquilar-form-pos" class="space-y-5">
                 <input type="hidden" name="cliente_id" id="cliente_id_alquiler">
                 <div>
                     <label class="form-label">Hu\u00e9sped*</label>
                     <div class="flex items-center gap-2">
-                        <input required name="cliente_nombre" id="cliente_nombre" class="form-control flex-grow" placeholder="Nombre completo o busque uno existente">
+                        <input required name="cliente_nombre" id="cliente_nombre" class="form-control grow" placeholder="Nombre completo o busque uno existente">
                         <button type="button" id="btn-buscar-cliente-alquiler" class="button button-info p-2 rounded-full" title="Buscar cliente existente"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" /></svg></button>
                     </div>
                 </div>
@@ -462,7 +462,7 @@ export async function showAlquilarModal(room, supabase, currentUser, hotelId, ma
                 </div>
                 <div id="descuento-wrapper">
                     <label class="form-label">C\u00f3digo de Descuento</label>
-                    <div class="flex items-center gap-2"><input type="text" id="codigo-descuento-alquiler" class="form-control flex-grow uppercase" placeholder="C\u00d3DIGO OPCIONAL"><button type="button" id="btn-aplicar-descuento-alquiler" class="button button-info">Aplicar</button></div>
+                    <div class="flex items-center gap-2"><input type="text" id="codigo-descuento-alquiler" class="form-control grow uppercase" placeholder="C\u00d3DIGO OPCIONAL"><button type="button" id="btn-aplicar-descuento-alquiler" class="button button-info">Aplicar</button></div>
                     <div id="feedback-descuento-alquiler" class="text-xs mt-1 h-4 font-semibold"></div>
                 </div>
                 <div class="pt-4"><button type="submit" id="btn-alquilar-hab" class="button button-success w-full py-3 text-lg font-bold rounded-lg">Confirmar y Registrar</button></div>
@@ -715,7 +715,7 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
         const newRow = document.createElement('div');
         newRow.className = 'pago-mixto-row flex items-center gap-2';
         newRow.innerHTML = `
-            <select class="form-control flex-grow">${opcionesMetodosHTML}</select>
+            <select class="form-control grow">${opcionesMetodosHTML}</select>
             <input type="number" class="form-control w-32 monto-pago-mixto" placeholder="Monto" min="0" step="any">
             <button type="button" class="btn-remover-pago-mixto text-red-500 hover:text-red-700 text-2xl font-bold">&times;</button>
         `;
@@ -840,7 +840,7 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
 
 
         const modalContent = document.createElement('div');
-        modalContent.className = "bg-gradient-to-br from-slate-50 to-gray-100 rounded-xl shadow-2xl w-full max-w-3xl p-0 m-auto animate-fade-in-up overflow-hidden";
+        modalContent.className = "bg-linear-to-br from-slate-50 to-gray-100 rounded-xl shadow-2xl w-full max-w-3xl p-0 m-auto animate-fade-in-up overflow-hidden";
 
         const fechaFinActual = new Date(reservaActiva.fecha_fin);
         const ahora = new Date();

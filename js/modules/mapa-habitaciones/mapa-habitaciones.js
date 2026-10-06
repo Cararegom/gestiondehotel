@@ -41,8 +41,8 @@ function buildBaseLayout(container, { readOnly = false } = {}) {
 
     <div id="room-map-list" ${readOnly ? 'data-read-only="true"' : ''} class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 px-4 md:px-0"></div>
 
-    <div id="modal-container" class="fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto" style="display:none;"></div>
-    <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-start justify-center bg-black/60 p-4 pt-8 overflow-y-auto" style="display:none;"></div>
+    <div id="modal-container" class="fixed inset-0 z-100 flex items-start justify-center bg-black/70 backdrop-blur-xs p-4 pt-8 overflow-y-auto" style="display:none;"></div>
+    <div id="modal-container-secondary" class="fixed inset-0 z-200 flex items-start justify-center bg-black/60 p-4 pt-8 overflow-y-auto" style="display:none;"></div>
   `;
 }
 
@@ -300,7 +300,7 @@ function renderMapaKpis(rooms, kpiContainer) {
   ];
 
   kpiContainer.innerHTML = cards.map((card) => `
-    <div class="rounded-2xl border px-4 py-3 shadow-sm ${card.bg}">
+    <div class="rounded-2xl border px-4 py-3 shadow-xs ${card.bg}">
       <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">${card.label}</p>
       <p class="mt-2 text-3xl font-black ${card.accent}">${card.value}</p>
     </div>
@@ -381,7 +381,7 @@ export async function mount(container, supabase, currentUser, hotelId) {
 
     if (configError) {
       console.error('Error critico cargando configuracion del hotel:', configError);
-      container.innerHTML = '<div class="p-4 text-red-700 bg-red-100 rounded">Error cargando la configuracion esencial del hotel.</div>';
+      container.innerHTML = '<div class="p-4 text-red-700 bg-red-100 rounded-sm">Error cargando la configuracion esencial del hotel.</div>';
       return;
     }
 
@@ -394,7 +394,7 @@ export async function mount(container, supabase, currentUser, hotelId) {
     syncWindowBridges();
   } catch (error) {
     console.error('Excepcion al cargar configuracion del hotel:', error);
-    container.innerHTML = '<div class="p-4 text-red-700 bg-red-100 rounded">Error fatal al cargar la configuracion del hotel.</div>';
+    container.innerHTML = '<div class="p-4 text-red-700 bg-red-100 rounded-sm">Error fatal al cargar la configuracion del hotel.</div>';
     return;
   }
 

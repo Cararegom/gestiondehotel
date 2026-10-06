@@ -2,7 +2,7 @@ import { RESERVA_OPERATIONAL_STATES } from './reservas-operacion.js';
 
 export function getAccionesReservaHTML(reserva, currentUser) {
     let actions = '';
-    const baseClass = 'button text-xs px-3 py-2 rounded-xl shadow-sm font-semibold disabled:opacity-50';
+    const baseClass = 'button text-xs px-3 py-2 rounded-xl shadow-xs font-semibold disabled:opacity-50';
     const estado = reserva.estado;
 
     if (RESERVA_OPERATIONAL_STATES.includes(estado) && reserva.pendiente > 0) {

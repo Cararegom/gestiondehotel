@@ -325,13 +325,13 @@ function renderPOSPlatosUI(containerEl, platos, onPlatoClickCallback) {
         const card = document.createElement('div');
         const hasRecipe = Array.isArray(plato.platos_recetas) && plato.platos_recetas.length > 0;
         // Se quita el padding general para que la imagen ocupe todo el ancho.
-        card.className = `plato-card-pos bg-white rounded-lg shadow border transition-all flex flex-col h-full overflow-hidden ${hasRecipe ? 'hover:shadow-lg hover:border-indigo-500 cursor-pointer' : 'opacity-60 cursor-not-allowed border-red-300'}`;
+        card.className = `plato-card-pos bg-white rounded-lg shadow-sm border transition-all flex flex-col h-full overflow-hidden ${hasRecipe ? 'hover:shadow-lg hover:border-indigo-500 cursor-pointer' : 'opacity-60 cursor-not-allowed border-red-300'}`;
         
         // --- INICIO DE LA MODIFICACIÓN ---
         card.innerHTML = `
             <img src="${plato.imagen_url || placeholderImg}" alt="${plato.nombre}" class="w-full h-24 object-cover">
-            <div class="p-2 flex flex-col flex-grow">
-                <h5 class="text-sm font-semibold text-gray-800 truncate flex-grow" title="${plato.nombre}">${plato.nombre}</h5>
+            <div class="p-2 flex flex-col grow">
+                <h5 class="text-sm font-semibold text-gray-800 truncate grow" title="${plato.nombre}">${plato.nombre}</h5>
                 ${hasRecipe ? '' : '<span class="text-xs font-semibold text-red-600">Sin receta · no vendible</span>'}
                 <p class="text-md font-bold text-indigo-600 mt-1 self-end">${formatCurrencyLocal(plato.precio)}</p>
             </div>
@@ -665,7 +665,7 @@ function mostrarModalPagoMixtoRestaurante(totalAPagar, metodosDisponibles, onCon
 
     modalEl = document.createElement('div');
     modalEl.id = 'modal-pago-mixto';
-    modalEl.className = 'modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-[70]';
+    modalEl.className = 'modal-container fixed inset-0 bg-gray-800/75 flex items-center justify-center p-4 z-70';
     
     let pagos = [];
     
@@ -675,7 +675,7 @@ function mostrarModalPagoMixtoRestaurante(totalAPagar, metodosDisponibles, onCon
 
         const pagosHtml = pagos.map((p, index) => {
             const metodo = metodosDisponibles.find(m => m.id === p.metodo_pago_id);
-            return `<div class="flex justify-between items-center p-2 bg-gray-100 rounded">
+            return `<div class="flex justify-between items-center p-2 bg-gray-100 rounded-sm">
                 <span>${metodo?.nombre}: ${formatCurrencyLocal(p.monto)}</span>
                 <button data-index="${index}" class="btn-remove-pago text-red-500 font-bold">&times;</button>
             </div>`;
@@ -690,7 +690,7 @@ function mostrarModalPagoMixtoRestaurante(totalAPagar, metodosDisponibles, onCon
                 </div>
                 <div id="pago-mixto-list" class="space-y-2 mb-4">${pagosHtml}</div>
                 <form id="form-add-pago" class="flex items-end gap-2 mb-4">
-                    <div class="flex-grow">
+                    <div class="grow">
                         <label class="form-label text-sm">Método</label>
                         <select name="metodo_pago_id" class="form-control">
                             ${metodosDisponibles.map(m => `<option value="${m.id}">${m.nombre}</option>`).join('')}
@@ -755,9 +755,9 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
         </div>
         <div id="platos-feedback" class="feedback-message my-2" style="display:none;"></div>
         <div id="platos-loading" class="loading-indicator text-center py-3" style="display:none;"></div>
-        <div id="lista-platos-container" class="overflow-x-auto bg-white shadow rounded-md"></div>
+        <div id="lista-platos-container" class="overflow-x-auto bg-white shadow-sm rounded-md"></div>
       </div>
-      <div id="modal-plato" class="modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50" style="display:none;"></div>
+      <div id="modal-plato" class="modal-container fixed inset-0 bg-gray-800/75 flex items-center justify-center p-4 z-50" style="display:none;"></div>
     `;
 
     const btnNuevoPlato = tabContentEl.querySelector('#btn-nuevo-plato');
@@ -776,12 +776,12 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
 
         modalPlatoEl.innerHTML = `
             <div class="modal-content bg-white p-5 rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col">
-              <form id="form-plato" class="flex flex-col flex-grow">
+              <form id="form-plato" class="flex flex-col grow">
                 <div class="flex justify-between items-center mb-4 pb-3 border-b">
                   <h4 class="text-xl font-semibold">${plato ? 'Editar' : 'Nuevo'} Plato</h4>
                   <button type="button" class="btn-cerrar-modal-plato text-gray-400 hover:text-gray-600 text-3xl">&times;</button>
                 </div>
-                <div class="flex-grow overflow-y-auto pr-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="grow overflow-y-auto pr-2 grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="md:col-span-2 space-y-4">
                         <input type="hidden" name="id" value="${plato?.id || ''}">
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -798,7 +798,7 @@ async function renderPlatosTab(tabContentEl, supabaseInstance, hotelId) {
                            <h5 class="text-md font-semibold mb-2">Receta del Plato</h5>
                            <div id="receta-items-list" class="space-y-2 mb-3 p-2 bg-gray-50 rounded-md border min-h-[40px]"></div>
                            <div class="flex items-end gap-2 p-2 bg-gray-100 rounded-b-md">
-                              <div class="flex-grow"><label class="text-xs">Ingrediente</label><select id="select-ingrediente-receta" class="form-control form-control-sm"></select></div>
+                              <div class="grow"><label class="text-xs">Ingrediente</label><select id="select-ingrediente-receta" class="form-control form-control-sm"></select></div>
                               <div><label id="label-cantidad-receta" class="text-xs">Cantidad</label><input type="number" id="cantidad-ingrediente-receta" step="any" class="form-control form-control-sm w-24" placeholder="Cant."></div>
                               <button type="button" id="btn-add-ingrediente-receta" class="button button-primary button-small">Añadir</button>
                            </div>
@@ -863,7 +863,7 @@ if (categorias?.length) {
             recetaActual.forEach((item, index) => {
                 const info = ingredientesDisponibles.find(i => i.id === item.ingrediente_id);
                 const itemEl = document.createElement('div');
-                itemEl.className = 'flex justify-between items-center bg-white p-2 rounded border text-sm';
+                itemEl.className = 'flex justify-between items-center bg-white p-2 rounded-sm border text-sm';
                 const costoLinea = Number(item.cantidad || 0) * Number(info?.costo_unitario || 0);
                 itemEl.innerHTML = `<span>${info?.nombre}<small class="block text-xs text-gray-500">Costo: ${formatCurrencyLocal(costoLinea)}</small></span><div class="flex items-center gap-2"><span class="font-semibold">${item.cantidad} ${info?.unidad_medida}</span><button type="button" data-index="${index}" class="btn-remove-receta-item text-red-500">&times;</button></div>`;
                 recetaItemsListEl.appendChild(itemEl);
@@ -1069,17 +1069,17 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
                     <input type="text" id="pos-filtro-platos" class="form-control w-full pl-10 pr-4 py-2 text-sm border-slate-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-700 dark:border-slate-600 dark:text-white" placeholder="Buscar plato...">
                 </div>
             </div>
-            <div id="pos-platos-disponibles-render-area" class="flex-grow overflow-y-auto pr-2 -mr-2"></div>
+            <div id="pos-platos-disponibles-render-area" class="grow overflow-y-auto pr-2 -mr-2"></div>
         </div>
 
         <div class="lg:col-span-2 pos-pedido-card bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 flex flex-col h-fit max-h-[calc(100vh-150px)]">
             
-            <div class="card-header p-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 flex-shrink-0">
+            <div class="card-header p-4 border-b border-slate-200 dark:border-slate-700 flex items-center gap-3 shrink-0">
                 <svg class="w-6 h-6 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="21" r="1"></circle><circle cx="20" cy="21" r="1"></circle><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path></svg>
                 <h5 class="font-bold text-xl text-slate-800 dark:text-slate-100">Pedido Actual</h5>
             </div>
             
-            <div class="flex-grow overflow-y-auto p-4 space-y-6">
+            <div class="grow overflow-y-auto p-4 space-y-6">
                 
                 <table class="w-full text-sm">
                     <thead>
@@ -1099,7 +1099,7 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
                     <div>
                         <label for="codigo-descuento-restaurante" class="form-label text-xs mb-1">Código de Descuento</label>
                         <div class="flex items-center gap-2">
-                            <input type="text" id="codigo-descuento-restaurante" class="form-control form-control-sm flex-grow" placeholder="CÓDIGO...">
+                            <input type="text" id="codigo-descuento-restaurante" class="form-control form-control-sm grow" placeholder="CÓDIGO...">
                             <button type="button" id="btn-aplicar-descuento-restaurante" class="button button-info button-small">Aplicar</button>
                         </div>
                         <div id="feedback-descuento-restaurante" class="text-xs mt-1 h-4"></div>
@@ -1131,7 +1131,7 @@ async function renderRegistrarVentaTab(tabContentEl, supabaseInstance, hotelId, 
                 </form>
             </div>
 
-            <div class="card-footer p-4 border-t border-slate-200 dark:border-slate-700 flex-shrink-0">
+            <div class="card-footer p-4 border-t border-slate-200 dark:border-slate-700 shrink-0">
     <div class="text-sm space-y-1 mb-4">
         <div class="flex justify-between">
             <span class="text-slate-500 dark:text-slate-400">Subtotal:</span>
@@ -1517,7 +1517,7 @@ async function renderHistorialVentasTab(tabContentEl, supabaseInstance, hotelId)
             <input type="date" id="filtro-fecha-fin-historial" class="form-control form-control-sm py-1.5 px-2 text-xs rounded-md border-gray-300">
             <button id="btn-filtrar-historial" class="button button-primary text-sm py-1.5 px-3 rounded-md">Filtrar</button>
         </div>
-        <div id="lista-historial-ventas-container" class="overflow-x-auto bg-white shadow rounded-md"></div>
+        <div id="lista-historial-ventas-container" class="overflow-x-auto bg-white shadow-sm rounded-md"></div>
       </div>`;
 
     const historialLoadingEl = tabContentEl.querySelector('#historial-loading');
@@ -1595,7 +1595,7 @@ async function renderHistorialVentasTab(tabContentEl, supabaseInstance, hotelId)
               <td class="px-3 py-3 whitespace-nowrap text-xs text-gray-500">${v.metodos_pago?.nombre || 'N/A'}</td>
               <td class="px-3 py-3 whitespace-nowrap text-xs text-gray-800 font-semibold text-right">${formatCurrencyLocal(v.monto_total)}</td>
               <td class="px-3 py-3 whitespace-nowrap text-center">
-                  <button class="button button-outline button-icon-small btn-ver-detalles-venta p-1 rounded text-xs" title="Ver Detalles">👁️</button>
+                  <button class="button button-outline button-icon-small btn-ver-detalles-venta p-1 rounded-sm text-xs" title="Ver Detalles">👁️</button>
               </td>
             </tr>
           `).join('')}
@@ -1634,7 +1634,7 @@ function mostrarDetallesVentaModal(venta) {
       if (!modalDetallesEl) {
           modalDetallesEl = document.createElement('div');
           modalDetallesEl.id = 'modal-detalles-venta-restaurante';
-          modalDetallesEl.className = 'modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-[60]';
+          modalDetallesEl.className = 'modal-container fixed inset-0 bg-gray-800/75 flex items-center justify-center p-4 z-60';
           document.body.appendChild(modalDetallesEl);
       }
 
@@ -1711,9 +1711,9 @@ async function renderCategoriasTab(tabContentEl, supabaseInstance, hotelId) {
         </div>
         <div id="categorias-feedback" class="feedback-message my-2" style="display:none;"></div>
         <div id="categorias-loading" class="loading-indicator text-center py-3" style="display:none;"></div>
-        <div id="lista-categorias-container" class="overflow-x-auto bg-white shadow rounded-md"></div>
+        <div id="lista-categorias-container" class="overflow-x-auto bg-white shadow-sm rounded-md"></div>
       </div>
-      <div id="modal-categoria" class="modal-container fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50" style="display:none;"></div>
+      <div id="modal-categoria" class="modal-container fixed inset-0 bg-gray-800/75 flex items-center justify-center p-4 z-50" style="display:none;"></div>
     `;
 
     // Referencias a los elementos del DOM
@@ -1933,7 +1933,7 @@ export async function mount(container, sbInstance, user) {
         <div class="card-body p-0 md:p-1">
           <div id="restaurante-feedback" role="status" aria-live="polite" style="display:none;" class="feedback-message m-4"></div>
           <div id="restaurante-loading" class="loading-indicator text-center py-4" style="display:none;">Cargando...</div>
-          <div id="restaurante-tab-content" class="mt-1 bg-white shadow-sm rounded-b-lg min-h-[60vh]">
+          <div id="restaurante-tab-content" class="mt-1 bg-white shadow-xs rounded-b-lg min-h-[60vh]">
           </div>
         </div>
       </div>`;

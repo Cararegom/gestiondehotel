@@ -43,7 +43,7 @@ export function startCronometro(room, reservaActiva, listEl, playPopSound) {
                     cardElement.classList.add('border-blue-500', 'ring-1', 'ring-blue-200');
                     const badgeEl = cardElement.querySelector('.badge');
                     if (badgeEl) {
-                        badgeEl.className = 'badge bg-blue-100 text-blue-800 px-2.5 py-1 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-sm flex-shrink-0';
+                        badgeEl.className = 'badge bg-blue-100 text-blue-800 px-2.5 py-1 text-xs font-bold rounded-full whitespace-nowrap flex items-center shadow-xs shrink-0';
                         badgeEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>TIEMPO LIBRE`;
                     }
                 }
@@ -73,7 +73,7 @@ export function startCronometro(room, reservaActiva, listEl, playPopSound) {
                         cardElement.classList.remove('border-yellow-500', 'border-indigo-500', 'border-green-500', 'border-blue-500');
                         const badgeEl = cardElement.querySelector('.badge');
                         if (badgeEl) {
-                            badgeEl.className = 'badge bg-red-100 text-red-700 px-2 py-1 text-[10px] uppercase font-bold rounded shadow-sm border border-black/5';
+                            badgeEl.className = 'badge bg-red-100 text-red-700 px-2 py-1 text-[10px] uppercase font-bold rounded-sm shadow-xs border border-black/5';
                             badgeEl.innerText = 'TIEMPO AGOTADO';
                         }
                     }
@@ -93,7 +93,7 @@ export function startCronometro(room, reservaActiva, listEl, playPopSound) {
                         cardElement.classList.add('border-yellow-500');
                         const badgeEl = cardElement.querySelector('.badge');
                         if (badgeEl) {
-                            badgeEl.className = 'badge bg-yellow-100 text-yellow-700 px-2 py-1 text-[10px] uppercase font-bold rounded shadow-sm border border-black/5';
+                            badgeEl.className = 'badge bg-yellow-100 text-yellow-700 px-2 py-1 text-[10px] uppercase font-bold rounded-sm shadow-xs border border-black/5';
                             badgeEl.innerText = 'OCUPADA';
                         }
                     }

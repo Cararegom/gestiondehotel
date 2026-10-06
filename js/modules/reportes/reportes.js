@@ -497,19 +497,19 @@ async function generarReporteIngresosTerraza(resultsContainerEl, fechaInicioInpu
         resultsContainerEl.innerHTML = `
           <h4 class="text-xl font-semibold mb-4 text-gray-800">Ingresos de Terraza (${formatDateLocal(fechaInicioInput, {dateStyle: 'medium'})} - ${formatDateLocal(fechaFinInput, {dateStyle: 'medium'})})</h4>
           <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-blue-50 p-4 rounded-xl shadow border border-blue-200">
+            <div class="bg-blue-50 p-4 rounded-xl shadow-sm border border-blue-200">
               <h5 class="text-sm font-semibold text-blue-700">Total Terraza</h5>
               <p class="text-2xl font-bold text-blue-700">${formatCurrencyLocal(total)}</p>
             </div>
-            <div class="bg-green-50 p-4 rounded-xl shadow border border-green-200">
+            <div class="bg-green-50 p-4 rounded-xl shadow-sm border border-green-200">
               <h5 class="text-sm font-semibold text-green-700">Consumo</h5>
               <p class="text-2xl font-bold text-green-700">${formatCurrencyLocal(consumo)}</p>
             </div>
-            <div class="bg-emerald-50 p-4 rounded-xl shadow border border-emerald-200">
+            <div class="bg-emerald-50 p-4 rounded-xl shadow-sm border border-emerald-200">
               <h5 class="text-sm font-semibold text-emerald-700">Propinas</h5>
               <p class="text-2xl font-bold text-emerald-700">${formatCurrencyLocal(propinas)}</p>
             </div>
-            <div class="bg-slate-50 p-4 rounded-xl shadow border border-slate-200">
+            <div class="bg-slate-50 p-4 rounded-xl shadow-sm border border-slate-200">
               <h5 class="text-sm font-semibold text-slate-700">Cuentas cobradas</h5>
               <p class="text-2xl font-bold text-slate-800">${cuentas}</p>
             </div>
@@ -637,8 +637,8 @@ function renderTablaMovimientos(movimientos, tituloTabla) {
       <div class="flex flex-col sm:flex-row justify-between items-center mt-6 mb-2">
         <h5 class="text-md font-semibold text-gray-700">${tituloTabla}</h5>
         <div class="flex items-center gap-2 mt-2 sm:mt-0">
-          <button id="btn-export-pdf" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded text-xs">Exportar PDF</button>
-          <button id="btn-export-excel" class="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded text-xs">Exportar Excel</button>
+          <button id="btn-export-pdf" class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-sm text-xs">Exportar PDF</button>
+          <button id="btn-export-excel" class="bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-sm text-xs">Exportar Excel</button>
         </div>
       </div>
       <div class="table-container overflow-x-auto shadow-md rounded-lg">
@@ -663,7 +663,7 @@ function renderTablaMovimientos(movimientos, tituloTabla) {
                 <tr class="hover:bg-gray-50 transition-colors duration-150">
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${row[0]}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-800 font-medium">${escapeHtml(row[1])}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600 break-words min-w-[200px] max-w-[400px]">${escapeHtml(row[2])}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600 wrap-break-word min-w-[200px] max-w-[400px]">${escapeHtml(row[2])}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-right font-semibold ${mov.tipo === 'ingreso' ? 'text-green-600' : 'text-red-600'}">${row[3]}</td>
                     <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${escapeHtml(row[4])}</td>
                 </tr>`;
@@ -807,7 +807,7 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
 
             html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">`;
             categoriasOrdenadas.forEach(([categoria, total]) => {
-                html += `<div class="p-4 bg-green-50 rounded-lg shadow border border-green-200"><h6 class="font-semibold text-green-700 truncate">${categoria}</h6><p class="text-xl font-bold text-green-600">${formatCurrencyLocal(total)}</p></div>`;
+                html += `<div class="p-4 bg-green-50 rounded-lg shadow-sm border border-green-200"><h6 class="font-semibold text-green-700 truncate">${categoria}</h6><p class="text-xl font-bold text-green-600">${formatCurrencyLocal(total)}</p></div>`;
             });
             html += `</div>`;
             html += `<div class="chart-container bg-white p-4 rounded-lg shadow-xl mb-6 border" style="height:400px; max-width: 600px; margin-left: auto; margin-right: auto; position: relative;"><canvas id="reporte-ingresos-categoria-pie-chart"></canvas></div>`;
@@ -831,7 +831,7 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
 
             html += `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">`;
             categoriasEgresosOrdenadas.forEach(([categoria, total]) => {
-                html += `<div class="p-4 bg-red-50 rounded-lg shadow border border-red-200"><h6 class="font-semibold text-red-700 truncate">${categoria}</h6><p class="text-xl font-bold text-red-600">${formatCurrencyLocal(total)}</p></div>`;
+                html += `<div class="p-4 bg-red-50 rounded-lg shadow-sm border border-red-200"><h6 class="font-semibold text-red-700 truncate">${categoria}</h6><p class="text-xl font-bold text-red-600">${formatCurrencyLocal(total)}</p></div>`;
             });
             html += `</div>`;
              html += `<div class="chart-container bg-white p-4 rounded-lg shadow-xl mb-6 border" style="height:400px; max-width: 600px; margin-left: auto; margin-right: auto; position: relative;"><canvas id="reporte-egresos-categoria-pie-chart"></canvas></div>`;
@@ -1016,7 +1016,7 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
     if (existingModal) existingModal.remove(); // Eliminar modal anterior si existe
 
     const loadingModal = document.createElement('div');
-    loadingModal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50";
+    loadingModal.className = "fixed inset-0 z-10000 flex items-center justify-center bg-black/50";
     loadingModal.innerHTML = `<div class="bg-white p-10 rounded-lg shadow-xl text-center"><p class="text-lg font-medium text-gray-700">Cargando detalles del cierre...</p></div>`;
     document.body.appendChild(loadingModal);
 
@@ -1077,7 +1077,7 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
         // 4. Render HTML for the modal
         let html = `
           <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-3xl mx-auto border border-slate-200 relative animate-fade-in-down">
-            <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-slate-100 to-gray-100 flex items-center justify-between">
+            <div class="py-5 px-8 border-b rounded-t-2xl bg-linear-to-r from-slate-100 to-gray-100 flex items-center justify-between">
               <div>
                 <h2 class="text-2xl font-bold text-slate-800">Detalle de Cierre de Caja</h2>
                 <p class="text-sm text-gray-600">Cerrado por: ${usuarioNombre} el ${fechaCierreStr}</p>
@@ -1132,7 +1132,7 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
               </div>
               <div class="mt-6">
                 <h5 class="text-md font-semibold mb-2 text-gray-700">Detalle de Movimientos del Turno</h5>
-                  <div class="table-container overflow-x-auto shadow-sm rounded-lg border bg-gray-50 max-h-[300px] overflow-y-auto">
+                  <div class="table-container overflow-x-auto shadow-xs rounded-lg border bg-gray-50 max-h-[300px] overflow-y-auto">
                     <table class="tabla-estilizada w-full min-w-full divide-y divide-gray-200">
                       <thead class="bg-gray-100 sticky top-0">
                         <tr>
@@ -1149,7 +1149,7 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
                           <tr class="hover:bg-slate-50">
                             <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">${formatDateLocal(mv.creado_en)}</td>
                             <td class="px-3 py-2 whitespace-nowrap text-xs"><span class="badge ${mv.tipo === 'ingreso' || mv.tipo === 'apertura' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">${mv.tipo}</span></td>
-                            <td class="px-3 py-2 text-xs text-gray-600 break-words min-w-[150px] max-w-[300px]">${mv.concepto || 'N/A'}</td>
+                            <td class="px-3 py-2 text-xs text-gray-600 wrap-break-word min-w-[150px] max-w-[300px]">${mv.concepto || 'N/A'}</td>
                             <td class="px-3 py-2 whitespace-nowrap text-xs text-right font-semibold ${mv.tipo === 'ingreso' || mv.tipo === 'apertura' ? 'text-green-600' : 'text-red-600'}">${formatCurrencyLocal(mv.monto)}</td>
                             <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">${mv.metodos_pago?.nombre || (mv.tipo === 'apertura' ? 'N/A (Apertura)' : 'N/A')}</td>
                             <td class="px-3 py-2 whitespace-nowrap text-xs text-gray-500">${mv.usuarios?.nombre || 'Sistema'}</td>
@@ -1170,7 +1170,7 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
         loadingModal.remove();
         const detailModal = document.createElement('div');
         detailModal.id = modalId;
-        detailModal.className = "fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50 p-4 overflow-auto";
+        detailModal.className = "fixed inset-0 z-10000 flex items-center justify-center bg-black/50 p-4 overflow-auto";
         detailModal.innerHTML = html;
         document.body.appendChild(detailModal);
 
@@ -1786,7 +1786,7 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
 
         resultsContainerEl.innerHTML = `
             <section class="space-y-6">
-                <div class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_#ffffff,_#f8fbff)] p-6 shadow-sm">
+                <div class="rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,#ffffff,#f8fbff)] p-6 shadow-xs">
                     <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                         <div>
                             <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Comparativo gerencial</p>
@@ -1801,22 +1801,22 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
                 ${availabilityNote}
 
                 <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                    <article class="rounded-[24px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-sm">
+                    <article class="rounded-[24px] border border-emerald-200 bg-emerald-50/80 p-5 shadow-xs">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">Ingresos del periodo</p>
                         <p class="mt-3 text-3xl font-black text-slate-900">${formatCurrencyLocal(ingresosCurrent)}</p>
                         <p class="mt-2 text-sm">${formatDeltaLabel(ingresosCurrent, ingresosPrevious, { currency: true })}</p>
                     </article>
-                    <article class="rounded-[24px] border border-rose-200 bg-rose-50/80 p-5 shadow-sm">
+                    <article class="rounded-[24px] border border-rose-200 bg-rose-50/80 p-5 shadow-xs">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-700">Egresos del periodo</p>
                         <p class="mt-3 text-3xl font-black text-slate-900">${formatCurrencyLocal(egresosCurrent)}</p>
                         <p class="mt-2 text-sm">${formatDeltaLabel(egresosCurrent, egresosPrevious, { currency: true })}</p>
                     </article>
-                    <article class="rounded-[24px] border border-blue-200 bg-blue-50/80 p-5 shadow-sm">
+                    <article class="rounded-[24px] border border-blue-200 bg-blue-50/80 p-5 shadow-xs">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Reservas validas</p>
                         <p class="mt-3 text-3xl font-black text-slate-900">${reservasValidasCurrent.length}</p>
                         <p class="mt-2 text-sm">${formatDeltaLabel(reservasValidasCurrent.length, reservasValidasPrevious.length)}</p>
                     </article>
-                    <article class="rounded-[24px] border border-amber-200 bg-amber-50/80 p-5 shadow-sm">
+                    <article class="rounded-[24px] border border-amber-200 bg-amber-50/80 p-5 shadow-xs">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">No-show / espera</p>
                         <p class="mt-3 text-3xl font-black text-slate-900">${noShowCurrent} / ${waitlistPendienteCurrent}</p>
                         <p class="mt-2 text-sm text-slate-600">No-show vs periodo anterior: ${formatDeltaLabel(noShowCurrent, noShowPrevious)}<br>Lista de espera: ${formatDeltaLabel(waitlistPendienteCurrent, waitlistPendientePrevious)}</p>
@@ -1824,17 +1824,17 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
                 </div>
 
                 <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-xs">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Resultado neto del periodo</p>
                         <p class="mt-3 text-3xl font-black ${(ingresosCurrent - egresosCurrent) >= 0 ? 'text-emerald-700' : 'text-rose-700'}">${formatCurrencyLocal(ingresosCurrent - egresosCurrent)}</p>
                         <p class="mt-2 text-sm text-slate-600">${formatDeltaLabel(ingresosCurrent - egresosCurrent, ingresosPrevious - egresosPrevious, { currency: true })}</p>
                     </article>
-                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-xs">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Tarifas e inteligencia comercial</p>
                         <p class="mt-3 text-3xl font-black text-slate-900">${reglasActivasPeriodo}</p>
                         <p class="mt-2 text-sm text-slate-600">Reglas dinamicas activas en el periodo actual.</p>
                     </article>
-                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <article class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-xs">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Calidad operativa</p>
                         <p class="mt-3 text-3xl font-black text-slate-900">${avgInspectionCurrent.toFixed(1)}/5</p>
                         <p class="mt-2 text-sm text-slate-600">${inspeccionesCurrent.length} inspecciones registradas · ${preventivosCurrent} preventivos creados.</p>
@@ -1842,7 +1842,7 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
                 </div>
 
                 <div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-                    <section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-xs">
                         <div class="flex items-center justify-between gap-3">
                             <div>
                                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Origen comercial</p>
@@ -1873,7 +1873,7 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
                         </div>
                     </section>
 
-                    <section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                    <section class="rounded-[24px] border border-slate-200 bg-white p-5 shadow-xs">
                         <div class="flex items-center justify-between gap-3">
                             <div>
                                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Embudo</p>
@@ -2146,7 +2146,7 @@ export async function mount(container, sbInstance, user) {
   
   container.innerHTML = `
     <div class="card reportes-module shadow-lg rounded-lg bg-gray-50/50">
-      <div class="card-header bg-gradient-to-r from-indigo-600 to-purple-600 p-4 border-b border-gray-200 rounded-t-lg">
+      <div class="card-header bg-linear-to-r from-indigo-600 to-purple-600 p-4 border-b border-gray-200 rounded-t-lg">
         <h2 class="text-2xl font-semibold text-white">Generador de Reportes Avanzado</h2>
       </div>
       <div class="card-body p-4 md:p-6">
@@ -2155,7 +2155,7 @@ export async function mount(container, sbInstance, user) {
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
             <div class="form-group md:col-span-2 lg:col-span-1">
               <label for="reporte-tipo-select" class="block text-sm font-medium text-gray-700 mb-1">Tipo de Reporte:</label>
-              <select id="reporte-tipo-select" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3">
+              <select id="reporte-tipo-select" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3">
                 <option value="">-- Elija un reporte --</option>
                 <option value="listado_reservas">Listado de Reservas</option>
                 <option value="ocupacion">Porcentaje de Ocupación</option>
@@ -2166,9 +2166,9 @@ export async function mount(container, sbInstance, user) {
                 <option value="cierres_de_caja">Historial de Cierres de Caja</option>
               </select>
             </div>
-            <div class="form-group lg:col-span-1"><label for="reporte-fecha-inicio" class="block text-sm font-medium text-gray-700 mb-1">Desde:</label><input type="date" id="reporte-fecha-inicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
-            <div class="form-group lg:col-span-1"><label for="reporte-fecha-fin" class="block text-sm font-medium text-gray-700 mb-1">Hasta:</label><input type="date" id="reporte-fecha-fin" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
-            <div class="form-group lg:col-span-1 self-end"><button id="btn-generar-reporte" class="button button-primary w-full py-2.5 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition ease-in-out duration-150">Generar Reporte</button></div>
+            <div class="form-group lg:col-span-1"><label for="reporte-fecha-inicio" class="block text-sm font-medium text-gray-700 mb-1">Desde:</label><input type="date" id="reporte-fecha-inicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
+            <div class="form-group lg:col-span-1"><label for="reporte-fecha-fin" class="block text-sm font-medium text-gray-700 mb-1">Hasta:</label><input type="date" id="reporte-fecha-fin" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-xs focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 px-3"></div>
+            <div class="form-group lg:col-span-1 self-end"><button id="btn-generar-reporte" class="button button-primary w-full py-2.5 px-4 rounded-md text-sm font-medium hover:bg-indigo-700 focus:outline-hidden focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition ease-in-out duration-150">Generar Reporte</button></div>
           </div>
         </div>
         <div id="reportes-loading" class="loading-indicator text-center py-4 text-indigo-600 font-medium" style="display:none;"></div>

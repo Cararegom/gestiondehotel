@@ -136,8 +136,8 @@ function templateById() {
 
 function renderShell(root) {
   root.innerHTML = `
-    <section class="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div class="border-b border-slate-200 bg-gradient-to-r from-slate-950 to-slate-800 px-4 py-5 text-white sm:px-6">
+    <section class="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+      <div class="border-b border-slate-200 bg-linear-to-r from-slate-950 to-slate-800 px-4 py-5 text-white sm:px-6">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -202,7 +202,7 @@ function renderTeamPanel() {
   host.innerHTML = `
     <div class="mb-4"><h4 class="font-bold text-slate-900">2. Equipo que participa</h4><p class="mt-1 text-xs text-slate-500">Solo usuarios activos con rol Recepcionista.</p></div>
     <div class="mb-3 flex items-center justify-between gap-2"><span class="text-xs font-semibold text-slate-500"><strong data-role="selected-count">${state.selectedUsers.size}</strong> seleccionadas</span><div class="flex gap-2 text-xs"><button type="button" data-action="select-all" class="font-semibold text-blue-700">Todas</button><button type="button" data-action="select-none" class="font-semibold text-slate-500">Ninguna</button></div></div>
-    <div class="max-h-80 space-y-2 overflow-y-auto pr-1">${users.length ? users.map((user) => `<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-blue-300"><input data-user-checkbox type="checkbox" value="${escapeHtml(user.id)}" class="mt-1" ${state.selectedUsers.has(user.id) ? 'checked' : ''}><span class="min-w-0 flex-1"><span class="block truncate text-sm font-semibold text-slate-800">${escapeHtml(user.nombre)}</span><span class="mt-1 flex flex-wrap gap-1">${user.evitaNoche ? '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Evita noche</span>' : ''}${user.prefiereDia ? '<span class="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Prefiere día</span>' : ''}</span></span></label>`).join('') : '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">No hay recepcionistas activas.</div>'}</div>`;
+    <div class="max-h-80 space-y-2 overflow-y-auto pr-1">${users.length ? users.map((user) => `<label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-blue-300"><input data-user-checkbox type="checkbox" value="${escapeHtml(user.id)}" class="mt-1" ${state.selectedUsers.has(user.id) ? 'checked' : ''}><span class="min-w-0 flex-1"><span class="block truncate text-sm font-semibold text-slate-800">${escapeHtml(user.nombre)}</span><span class="mt-1 flex flex-wrap gap-1">${user.evitaNoche ? '<span class="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Evita noche</span>' : ''}${user.prefiereDia ? '<span class="rounded-sm bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Prefiere día</span>' : ''}</span></span></label>`).join('') : '<div class="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">No hay recepcionistas activas.</div>'}</div>`;
 }
 
 function periodRange() {
@@ -218,7 +218,7 @@ function renderGeneratorPanel() {
     <div class="mb-4"><h4 class="font-bold text-slate-900">3. Crear un borrador</h4><p class="mt-1 text-xs text-slate-500">Generar nunca modifica el horario publicado.</p></div>
     <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div class="flex-1"><div class="mb-3 flex flex-wrap gap-2">${[['week','Semana'],['month','Mes'],['custom','Personalizado']].map(([mode,label]) => `<button type="button" data-action="period" data-period="${mode}" class="rounded-lg px-3 py-2 text-sm font-semibold ${state.periodMode === mode ? 'bg-blue-600 text-white' : 'border border-slate-300 bg-white text-slate-700'}">${label}</button>`).join('')}</div><div class="grid gap-3 sm:grid-cols-2"><label class="text-xs font-semibold text-slate-600">Desde<input data-period-start type="date" value="${range.start}" class="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"></label><label class="text-xs font-semibold text-slate-600">Hasta<input data-period-end type="date" value="${range.end}" class="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm"></label></div></div>
-      <button type="button" data-action="generate" class="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700">Generar borrador</button>
+      <button type="button" data-action="generate" class="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-xs hover:bg-blue-700">Generar borrador</button>
     </div>`;
 }
 
@@ -270,7 +270,7 @@ function renderCalendar() {
     const selected = row.plantilla_turno_id || '';
     const locked = row.bloqueado === true;
     const options = [`<option value="" ${selected ? '' : 'selected'}>Descanso</option>`, ...templates.map((template) => `<option value="${escapeHtml(template.id)}" ${selected === template.id ? 'selected' : ''}>${escapeHtml(template.nombre)} · ${normalizeTime(template.hora_inicio)}–${normalizeTime(template.hora_fin)}</option>`)].join('');
-    return `<td class="border-b border-r border-slate-200 p-2 align-top"><div class="rounded-lg border ${locked ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-2" data-assignment-id="${escapeHtml(row.id)}"><select data-assignment-shift ${editable ? '' : 'disabled'} class="w-full rounded-md border border-slate-300 bg-white p-1.5 text-xs">${options}</select><div class="mt-2 flex items-center justify-between gap-2"><span class="text-[10px] font-semibold ${locked ? 'text-blue-700' : 'text-slate-400'}">${locked ? '🔒 Protegido' : 'Libre para reorganizar'}</span>${editable ? `<button type="button" data-action="toggle-lock" data-assignment-id="${escapeHtml(row.id)}" class="rounded border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold text-slate-600">${locked ? 'Desbloquear' : 'Proteger'}</button>` : ''}</div></div></td>`;
+    return `<td class="border-b border-r border-slate-200 p-2 align-top"><div class="rounded-lg border ${locked ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-2" data-assignment-id="${escapeHtml(row.id)}"><select data-assignment-shift ${editable ? '' : 'disabled'} class="w-full rounded-md border border-slate-300 bg-white p-1.5 text-xs">${options}</select><div class="mt-2 flex items-center justify-between gap-2"><span class="text-[10px] font-semibold ${locked ? 'text-blue-700' : 'text-slate-400'}">${locked ? '🔒 Protegido' : 'Libre para reorganizar'}</span>${editable ? `<button type="button" data-action="toggle-lock" data-assignment-id="${escapeHtml(row.id)}" class="rounded-sm border border-slate-300 bg-white px-1.5 py-1 text-[10px] font-semibold text-slate-600">${locked ? 'Desbloquear' : 'Proteger'}</button>` : ''}</div></div></td>`;
   }).join('')}</tr>`).join('')}</tbody></table></div><div class="border-t border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">Cambiar un turno lo marca automáticamente como protegido. Reorganizar recalcula solo las casillas libres.</div></div>`;
 }
 

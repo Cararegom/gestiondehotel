@@ -11,7 +11,7 @@ export function renderConfiguracionTab(deps) {
 
   return `
     <div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
-      <form id="terraza-config-form" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
+      <form id="terraza-config-form" class="rounded-xl border border-slate-200 bg-white p-5 shadow-xs xl:col-span-2">
         <div class="mb-4">
           <h2 class="text-lg font-bold text-slate-800">Configuracion de Terraza</h2>
           <p class="mt-1 text-sm text-slate-500">Define recargos y opciones que usan los meseros al vender y entregar recibos.</p>

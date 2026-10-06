@@ -39,13 +39,13 @@ async function generateDiscountCard(discount, logoUrl, supabaseInstance) {
                 ${logoUrl ? `<img src="${logoUrl}" alt="Logo del Hotel" class="max-h-16 object-contain mx-auto"/>` : `<div class="h-16"></div>`}
             </div>
 
-            <div class="p-6 text-center flex-grow flex flex-col justify-center">
+            <div class="p-6 text-center grow flex flex-col justify-center">
                 <h4 class="text-2xl font-light text-gray-300 tracking-wider">${discount.nombre}</h4>
                 <p class="text-7xl font-bold my-3 text-white tracking-tighter">${discount.tipo === 'porcentaje' ? `${discount.valor}%` : formatCurrency(discount.valor)}</p>
-                <p class="text-xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-yellow-300 to-amber-500">DE DESCUENTO</p>
+                <p class="text-xl font-semibold bg-clip-text text-transparent bg-linear-to-r from-yellow-300 to-amber-500">DE DESCUENTO</p>
             </div>
 
-            <div class="bg-black bg-opacity-20 p-6 text-center">
+            <div class="bg-black/20 p-6 text-center">
                 ${discount.codigo 
                     ? `<div>
                          <p class="text-sm text-gray-400">Usa este código en tu próxima visita:</p>
@@ -61,11 +61,11 @@ async function generateDiscountCard(discount, logoUrl, supabaseInstance) {
 
         <div class="mt-4 p-4 bg-white rounded-lg shadow-lg flex flex-wrap items-center gap-2">
             <button id="download-card-btn" class="button button-primary">Descargar</button>
-            <input type="email" id="email-recipient-input" placeholder="correo@cliente.com" class="form-control flex-grow" />
+            <input type="email" id="email-recipient-input" placeholder="correo@cliente.com" class="form-control grow" />
             <button id="email-card-btn" class="button button-success">Enviar</button>
             <button id="modal-close-btn" class="button button-neutral ml-auto">Cerrar</button>
         </div>
-        <div id="email-feedback" class="text-sm mt-2 p-2 bg-white rounded"></div>
+        <div id="email-feedback" class="text-sm mt-2 p-2 bg-white rounded-sm"></div>
       </div>
     </div>`;
     document.body.insertAdjacentHTML('beforeend', modalHtml);
@@ -421,14 +421,14 @@ async function loadAndRenderDiscounts(tbodyEl, supabaseInstance, hotelId, showAl
                 case 'codigo': 
                     tipoDisplay = 'Por Código';
                     if (d.codigo) {
-                        nombreDisplay += `<div class="text-slate-500 font-mono text-xs inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded mt-1">${d.codigo}</div>`;
+                        nombreDisplay += `<div class="text-slate-500 font-mono text-xs inline-block bg-blue-100 text-blue-800 px-2 py-0.5 rounded-sm mt-1">${d.codigo}</div>`;
                     }
                     break;
                 case 'automatico': tipoDisplay = 'Automático'; break;
                 case 'cliente_especifico': 
                     const clientName = d.clientes?.nombre || 'N/A';
                     tipoDisplay = `Cliente Específico`;
-                    nombreDisplay += `<div class="text-slate-500 text-xs inline-block bg-purple-100 text-purple-800 px-2 py-0.5 rounded mt-1">👤 ${clientName}</div>`;
+                    nombreDisplay += `<div class="text-slate-500 text-xs inline-block bg-purple-100 text-purple-800 px-2 py-0.5 rounded-sm mt-1">👤 ${clientName}</div>`;
                     break;
                 default: tipoDisplay = 'General';
             }
@@ -680,7 +680,7 @@ container.innerHTML = `
                             </div>
                             
                             <div class="form-group flex items-center">
-                                <input type="checkbox" id="activo" name="activo" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" checked />
+                                <input type="checkbox" id="activo" name="activo" class="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500" checked />
                                 <label for="activo" class="ml-3 block text-sm font-medium text-slate-700">Activar este descuento</label>
                             </div>
 
@@ -700,7 +700,7 @@ container.innerHTML = `
                     <div class="flex flex-wrap items-center justify-between gap-4">
                         <h3 class="text-xl font-bold text-slate-800">Descuentos Existentes</h3>
                         <div class="flex items-center">
-                            <input id="show-inactive-discounts-checkbox" type="checkbox" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                            <input id="show-inactive-discounts-checkbox" type="checkbox" class="h-4 w-4 rounded-sm border-gray-300 text-blue-600 focus:ring-blue-500">
                             <label for="show-inactive-discounts-checkbox" class="ml-2 block text-sm font-medium text-slate-700">Mostrar inactivos</label>
                         </div>
                     </div>

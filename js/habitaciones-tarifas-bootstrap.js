@@ -153,7 +153,7 @@ function renderTariffList(section) {
 
   const roomNames = new Map(rooms.map((room) => [String(room.id), room.nombre]));
   list.innerHTML = tariffs.map((tariff) => `
-    <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" data-tariff-id="${tariff.id}">
+    <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs" data-tariff-id="${tariff.id}">
       <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <div class="flex flex-wrap items-center gap-2">
@@ -374,7 +374,7 @@ async function mountTariffs() {
 
   const section = document.createElement('section');
   section.id = 'habitaciones-tarifas-programadas';
-  section.className = 'mt-10 space-y-6 rounded-[28px] border border-indigo-100 bg-gradient-to-b from-white to-indigo-50/40 p-5 md:p-7 shadow-sm';
+  section.className = 'mt-10 space-y-6 rounded-[28px] border border-indigo-100 bg-linear-to-b from-white to-indigo-50/40 p-5 md:p-7 shadow-xs';
   section.innerHTML = `
     <div>
       <p class="text-xs font-bold uppercase tracking-[0.2em] text-indigo-500">Tarifas programadas</p>
@@ -384,7 +384,7 @@ async function mountTariffs() {
 
     <div id="tarifas-programadas-feedback" class="hidden"></div>
 
-    <form id="tarifa-programada-form" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-5">
+    <form id="tarifa-programada-form" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs space-y-5">
       <input type="hidden" name="tarifa_id">
       <div class="flex items-center justify-between gap-3">
         <h3 id="tarifa-form-title" class="text-lg font-bold text-slate-800">Nueva tarifa programada</h3>

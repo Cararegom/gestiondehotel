@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "build:tailwind": "tailwindcss -i ./css/tailwind-source.css -o ./tailwind.css --minify",
+    "build:tailwind": "node scripts/build-tailwind.mjs",
     "build:sentry": "node scripts/build-sentry.js",
     "build": "npm run build:tailwind && npm run build:sentry",
     "sentry:status": "powershell -NoProfile -File scripts/sentry.ps1 -Action status",
@@ -23,13 +23,13 @@
   },
   "dependencies": {
     "@sentry/browser": "10.73.0",
-    "@tailwindcss/vite": "^4.1.10",
-    "tailwindcss": "^4.1.10"
+    "tailwindcss": "4.3.3"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
-    "esbuild": "0.25.5",
-    "tailwindcss3": "npm:tailwindcss@3.4.17"
+    "@tailwindcss/node": "4.3.3",
+    "@tailwindcss/oxide": "4.3.3",
+    "esbuild": "0.25.5"
   },
   "name": "gestiondehotel",
   "version": "1.0.0",

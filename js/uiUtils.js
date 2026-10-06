@@ -876,7 +876,7 @@ export function mostrarConfirmacion(titulo, mensaje, tipo = 'danger') {
 
     // Crear el elemento contenedor
     const modalEl = document.createElement('div');
-    modalEl.className = "fixed inset-0 z-[150] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-fadeIn";
+    modalEl.className = "fixed inset-0 z-150 flex items-center justify-center bg-gray-900/60 backdrop-blur-xs p-4 animate-fadeIn";
     modalEl.innerHTML = `
             <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 relative transform transition-all scale-100 border border-gray-200">
                 <div class="text-center">
@@ -887,10 +887,10 @@ export function mostrarConfirmacion(titulo, mensaje, tipo = 'danger') {
                     </div>
                 </div>
                 <div class="mt-6 flex gap-3 justify-center">
-                    <button id="btn-cancel-confirm" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none transition-colors">
+                    <button id="btn-cancel-confirm" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-gray-300 shadow-xs px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-hidden transition-colors">
                         Cancelar
                     </button>
-                    <button id="btn-accept-confirm" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-${colorClass}-600 text-base font-medium text-white hover:bg-${colorClass}-700 focus:outline-none transition-colors shadow-lg shadow-${colorClass}-500/30">
+                    <button id="btn-accept-confirm" type="button" class="flex-1 inline-flex justify-center rounded-lg border border-transparent shadow-xs px-4 py-2 bg-${colorClass}-600 text-base font-medium text-white hover:bg-${colorClass}-700 focus:outline-hidden transition-colors shadow-lg shadow-${colorClass}-500/30">
                         Sí, confirmar
                     </button>
                 </div>

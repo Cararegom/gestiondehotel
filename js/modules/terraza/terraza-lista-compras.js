@@ -35,7 +35,7 @@ function getListaCompraItems(deps) {
 
 function renderEmptyState() {
   return `
-    <div class="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+    <div class="rounded-xl border border-slate-200 bg-white p-8 text-center shadow-xs">
       <h3 class="text-lg font-bold text-slate-800">Lista de compra al dia</h3>
       <p class="mt-1 text-sm text-slate-500">No hay productos activos con disponible por debajo del stock minimo.</p>
     </div>
@@ -48,7 +48,7 @@ function renderShoppingCards(items) {
   return `
     <div class="grid gap-3 md:hidden">
       ${items.map((item) => `
-        <article class="rounded-xl border border-amber-200 bg-white p-4 shadow-sm">
+        <article class="rounded-xl border border-amber-200 bg-white p-4 shadow-xs">
           <div class="flex items-start justify-between gap-3">
             <div>
               <h3 class="font-bold text-slate-800">${escapeHtml(item.nombre)}</h3>
@@ -72,7 +72,7 @@ function renderShoppingTable(items) {
   if (!items.length) return '';
 
   return `
-    <div class="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:block">
+    <div class="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs md:block">
       <table class="w-full text-sm">
         <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
           <tr>
@@ -115,7 +115,7 @@ export function renderListaCompraTab(deps) {
   return `
     <div class="space-y-4">
       ${deps.renderStats()}
-      <section class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+      <section class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 class="text-lg font-bold text-slate-800">Lista de compra</h2>
           <p class="text-sm text-slate-500">${items.length} producto(s) con disponible bajo minimo | ${totalSugerido} unidad(es) sugeridas.</p>

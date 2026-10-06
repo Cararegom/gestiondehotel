@@ -58,7 +58,7 @@ function ensureShell() {
 
   shell = document.createElement('section');
   shell.id = 'mant-f4-analytics';
-  shell.className = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-sm';
+  shell.className = 'rounded-2xl border border-slate-200 bg-white p-4 shadow-xs';
   shell.innerHTML = '<p class="text-sm text-slate-500">Cargando control de mantenimiento...</p>';
 
   const calendar = activeContainer.querySelector('#mant-calendar-shell');
@@ -192,7 +192,7 @@ function renderMetrics(metrics) {
     <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
       <p class="text-xs font-black uppercase tracking-wide text-slate-500">Categorías más reportadas</p>
       <div class="mt-2 flex flex-wrap gap-2">
-        ${categories.length ? categories.map((item) => `<span class="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm">${escapeHtml(item.categoria || 'general')} · ${Number(item.reportes || 0)}</span>`).join('') : '<span class="text-sm text-slate-500">Sin datos todavía.</span>'}
+        ${categories.length ? categories.map((item) => `<span class="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs">${escapeHtml(item.categoria || 'general')} · ${Number(item.reportes || 0)}</span>`).join('') : '<span class="text-sm text-slate-500">Sin datos todavía.</span>'}
       </div>
     </div>`;
 

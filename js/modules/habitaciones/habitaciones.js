@@ -535,7 +535,7 @@ async function showEditHabitacionModal(habitacionId) {
     if (!modalContainer) {
         modalContainer = document.createElement('div');
         modalContainer.id = 'habitacion-edit-modal-container';
-        modalContainer.className = "fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4";
+        modalContainer.className = "fixed inset-0 z-100 flex items-center justify-center bg-black/60 p-4";
         document.body.appendChild(modalContainer);
     }
     
@@ -1000,7 +1000,7 @@ export async function mount(container, supabaseInst, user, hotelId, planDetails)
   // --- HTML del módulo (Abreviado para no repetir todo, usar el de la versión anterior) ---
 container.innerHTML = `
     <div class="card habitaciones-module shadow-lg rounded-2xl overflow-hidden">
-      <div class="card-header bg-gradient-to-tr from-blue-600 to-indigo-700 p-5 border-b border-indigo-800">
+      <div class="card-header bg-linear-to-tr from-blue-600 to-indigo-700 p-5 border-b border-indigo-800">
         <h2 class="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
           <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
           Gestión de Hotel: Habitaciones y Tiempos
@@ -1038,7 +1038,7 @@ container.innerHTML = `
             </div>
             <div class="flex flex-col gap-3 border-t border-indigo-100 pt-4 md:flex-row md:items-center md:justify-between">
               <label for="activoTiempo" class="inline-flex items-center gap-2 self-start rounded-lg border border-indigo-100 bg-white/80 px-3 py-2">
-                <input type="checkbox" id="activoTiempo" name="activoTiempo" class="form-check-input h-5 w-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked />
+                <input type="checkbox" id="activoTiempo" name="activoTiempo" class="form-check-input h-5 w-5 text-indigo-600 border-gray-300 rounded-sm focus:ring-indigo-500" checked />
                 <span class="text-sm font-medium text-indigo-800">Activo</span>
               </label>
               <div class="form-actions flex flex-wrap items-center gap-3">
@@ -1048,7 +1048,7 @@ container.innerHTML = `
             </div>
           </form>
           <h4 class="text-md font-semibold text-indigo-700 mb-2 mt-6">Tiempos Existentes</h4>
-          <div class="table-container overflow-x-auto rounded-lg border border-indigo-100 shadow-sm">
+          <div class="table-container overflow-x-auto rounded-lg border border-indigo-100 shadow-xs">
             <table class="tabla-estilizada w-full min-w-full divide-y divide-indigo-100">
               <thead class="bg-indigo-50"><tr class="text-indigo-800"><th>Nombre</th><th>Duración</th><th>Precio</th><th>Estado</th><th>Acciones</th></tr></thead>
               <tbody id="tabla-tiempos-estancia-body" class="bg-white divide-y divide-gray-200"></tbody>

@@ -102,7 +102,7 @@ function renderMetricCard(label, value, tone = 'slate') {
   };
 
   return `
-    <article class="rounded-2xl border bg-gradient-to-br ${toneClasses[tone] || toneClasses.slate} p-4 shadow-sm">
+    <article class="rounded-2xl border bg-linear-to-br ${toneClasses[tone] || toneClasses.slate} p-4 shadow-xs">
       <p class="text-xs uppercase tracking-[0.22em] opacity-70">${escapeHtml(label)}</p>
       <p class="mt-2 text-3xl font-black">${escapeHtml(String(value ?? 0))}</p>
     </article>
@@ -126,7 +126,7 @@ function renderRecentIncidents(incidents = []) {
         const modulo = getIncidentModule(detalles);
         const resumen = getIncidentSummary(detalles);
         return `
-          <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
             <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <p class="text-xs uppercase tracking-[0.22em] text-slate-400">${escapeHtml(modulo)}</p>
@@ -262,7 +262,7 @@ function renderSupportCenter(payload) {
 
   currentContainerEl.innerHTML = `
     <div class="space-y-6 p-4 md:p-8">
-      <section class="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
+      <section class="rounded-[28px] bg-linear-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.35em] text-blue-200">Soporte</p>
@@ -270,9 +270,9 @@ function renderSupportCenter(payload) {
             <p class="mt-2 max-w-3xl text-sm text-blue-100">Un solo lugar para resolver dudas operativas, abrir el chat con Valeria y revisar las incidencias recientes del hotel.</p>
           </div>
           <div class="flex flex-wrap gap-3">
-            <button id="support-center-open-chat" class="rounded-2xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow hover:bg-emerald-300">Abrir chat con Valeria</button>
-            <a href="#/bitacora?scope=soporte" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20">Ver incidencias</a>
-            <a href="mailto:support@gestiondehotel.com?subject=Escalamiento%20de%20soporte%20hotel%20${encodeURIComponent(currentHotelId || '')}" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20">Escalar por correo</a>
+            <button id="support-center-open-chat" class="rounded-2xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm hover:bg-emerald-300">Abrir chat con Valeria</button>
+            <a href="#/bitacora?scope=soporte" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20">Ver incidencias</a>
+            <a href="mailto:support@gestiondehotel.com?subject=Escalamiento%20de%20soporte%20hotel%20${encodeURIComponent(currentHotelId || '')}" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20">Escalar por correo</a>
           </div>
         </div>
 
@@ -285,26 +285,26 @@ function renderSupportCenter(payload) {
       </section>
 
       <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Ayuda inmediata</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Canales disponibles</h2>
           <div class="mt-4 grid gap-4 md:grid-cols-2">
-            <button type="button" data-support-open-chat="true" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <button type="button" data-support-open-chat="true" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-left shadow-xs transition hover:-translate-y-0.5 hover:shadow-md">
               <p class="text-xs uppercase tracking-[0.22em] text-blue-500">Chat interno</p>
               <h3 class="mt-2 text-lg font-bold text-slate-900">Habla con Valeria</h3>
               <p class="mt-2 text-sm text-slate-600">Ideal para dudas operativas, rutas dentro del sistema o estructurar una falla antes de escalarla.</p>
             </button>
-            <a href="#/bitacora?scope=soporte" class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <a href="#/bitacora?scope=soporte" class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-xs transition hover:-translate-y-0.5 hover:shadow-md">
               <p class="text-xs uppercase tracking-[0.22em] text-emerald-600">Seguimiento</p>
               <h3 class="mt-2 text-lg font-bold text-slate-900">Bitacora de incidencias</h3>
               <p class="mt-2 text-sm text-slate-600">Revisa los casos que Valeria ya dejó registrados para este hotel y dales seguimiento operativo.</p>
             </a>
-            <a href="#/faq" class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <a href="#/faq" class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-xs transition hover:-translate-y-0.5 hover:shadow-md">
               <p class="text-xs uppercase tracking-[0.22em] text-amber-600">Autoayuda</p>
               <h3 class="mt-2 text-lg font-bold text-slate-900">Preguntas frecuentes</h3>
               <p class="mt-2 text-sm text-slate-600">Consulta respuestas rápidas para caja, reservas, reportes, integraciones y operación diaria.</p>
             </a>
-            <a href="mailto:support@gestiondehotel.com?subject=Escalamiento%20de%20soporte%20hotel%20${encodeURIComponent(currentHotelId || '')}" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+            <a href="mailto:support@gestiondehotel.com?subject=Escalamiento%20de%20soporte%20hotel%20${encodeURIComponent(currentHotelId || '')}" class="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-xs transition hover:-translate-y-0.5 hover:shadow-md">
               <p class="text-xs uppercase tracking-[0.22em] text-slate-500">Escalamiento</p>
               <h3 class="mt-2 text-lg font-bold text-slate-900">Correo del equipo</h3>
               <p class="mt-2 text-sm text-slate-600">Usa este canal cuando el caso necesite revisión humana o involucre algo excepcional.</p>
@@ -312,7 +312,7 @@ function renderSupportCenter(payload) {
           </div>
         </article>
 
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Buenas practicas</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Como reportar mejor una falla</h2>
           <ul class="mt-4 space-y-3 text-sm text-slate-600">
@@ -325,7 +325,7 @@ function renderSupportCenter(payload) {
         </article>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Incidencia manual</p>
@@ -340,31 +340,31 @@ function renderSupportCenter(payload) {
         <form id="support-manual-incident-form" class="mt-5 grid gap-4 lg:grid-cols-2">
           <div>
             <label class="mb-1 block text-sm font-semibold text-slate-700">Modulo afectado *</label>
-            <input name="modulo_afectado" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:bg-white" placeholder="Ej: Caja, Reservas, Mapa Hotel">
+            <input name="modulo_afectado" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden focus:border-blue-300 focus:bg-white" placeholder="Ej: Caja, Reservas, Mapa Hotel">
           </div>
           <div>
             <label class="mb-1 block text-sm font-semibold text-slate-700">Pantalla o flujo</label>
-            <input name="pantalla_o_flujo" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:bg-white" placeholder="Ej: Cierre de caja / ver consumos">
+            <input name="pantalla_o_flujo" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden focus:border-blue-300 focus:bg-white" placeholder="Ej: Cierre de caja / ver consumos">
           </div>
           <div>
             <label class="mb-1 block text-sm font-semibold text-slate-700">Accion realizada</label>
-            <input name="accion_realizada" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:bg-white" placeholder="Ej: Intentaba cerrar turno">
+            <input name="accion_realizada" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden focus:border-blue-300 focus:bg-white" placeholder="Ej: Intentaba cerrar turno">
           </div>
           <div>
             <label class="mb-1 block text-sm font-semibold text-slate-700">Resultado esperado</label>
-            <input name="resultado_esperado" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:bg-white" placeholder="Ej: Debia generar el corte y enviar correo">
+            <input name="resultado_esperado" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden focus:border-blue-300 focus:bg-white" placeholder="Ej: Debia generar el corte y enviar correo">
           </div>
           <div class="lg:col-span-2">
             <label class="mb-1 block text-sm font-semibold text-slate-700">Resultado real *</label>
-            <textarea name="resultado_real" rows="4" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:bg-white" placeholder="Describe el error, lo que ocurrio o el comportamiento anormal"></textarea>
+            <textarea name="resultado_real" rows="4" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden focus:border-blue-300 focus:bg-white" placeholder="Describe el error, lo que ocurrio o el comportamiento anormal"></textarea>
           </div>
           <div>
             <label class="mb-1 block text-sm font-semibold text-slate-700">Impacto operativo</label>
-            <input name="impacto_operativo" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:bg-white" placeholder="Ej: Bloquea cobros o check-in">
+            <input name="impacto_operativo" type="text" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden focus:border-blue-300 focus:bg-white" placeholder="Ej: Bloquea cobros o check-in">
           </div>
           <div>
             <label class="mb-1 block text-sm font-semibold text-slate-700">Prioridad sugerida</label>
-            <select name="prioridad_sugerida" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-blue-300 focus:bg-white">
+            <select name="prioridad_sugerida" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden focus:border-blue-300 focus:bg-white">
               <option value="Alta">Alta</option>
               <option value="Media" selected>Media</option>
               <option value="Baja">Baja</option>
@@ -376,12 +376,12 @@ function renderSupportCenter(payload) {
             <div id="support-manual-files-preview" class="mt-3"></div>
           </div>
           <div class="lg:col-span-2 flex justify-end">
-            <button type="submit" class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow hover:bg-blue-700">Guardar incidencia</button>
+            <button type="submit" class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700">Guardar incidencia</button>
           </div>
         </form>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Incidencias recientes</p>
@@ -407,7 +407,7 @@ async function loadSupportCenter() {
 
   currentContainerEl.innerHTML = `
     <div class="p-8">
-      <div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">
+      <div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-xs">
         Cargando centro de soporte...
       </div>
     </div>
@@ -441,7 +441,7 @@ export async function mount(container, sbInstance, user, hotelId) {
   if (!currentUser) {
     currentContainerEl.innerHTML = `
       <div class="p-8">
-        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-sm">
+        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-xs">
           Debes iniciar sesion para acceder al centro de soporte.
         </div>
       </div>
@@ -456,7 +456,7 @@ export async function mount(container, sbInstance, user, hotelId) {
     console.error('[Soporte] Error cargando centro de soporte:', error);
     currentContainerEl.innerHTML = `
       <div class="p-8">
-        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-sm">
+        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-xs">
           No se pudo cargar el centro de soporte: ${escapeHtml(error.message || 'Error desconocido')}
         </div>
       </div>

@@ -5,7 +5,7 @@ export function renderHistorialTab(deps) {
   return `
     <div class="grid grid-cols-1 gap-5 xl:grid-cols-3">
       <div class="xl:col-span-2">${renderHistorial(deps)}</div>
-      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
         <h3 class="font-bold text-slate-800">Operacion de Terraza</h3>
         <p class="mt-2 text-sm text-slate-500">Las ventas cobradas aqui entran al cierre de Caja como ingresos de Terraza.</p>
         <div class="mt-4 rounded-lg bg-blue-50 p-3 text-sm font-semibold text-blue-800">
@@ -40,7 +40,7 @@ function renderHistorial(deps) {
   }
 
   return `
-    <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div class="rounded-xl border border-slate-200 bg-white shadow-xs">
       <div class="border-b border-slate-200 p-4">
         <h3 class="font-bold text-slate-800">Historial de cuentas y movimientos</h3>
         <p class="mt-1 text-xs text-slate-500">Incluye cuentas cobradas, canceladas y reabiertas.</p>
