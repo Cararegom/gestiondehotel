@@ -352,3 +352,59 @@ export function formatInTimeZone(value, timeZone = DEFAULT_HOTEL_TIME_ZONE, loca
   if (Number.isNaN(date.getTime())) return 'Fecha Inválida';
   return new Intl.DateTimeFormat(locale, { ...safeOptions, timeZone: zone }).format(date);
 }
+
+function getDateTimePartsInTimeZone(value, timeZone) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('Fecha y hora inválidas.');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const values = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') values[part.type] = part.value;
+  }
+  return values;
+}
+
+export function parseDateTimeInTimeZone(value, timeZone = getRuntimeHotelTimeZone()) {
+  if (value instanceof Date) {
+    const cloned = new Date(value.getTime());
+    if (Number.isNaN(cloned.getTime())) throw new Error('Fecha y hora inválidas.');
+    return cloned;
+  }
+
+  const text = String(value || '').trim();
+  const localDateTimeMatch = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?)$/.exec(text);
+  if (localDateTimeMatch) {
+    const result = zonedDateTimeToUtc(localDateTimeMatch[1], localDateTimeMatch[2], timeZone);
+    const values = getDateTimePartsInTimeZone(result, timeZone);
+    const representedWallClock = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+    const requestedWallClock = `${localDateTimeMatch[1]}T${localDateTimeMatch[2].slice(0, 5)}`;
+    if (representedWallClock !== requestedWallClock) {
+      throw new Error('La hora local no existe en la zona horaria seleccionada.');
+    }
+    return result;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return zonedDateTimeToUtc(text, '00:00:00.000', timeZone);
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new Error('Fecha y hora inválidas.');
+  return parsed;
+}
+
+export function toDateTimeLocalValueInTimeZone(value, timeZone = getRuntimeHotelTimeZone()) {
+  const zone = normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE);
+  const date = parseDateTimeInTimeZone(value, zone);
+  const values = getDateTimePartsInTimeZone(date, zone);
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+}

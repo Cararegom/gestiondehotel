@@ -10,6 +10,11 @@ import { escapeAttribute, escapeHtml, normalizeLegacyText } from '../../security
 import { confirmAction, seleccionarMetodoPago, solicitarMotivoCambioMetodo } from './caja-turnos.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 import { getBankPaymentCashStatuses, getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
+import {
+  getRuntimeHotelTimeZone,
+  parseDateTimeInTimeZone,
+  toDateTimeLocalValueInTimeZone
+} from '../../services/hotelTimeZoneService.js';
 
 export function createInitialMovementTableState() {
   return {
@@ -133,6 +138,111 @@ export function getMovementTypeBadge(movementType) {
   return `<span class="badge bg-blue-100 text-blue-800">${safeType}</span>`;
 }
 
+const LINKED_MOVEMENT_FIELDS = [
+  'reserva_id',
+  'pago_reserva_id',
+  'venta_tienda_id',
+  'venta_restaurante_id',
+  'venta_terraza_id',
+  'reserva_terraza_id',
+  'compra_tienda_id'
+];
+
+// El backend tambien bloquea anticipos, gastos y conciliaciones bancarias.
+export function isMovementLinkedToOtherModule(movement = {}) {
+  return LINKED_MOVEMENT_FIELDS.some((field) => Boolean(movement?.[field]));
+}
+
+export function canAdminEditMovement(movement = {}, isAdminUser = false) {
+  const isReversal = movement?.source === 'caja_reversal' || Boolean(movement?.original_movement_id);
+  return Boolean(isAdminUser)
+    && !isReversal
+    && !movement?.reverted
+    && ['ingreso', 'egreso', 'apertura'].includes(movement?.tipo);
+}
+
+export async function solicitarEdicionMovimientoAdmin({ movement, metodos, timeZone = getRuntimeHotelTimeZone() }) {
+  if (typeof Swal === 'undefined') {
+    throw new Error('El editor de movimientos no esta disponible en este navegador.');
+  }
+
+  const isApertura = movement.tipo === 'apertura';
+  const linked = isMovementLinkedToOtherModule(movement);
+  const fechaLocal = toDateTimeLocalValueInTimeZone(getMovementEffectiveDate(movement) || new Date(), timeZone);
+  const metodoOptions = (metodos || []).map((metodo) => `
+    <option value="${escapeAttribute(metodo.id)}" ${metodo.id === movement.metodo_pago_id ? 'selected' : ''}>
+      ${escapeHtml(metodo.nombre || 'Sin nombre')}${metodo.activo === false ? ' (inactivo)' : ''}
+    </option>`).join('');
+  const tipoField = isApertura
+    ? '<input id="edit-mov-tipo" type="hidden" value="apertura"><p class="text-sm text-slate-600">Tipo: <strong>Apertura</strong></p>'
+    : `<select id="edit-mov-tipo" class="swal2-select" style="width:100%;margin:0" ${linked ? 'disabled' : ''}>
+        <option value="ingreso" ${movement.tipo === 'ingreso' ? 'selected' : ''}>Ingreso</option>
+        <option value="egreso" ${movement.tipo === 'egreso' ? 'selected' : ''}>Egreso</option>
+      </select>`;
+
+  const result = await Swal.fire({
+    title: 'Editar movimiento',
+    width: 560,
+    html: `
+      <div style="display:grid;gap:12px;text-align:left">
+        ${linked ? '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Este movimiento esta ligado a una reserva o venta: el monto y el tipo se corrigen desde ese modulo.</p>' : ''}
+        <label class="text-sm font-semibold">Tipo ${tipoField}</label>
+        <label class="text-sm font-semibold">Monto
+          <input id="edit-mov-monto" type="number" min="1" step="any" class="swal2-input" style="width:100%;margin:0" value="${escapeAttribute(String(Number(movement.monto) || ''))}" ${linked ? 'disabled' : ''}>
+        </label>
+        <label class="text-sm font-semibold">Concepto
+          <textarea id="edit-mov-concepto" maxlength="500" class="swal2-textarea" style="width:100%;margin:0">${escapeHtml(movement.concepto_original ?? movement.concepto ?? '')}</textarea>
+        </label>
+        <label class="text-sm font-semibold">Metodo de pago
+          <select id="edit-mov-metodo" class="swal2-select" style="width:100%;margin:0">${metodoOptions}</select>
+        </label>
+        <label class="text-sm font-semibold">Fecha y hora
+          <input id="edit-mov-fecha" type="datetime-local" class="swal2-input" style="width:100%;margin:0" value="${escapeAttribute(fechaLocal)}">
+        </label>
+        <label class="text-sm font-semibold">Motivo de la correccion
+          <textarea id="edit-mov-motivo" maxlength="500" class="swal2-textarea" style="width:100%;margin:0" placeholder="Obligatorio. Queda en la auditoria."></textarea>
+        </label>
+      </div>`,
+    showCancelButton: true,
+    confirmButtonText: 'Guardar cambios',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#2563eb',
+    focusConfirm: false,
+    preConfirm: () => {
+      const popup = Swal.getPopup();
+      const value = (selector) => popup.querySelector(selector)?.value ?? '';
+      const monto = Number(value('#edit-mov-monto'));
+      const concepto = String(value('#edit-mov-concepto')).trim();
+      const motivo = String(value('#edit-mov-motivo')).trim();
+      const metodoPagoId = value('#edit-mov-metodo');
+      if (!Number.isFinite(monto) || monto <= 0) return Swal.showValidationMessage('El monto debe ser mayor que cero.');
+      if (!concepto) return Swal.showValidationMessage('El concepto es obligatorio.');
+      if (!metodoPagoId) return Swal.showValidationMessage('Selecciona un metodo de pago.');
+      if (!motivo) return Swal.showValidationMessage('El motivo de la correccion es obligatorio.');
+      const fechaInput = value('#edit-mov-fecha');
+      let fechaMovimiento = getMovementEffectiveDate(movement);
+      // datetime-local recorta segundos: si no se toco, se conserva la fecha exacta.
+      if (fechaInput !== fechaLocal || !fechaMovimiento) {
+        try {
+          fechaMovimiento = parseDateTimeInTimeZone(fechaInput, timeZone).toISOString();
+        } catch (error) {
+          return Swal.showValidationMessage(error.message || 'Fecha y hora invalidas.');
+        }
+      }
+      return {
+        tipo: value('#edit-mov-tipo') || movement.tipo,
+        monto,
+        concepto,
+        metodoPagoId,
+        fechaMovimiento,
+        motivo
+      };
+    }
+  });
+
+  return result.isConfirmed ? result.value : null;
+}
+
 export function getBankStatusBadge(status) {
   const badges = {
     pending: ['Esperando verificacion', 'bg-amber-100 text-amber-800'],
@@ -252,6 +362,9 @@ export function renderMovementRows({
       const movementDate = formatMovementDateTime(movement);
       const isIncome = movement.tipo === 'ingreso';
       const amountClass = movement.tipo === 'egreso' ? 'text-red-600' : (isIncome ? 'text-green-600' : 'text-blue-600');
+      const editButton = canAdminEditMovement(movement, isAdminUser)
+        ? `<button class="text-blue-600 hover:text-blue-800 font-medium" title="Editar movimiento" data-edit-movimiento-admin="${movementIdAttr}" data-edit-metodo="${movementIdAttr}" data-metodo-actual="${currentMethodAttr}">Editar</button>`
+        : `<button class="text-blue-600 hover:text-blue-800 font-medium" title="Editar metodo de pago" data-edit-metodo="${movementIdAttr}" data-metodo-actual="${currentMethodAttr}">Editar</button>`;
 
       return `
         <tr class="hover:bg-slate-50 transition-colors">
@@ -276,7 +389,7 @@ export function renderMovementRows({
             <div class="flex items-center justify-between gap-3">
               <span class="truncate">${safeMethodName}</span>
               <div class="flex-shrink-0 flex items-center gap-3">
-                <button class="text-blue-600 hover:text-blue-800 font-medium" title="Editar metodo de pago" data-edit-metodo="${movementIdAttr}" data-metodo-actual="${currentMethodAttr}">Editar</button>
+                ${editButton}
                 ${isReverted ? '<span class="text-xs font-semibold text-amber-700">Revertido</span>' : ''}
                 ${isAdminUser && !isReversal && !isReverted ? `<button class="text-red-500 hover:text-red-700 font-medium" title="Revertir movimiento" data-delete-movimiento="${movementIdAttr}" data-concepto="${conceptAttr}" data-monto="${amountAttr}" data-tipo="${typeAttr}">Revertir</button>` : ''}
               </div>
@@ -319,6 +432,75 @@ export async function handleMovementTableClick({
   currentModuleUser,
   currentContainerEl
 }) {
+  const adminEditButton = event.target.closest('button[data-edit-movimiento-admin]');
+  if (adminEditButton && isAdminUser) {
+    const movimientoId = adminEditButton.getAttribute('data-edit-movimiento-admin');
+    const movement = movementTableState.all.find((item) => item.id === movimientoId);
+    const feedbackEl = currentContainerEl.querySelector('#turno-global-feedback');
+    if (!movement) {
+      showError(feedbackEl, 'No se encontro el movimiento. Recarga la vista e intenta de nuevo.');
+      return;
+    }
+
+    showGlobalLoading('Cargando metodos de pago...');
+    const { data: metodos, error: errMetodos } = await supabase
+      .from('metodos_pago')
+      .select('id, nombre, activo')
+      .eq('hotel_id', hotelId)
+      .order('nombre');
+    hideGlobalLoading();
+    if (errMetodos) {
+      showError(feedbackEl, 'No se pudieron cargar los metodos de pago.');
+      return;
+    }
+    const metodosEditables = (metodos || []).filter((metodo) => metodo.activo !== false || metodo.id === movement.metodo_pago_id);
+
+    let cambios;
+    try {
+      cambios = await solicitarEdicionMovimientoAdmin({ movement, metodos: metodosEditables });
+    } catch (modalError) {
+      showError(feedbackEl, modalError.message);
+      return;
+    }
+    if (!cambios) return;
+
+    showGlobalLoading('Guardando movimiento...');
+    const { data: editResult, error: editError } = await supabase.rpc('editar_movimiento_caja_admin', {
+      p_movimiento_id: movimientoId,
+      p_tipo: cambios.tipo,
+      p_monto: cambios.monto,
+      p_concepto: cambios.concepto,
+      p_metodo_pago_id: cambios.metodoPagoId,
+      p_fecha_movimiento: cambios.fechaMovimiento,
+      p_motivo: cambios.motivo
+    });
+    hideGlobalLoading();
+
+    if (editError) {
+      showError(feedbackEl, `No se pudo editar el movimiento: ${editError.message}`);
+      return;
+    }
+    if (editResult?.ledger_sincronizado !== true) {
+      showError(feedbackEl, 'El movimiento cambio, pero no se pudo verificar la cuenta financiera asociada.');
+      return;
+    }
+
+    showSuccess(feedbackEl, editResult?.sin_cambios ? 'No habia cambios para guardar.' : 'Movimiento actualizado y auditado.');
+    await loadAndRenderMovements({
+      tBodyEl,
+      summaryEls,
+      turnoId,
+      movementRefs,
+      movementTableState,
+      supabase,
+      hotelId,
+      hotelName,
+      currentContainerEl,
+      isAdminUser
+    });
+    return;
+  }
+
   const editButton = event.target.closest('button[data-edit-metodo]');
   if (editButton) {
     const movimientoId = editButton.getAttribute('data-edit-metodo');
@@ -466,7 +648,7 @@ export async function loadAndRenderMovements({
   try {
     const { data: movements, error } = await supabase
       .from('caja')
-      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,venta_tienda_id,venta_restaurante_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
+      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,reserva_id,pago_reserva_id,venta_tienda_id,venta_restaurante_id,venta_terraza_id,reserva_terraza_id,compra_tienda_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
       .eq('hotel_id', hotelId)
       .eq('turno_id', turnoId);
 

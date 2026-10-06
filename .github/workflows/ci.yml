@@ -22,8 +22,15 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      # Bloquea solo vulnerabilidades altas en dependencias de produccion.
+      # Las de herramientas de build (tailwindcss3 -> braces, sin version
+      # corregida) se reportan en el paso siguiente sin bloquear el CI.
       - name: Dependency security audit
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Full dependency audit (informativo)
         run: npm audit --audit-level=high
+        continue-on-error: true
 
       - name: Syntax check
         run: npm run check:syntax
