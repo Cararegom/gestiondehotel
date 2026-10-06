@@ -454,3 +454,57 @@ test('la migracion aborta sin cambios si un hotel tiene dos Efectivo activos', a
 test('el frontend conserva la firma del RPC de apertura', () => {
   assert.match(turnosSource, /rpc\('abrir_turno_con_apertura',\s*\{\s*p_hotel_id: currentHotelId,\s*p_usuario_id: currentModuleUser\.id,\s*p_monto_inicial: montoInicial,\s*p_fecha_movimiento: fechaMovimiento\s*\}\)/);
 });
+
+test('legado: repara aperturas sin source y crea Efectivo donde falta, sin tocar turnos cerrados', async (t) => {
+  const legacyRepair = fs.readFileSync(
+    path.join(migrationsDir, '20261006150000_m5_reparar_aperturas_turnos_abiertos_legado.sql'),
+    'utf8',
+  );
+  const db = await createDatabase({ legacy: true });
+  t.after(() => db.close());
+  // Apertura antigua sin source en hotel con Efectivo, e ingreso sin metodo reparado manualmente.
+  await db.exec(`
+    update public.caja set metodo_pago_id = '${ids.cashA}' where turno_id = '${ids.legacyOpenA}' and tipo = 'ingreso';
+    alter table public.metodos_pago add column creado_en timestamptz default now();
+    alter table public.metodos_pago alter column id set default gen_random_uuid();
+  `);
+  const turnoViejo = id(60);
+  await db.exec(`
+    insert into public.turnos(id, hotel_id, usuario_id, estado) values ('${turnoViejo}', '${ids.hotelB}', '${ids.actorB}', 'abierto');
+    insert into public.caja(hotel_id, usuario_id, turno_id, tipo, concepto, monto, metodo_pago_id, source)
+      values ('${ids.hotelB}', '${ids.actorB}', '${turnoViejo}', 'apertura', 'Apertura de caja', 90000, null, null);
+  `).catch(async () => {
+    // El trigger preventivo impide crear aperturas sin metodo: se simula el legado sin el.
+    await db.exec(`
+      alter table public.caja disable trigger caja_apertura_requiere_metodo_trg;
+      insert into public.turnos(id, hotel_id, usuario_id, estado) values ('${turnoViejo}', '${ids.hotelB}', '${ids.actorB}', 'abierto');
+      insert into public.caja(hotel_id, usuario_id, turno_id, tipo, concepto, monto, metodo_pago_id, source)
+        values ('${ids.hotelB}', '${ids.actorB}', '${turnoViejo}', 'apertura', 'Apertura de caja', 90000, null, null);
+      alter table public.caja enable trigger caja_apertura_requiere_metodo_trg;
+    `);
+  });
+
+  await db.exec(legacyRepair);
+
+  const rows = await db.query(`
+    select c.turno_id, c.monto, m.nombre, m.hotel_id = c.hotel_id as mismo_hotel
+      from public.caja c left join public.metodos_pago m on m.id = c.metodo_pago_id
+     where c.tipo = 'apertura' order by c.turno_id
+  `);
+  const byTurno = Object.fromEntries(rows.rows.map((row) => [row.turno_id, row]));
+  assert.equal(byTurno[turnoViejo].nombre.trim().toLowerCase(), 'efectivo');
+  assert.equal(byTurno[ids.legacyOpenSinEfectivo].nombre, 'Efectivo', 'se creo Efectivo en el hotel que no tenia');
+  assert.equal(byTurno[ids.legacyOpenSinEfectivo].mismo_hotel, true);
+  assert.equal(byTurno[ids.legacyClosedA].nombre, null, 'turno cerrado intacto');
+  assert.equal(Number(byTurno[turnoViejo].monto), 90000);
+
+  const efectivos = await db.query(`select count(*)::int as n from public.metodos_pago where hotel_id = '${ids.hotelSinEfectivo}' and nombre = 'Efectivo'`);
+  assert.equal(efectivos.rows[0].n, 1);
+  const ledger = await db.query('select count(*)::int as n from public.account_movements');
+  assert.equal(ledger.rows[0].n, 0);
+
+  // Idempotente.
+  await db.exec(legacyRepair);
+  const again = await db.query(`select count(*)::int as n from public.metodos_pago where lower(btrim(nombre)) = 'efectivo'`);
+  assert.equal(again.rows[0].n, 3);
+});
