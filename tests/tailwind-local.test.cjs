@@ -33,6 +33,12 @@ test('Tailwind v4 conserva la apariencia de v3 y no usa utilidades eliminadas', 
   assert.match(source, /cursor: pointer;/);
   assert.match(css, /--color-blue-600:#2563eb/);
 
+  // Sin @layer: style.css se carga antes y, como en v3, a igual especificidad
+  // deben ganar las utilidades (p. ej. .hidden). Con capas ganaria style.css.
+  assert.doesNotMatch(css, /@layer\b/);
+  const app = fs.readFileSync(path.join(root, 'app/index.html'), 'utf8');
+  assert.ok(app.indexOf('../style.css') < app.indexOf('../tailwind.css'), 'style.css debe cargarse antes que tailwind.css');
+
   // Sin la CLI v3 ni @tailwindcss/cli (arrastran braces vulnerable).
   assert.equal(pkg.devDependencies.tailwindcss3, undefined);
   assert.equal(pkg.devDependencies['@tailwindcss/cli'], undefined);
