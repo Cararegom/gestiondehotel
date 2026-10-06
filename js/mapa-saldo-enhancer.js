@@ -281,6 +281,8 @@ export async function refrescarSaldosVisiblesMapa() {
   const hotelId = window.hotelIdGlobal;
 
   if (!grid || !supabase || !hotelId) return;
+  // El mapa de solo lectura (personal de aseo) no muestra saldos ni cobros.
+  if (grid.dataset.readOnly === 'true') return;
 
   const cards = Array.from(grid.querySelectorAll('.room-card'));
   if (cards.length === 0) return;

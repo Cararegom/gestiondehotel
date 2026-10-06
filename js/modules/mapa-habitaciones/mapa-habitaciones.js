@@ -1,4 +1,5 @@
 import { turnoService, checkTurnoActivo } from '../../services/turnoService.js';
+import { isAseoReadOnlyUser } from '../../services/aseoRoleService.js';
 import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/clientes.js';
 import { registrarUsoDescuento } from '../../uiUtils.js';
 import { renderFloorFilters, getRoomOperationalAlerts } from './room-card.js';
@@ -23,19 +24,20 @@ function syncWindowBridges() {
   window.registrarUsoDescuento = registrarUsoDescuento;
 }
 
-function buildBaseLayout(container) {
+function buildBaseLayout(container, { readOnly = false } = {}) {
   container.innerHTML = `
     <div class="mb-8 px-4 md:px-0">
       <h2 class="text-3xl font-bold text-gray-800 flex items-center">
         Mapa de Habitaciones
       </h2>
+      ${readOnly ? '<p id="mapa-modo-lectura" class="mt-2 inline-flex rounded-lg bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">Modo solo lectura: consulta qué habitaciones están libres u ocupadas.</p>' : ''}
     </div>
 
     <div id="mapa-kpi-container" class="mb-6 grid grid-cols-2 gap-3 px-4 md:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-9 md:px-0"></div>
     <div id="mapa-toolbar-container" class="mb-4 px-4 md:px-0"></div>
     <div id="floor-filter-container" class="flex flex-wrap items-center gap-2 mb-6 pb-4 border-b border-slate-200 px-4 md:px-0"></div>
 
-    <div id="room-map-list" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 px-4 md:px-0"></div>
+    <div id="room-map-list" ${readOnly ? 'data-read-only="true"' : ''} class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 px-4 md:px-0"></div>
 
     <div id="modal-container" class="fixed inset-0 z-[100] flex items-start justify-center bg-black/70 backdrop-blur-sm p-4 pt-8 overflow-y-auto" style="display:none;"></div>
     <div id="modal-container-secondary" class="fixed inset-0 z-[200] flex items-start justify-center bg-black/60 p-4 pt-8 overflow-y-auto" style="display:none;"></div>
@@ -424,10 +426,15 @@ export async function mount(container, supabase, currentUser, hotelId) {
     return;
   }
 
-  const hayTurno = await checkTurnoActivo(supabase, hotelId, currentUser.id);
-  if (!hayTurno) return;
+  const readOnly = isAseoReadOnlyUser(currentUser);
 
-  buildBaseLayout(container);
+  // El personal de aseo no abre turno de caja: solo consulta el mapa.
+  if (!readOnly) {
+    const hayTurno = await checkTurnoActivo(supabase, hotelId, currentUser.id);
+    if (!hayTurno) return;
+  }
+
+  buildBaseLayout(container, { readOnly });
 
   const roomsListEl = container.querySelector('#room-map-list');
   if (!roomsListEl) {
@@ -460,7 +467,9 @@ export async function renderRooms(gridEl, supabase, currentUser, hotelId) {
 
   currentRooms = Array.isArray(habitaciones) ? habitaciones : [];
   applyUpcomingReservationLocks(currentRooms);
-  await syncOperationalRoomStates(currentRooms, supabase, hotelId);
+  if (!isAseoReadOnlyUser(currentUser)) {
+    await syncOperationalRoomStates(currentRooms, supabase, hotelId);
+  }
   sortRooms(currentRooms);
   renderMapaKpis(currentRooms, kpiContainer);
 
