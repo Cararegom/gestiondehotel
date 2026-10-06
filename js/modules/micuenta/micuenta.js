@@ -180,7 +180,7 @@ function buildRenewalMessage(diasRestantes, estado, enGracia) {
 
 function renderUsageCard({ icon, title, meta }) {
   return `
-    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-xs">
       <div class="flex items-center justify-between gap-3">
         <div class="flex items-center gap-2 text-sm font-semibold text-slate-700"><span>${icon}</span>${escapeHtml(title)}</div>
         <div class="text-sm font-bold text-slate-900">${escapeHtml(meta.label)}</div>
@@ -210,7 +210,7 @@ function buildInternalAccountHero(planName) {
       <div class="grid gap-5 md:grid-cols-[1fr_auto] md:items-center">
         <div>
           <div class="flex flex-wrap items-center gap-2">
-            <span class="rounded-full bg-white bg-opacity-10 px-3 py-1 text-xs font-semibold">Plan ${planName}</span>
+            <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">Plan ${planName}</span>
             <span class="rounded-full bg-emerald-900 px-3 py-1 text-xs font-semibold text-emerald-200">Cuenta interna</span>
           </div>
           <h3 class="mt-4 text-2xl md:text-3xl font-bold">Acceso permanente sin renovación</h3>
@@ -288,11 +288,11 @@ export async function mount(container, supabase, user, hotelId) {
 
   const billingControls = esCuentaInterna ? '' : `
     <div class="flex flex-wrap gap-2">
-      <label class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">Moneda
-        <select id="monedaSelector" class="ml-2 bg-transparent font-bold text-slate-900 outline-none"><option value="COP">COP</option><option value="USD">USD</option></select>
+      <label class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-xs">Moneda
+        <select id="monedaSelector" class="ml-2 bg-transparent font-bold text-slate-900 outline-hidden"><option value="COP">COP</option><option value="USD">USD</option></select>
       </label>
-      <label class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm">Pago
-        <select id="tipoPagoSelector" class="ml-2 bg-transparent font-bold text-slate-900 outline-none"><option value="mensual">Mensual</option><option value="anual">Anual · 2 meses gratis</option></select>
+      <label class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-xs">Pago
+        <select id="tipoPagoSelector" class="ml-2 bg-transparent font-bold text-slate-900 outline-hidden"><option value="mensual">Mensual</option><option value="anual">Anual · 2 meses gratis</option></select>
       </label>
     </div>`;
 
@@ -303,14 +303,14 @@ export async function mount(container, supabase, user, hotelId) {
       <div class="grid gap-6 lg:grid-cols-2 lg:items-center">
         <div>
           <div class="flex flex-wrap items-center gap-2">
-            <span class="rounded-full bg-white bg-opacity-10 px-3 py-1 text-xs font-semibold">Plan ${safePlanName}</span>
+            <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold">Plan ${safePlanName}</span>
             <span class="rounded-full ${hotel.estado_suscripcion === 'vencido' ? 'bg-rose-900 text-rose-100' : 'bg-emerald-900 text-emerald-200'} px-3 py-1 text-xs font-semibold">${safeStatus}</span>
           </div>
           <h3 class="mt-4 text-2xl md:text-3xl font-bold">${escapeHtml(renewalMessage.title)}</h3>
           <p class="mt-2 max-w-2xl text-sm text-slate-300">${escapeHtml(renewalMessage.body)}</p>
           <div class="mt-5 flex flex-wrap items-center gap-3 text-sm">
-            <span class="rounded-xl bg-white bg-opacity-10 px-3 py-2"><b>Fin del ciclo:</b> ${fechaFin ? fechaFin.toLocaleDateString('es-CO') : 'N/A'}</span>
-            <span class="rounded-xl bg-white bg-opacity-10 px-3 py-2"><b>${enGracia ? 'Gracia restante' : 'Días restantes'}:</b> ${diasRestantes}</span>
+            <span class="rounded-xl bg-white/10 px-3 py-2"><b>Fin del ciclo:</b> ${fechaFin ? fechaFin.toLocaleDateString('es-CO') : 'N/A'}</span>
+            <span class="rounded-xl bg-white/10 px-3 py-2"><b>${enGracia ? 'Gracia restante' : 'Días restantes'}:</b> ${diasRestantes}</span>
           </div>
         </div>
         <div class="rounded-2xl bg-white p-4 text-slate-900">
@@ -327,14 +327,14 @@ export async function mount(container, supabase, user, hotelId) {
       <b>Cuenta interna protegida.</b> Las opciones de renovación, promociones y checkout están ocultas para evitar cobros accidentales. El plan puede seguir consultándose y usándose normalmente.
     </section>` : `
     ${recommendedPlan ? `
-      <section class="mb-6 rounded-3xl border border-indigo-200 bg-indigo-50 p-5 md:p-6 shadow-sm">
+      <section class="mb-6 rounded-3xl border border-indigo-200 bg-indigo-50 p-5 md:p-6 shadow-xs">
         <div class="grid gap-5 md:grid-cols-2 md:items-center">
           <div><div class="text-xs font-bold uppercase tracking-wide text-indigo-600">Recomendación basada en tu uso</div><h3 class="mt-2 text-xl font-bold text-slate-900">Tu operación está acercándose a los límites de ${safePlanName}</h3><p class="mt-2 text-sm text-slate-600">${escapeHtml(recommendationReason)}</p><p class="mt-1 text-xs text-slate-500">Esta recomendación aparece porque tu uso ya supera el 80% de al menos un límite configurado.</p></div>
-          <div class="md:text-right"><button class="btn-ir-plan-recomendado rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white shadow transition hover:bg-indigo-700" data-plan-id="${escapeHtml(recommendedPlan.id)}">Ver ${escapeHtml(recommendedPlan.nombre)}</button></div>
+          <div class="md:text-right"><button class="btn-ir-plan-recomendado rounded-xl bg-indigo-600 px-5 py-3 font-bold text-white shadow-sm transition hover:bg-indigo-700" data-plan-id="${escapeHtml(recommendedPlan.id)}">Ver ${escapeHtml(recommendedPlan.nombre)}</button></div>
         </div>
       </section>` : `
       <section class="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900"><b>Tu plan actual todavía tiene margen.</b> Mejora cuando tu operación lo necesite o cuando otro plan tenga funciones que realmente vayas a usar.</section>`}
-    <section class="bg-white shadow-sm border border-slate-200 rounded-3xl p-5 md:p-6 mb-8">
+    <section class="bg-white shadow-xs border border-slate-200 rounded-3xl p-5 md:p-6 mb-8">
       <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between"><div><div class="text-xs font-bold uppercase tracking-wide text-blue-600">Planes disponibles</div><h3 class="mt-1 text-2xl font-bold text-slate-900">Compara antes de decidir</h3><p class="mt-1 text-sm text-slate-500">El precio cambia con la moneda y el período seleccionados arriba.</p></div><div class="rounded-xl bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800">Anual = pagas 10 meses y recibes 12</div></div>
       <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-5" id="planes-list"></div>
     </section>`;
@@ -356,13 +356,13 @@ export async function mount(container, supabase, user, hotelId) {
       ${salesSections}
 
       <section class="grid grid-cols-1 xl:grid-cols-2 gap-5 mb-8">
-        <div class="bg-white border border-slate-200 shadow-sm rounded-3xl p-5 md:p-6">
+        <div class="bg-white border border-slate-200 shadow-xs rounded-3xl p-5 md:p-6">
           <h3 class="text-lg font-bold text-slate-900">Historial de pagos</h3><p class="text-xs text-slate-500 mb-4">Consulta pagos y operaciones de suscripción registradas.</p>
           <div class="overflow-auto"><table class="w-full min-w-[650px] text-xs"><thead><tr class="text-left text-slate-500 border-b"><th class="py-2">Fecha</th><th>Plan</th><th>Monto</th><th>Operación</th><th>Proveedor</th><th>Período</th></tr></thead><tbody>
           ${pagosSafe.length === 0 ? `<tr><td colspan="6" class="text-slate-400 py-4 text-center">Sin pagos registrados</td></tr>` : pagosSafe.map(p => `<tr class="border-b border-slate-100"><td class="py-2">${p.fecha ? new Date(p.fecha).toLocaleDateString('es-CO') : '-'}</td><td>${escapeHtml(p.plan || '-')}</td><td class="font-semibold">${formatMoneda(p.monto, p.moneda)}</td><td>${escapeHtml(paymentTypeLabel(p.payment_type))}</td><td>${escapeHtml(p.provider || p.metodo_pago || '-')}</td><td>${escapeHtml(p.billing_period || '-')}</td></tr>`).join('')}
           </tbody></table></div>
         </div>
-        <div class="bg-white border border-slate-200 shadow-sm rounded-3xl p-5 md:p-6">
+        <div class="bg-white border border-slate-200 shadow-xs rounded-3xl p-5 md:p-6">
           <h3 class="text-lg font-bold text-slate-900">Cambios de plan</h3><p class="text-xs text-slate-500 mb-4">Trazabilidad de mejoras y cambios programados.</p>
           <div class="overflow-auto"><table class="w-full min-w-[450px] text-xs"><thead><tr class="text-left text-slate-500 border-b"><th class="py-2">Fecha</th><th>De</th><th>A</th><th>Origen</th></tr></thead><tbody>
           ${cambiosPlanSafe.length === 0 ? `<tr><td colspan="4" class="text-slate-400 py-4 text-center">Sin cambios registrados</td></tr>` : cambiosPlanSafe.map(c => `<tr class="border-b border-slate-100"><td class="py-2">${c.fecha ? new Date(c.fecha).toLocaleDateString('es-CO') : '-'}</td><td>${escapeHtml(c.plan_anterior || '-')}</td><td>${escapeHtml(c.plan_nuevo || '-')}</td><td>${escapeHtml(c.usuario_nombre || '-')}</td></tr>`).join('')}
@@ -370,11 +370,11 @@ export async function mount(container, supabase, user, hotelId) {
         </div>
       </section>
 
-      <section class="bg-white border border-slate-200 shadow-sm rounded-3xl p-5 md:p-6 mb-8">
+      <section class="bg-white border border-slate-200 shadow-xs rounded-3xl p-5 md:p-6 mb-8">
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div><div class="text-xs font-bold uppercase tracking-wide text-slate-500">Seguridad de la cuenta</div><h3 class="mt-1 text-xl font-bold text-slate-900">Datos del administrador</h3><p class="mt-1 text-sm text-slate-500">Correo actual: <b>${safeEmail}</b></p></div><div class="flex flex-wrap gap-2"><button id="btnCambiarCorreo" class="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-100">Cambiar correo</button><button id="btnCambiarPass" class="rounded-xl border border-slate-300 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-100">Cambiar mi contraseña</button></div></div>
       </section>
 
-      <details class="bg-white border border-slate-200 shadow-sm rounded-3xl p-5 md:p-6 mb-8">
+      <details class="bg-white border border-slate-200 shadow-xs rounded-3xl p-5 md:p-6 mb-8">
         <summary class="cursor-pointer list-none"><div class="flex items-center justify-between gap-3"><div><div class="text-xs font-bold uppercase tracking-wide text-indigo-600">Programa de referidos</div><h3 class="mt-1 text-lg font-bold text-slate-900">Gana 30 días por cada hotel referido que pague</h3></div><span class="rounded-full bg-indigo-50 px-3 py-1 text-sm font-bold text-indigo-700">${referidosAnalytics.activos} activos</span></div></summary>
         <div class="mt-5"><div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4"><div class="rounded-xl bg-slate-50 p-3"><div class="text-xs text-slate-500">Total</div><div class="text-xl font-bold">${referidosAnalytics.total}</div></div><div class="rounded-xl bg-emerald-50 p-3"><div class="text-xs text-emerald-700">Activos</div><div class="text-xl font-bold text-emerald-800">${referidosAnalytics.activos}</div></div><div class="rounded-xl bg-amber-50 p-3"><div class="text-xs text-amber-700">Trial</div><div class="text-xl font-bold text-amber-800">${referidosAnalytics.trial}</div></div><div class="rounded-xl bg-rose-50 p-3"><div class="text-xs text-rose-700">Pendientes</div><div class="text-xl font-bold text-rose-800">${referidosAnalytics.pendientes}</div></div><div class="rounded-xl bg-blue-50 p-3"><div class="text-xs text-blue-700">Conversión</div><div class="text-xl font-bold text-blue-800">${referidosAnalytics.conversionRate.toFixed(0)}%</div></div></div>
           <div class="flex flex-col sm:flex-row gap-2 mb-4"><input type="text" class="form-control w-full" value="${escapeHtml(refLink)}" readonly id="refLinkInput"><button class="btn btn-accent" id="btnCopyRefLink">Copiar enlace</button></div>
@@ -385,9 +385,9 @@ export async function mount(container, supabase, user, hotelId) {
       <div class="flex flex-col items-center justify-center text-xs text-slate-400 pt-4 pb-2">Gestión de Hotel es un producto de Grupo Empresarial Areiza Gomez</div>
     </div>
 
-    ${esCuentaInterna ? '' : `<div id="modalUpgrade" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden p-4"><div class="bg-white p-6 rounded-2xl shadow-xl max-w-md w-full relative"><button id="closeUpgradeModal" class="absolute top-2 right-3 text-slate-400 hover:text-red-500 text-2xl">&times;</button><h3 class="font-bold text-lg mb-2 text-blue-700">Confirmar cambio de plan</h3><div class="mb-2"><span id="modalPlanName"></span></div><div class="mb-3 text-sm text-slate-500">Fin del ciclo: <b>${fechaFin ? fechaFin.toLocaleDateString('es-CO') : '-'}</b>.</div><div id="prorrateoDetalle" class="mb-4 p-3 bg-blue-50 rounded-lg text-blue-900"></div><button id="confirmUpgrade" class="w-full py-3 px-4 rounded-xl text-white bg-emerald-600 font-semibold shadow hover:bg-emerald-700"><span class="btn-text">Pagar y cambiar plan</span></button></div></div>`}
+    ${esCuentaInterna ? '' : `<div id="modalUpgrade" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden p-4"><div class="bg-white p-6 rounded-2xl shadow-xl max-w-md w-full relative"><button id="closeUpgradeModal" class="absolute top-2 right-3 text-slate-400 hover:text-red-500 text-2xl">&times;</button><h3 class="font-bold text-lg mb-2 text-blue-700">Confirmar cambio de plan</h3><div class="mb-2"><span id="modalPlanName"></span></div><div class="mb-3 text-sm text-slate-500">Fin del ciclo: <b>${fechaFin ? fechaFin.toLocaleDateString('es-CO') : '-'}</b>.</div><div id="prorrateoDetalle" class="mb-4 p-3 bg-blue-50 rounded-lg text-blue-900"></div><button id="confirmUpgrade" class="w-full py-3 px-4 rounded-xl text-white bg-emerald-600 font-semibold shadow-sm hover:bg-emerald-700"><span class="btn-text">Pagar y cambiar plan</span></button></div></div>`}
 
-    <div id="modalCorreo" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden p-4"><div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full relative"><button id="closeCorreoModal" class="absolute top-2 right-3 text-slate-400 hover:text-red-500 text-2xl">&times;</button><h3 class="font-bold text-lg mb-4 text-blue-700">Cambiar correo</h3><form id="formCorreo"><label class="block text-sm mb-1">Correo actual</label><input type="email" class="form-control mb-3" value="${safeEmail}" disabled><label class="block text-sm mb-1">Nuevo correo</label><input type="email" class="form-control mb-3" id="nuevoCorreo" required><button class="btn btn-primary w-full mt-1" type="submit">Actualizar correo</button></form></div></div>`;
+    <div id="modalCorreo" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 hidden p-4"><div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full relative"><button id="closeCorreoModal" class="absolute top-2 right-3 text-slate-400 hover:text-red-500 text-2xl">&times;</button><h3 class="font-bold text-lg mb-4 text-blue-700">Cambiar correo</h3><form id="formCorreo"><label class="block text-sm mb-1">Correo actual</label><input type="email" class="form-control mb-3" value="${safeEmail}" disabled><label class="block text-sm mb-1">Nuevo correo</label><input type="email" class="form-control mb-3" id="nuevoCorreo" required><button class="btn btn-primary w-full mt-1" type="submit">Actualizar correo</button></form></div></div>`;
 
   const monedaSelector = container.querySelector('#monedaSelector');
   const tipoPagoSelector = container.querySelector('#tipoPagoSelector');
@@ -475,7 +475,7 @@ export async function mount(container, supabase, user, hotelId) {
       if (esPlanActual) actionHtml = `<button class="w-full mt-4 py-3 rounded-xl bg-blue-100 text-blue-700 font-bold cursor-not-allowed" disabled>Tu plan actual</button>`;
       else if (!eligible) actionHtml = `<button class="w-full mt-4 py-3 rounded-xl bg-slate-200 text-slate-500 font-bold cursor-not-allowed" disabled>No compatible con tu uso actual</button>`;
       else actionHtml = `<button class="btn-elegir-plan w-full mt-4 py-3 px-4 rounded-xl text-white ${tipoCambio === 'upgrade' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-700 hover:bg-slate-800'} font-bold transition" data-plan-id="${escapeHtml(plan.id)}" data-tipo-cambio="${tipoCambio}">${tipoCambio === 'upgrade' ? `Mejorar a ${safeName}` : `Cambiar a ${safeName} próximo ciclo`}</button>`;
-      planesList.insertAdjacentHTML('beforeend', `<article id="plan-card-${escapeHtml(plan.id)}" class="relative rounded-2xl border p-5 flex flex-col justify-between ${esPlanActual ? 'border-blue-500 ring-2 ring-blue-100' : esRecomendado ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-slate-200'}">${esRecomendado ? '<div class="absolute -top-3 left-4 rounded-full bg-indigo-600 px-3 py-1 text-xs font-bold text-white shadow">Recomendado para tu operación</div>' : ''}<div><div class="flex items-center justify-between gap-2"><h4 class="text-xl font-bold text-slate-900">${safeName}</h4>${esPlanActual ? '<span class="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">Actual</span>' : ''}</div><p class="mt-2 text-sm text-slate-500">${escapeHtml(plan.descripcion || '')}</p><div class="mt-4 text-3xl font-extrabold text-slate-900">${formatMoneda(price, monedaActual)} <span class="text-sm font-medium text-slate-400">/${periodoActual === 'anual' ? 'año' : 'mes'}</span></div>${periodoActual === 'anual' && annualSaving > 0 ? `<div class="mt-2 text-xs font-semibold text-emerald-700">Ahorras ${formatMoneda(annualSaving, monedaActual)} frente a 12 mensualidades.</div>` : ''}${promo.promoAplica ? `<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><b>Promo aplicada:</b> precio normal ${formatMoneda(precioBase, monedaActual)} · ahorras ${formatMoneda(ahorroPromo, monedaActual)}.</div>` : ''}<div class="mt-4 grid grid-cols-2 gap-2 text-xs"><div class="rounded-lg bg-slate-50 p-2"><b>🚪 Capacidad</b><div class="mt-1 text-slate-500">${planLimits.habitaciones == null ? 'Sin límite definido' : `${planLimits.habitaciones} habitaciones`}</div></div><div class="rounded-lg bg-slate-50 p-2"><b>👥 Equipo</b><div class="mt-1 text-slate-500">${planLimits.usuarios == null ? 'Sin límite definido' : `${planLimits.usuarios} usuarios`}</div></div></div><ul class="mt-4 space-y-2 text-xs text-slate-600">${safePlanFeatures(plan).map(feature => `<li class="flex gap-2"><span class="text-emerald-600">✓</span><span>${escapeHtml(feature)}</span></li>`).join('')}</ul></div>${actionHtml}</article>`);
+      planesList.insertAdjacentHTML('beforeend', `<article id="plan-card-${escapeHtml(plan.id)}" class="relative rounded-2xl border p-5 flex flex-col justify-between ${esPlanActual ? 'border-blue-500 ring-2 ring-blue-100' : esRecomendado ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-slate-200'}">${esRecomendado ? '<div class="absolute -top-3 left-4 rounded-full bg-indigo-600 px-3 py-1 text-xs font-bold text-white shadow-sm">Recomendado para tu operación</div>' : ''}<div><div class="flex items-center justify-between gap-2"><h4 class="text-xl font-bold text-slate-900">${safeName}</h4>${esPlanActual ? '<span class="rounded-full bg-blue-50 px-2 py-1 text-xs font-bold text-blue-700">Actual</span>' : ''}</div><p class="mt-2 text-sm text-slate-500">${escapeHtml(plan.descripcion || '')}</p><div class="mt-4 text-3xl font-extrabold text-slate-900">${formatMoneda(price, monedaActual)} <span class="text-sm font-medium text-slate-400">/${periodoActual === 'anual' ? 'año' : 'mes'}</span></div>${periodoActual === 'anual' && annualSaving > 0 ? `<div class="mt-2 text-xs font-semibold text-emerald-700">Ahorras ${formatMoneda(annualSaving, monedaActual)} frente a 12 mensualidades.</div>` : ''}${promo.promoAplica ? `<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900"><b>Promo aplicada:</b> precio normal ${formatMoneda(precioBase, monedaActual)} · ahorras ${formatMoneda(ahorroPromo, monedaActual)}.</div>` : ''}<div class="mt-4 grid grid-cols-2 gap-2 text-xs"><div class="rounded-lg bg-slate-50 p-2"><b>🚪 Capacidad</b><div class="mt-1 text-slate-500">${planLimits.habitaciones == null ? 'Sin límite definido' : `${planLimits.habitaciones} habitaciones`}</div></div><div class="rounded-lg bg-slate-50 p-2"><b>👥 Equipo</b><div class="mt-1 text-slate-500">${planLimits.usuarios == null ? 'Sin límite definido' : `${planLimits.usuarios} usuarios`}</div></div></div><ul class="mt-4 space-y-2 text-xs text-slate-600">${safePlanFeatures(plan).map(feature => `<li class="flex gap-2"><span class="text-emerald-600">✓</span><span>${escapeHtml(feature)}</span></li>`).join('')}</ul></div>${actionHtml}</article>`);
     }
     container.querySelectorAll('.btn-elegir-plan').forEach(btn => btn.addEventListener('click', () => {
       const selected = plans.find(plan => String(plan.id) === String(btn.dataset.planId));

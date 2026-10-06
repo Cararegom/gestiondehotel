@@ -16,7 +16,43 @@ test('login y aplicación cargan Tailwind desde el mismo dominio', () => {
   assert.match(app, /href="\.\.\/tailwind\.css"/);
 
   assert.ok(css.length > 50000, 'el CSS compilado no debe estar vacío');
-  assert.match(css, /\.bg-opacity-75\{/);
+  assert.match(css, /tailwindcss v4\./);
+  assert.match(css, /\.bg-black\\\/75\{/);
   assert.match(css, /\.text-gray-500\{/);
-  assert.match(css, /\.space-y-6>/);
+  assert.match(css, /:where\(\.space-y-6>:not\(:last-child\)\)\{/);
+});
+
+test('Tailwind v4 conserva la apariencia de v3 y no usa utilidades eliminadas', () => {
+  const source = fs.readFileSync(path.join(root, 'css/tailwind-source.css'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'tailwind.css'), 'utf8');
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+
+  // Paleta y valores por defecto de v3.
+  assert.match(source, /--color-blue-600: #2563eb;/);
+  assert.match(source, /border-color: var\(--color-gray-200, currentcolor\);/);
+  assert.match(source, /cursor: pointer;/);
+  assert.match(css, /--color-blue-600:#2563eb/);
+
+  // Sin @layer: style.css se carga antes y, como en v3, a igual especificidad
+  // deben ganar las utilidades (p. ej. .hidden). Con capas ganaria style.css.
+  assert.doesNotMatch(css, /@layer\b/);
+  const app = fs.readFileSync(path.join(root, 'app/index.html'), 'utf8');
+  assert.ok(app.indexOf('../style.css') < app.indexOf('../tailwind.css'), 'style.css debe cargarse antes que tailwind.css');
+
+  // Sin la CLI v3 ni @tailwindcss/cli (arrastran braces vulnerable).
+  assert.equal(pkg.devDependencies.tailwindcss3, undefined);
+  assert.equal(pkg.devDependencies['@tailwindcss/cli'], undefined);
+  assert.equal(pkg.scripts['build:tailwind'], 'node scripts/build-tailwind.mjs');
+
+  // Utilidades de v3 que no existen en v4 no deben quedar en el codigo.
+  const files = ['login.html', 'app/index.html'];
+  const walk = (dir) => fs.readdirSync(path.join(root, dir), { withFileTypes: true }).forEach((entry) => {
+    const rel = path.join(dir, entry.name);
+    if (entry.isDirectory()) walk(rel);
+    else if (/\.(js|html)$/.test(entry.name)) files.push(rel);
+  });
+  walk('js');
+  const legacy = /(^|[\s"'`])(?:[a-z0-9-]+:)*(?:bg|text|border|ring|divide|placeholder)-opacity-\d+(?=[\s"'`]|$)/m;
+  const offenders = files.filter((file) => legacy.test(fs.readFileSync(path.join(root, file), 'utf8')));
+  assert.deepEqual(offenders, []);
 });

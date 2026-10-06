@@ -14,7 +14,7 @@ test('muestra un globo global cuando llega una transferencia bancaria', () => {
   assert.match(notifications, /Nueva transferencia bancaria/);
   assert.match(notifications, /data-open-bank-payment/);
   assert.match(notifications, /canOpenBankPaymentDetails/);
-  assert.match(notifications, /z-\[10000\]/);
+  assert.match(notifications, /\bz-10000\b/);
   assert.doesNotMatch(notifications, /setTimeout\(removeToast/);
   assert.doesNotMatch(notifications, />Entendido</);
   assert.match(notifications, /showUnreadBankAlerts: true/);

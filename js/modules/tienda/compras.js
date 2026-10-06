@@ -30,7 +30,7 @@ export async function renderHistorialCompras() {
     }
 
     container.innerHTML = `
-      <div class="table-responsive-sm mt-4 border rounded-lg shadow-sm" style="overflow-x:auto;">
+      <div class="table-responsive-sm mt-4 border rounded-lg shadow-xs" style="overflow-x:auto;">
         <table class="table table-sm table-hover" style="min-width:600px;">
           <thead class="bg-gray-100">
             <tr>
@@ -81,12 +81,12 @@ export async function verDetallesCompra(compraId) {
     const totalCompra = detalles.reduce((sum, item) => sum + item.subtotal, 0);
     const modal = document.createElement('div');
     modal.id = 'modal-detalles-compra';
-    modal.className = 'fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center p-4 z-[1001]';
+    modal.className = 'fixed inset-0 bg-gray-900/75 flex items-center justify-center p-4 z-1001';
     modal.innerHTML = `
       <div class="bg-white rounded-lg shadow-xl w-full max-w-2xl flex flex-col overflow-hidden animate-fade-in-up">
         <div class="flex justify-between items-center p-5 border-b border-gray-200 bg-gray-50">
           <h3 class="text-xl font-semibold text-blue-700">Detalles de la Compra</h3>
-          <button onclick="document.getElementById('modal-detalles-compra').remove()" class="text-gray-500 hover:text-gray-800 text-2xl leading-none focus:outline-none">&times;</button>
+          <button onclick="document.getElementById('modal-detalles-compra').remove()" class="text-gray-500 hover:text-gray-800 text-2xl leading-none focus:outline-hidden">&times;</button>
         </div>
         <div class="p-4 sm:p-6 overflow-y-auto max-h-[65vh]">
           <table class="min-w-full divide-y divide-gray-200">

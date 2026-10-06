@@ -123,7 +123,7 @@ async function showTab(key, context) {
   root.querySelectorAll('[data-report-tab]').forEach((button) => {
     const selected = button.dataset.reportTab === tab.key;
     button.setAttribute('aria-selected', String(selected));
-    button.className = `rounded-xl px-4 py-2.5 text-sm font-semibold transition ${selected ? 'bg-blue-600 text-white shadow' : 'bg-white text-slate-700 border border-slate-200 hover:border-blue-300'}`;
+    button.className = `rounded-xl px-4 py-2.5 text-sm font-semibold transition ${selected ? 'bg-blue-600 text-white shadow-sm' : 'bg-white text-slate-700 border border-slate-200 hover:border-blue-300'}`;
   });
 
   try {
@@ -159,14 +159,14 @@ export async function mount(container, supabase, user, hotelId, planDetails) {
 
   root.innerHTML = `
     <section class="min-h-full bg-slate-50 p-3 md:p-5">
-      <header class="mb-4 rounded-2xl bg-gradient-to-r from-slate-950 via-blue-950 to-blue-700 p-5 text-white shadow-lg">
+      <header class="mb-4 rounded-2xl bg-linear-to-r from-slate-950 via-blue-950 to-blue-700 p-5 text-white shadow-lg">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p class="text-xs font-semibold uppercase tracking-[.2em] text-blue-200">Centro de información</p>
             <h1 class="mt-1 text-2xl font-bold">Reportes${admin ? ' y finanzas' : ''}</h1>
             <p class="mt-1 max-w-3xl text-sm text-blue-100">${admin ? 'Consulta la operación y administra la información financiera desde un solo lugar.' : 'Consulta los reportes necesarios para la operación del hotel.'}</p>
           </div>
-          <div class="min-w-[260px] rounded-xl border border-white/20 bg-white/10 p-3 backdrop-blur-sm">
+          <div class="min-w-[260px] rounded-xl border border-white/20 bg-white/10 p-3 backdrop-blur-xs">
             <p class="text-[11px] font-bold uppercase tracking-[.16em] text-blue-100">Zona horaria activa</p>
             <p class="mt-2 text-sm font-bold text-white">${hotelTimeZone}</p>
             <p class="mt-1 text-xs font-semibold text-blue-100">Se administra únicamente desde Configuración del hotel.</p>

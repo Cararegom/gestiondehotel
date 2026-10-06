@@ -192,7 +192,7 @@ export async function solicitarEdicionMovimientoAdmin({ movement, metodos, timeZ
     width: 560,
     html: `
       <div style="display:grid;gap:12px;text-align:left">
-        ${linked ? '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">Este movimiento esta ligado a una reserva o venta: el monto y el tipo se corrigen desde ese modulo.</p>' : ''}
+        ${linked ? '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm p-2">Este movimiento esta ligado a una reserva o venta: el monto y el tipo se corrigen desde ese modulo.</p>' : ''}
         <label class="text-sm font-semibold">Tipo ${tipoField}</label>
         <label class="text-sm font-semibold">Monto
           <input id="edit-mov-monto" type="number" min="1" step="any" class="swal2-input" style="width:100%;margin:0" value="${escapeAttribute(String(Number(movement.monto) || ''))}" ${linked ? 'disabled' : ''}>
@@ -392,7 +392,7 @@ export function renderMovementRows({
           <td class="px-4 py-3 text-sm text-gray-500">
             <div class="flex items-center justify-between gap-3">
               <span class="truncate">${safeMethodName}</span>
-              <div class="flex-shrink-0 flex items-center gap-3">
+              <div class="shrink-0 flex items-center gap-3">
                 ${editButton}
                 ${isReverted ? '<span class="text-xs font-semibold text-amber-700">Revertido</span>' : ''}
                 ${isAdminUser && !isReversal && !isReverted ? `<button class="text-red-500 hover:text-red-700 font-medium" title="Revertir movimiento" data-delete-movimiento="${movementIdAttr}" data-concepto="${conceptAttr}" data-monto="${amountAttr}" data-tipo="${typeAttr}">Revertir</button>` : ''}
@@ -575,9 +575,9 @@ export async function handleMovementTableClick({
     const monto = deleteButton.dataset.monto;
     const tipo = deleteButton.dataset.tipo;
 
-    let warningMessage = `<p>Realmente deseas eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded text-left"><strong>Concepto:</strong> ${escapeHtml(concepto || 'N/A')}<br><strong>Monto:</strong> ${escapeHtml(monto || 'N/A')}</div><p class="font-bold text-red-600">Esta accion es irreversible.</p>`;
+    let warningMessage = `<p>Realmente deseas eliminar este movimiento de caja?</p><div class="my-3 p-2 bg-gray-100 border border-gray-300 rounded-sm text-left"><strong>Concepto:</strong> ${escapeHtml(concepto || 'N/A')}<br><strong>Monto:</strong> ${escapeHtml(monto || 'N/A')}</div><p class="font-bold text-red-600">Esta accion es irreversible.</p>`;
     if (tipo === 'apertura') {
-      warningMessage = `<p class="font-bold text-lg text-red-700">Advertencia maxima</p><p>Estas a punto de eliminar el movimiento de <strong>apertura de turno</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded text-left"><strong>Monto:</strong> ${escapeHtml(monto || 'N/A')}</div><p>Eliminar esto afectara todos los calculos del turno.</p>`;
+      warningMessage = `<p class="font-bold text-lg text-red-700">Advertencia maxima</p><p>Estas a punto de eliminar el movimiento de <strong>apertura de turno</strong>.</p><div class="my-3 p-2 bg-red-100 border border-red-400 rounded-sm text-left"><strong>Monto:</strong> ${escapeHtml(monto || 'N/A')}</div><p>Eliminar esto afectara todos los calculos del turno.</p>`;
     }
 
     const confirmed = await confirmAction({

@@ -110,7 +110,7 @@ async function injectPanel() {
     if (!(await canUseRelationFlow()) || !isCajaRoute() || document.getElementById(PANEL_ID)) return;
     const panel = document.createElement('section');
     panel.id = PANEL_ID;
-    panel.className = 'rounded-3xl border border-sky-200 bg-sky-50 p-4 md:p-5 shadow-sm';
+    panel.className = 'rounded-3xl border border-sky-200 bg-sky-50 p-4 md:p-5 shadow-xs';
     panel.innerHTML = `
       <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
@@ -250,7 +250,7 @@ function mountModalShell() {
     host.classList.remove('hidden');
   } else {
     const wrapper = document.createElement('div');
-    wrapper.className = 'fixed inset-0 bg-black/60 z-[1050] flex items-center justify-center p-4';
+    wrapper.className = 'fixed inset-0 bg-black/60 z-1050 flex items-center justify-center p-4';
     wrapper.innerHTML = shell;
     document.body.appendChild(wrapper);
   }

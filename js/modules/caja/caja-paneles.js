@@ -4,7 +4,7 @@ import { escapeAttribute, escapeHtml } from '../../security.js';
 export async function mostrarHistorialReversiones({ supabase, hotelId }) {
   const modalContainer = document.createElement('div');
   modalContainer.id = 'modal-historial-reversiones';
-  modalContainer.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-70 p-4';
+  modalContainer.className = 'fixed inset-0 z-10000 flex items-center justify-center bg-black/70 p-4';
   modalContainer.innerHTML = '<div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl text-center"><p>Cargando reversiones...</p></div>';
   document.body.appendChild(modalContainer);
 
@@ -183,7 +183,7 @@ export async function mostrarTurnosAbiertos({
 
         const botonGestion = esMiTurno
           ? '<span class="text-gray-400 italic">Es tu turno actual</span>'
-          : `<button class="button bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded" data-turno-id="${escapeAttribute(turno.id || '')}">Gestionar turno</button>`;
+          : `<button class="button bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-sm" data-turno-id="${escapeAttribute(turno.id || '')}">Gestionar turno</button>`;
 
         return `
           <tr class="hover:bg-gray-50 border-b">

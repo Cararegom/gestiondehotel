@@ -199,7 +199,7 @@ function renderSimulation(section) {
     return `<div class="flex flex-col gap-1 border-b border-slate-100 py-2 last:border-0 sm:flex-row sm:items-center sm:justify-between"><div><strong>${escapeHtml(item.fecha)}</strong><div class="text-xs text-slate-500">${escapeHtml(tariffName)}</div></div><div class="font-semibold text-slate-800">${formatCurrency(item.precioHospedaje)}${escapeHtml(extra)}</div></div>`;
   }).join('');
 
-  result.className = 'rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm';
+  result.className = 'rounded-2xl border border-indigo-100 bg-white p-4 shadow-xs';
   result.innerHTML = `
     <div class="flex flex-wrap items-end justify-between gap-3 border-b border-indigo-100 pb-3">
       <div><p class="text-xs font-bold uppercase tracking-wider text-indigo-500">Resultado</p><p class="text-sm text-slate-600">${nights} noche${nights === 1 ? '' : 's'} · ${guests} huésped${guests === 1 ? '' : 'es'}</p></div>

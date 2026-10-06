@@ -141,7 +141,7 @@ function isMobileEnergyDevice() {
 
 function renderScanRetry(view, message = 'No pudimos procesar el QR. Toca para reintentar.') {
   if (!view) return;
-  view.innerHTML = `<div class="rounded-2xl bg-white p-6 text-center shadow">
+  view.innerHTML = `<div class="rounded-2xl bg-white p-6 text-center shadow-sm">
     <p class="mb-4 font-semibold text-slate-700">${escapeHtml(message)}</p>
     <button id="energy-retry" class="rounded-xl bg-orange-600 px-5 py-3 font-bold text-white">Volver a escanear</button>
   </div>`;
@@ -162,7 +162,7 @@ function renderShell(config) {
 
   root.innerHTML = `
     <section class="mx-auto max-w-6xl space-y-5 p-4 md:p-7">
-      <header class="rounded-3xl bg-gradient-to-r from-amber-500 to-orange-600 p-6 text-white shadow-lg">
+      <header class="rounded-3xl bg-linear-to-r from-amber-500 to-orange-600 p-6 text-white shadow-lg">
         <p class="text-sm font-semibold uppercase tracking-widest">Operación hotelera</p>
         <h1 class="mt-1 text-3xl font-black">⚡ Control de Energía</h1>
         <p class="mt-2 text-amber-50">Verifica físicamente la habitación antes de dejarla disponible.</p>
@@ -208,7 +208,7 @@ async function processToken(token) {
   activeToken = token;
 
   // El backend debe recibir el escaneo aunque html5-qrcode tarde o se bloquee al cerrar la cámara.
-  view.innerHTML = `<div class="mx-auto max-w-lg rounded-2xl bg-blue-50 p-7 text-center shadow">
+  view.innerHTML = `<div class="mx-auto max-w-lg rounded-2xl bg-blue-50 p-7 text-center shadow-sm">
     <div class="text-3xl">📷</div>
     <p class="mt-3 text-lg font-black text-blue-950">QR detectado. Verificando habitación…</p>
     <p class="mt-2 text-sm text-blue-800">No cierres esta pantalla. Esto normalmente tarda solo unos segundos.</p>
@@ -306,7 +306,7 @@ async function renderScanner() {
     return;
   }
 
-  view.innerHTML = `<div class="rounded-2xl bg-white p-5 shadow">
+  view.innerHTML = `<div class="rounded-2xl bg-white p-5 shadow-sm">
     <div id="energy-reader" class="mx-auto max-w-lg"></div>
     <p class="mt-4 text-center text-sm text-slate-600">Permite el acceso a la cámara y apunta al QR instalado dentro de la habitación.</p>
   </div>`;
@@ -350,7 +350,7 @@ async function renderHistory() {
     .limit(250);
 
   if (error) { feedback(friendlyError(error)); return; }
-  view.innerHTML = `<div class="overflow-x-auto rounded-2xl bg-white shadow"><table class="min-w-full text-sm">
+  view.innerHTML = `<div class="overflow-x-auto rounded-2xl bg-white shadow-sm"><table class="min-w-full text-sm">
     <thead class="bg-slate-100"><tr><th class="p-3 text-left">Habitación</th><th class="p-3">Generado</th><th class="p-3">Revisado</th><th class="p-3">Tiempo</th><th class="p-3">Usuario / rol</th><th class="p-3">Estado</th><th class="p-3">Alerta</th><th class="p-3">Acción</th></tr></thead>
     <tbody>${(data || []).map((row) => {
       const end = row.completed_at ? new Date(row.completed_at) : new Date();
@@ -499,10 +499,10 @@ async function renderSettings(config) {
   const roomList = rooms || [];
   const prepared = roomList.filter((room) => room.token).length;
   const adminSettings = capabilities?.can_admin
-    ? `<form id="energy-settings" class="mb-5 grid gap-4 rounded-2xl bg-white p-5 shadow md:grid-cols-3">
-        <label class="font-semibold">Tiempo máximo (min)<input name="timeout" type="number" min="1" max="1440" value="${Number(config.energy_check_timeout_minutes || 10)}" class="mt-1 w-full rounded border p-2"></label>
-        <label class="font-semibold">Alertas por correo<select name="emails_on" class="mt-1 w-full rounded border p-2"><option value="true" ${config.energy_email_notifications_enabled ? 'selected' : ''}>Activadas</option><option value="false" ${!config.energy_email_notifications_enabled ? 'selected' : ''}>Desactivadas</option></select></label>
-        <label class="font-semibold">Correos adicionales<input name="emails" value="${escapeHtml(config.energy_alert_emails || '')}" class="mt-1 w-full rounded border p-2" placeholder="admin@hotel.com"></label>
+    ? `<form id="energy-settings" class="mb-5 grid gap-4 rounded-2xl bg-white p-5 shadow-sm md:grid-cols-3">
+        <label class="font-semibold">Tiempo máximo (min)<input name="timeout" type="number" min="1" max="1440" value="${Number(config.energy_check_timeout_minutes || 10)}" class="mt-1 w-full rounded-sm border p-2"></label>
+        <label class="font-semibold">Alertas por correo<select name="emails_on" class="mt-1 w-full rounded-sm border p-2"><option value="true" ${config.energy_email_notifications_enabled ? 'selected' : ''}>Activadas</option><option value="false" ${!config.energy_email_notifications_enabled ? 'selected' : ''}>Desactivadas</option></select></label>
+        <label class="font-semibold">Correos adicionales<input name="emails" value="${escapeHtml(config.energy_alert_emails || '')}" class="mt-1 w-full rounded-sm border p-2" placeholder="admin@hotel.com"></label>
         <button class="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white md:col-span-3">Guardar configuración</button>
       </form>`
     : `<div class="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-950">
@@ -523,7 +523,7 @@ async function renderSettings(config) {
           : 'Puedes imprimir los QR ya preparados sin activar el sistema.'}
     </div>
     ${adminSettings}
-    <div class="mb-5 rounded-2xl bg-white p-5 shadow">
+    <div class="mb-5 rounded-2xl bg-white p-5 shadow-sm">
       <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 class="text-lg font-black text-slate-900">Impresión de QR</h2>
@@ -539,14 +539,14 @@ async function renderSettings(config) {
         <button id="energy-print-all" type="button" class="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white">Imprimir todos los QR</button>
       </div>
     </div>
-    <div class="grid gap-4 md:grid-cols-2">${roomList.map((room) => `<article class="rounded-2xl bg-white p-5 shadow" data-room-card="${room.room_id}">
+    <div class="grid gap-4 md:grid-cols-2">${roomList.map((room) => `<article class="rounded-2xl bg-white p-5 shadow-sm" data-room-card="${room.room_id}">
       <div class="flex items-start justify-between gap-3">
         <div>
           <h3 class="text-xl font-black">Habitación ${escapeHtml(room.room_name)}</h3>
           <p class="my-2 text-sm">${room.token ? `QR generado ${formatDate(room.generated_at)}` : 'Sin QR'}</p>
         </div>
         <label class="flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <input type="checkbox" data-select-room="${room.room_id}" ${room.token ? '' : 'disabled'} class="h-5 w-5 rounded border-slate-300">
+          <input type="checkbox" data-select-room="${room.room_id}" ${room.token ? '' : 'disabled'} class="h-5 w-5 rounded-sm border-slate-300">
           Seleccionar
         </label>
       </div>
@@ -730,7 +730,7 @@ export async function mount(container, supabase, _user, currentHotelId) {
   } catch (error) {
     const unauthorized = String(error?.message || error).includes('NO_AUTORIZADO');
     if (!unauthorized) reportEnergyError('ENERGY_CONTROL_MOUNT_FAILED', error);
-    root.innerHTML = `<p class="m-6 rounded p-4 ${unauthorized ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'}">${unauthorized ? 'No tienes permiso para usar Control de Energía.' : 'No fue posible cargar Control de Energía.'}</p>`;
+    root.innerHTML = `<p class="m-6 rounded-sm p-4 ${unauthorized ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-900'}">${unauthorized ? 'No tienes permiso para usar Control de Energía.' : 'No fue posible cargar Control de Energía.'}</p>`;
   }
 }
 

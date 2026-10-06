@@ -32,7 +32,7 @@ function ensureSuggestionHost(form) {
 
   host = document.createElement('div');
   host.dataset.clienteIdentitySuggestions = 'true';
-  host.className = 'hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm shadow-sm';
+  host.className = 'hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm shadow-xs';
   host.setAttribute('aria-live', 'polite');
 
   const nombreInput = form.elements?.cliente_nombre;

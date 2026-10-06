@@ -99,7 +99,7 @@ function rankingLayout() {
         <p class="mt-1 text-sm">Este ranking es exclusivo para el propietario del hotel. Se mide cuántas verificaciones hizo cada persona y cuánto tardó en promedio en completarlas.</p>
       </div>
 
-      <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-4 shadow">
+      <div class="flex flex-wrap items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
         <label for="energy-ranking-period" class="font-bold text-slate-700">Periodo</label>
         <select id="energy-ranking-period" class="rounded-xl border border-slate-300 bg-white px-4 py-2 font-semibold text-slate-800">
           <option value="7">Últimos 7 días</option>
@@ -111,7 +111,7 @@ function rankingLayout() {
       </div>
 
       <div id="energy-ranking-content">
-        <div class="rounded-2xl bg-white p-8 text-center text-slate-500 shadow">Cargando ranking…</div>
+        <div class="rounded-2xl bg-white p-8 text-center text-slate-500 shadow-sm">Cargando ranking…</div>
       </div>
     </div>`;
 }
@@ -121,7 +121,7 @@ function renderRankingRows(view, rows) {
   if (!target) return;
 
   if (!rows.length) {
-    target.innerHTML = '<div class="rounded-2xl bg-white p-8 text-center text-slate-500 shadow">Todavía no hay controles completados en este periodo.</div>';
+    target.innerHTML = '<div class="rounded-2xl bg-white p-8 text-center text-slate-500 shadow-sm">Todavía no hay controles completados en este periodo.</div>';
     return;
   }
 
@@ -131,24 +131,24 @@ function renderRankingRows(view, rows) {
 
   target.innerHTML = `
     <div class="grid gap-4 md:grid-cols-3">
-      <div class="rounded-2xl bg-white p-5 shadow">
+      <div class="rounded-2xl bg-white p-5 shadow-sm">
         <div class="text-xs font-bold uppercase tracking-wider text-slate-500">🥇 Líder del periodo</div>
         <div class="mt-2 text-2xl font-black text-slate-900">${escapeHtml(leader.nombre)}</div>
         <div class="mt-1 text-sm text-slate-600">${Number(leader.total_checks || 0)} controles completados</div>
       </div>
-      <div class="rounded-2xl bg-white p-5 shadow">
+      <div class="rounded-2xl bg-white p-5 shadow-sm">
         <div class="text-xs font-bold uppercase tracking-wider text-slate-500">⚡ Más rápida</div>
         <div class="mt-2 text-2xl font-black text-slate-900">${escapeHtml(fastest?.nombre || '—')}</div>
         <div class="mt-1 text-sm text-slate-600">Promedio ${formatRankingDuration(fastest?.avg_seconds)}</div>
       </div>
-      <div class="rounded-2xl bg-white p-5 shadow">
+      <div class="rounded-2xl bg-white p-5 shadow-sm">
         <div class="text-xs font-bold uppercase tracking-wider text-slate-500">✅ Verificaciones</div>
         <div class="mt-2 text-2xl font-black text-slate-900">${totalChecks}</div>
         <div class="mt-1 text-sm text-slate-600">Total del equipo en el periodo</div>
       </div>
     </div>
 
-    <div class="mt-5 overflow-x-auto rounded-2xl bg-white shadow">
+    <div class="mt-5 overflow-x-auto rounded-2xl bg-white shadow-sm">
       <table class="min-w-full text-sm">
         <thead class="bg-slate-100 text-slate-700">
           <tr>
@@ -187,7 +187,7 @@ function renderRankingRows(view, rows) {
 async function loadEnergyRanking(view) {
   const content = view.querySelector('#energy-ranking-content');
   const period = Number(view.querySelector('#energy-ranking-period')?.value || 30);
-  if (content) content.innerHTML = '<div class="rounded-2xl bg-white p-8 text-center text-slate-500 shadow">Cargando ranking…</div>';
+  if (content) content.innerHTML = '<div class="rounded-2xl bg-white p-8 text-center text-slate-500 shadow-sm">Cargando ranking…</div>';
 
   const { data, error } = await supabase.rpc('energy_admin_performance_ranking', { p_days: period });
   if (error) {

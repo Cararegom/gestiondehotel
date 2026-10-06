@@ -358,27 +358,27 @@ export function renderFloorFilters(currentRooms, filterContainer, toolbarContain
         if (!toolbarContainer) return;
 
         toolbarContainer.innerHTML = `
-            <div class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+            <div class="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-xs">
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-5">
                     <div class="md:col-span-2">
                         <label for="mapa-room-search" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Buscar</label>
-                        <input id="mapa-room-search" type="search" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Habitacion, huesped o tipo">
+                        <input id="mapa-room-search" type="search" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-hidden transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100" placeholder="Habitacion, huesped o tipo">
                     </div>
                     <div>
                         <label for="mapa-room-state-filter" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Estado</label>
-                        <select id="mapa-room-state-filter" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                        <select id="mapa-room-state-filter" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-hidden transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
                             ${stateOptions.map((estado) => `<option value="${escapeAttribute(estado)}">${escapeHtml(estado === 'todos' ? 'Todos los estados' : getStateLabel(estado))}</option>`).join('')}
                         </select>
                     </div>
                     <div>
                         <label for="mapa-room-type-filter" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Tipo</label>
-                        <select id="mapa-room-type-filter" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                        <select id="mapa-room-type-filter" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-hidden transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
                             ${typeOptions.map((tipo) => `<option value="${escapeAttribute(tipo)}">${escapeHtml(tipo === 'todos' ? 'Todos los tipos' : tipo)}</option>`).join('')}
                         </select>
                     </div>
                     <div>
                         <label for="mapa-room-alert-filter" class="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Alertas</label>
-                        <select id="mapa-room-alert-filter" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
+                        <select id="mapa-room-alert-filter" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 outline-hidden transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100">
                             <option value="todas">Todas</option>
                             <option value="con_alertas">Con alertas</option>
                             <option value="checkout_proximo">Checkout proximo</option>
@@ -528,7 +528,7 @@ function buildActiveGuestHtml(reservaActiva) {
 
     return `
         <div class="mt-2 flex items-center text-sm text-slate-700">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1.5 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
             <span class="truncate font-medium">${escapeHtml(clienteActual)}</span>
         </div>
     `;
@@ -593,7 +593,7 @@ export function roomCard(room, supabase, currentUser, hotelId, mainAppContainer)
     const alertChipsHTML = buildAlertChipsHtml(room);
 
     const div = document.createElement('div');
-    div.className = `room-card relative bg-white rounded-xl shadow-sm border-2 ${colorClass} hover:shadow-md transition-all cursor-pointer overflow-hidden group min-h-[160px] flex flex-col justify-between`;
+    div.className = `room-card relative bg-white rounded-xl shadow-xs border-2 ${colorClass} hover:shadow-md transition-all cursor-pointer overflow-hidden group min-h-[160px] flex flex-col justify-between`;
     div.onclick = (event) => {
         event.stopPropagation();
         try {
@@ -606,7 +606,7 @@ export function roomCard(room, supabase, currentUser, hotelId, mainAppContainer)
 
     div.innerHTML = `
         ${imageBannerHTML}
-        <div class="p-3 flex-grow flex flex-col">
+        <div class="p-3 grow flex flex-col">
             <div class="flex justify-between items-start mb-2">
                 <div>
                     <h3 class="font-bold text-gray-900 text-xl tracking-tight leading-none">${safeRoomName}</h3>
@@ -617,7 +617,7 @@ export function roomCard(room, supabase, currentUser, hotelId, mainAppContainer)
                 </div>
 
                 <div class="flex flex-col items-end gap-1 ml-2">
-                    <span class="badge ${getBadgeBackgroundColor(room.estado)} px-2 py-1 text-[10px] uppercase font-bold rounded shadow-sm border border-black/5">
+                    <span class="badge ${getBadgeBackgroundColor(room.estado)} px-2 py-1 text-[10px] uppercase font-bold rounded-sm shadow-xs border border-black/5">
                         ${safeEstado}
                     </span>
                 </div>
@@ -629,7 +629,7 @@ export function roomCard(room, supabase, currentUser, hotelId, mainAppContainer)
             ${loanedItemsHTML}
 
             <div class="mt-auto pt-3 ${amenitiesHTML ? 'border-t border-slate-100' : ''}">
-                ${amenitiesHTML || '<div class="flex-grow"></div>'}
+                ${amenitiesHTML || '<div class="grow"></div>'}
             </div>
         </div>
         <div class="bg-slate-50/70 border-t border-slate-100 px-3 py-2 min-h-[42px] flex items-center justify-end">
@@ -650,10 +650,10 @@ export function roomCard(room, supabase, currentUser, hotelId, mainAppContainer)
 export function readOnlyRoomCard(room) {
     const colorClass = estadoColores[room.estado] || estadoColores.default;
     const div = document.createElement('div');
-    div.className = `room-card room-card-readonly relative bg-white rounded-xl shadow-sm border-2 ${colorClass} cursor-default overflow-hidden min-h-[110px] flex flex-col justify-between`;
+    div.className = `room-card room-card-readonly relative bg-white rounded-xl shadow-xs border-2 ${colorClass} cursor-default overflow-hidden min-h-[110px] flex flex-col justify-between`;
     div.dataset.readOnly = 'true';
     div.innerHTML = `
-        <div class="p-3 flex-grow flex flex-col">
+        <div class="p-3 grow flex flex-col">
             <div class="flex justify-between items-start">
                 <div>
                     <h3 class="font-bold text-gray-900 text-xl tracking-tight leading-none">${escapeHtml(room.nombre || 'Habitacion')}</h3>
@@ -662,7 +662,7 @@ export function readOnlyRoomCard(room) {
                         <span class="truncate max-w-[140px]">${escapeHtml(getRoomTypeLabel(room))}</span>
                     </div>
                 </div>
-                <span class="badge ${getBadgeBackgroundColor(room.estado)} ml-2 px-2 py-1 text-[10px] uppercase font-bold rounded shadow-sm border border-black/5">
+                <span class="badge ${getBadgeBackgroundColor(room.estado)} ml-2 px-2 py-1 text-[10px] uppercase font-bold rounded-sm shadow-xs border border-black/5">
                     ${escapeHtml(room.estado || 'N/A')}
                 </span>
             </div>

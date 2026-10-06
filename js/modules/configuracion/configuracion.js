@@ -51,7 +51,7 @@ async function mountHotelTimeZoneSetting(container, supabase, hotelId) {
   fieldset.id = 'configuracion-zona-horaria';
   fieldset.className = 'border-2 border-sky-200 p-6 rounded-xl shadow-md bg-sky-50/30';
   fieldset.innerHTML = `
-    <legend class="text-xl font-semibold text-sky-700 px-3 py-1 bg-white border-2 border-sky-200 rounded-lg shadow-sm">
+    <legend class="text-xl font-semibold text-sky-700 px-3 py-1 bg-white border-2 border-sky-200 rounded-lg shadow-xs">
       <span class="mr-2">🌎</span>Fecha, hora y zona horaria
     </legend>
     <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 md:items-end">

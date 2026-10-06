@@ -8,6 +8,7 @@ node_modules
 prueba-google-watch
 scripts/*
 !scripts/build-sentry.js
+!scripts/build-tailwind.mjs
 AGENTS.md
 supabase
 tests

@@ -498,7 +498,7 @@ function crearModalPermisos() {
     if (!modal) {
         modal = document.createElement('div');
         modal.id = 'modal-permisos-usuario';
-        modal.className = 'fixed inset-0 w-screen h-screen z-[10000] bg-black bg-opacity-30 hidden items-center justify-center';
+        modal.className = 'fixed inset-0 w-screen h-screen z-10000 bg-black/30 hidden items-center justify-center';
         modal.innerHTML = `
         <div class="bg-white rounded-xl min-w-[320px] max-w-md p-7 shadow-2xl">
             <h3 id="modal-permisos-title" class="text-xl font-bold text-gray-800 mb-4">Editar permisos</h3>

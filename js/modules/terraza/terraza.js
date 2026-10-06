@@ -609,27 +609,27 @@ function renderStats() {
 
   return `
     <div class="grid grid-cols-1 gap-3 md:grid-cols-6">
-      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
         <div class="text-xs font-semibold uppercase text-slate-500">Cuentas abiertas</div>
         <div class="mt-1 text-2xl font-extrabold text-slate-900">${cuentas}</div>
       </div>
-      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
         <div class="text-xs font-semibold uppercase text-slate-500">Total pendiente</div>
         <div class="mt-1 text-2xl font-extrabold text-blue-700">${money(totalAbierto)}</div>
       </div>
-      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
         <div class="text-xs font-semibold uppercase text-slate-500">Puestos con consumo</div>
         <div class="mt-1 text-2xl font-extrabold text-slate-900">${puestosOcupados}</div>
       </div>
-      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
         <div class="text-xs font-semibold uppercase text-slate-500">Stock bajo</div>
         <div class="mt-1 text-2xl font-extrabold ${productosBajos ? 'text-amber-700' : 'text-slate-900'}">${productosBajos}</div>
       </div>
-      <div class="rounded-xl border border-purple-200 bg-purple-50 p-4 shadow-sm">
+      <div class="rounded-xl border border-purple-200 bg-purple-50 p-4 shadow-xs">
         <div class="text-xs font-semibold uppercase text-purple-700">Reservas</div>
         <div class="mt-1 text-2xl font-extrabold text-purple-900">${reservasActivas}</div>
       </div>
-      <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+      <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-xs">
         <div class="text-xs font-semibold uppercase text-emerald-700">Propinas cobradas</div>
         <div class="mt-1 text-2xl font-extrabold text-emerald-900">${money(propinasCobradas)}</div>
       </div>
@@ -653,10 +653,10 @@ function renderTabNav() {
   }
 
   return `
-    <div class="grid w-full grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-sm sm:grid-cols-3 lg:inline-flex lg:w-auto">
+    <div class="grid w-full grid-cols-2 gap-1 rounded-xl border border-slate-200 bg-white p-1 shadow-xs sm:grid-cols-3 lg:inline-flex lg:w-auto">
       ${tabs.map((tab) => `
         <button
-          class="rounded-lg px-3 py-2 text-center text-sm font-bold transition sm:px-4 ${state.activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'}"
+          class="rounded-lg px-3 py-2 text-center text-sm font-bold transition sm:px-4 ${state.activeTab === tab.id ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-50'}"
           data-action="switch-tab"
           data-tab="${escapeAttribute(tab.id)}"
         >
@@ -862,7 +862,7 @@ function render() {
   state.container.innerHTML = `
     <section class="terraza-module min-h-screen bg-slate-100 p-4 lg:p-6">
       <div class="mx-auto max-w-[1600px] space-y-5">
-        <header class="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center">
+        <header class="flex flex-col justify-between gap-3 rounded-xl border border-slate-200 bg-white p-5 shadow-xs md:flex-row md:items-center">
           <div class="min-w-0">
             <p class="text-xs font-bold uppercase tracking-wide text-blue-600">Modulo exclusivo</p>
             <h1 class="text-2xl font-extrabold text-slate-900">Terraza</h1>

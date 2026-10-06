@@ -34,7 +34,7 @@ function renderSandbox(container) {
     body: `
       <div class="grid gap-4 lg:grid-cols-3">
         ${scenarios.map((scenario) => `
-          <article class="rounded-2xl border ${activeScenario?.id === scenario.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-5 shadow-sm">
+          <article class="rounded-2xl border ${activeScenario?.id === scenario.id ? 'border-blue-300 bg-blue-50' : 'border-slate-200 bg-white'} p-5 shadow-xs">
             <h3 class="text-lg font-bold text-slate-900">${scenario.name}</h3>
             <p class="mt-2 text-sm text-slate-600">${scenario.description}</p>
             <button type="button" class="button ${activeScenario?.id === scenario.id ? 'button-neutral' : 'button-primary'} app-touch-button mt-4" data-sandbox-load="${scenario.id}">

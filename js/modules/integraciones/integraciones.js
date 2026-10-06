@@ -523,7 +523,7 @@ function showGmailFeedback(feedbackEl, message, tone = 'info', duration = 5000) 
 
 function renderGmailPaymentCard() {
   return `
-    <section id="gmail-payment-integration-card" class="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
+    <section id="gmail-payment-integration-card" class="rounded-2xl border border-blue-200 bg-white p-5 shadow-xs">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div class="flex flex-wrap items-center gap-2">
@@ -725,14 +725,14 @@ function showGmailCallbackResult(ui, callbackResult) {
 function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
   currentContainer.innerHTML = `
     <div class="space-y-6 p-4 md:p-8">
-      <section class="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
+      <section class="rounded-[28px] bg-linear-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.35em] text-blue-200">Integraciones</p>
             <h1 class="mt-2 text-3xl font-black">Centro de integraciones y crecimiento</h1>
             <p class="mt-2 max-w-3xl text-sm text-blue-100">Gestiona calendarios, habilita facturacion con Alegra y deja trazabilidad real de las integraciones contables, fiscales y OTA que tu hotel necesita.</p>
           </div>
-          <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-blue-50 backdrop-blur">
+          <div class="rounded-2xl border border-white/10 bg-white/10 px-4 py-3 text-sm text-blue-50 backdrop-blur-sm">
             Lo activo, lo solicitado y lo que esta en evaluacion queda concentrado aqui.
           </div>
         </div>
@@ -742,7 +742,7 @@ function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
       ${showGmailPaymentCard ? renderGmailPaymentCard() : ''}
 
       <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Calendarios conectados</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Google y Outlook</h2>
           <p class="mt-2 text-sm text-slate-600">Sincroniza reservas, evita sobreventa y valida la conexion con eventos de prueba.</p>
@@ -762,7 +762,7 @@ function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
               <form id="google-test-form" style="display:none;" class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                 <p class="mb-2 text-sm font-medium">Probar la conexion</p>
                 <div class="flex items-center gap-2">
-                  <input type="text" name="test_event_summary" placeholder="Titulo del evento de prueba" class="form-control text-sm flex-grow">
+                  <input type="text" name="test_event_summary" placeholder="Titulo del evento de prueba" class="form-control text-sm grow">
                   <button type="submit" class="button button-secondary py-1 px-3 text-sm">Crear evento</button>
                 </div>
                 <div id="google-test-feedback" class="mt-2 text-sm"></div>
@@ -784,7 +784,7 @@ function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
               <form id="outlook-test-form" style="display:none;" class="mt-4 rounded-xl border border-slate-200 bg-white p-4">
                 <p class="mb-2 text-sm font-medium">Probar la conexion</p>
                 <div class="flex items-center gap-2">
-                  <input type="text" name="test_event_summary" placeholder="Titulo del evento de prueba" class="form-control text-sm flex-grow">
+                  <input type="text" name="test_event_summary" placeholder="Titulo del evento de prueba" class="form-control text-sm grow">
                   <button type="submit" class="button button-secondary py-1 px-3 text-sm">Crear evento</button>
                 </div>
                 <div id="outlook-test-feedback" class="mt-2 text-sm"></div>
@@ -794,18 +794,18 @@ function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
           </div>
         </article>
 
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Fiscal / contable</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Alegra y roadmap fiscal</h2>
           <p class="mt-2 text-sm text-slate-600">Mantiene la configuracion real de Alegra y deja priorizadas otras conexiones contables o tributarias.</p>
           <form id="alegra-config-form" class="mt-5 space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
             <div>
               <label class="mb-1 block text-sm font-semibold text-slate-700">Usuario de Alegra</label>
-              <input type="text" name="alegra_usuario" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="correo o usuario">
+              <input type="text" name="alegra_usuario" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-hidden focus:border-blue-300" placeholder="correo o usuario">
             </div>
             <div>
               <label class="mb-1 block text-sm font-semibold text-slate-700">Token / API key</label>
-              <input type="password" name="alegra_token" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-300" placeholder="Token seguro de Alegra">
+              <input type="password" name="alegra_token" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-hidden focus:border-blue-300" placeholder="Token seguro de Alegra">
             </div>
             <div class="flex flex-wrap gap-2">
               <button type="submit" id="alegra-save-btn" class="button button-primary py-2 px-4 rounded-md">Guardar configuracion</button>
@@ -818,7 +818,7 @@ function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
       </section>
 
       <section class="grid gap-6 xl:grid-cols-[1fr_1fr]">
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <div class="flex items-center justify-between gap-3">
             <div>
               <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Catalogo fiscal</p>
@@ -831,7 +831,7 @@ function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
           </div>
         </article>
 
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <div class="flex items-center justify-between gap-3">
             <div>
               <p class="text-xs uppercase tracking-[0.25em] text-slate-400">OTAs / channel manager</p>
@@ -846,7 +846,7 @@ function renderModuleLayout({ showGmailPaymentCard = false } = {}) {
         </article>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Historial del hotel</p>
@@ -891,7 +891,7 @@ export async function mount(container, sbInstance, user) {
   if (mountToken !== currentMountToken) return;
 
   if (!currentHotelId) {
-    container.innerHTML = '<div class="rounded-2xl border border-red-200 bg-red-50 p-8 text-center text-red-700 shadow-sm">No se pudo identificar el hotel actual para gestionar integraciones.</div>';
+    container.innerHTML = '<div class="rounded-2xl border border-red-200 bg-red-50 p-8 text-center text-red-700 shadow-xs">No se pudo identificar el hotel actual para gestionar integraciones.</div>';
     return;
   }
 

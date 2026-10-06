@@ -202,7 +202,7 @@ function applyCurrentFilter(root) {
   root.querySelectorAll('[data-user-view]').forEach((button) => {
     const selected = button.dataset.userView === view;
     button.className = selected
-      ? 'rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm'
+      ? 'rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-xs'
       : 'rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50';
   });
   const empty = root.querySelector('#usuarios-archivo-empty');
@@ -228,7 +228,7 @@ function installToolbar(root) {
   toolbar.innerHTML = `
     <div>
       <div class="flex flex-wrap gap-2">
-        <button type="button" data-user-view="active" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-sm">
+        <button type="button" data-user-view="active" class="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-xs">
           Personal activo <span data-user-count="active" class="ml-1 rounded-full bg-white/20 px-2 py-0.5">0</span>
         </button>
         <button type="button" data-user-view="archived" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-600 hover:bg-slate-50">

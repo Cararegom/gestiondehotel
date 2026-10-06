@@ -124,7 +124,7 @@ function renderMetricCard(label, value, tone = 'slate', helperText = '') {
   };
 
   return `
-    <article class="rounded-2xl border bg-gradient-to-br ${toneClasses[tone] || toneClasses.slate} p-4 shadow-sm">
+    <article class="rounded-2xl border bg-linear-to-br ${toneClasses[tone] || toneClasses.slate} p-4 shadow-xs">
       <p class="text-[11px] uppercase tracking-[0.28em] opacity-70">${escapeHtml(label)}</p>
       <p class="mt-2 text-3xl font-black">${escapeHtml(String(value ?? 0))}</p>
       ${helperText ? `<p class="mt-2 text-xs opacity-80">${escapeHtml(helperText)}</p>` : ''}
@@ -242,7 +242,7 @@ function renderIntegrationRequestsGlobal(requests = []) {
   return `
     <div class="space-y-3">
       ${requests.map((request) => `
-        <article class="rounded-xl border border-slate-100 bg-white p-4 shadow-sm">
+        <article class="rounded-xl border border-slate-100 bg-white p-4 shadow-xs">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p class="text-sm font-semibold text-slate-900">${escapeHtml(request.proveedor || 'Proveedor')}</p>
@@ -338,7 +338,7 @@ function renderRecentEvents(events = []) {
             : 'border-slate-200 bg-white';
 
         return `
-          <article class="rounded-xl border ${tone} p-4 shadow-sm">
+          <article class="rounded-xl border ${tone} p-4 shadow-xs">
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p class="text-[11px] uppercase tracking-[0.24em] text-slate-400">${escapeHtml(event.level || 'info')} · ${escapeHtml(event.source || 'app')}</p>
@@ -364,7 +364,7 @@ function renderSecuritySummary(security = {}) {
   const policyCounts = security.policy_counts || {};
 
   return `
-    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
       <div class="flex items-center justify-between gap-3">
         <div>
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Seguridad / RLS</p>
@@ -487,7 +487,7 @@ function renderHotelsTable() {
           <div class="flex flex-wrap justify-end gap-2">
             <button
               type="button"
-              class="ops-saas-grace rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-amber-600"
+              class="ops-saas-grace rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-600"
               data-hotel-id="${escapeHtml(hotel.id)}"
               data-hotel-name="${escapeHtml(hotel.nombre || 'hotel')}"
             >
@@ -495,7 +495,7 @@ function renderHotelsTable() {
             </button>
             <button
               type="button"
-              class="ops-saas-export rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow hover:bg-blue-700"
+              class="ops-saas-export rounded-xl bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
               data-hotel-id="${escapeHtml(hotel.id)}"
               data-hotel-name="${escapeHtml(hotel.nombre || 'hotel')}"
             >
@@ -699,7 +699,7 @@ function renderConsole(snapshot) {
 
   currentContainerEl.innerHTML = `
     <div class="space-y-6 p-4 md:p-8">
-      <section class="rounded-[28px] bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
+      <section class="rounded-[28px] bg-linear-to-br from-slate-950 via-slate-900 to-blue-950 p-6 text-white shadow-2xl">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.35em] text-blue-200">Admin Panel SaaS</p>
@@ -707,7 +707,7 @@ function renderConsole(snapshot) {
             <p class="mt-2 max-w-3xl text-sm text-blue-100">Gestiona hoteles, revisa ingresos mensuales, detecta incidencias y otorga dias de gracia desde una sola consola.</p>
           </div>
           <div class="flex flex-wrap gap-3">
-            <button id="ops-saas-refresh" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur hover:bg-white/20">Actualizar</button>
+            <button id="ops-saas-refresh" class="rounded-2xl bg-white/10 px-4 py-2 text-sm font-semibold text-white backdrop-blur-sm hover:bg-white/20">Actualizar</button>
           </div>
         </div>
         <div class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -734,7 +734,7 @@ function renderConsole(snapshot) {
       </section>
 
       <section class="grid gap-6 xl:grid-cols-[1.25fr_0.95fr]">
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Ingresos</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Resumen financiero mensual</h2>
           <div class="mt-4 grid gap-4 lg:grid-cols-2">
@@ -749,7 +749,7 @@ function renderConsole(snapshot) {
           </div>
         </article>
 
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Pagos recientes</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Actividad comercial</h2>
           <div class="mt-4">${renderRecentPayments(snapshot?.recent_payments || [])}</div>
@@ -757,26 +757,26 @@ function renderConsole(snapshot) {
       </section>
 
       <section class="grid gap-6 xl:grid-cols-[0.85fr_1.15fr_1fr]">
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Multi-propiedad</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Resumen de grupos hoteleros</h2>
           <div class="mt-4">${renderGroupSummary(groupSummary)}</div>
         </article>
 
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Landing / comercial</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Leads recientes</h2>
           <div class="mt-4">${renderLandingLeads(landingLeadsCache)}</div>
         </article>
 
-        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <article class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Integraciones</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Solicitudes por revisar</h2>
           <div class="mt-4">${renderIntegrationRequestsGlobal(integrationRequestsCache)}</div>
         </article>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Hoteles</p>
@@ -787,7 +787,7 @@ function renderConsole(snapshot) {
             id="ops-saas-hotel-search"
             type="search"
             placeholder="Buscar hotel, ciudad, estado o contacto"
-            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-blue-300 focus:bg-white md:max-w-sm"
+            class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-hidden transition focus:border-blue-300 focus:bg-white md:max-w-sm"
           >
         </div>
         <div class="mt-4 overflow-x-auto">
@@ -809,7 +809,7 @@ function renderConsole(snapshot) {
         </div>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Pricing futuro</p>
@@ -821,7 +821,7 @@ function renderConsole(snapshot) {
       </section>
 
       <section class="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
           <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Errores y eventos</p>
           <h2 class="mt-1 text-xl font-bold text-slate-900">Eventos recientes del sistema</h2>
           <div class="mt-4">${renderRecentEvents(snapshot?.recent_events || [])}</div>
@@ -853,7 +853,7 @@ async function loadConsole() {
 
   currentContainerEl.innerHTML = `
     <div class="p-8">
-      <div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-sm">
+      <div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-xs">
         Cargando admin panel SaaS...
       </div>
     </div>
@@ -894,7 +894,7 @@ async function loadConsole() {
     console.error('[Ops SaaS] Error cargando consola:', error);
     currentContainerEl.innerHTML = `
       <div class="p-8">
-        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-sm">
+        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-xs">
           No se pudo cargar el admin panel: ${escapeHtml(error.message || 'Error desconocido')}
         </div>
       </div>
@@ -929,7 +929,7 @@ export async function mount(container, sbInstance, user, hotelId) {
   if (!currentUser) {
     currentContainerEl.innerHTML = `
       <div class="p-8">
-        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-sm">
+        <div class="rounded-2xl border border-rose-200 bg-rose-50 p-8 text-center text-rose-700 shadow-xs">
           Debes iniciar sesion para acceder al admin panel.
         </div>
       </div>

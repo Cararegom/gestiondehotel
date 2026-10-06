@@ -17,7 +17,7 @@ function renderSimpleList(items, emptyText, type) {
   return `
     <div class="space-y-3">
       ${items.map((item) => `
-        <article class="rounded-2xl border ${type === 'attention' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'} p-4 shadow-sm">
+        <article class="rounded-2xl border ${type === 'attention' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'} p-4 shadow-xs">
           <div class="flex items-start justify-between gap-3">
             <div>
               <strong class="block text-slate-900">${item.cliente_nombre || item.title || 'Registro'}</strong>

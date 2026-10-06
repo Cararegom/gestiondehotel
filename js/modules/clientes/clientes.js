@@ -77,11 +77,11 @@ function renderClienteDescuentos(descuentos) {
         return '<div class="text-center text-gray-500 p-6">Este cliente no tiene descuentos personalizados asignados.</div>';
     }
     return descuentos.map(d => `
-        <div class="mb-3 p-4 border border-blue-200 rounded-lg bg-blue-50 shadow-sm">
+        <div class="mb-3 p-4 border border-blue-200 rounded-lg bg-blue-50 shadow-xs">
             <div class="flex justify-between items-start">
                 <div>
                     <h5 class="font-bold text-blue-800 text-lg">${escapeHtml(d.nombre)}</h5>
-                    ${d.codigo ? `<p class="font-mono text-sm bg-blue-100 text-blue-700 px-2 py-0.5 rounded inline-block my-1">${escapeHtml(d.codigo)}</p>` : '<p class="text-sm text-gray-600">Automático</p>'}
+                    ${d.codigo ? `<p class="font-mono text-sm bg-blue-100 text-blue-700 px-2 py-0.5 rounded-sm inline-block my-1">${escapeHtml(d.codigo)}</p>` : '<p class="text-sm text-gray-600">Automático</p>'}
                 </div>
                 <span class="text-xl font-bold text-blue-600">${d.tipo === 'porcentaje' ? `${d.valor}%` : formatCurrency(d.valor)}</span>
             </div>
@@ -238,7 +238,7 @@ function renderCRMInsightsHeader() {
             </div>
             <div class="grid grid-cols-1 xl:grid-cols-2 gap-3">
                 ${crmCampaignSuggestions.map((campaign) => `
-                    <div class="rounded-xl border border-white bg-white px-4 py-4 shadow-sm">
+                    <div class="rounded-xl border border-white bg-white px-4 py-4 shadow-xs">
                         <div class="flex items-start justify-between gap-3">
                             <div>
                                 <div class="font-semibold text-slate-800">${escapeHtml(campaign.title)}</div>
@@ -340,7 +340,7 @@ export async function mount(container, supabase, user, hotelId, opts = {}) {
             <div class="card-body p-4">
                 <div id="clientes-crm-header" class="mb-6"></div>
                 <div class="flex flex-wrap items-center mb-4 gap-3">
-                    <input id="buscar-cliente" class="form-control flex-grow p-2 border border-gray-300 rounded-md focus:ring focus:ring-blue-200" type="text" placeholder="Buscar por nombre, email, documento o teléfono">
+                    <input id="buscar-cliente" class="form-control grow p-2 border border-gray-300 rounded-md focus:ring-3 focus:ring-blue-200" type="text" placeholder="Buscar por nombre, email, documento o teléfono">
                     <input type="date" id="filtro-fecha-inicio" class="form-control p-2 border border-gray-300 rounded-md">
                     <input type="date" id="filtro-fecha-fin" class="form-control p-2 border border-gray-300 rounded-md">
                     <button id="btn-aplicar-filtro-fechas" class="button button-info bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-md transition-colors duration-200">Filtrar por Fecha</button>
@@ -958,7 +958,7 @@ async function mostrarHistorialCliente(clienteId) {
                 <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="actividades-crm">Actividades CRM</button>
                 <button class="tab-button flex-1 py-3 px-4 text-center font-semibold text-gray-700 hover:bg-gray-100" data-tab="descuentos">Descuentos</button>
             </div>
-            <div id="tab-content" class="flex-grow overflow-y-auto">
+            <div id="tab-content" class="grow overflow-y-auto">
                 <div id="tab-datos-generales" class="tab-pane active p-2">
                     <div class="mb-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
                         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -1022,7 +1022,7 @@ async function mostrarHistorialCliente(clienteId) {
                     <div class="mt-4 h-64"><canvas id="gastosChart"></canvas></div>
                     <div class="mt-8">
                         <h4 class="font-bold mb-2 text-lg">Detalle de Consumos</h4>
-                        <div class="overflow-y-auto max-h-64 border rounded p-2 bg-gray-50">${renderDetalleGastos(reservas, ventas, ventasTienda, ventasRestaurante)}</div>
+                        <div class="overflow-y-auto max-h-64 border rounded-sm p-2 bg-gray-50">${renderDetalleGastos(reservas, ventas, ventasTienda, ventasRestaurante)}</div>
                     </div>
                 </div>
                 <div id="tab-actividades-crm" class="tab-pane hidden p-2">
@@ -1033,8 +1033,8 @@ async function mostrarHistorialCliente(clienteId) {
                     <form id="form-crm-actividad" class="mt-4 border-t pt-3 border-gray-200">
                         <label class="block text-base font-semibold text-gray-800 mb-2">Agregar Actividad CRM</label>
                         <div class="flex flex-wrap gap-3 mb-3">
-                            <select name="tipo" class="form-control p-2 border border-gray-300 rounded-md flex-grow" required><option value="">Tipo de Actividad</option><option>Llamada</option><option>Email</option><option>Nota</option><option>Tarea</option><option>WhatsApp</option><option>Visita</option><option>Recordatorio</option></select>
-                            <select name="estado" class="form-control p-2 border border-gray-300 rounded-md flex-grow" required><option value="pendiente">Pendiente</option><option value="completada">Completada</option><option value="reagendada">Reagendada</option><option value="cancelada">Cancelada</option></select>
+                            <select name="tipo" class="form-control p-2 border border-gray-300 rounded-md grow" required><option value="">Tipo de Actividad</option><option>Llamada</option><option>Email</option><option>Nota</option><option>Tarea</option><option>WhatsApp</option><option>Visita</option><option>Recordatorio</option></select>
+                            <select name="estado" class="form-control p-2 border border-gray-300 rounded-md grow" required><option value="pendiente">Pendiente</option><option value="completada">Completada</option><option value="reagendada">Reagendada</option><option value="cancelada">Cancelada</option></select>
                         </div>
                         <textarea name="descripcion" class="form-control w-full p-2 border border-gray-300 rounded-md h-24 mb-3" required placeholder="Descripción de la actividad"></textarea>
                         <div id="feedback-form-crm-actividad" class="mb-3 text-center"></div>
@@ -1083,8 +1083,8 @@ function setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventas
     // Lógica de pestañas (sin cambios)
     modal.querySelectorAll('.tab-button').forEach(button => {
         button.onclick = (e) => {
-            modal.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'bg-white', 'border-b-2', 'border-blue-600', 'text-blue-600', 'shadow-sm'));
-            e.target.classList.add('active', 'bg-white', 'border-b-2', 'border-blue-600', 'text-blue-600', 'shadow-sm');
+            modal.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'bg-white', 'border-b-2', 'border-blue-600', 'text-blue-600', 'shadow-xs'));
+            e.target.classList.add('active', 'bg-white', 'border-b-2', 'border-blue-600', 'text-blue-600', 'shadow-xs');
             const targetTab = e.target.dataset.tab;
             modal.querySelectorAll('.tab-pane').forEach(pane => pane.classList.add('hidden'));
             modal.querySelector(`#tab-${targetTab}`).classList.remove('hidden');
@@ -1195,7 +1195,7 @@ function setupClientDetailListeners(clienteId, cliente, reservas, ventas, ventas
                         <h6 class="font-bold text-base">Editando Actividad</h6>
                         <textarea class="form-control w-full p-2 border border-gray-300 rounded-md h-20" id="edit-desc-${escapeAttribute(activity.id)}">${escapeHtml(activity.descripcion)}</textarea>
                         <div class="flex gap-3">
-                            <select class="form-control flex-grow p-2 border border-gray-300 rounded-md" id="edit-estado-${escapeAttribute(activity.id)}">
+                            <select class="form-control grow p-2 border border-gray-300 rounded-md" id="edit-estado-${escapeAttribute(activity.id)}">
                                 <option value="pendiente" ${activity.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option>
                                 <option value="completada" ${activity.estado === 'completada' ? 'selected' : ''}>Completada</option>
                                 <option value="reagendada" ${activity.estado === 'reagendada' ? 'selected' : ''}>Reagendada</option>
@@ -1263,7 +1263,7 @@ function renderReservas(reservas) {
     // ▼▼▼ CORRECCIÓN CLAVE AQUÍ ▼▼▼
     // Se usa r.habitaciones.nombre para el nombre y r.monto_total para el total.
     return reservas.map(r => `
-        <li class="mb-1 p-2 bg-gray-50 rounded border border-gray-200">
+        <li class="mb-1 p-2 bg-gray-50 rounded-sm border border-gray-200">
             <strong>Fecha:</strong> ${formatDate(r.fecha_inicio)} -
             <strong>Habitación:</strong> ${escapeHtml(r.habitaciones?.nombre || 'N/A')} -
             <strong>Total:</strong> ${formatCurrency(r.monto_total || 0)}
@@ -1288,9 +1288,9 @@ function renderActividades(arr) {
     };
 
     return arr.map(a => `
-        <li class="actividad-item mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-sm" data-activity-id="${escapeAttribute(a.id)}">
+        <li class="actividad-item mb-2 p-3 border border-gray-200 rounded-lg bg-white shadow-xs" data-activity-id="${escapeAttribute(a.id)}">
             <div class="flex justify-between items-start">
-                <div class="flex-grow">
+                <div class="grow">
                     <div class="flex items-center gap-3 mb-1">
                         <span class="font-bold text-blue-800 text-base">${escapeHtml(a.tipo)}</span>
                         <span class="px-2 py-0.5 text-xs font-semibold rounded-full ${estadoColores[a.estado] || 'bg-gray-100 text-gray-800'}">${escapeHtml(a.estado || 'Pendiente')}</span>
@@ -1298,7 +1298,7 @@ function renderActividades(arr) {
                     <p class="text-gray-700 text-sm mb-2">${escapeHtml(a.descripcion || '')}</p>
                     <p class="text-xs text-gray-500">Registrado: ${formatDate(a.fecha)}</p>
                 </div>
-                <div class="flex items-center gap-2 flex-shrink-0 ml-4">
+                <div class="flex items-center gap-2 shrink-0 ml-4">
                     <button data-action="edit-crm" data-id="${escapeAttribute(a.id)}" title="Editar Actividad" class="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-md">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd" /></svg>
                     </button>
@@ -1490,7 +1490,7 @@ export async function showClienteSelectorModal(supabaseManual, hotelIdManual, op
         <input id="filtro-cliente"
                type="text"
                placeholder="Buscar por nombre, cédula o teléfono..."
-               class="w-full px-4 py-3 rounded-lg text-base border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-400 mb-4 bg-white shadow-sm transition-all duration-200" />
+               class="w-full px-4 py-3 rounded-lg text-base border border-gray-300 focus:outline-hidden focus:ring-2 focus:ring-green-400 mb-4 bg-white shadow-xs transition-all duration-200" />
         <div id="lista-clientes" class="rounded-lg border border-gray-200 max-h-[300px] overflow-y-auto divide-y divide-gray-100 bg-white shadow-inner">
             </div>
         <div class="mt-6 text-right">

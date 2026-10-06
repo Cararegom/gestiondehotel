@@ -29,7 +29,7 @@ function renderCatalogForm(deps) {
     : null;
 
   return `
-    <form id="terraza-product-form" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <form id="terraza-product-form" class="rounded-xl border border-slate-200 bg-white p-4 shadow-xs">
       <div class="mb-3 flex items-center justify-between gap-3">
         <div>
           <h3 class="text-base font-bold text-slate-800">${product ? 'Editar producto de terraza' : 'Nuevo producto de terraza'}</h3>
@@ -122,7 +122,7 @@ function renderInventarioTable(deps) {
   }
 
   return `
-    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs">
       <div class="border-b border-slate-200 p-4">
         <h3 class="font-bold text-slate-800">Inventario de Terraza</h3>
         <p class="text-xs text-slate-500">El stock disponible descuenta las unidades en cuentas abiertas.</p>
@@ -189,7 +189,7 @@ function renderInventarioTable(deps) {
 
 function renderTransferInfoPanel() {
   return `
-    <section class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 shadow-sm">
+    <section class="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 shadow-xs">
       <h3 class="font-bold">Transferencias de inventario</h3>
       <p class="mt-1">El inventario de Tienda hacia Terraza lo envia recepcion desde <strong>Tienda &gt; Inventario</strong>, cuando el mesero lo solicite.</p>
       <p class="mt-1">La devolucion de Terraza hacia Tienda tambien se gestiona desde <strong>Tienda &gt; Inventario</strong>, quedando registrada con el usuario y turno correspondiente.</p>
@@ -201,7 +201,7 @@ function renderInventoryPrintPanel(deps) {
   const activeProducts = deps.state.productos.filter((producto) => producto.activo !== false).length;
 
   return `
-    <section class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+    <section class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-xs sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h3 class="text-base font-bold text-slate-800">Inventario de Terraza</h3>
         <p class="text-xs text-slate-500">${activeProducts} producto(s) activo(s) para impresion.</p>

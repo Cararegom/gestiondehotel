@@ -223,13 +223,13 @@ export async function mount(container, sbInstance, user) {
       </div>
       <div class="card-body p-4 md:p-6 space-y-8">
         <div id="servicios-feedback" role="status" aria-live="polite" style="display:none;" class="feedback-message mb-4"></div>
-        <section id="section-tipos-servicio" class="p-4 border rounded-md bg-gray-50 shadow-sm">
+        <section id="section-tipos-servicio" class="p-4 border rounded-md bg-gray-50 shadow-xs">
           <h3 class="text-lg font-semibold text-gray-700 mb-3">Categorías de Servicios</h3>
           <form id="form-tipo-servicio" class="form space-y-3 mb-4" novalidate autocomplete="off">
             <input type="hidden" id="tipoServicioIdEdit" name="tipoServicioIdEdit" />
             <div>
               <label for="nombreTipo" class="block text-sm font-medium text-gray-600">Nombre de la Categoría *</label>
-              <input type="text" id="nombreTipo" name="nombreTipo" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required maxlength="100" autocomplete="off" />
+              <input type="text" id="nombreTipo" name="nombreTipo" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-xs sm:text-sm" required maxlength="100" autocomplete="off" />
             </div>
             <div class="form-actions flex items-center gap-3">
               <button type="submit" id="btn-guardar-tipo-servicio" class="button button-primary text-sm py-2 px-3 rounded-md">Guardar Categoría</button>
@@ -250,26 +250,26 @@ export async function mount(container, sbInstance, user) {
           </div>
         </section>
         <hr class="my-6"/>
-        <section id="section-servicios-adicionales" class="p-4 border rounded-md bg-gray-50 shadow-sm">
+        <section id="section-servicios-adicionales" class="p-4 border rounded-md bg-gray-50 shadow-xs">
           <h3 id="form-servicio-adicional-titulo" class="text-lg font-semibold text-gray-700 mb-3">Agregar Nuevo Servicio Adicional</h3>
           <form id="form-servicio-adicional" class="form grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" novalidate autocomplete="off">
             <input type="hidden" id="servicioIdEdit" name="servicioIdEdit" />
             <div class="form-group">
               <label for="nombreServicio" class="block text-sm font-medium text-gray-600">Nombre del Servicio *</label>
-              <input type="text" id="nombreServicio" name="nombreServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required maxlength="150" autocomplete="off" />
+              <input type="text" id="nombreServicio" name="nombreServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-xs sm:text-sm" required maxlength="150" autocomplete="off" />
             </div>
             <div class="form-group">
               <label for="servicio-tipo" class="block text-sm font-medium text-gray-600">Categoría del Servicio</label>
-              <select id="servicio-tipo" name="tipo_id" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm">
+              <select id="servicio-tipo" name="tipo_id" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-xs sm:text-sm">
                 <option value="">Cargando categorías...</option>
               </select>
             </div>
             <div class="form-group">
               <label for="precioServicio" class="block text-sm font-medium text-gray-600">Precio *</label>
-              <input type="number" id="precioServicio" name="precioServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-sm sm:text-sm" required min="0" step="0.01" autocomplete="off" />
+              <input type="number" id="precioServicio" name="precioServicio" class="form-control mt-1 block w-full rounded-md border-gray-300 shadow-xs sm:text-sm" required min="0" step="0.01" autocomplete="off" />
             </div>
             <div class="form-group flex items-center pt-6">
-              <input type="checkbox" id="activoServicio" name="activoServicio" class="form-check-input h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500" checked />
+              <input type="checkbox" id="activoServicio" name="activoServicio" class="form-check-input h-4 w-4 text-indigo-600 border-gray-300 rounded-sm focus:ring-indigo-500" checked />
               <label for="activoServicio" class="ml-2 block text-sm text-gray-900">Servicio Activo</label>
             </div>
             <div class="form-actions md:col-span-2 flex items-center gap-3 mt-2">

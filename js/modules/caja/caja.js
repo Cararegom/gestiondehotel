@@ -282,19 +282,19 @@ async function renderizarUIAbierta() {
               </p>
 
               <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mt-6">
-                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-xs">
                   <span class="block text-xs uppercase tracking-widest text-slate-300">Cajero</span>
                   <span class="block text-base font-semibold mt-2 text-white">${usuarioTurnoNombre}</span>
                 </div>
-                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-xs">
                   <span class="block text-xs uppercase tracking-widest text-slate-300">Inicio</span>
                   <span id="turno-opened-at" class="block text-base font-semibold mt-2 text-white">${fechaAperturaLabel}</span>
                 </div>
-                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-xs">
                   <span class="block text-xs uppercase tracking-widest text-slate-300">Tiempo abierto</span>
                   <span id="turno-open-duration" class="block text-base font-semibold mt-2 text-white">${tiempoAbiertoLabel}</span>
                 </div>
-                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-sm">
+                <div class="rounded-2xl bg-white/10 border border-white/10 px-4 py-4 backdrop-blur-xs">
                   <span class="block text-xs uppercase tracking-widest text-slate-300">Movimientos</span>
                   <span id="turno-movements-count" class="block text-base font-semibold mt-2 text-white">0</span>
                 </div>
@@ -303,8 +303,8 @@ async function renderizarUIAbierta() {
 
             <div class="flex flex-wrap items-center gap-2 xl:justify-end">
             ${isAdmin ? `
-              <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver turnos abiertos</button>
-              <button id="btn-ver-reversiones" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-sm bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver reversiones</button>
+              <button id="btn-ver-turnos-abiertos" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-xs bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver turnos abiertos</button>
+              <button id="btn-ver-reversiones" class="button button-neutral py-2.5 px-4 rounded-2xl shadow-xs bg-white/10 hover:bg-white/20 text-white border border-white/10">Ver reversiones</button>
             ` : ''}
               <button id="btn-cerrar-turno" class="button ${esModoSupervision ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'} text-white font-bold py-2.5 px-5 rounded-2xl shadow-lg shadow-black/10">
                 ${esModoSupervision ? 'Forzar cierre de este turno' : 'Preparar corte de caja'}
@@ -319,7 +319,7 @@ async function renderizarUIAbierta() {
 
           <div class="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,0.9fr)]">
             <div class="space-y-5">
-              <section class="rounded-3xl bg-white border border-slate-200 shadow-sm overflow-hidden">
+              <section class="rounded-3xl bg-white border border-slate-200 shadow-xs overflow-hidden">
                 <div class="p-5 border-b border-slate-200 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
                   <div>
                     <p class="text-xs uppercase tracking-widest text-slate-400 mb-2">Resumen financiero</p>
@@ -332,33 +332,33 @@ async function renderizarUIAbierta() {
                 </div>
 
                 <div class="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 ${mostrarPropinas ? '2xl:grid-cols-6' : '2xl:grid-cols-5'} gap-4">
-                  <div class="rounded-3xl border border-slate-200 bg-gradient-to-b from-slate-50 to-white p-5 shadow-sm">
+                  <div class="rounded-3xl border border-slate-200 bg-linear-to-b from-slate-50 to-white p-5 shadow-xs">
                     <span class="block text-xs uppercase tracking-widest text-slate-400">Apertura</span>
                     <span id="turno-total-apertura" class="block text-2xl font-bold mt-3 text-slate-900 leading-tight">$0</span>
                     <span class="block text-xs text-slate-500 mt-2">Base inicial del cajero</span>
                   </div>
-                  <div class="rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-sm">
+                  <div class="rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-xs">
                     <span class="block text-xs uppercase tracking-widest text-emerald-700">Ingresos</span>
                     <span id="turno-total-ingresos" class="block text-2xl font-bold mt-3 text-emerald-600 leading-tight">$0</span>
                     <span class="block text-xs text-emerald-700/70 mt-2">Dinero que entro en el turno</span>
                   </div>
                   ${mostrarPropinas ? `
-                  <div class="rounded-3xl border border-amber-200 bg-amber-50/80 p-5 shadow-sm">
+                  <div class="rounded-3xl border border-amber-200 bg-amber-50/80 p-5 shadow-xs">
                     <span class="block text-xs uppercase tracking-widest text-amber-700">Propinas del turno</span>
                     <span id="turno-total-propinas" class="block text-2xl font-bold mt-3 text-amber-600 leading-tight">$0</span>
                     <span class="block text-xs text-amber-700/70 mt-2">Propina recogida en Terraza</span>
                   </div>` : ''}
-                  <div class="rounded-3xl border border-rose-200 bg-rose-50/80 p-5 shadow-sm">
+                  <div class="rounded-3xl border border-rose-200 bg-rose-50/80 p-5 shadow-xs">
                     <span class="block text-xs uppercase tracking-widest text-rose-700">Egresos</span>
                     <span id="turno-total-egresos" class="block text-2xl font-bold mt-3 text-rose-600 leading-tight">$0</span>
                     <span class="block text-xs text-rose-700/70 mt-2">Salidas registradas en el turno</span>
                   </div>
-                  <div class="rounded-3xl border border-sky-200 bg-sky-50/80 p-5 shadow-sm">
+                  <div class="rounded-3xl border border-sky-200 bg-sky-50/80 p-5 shadow-xs">
                     <span class="block text-xs uppercase tracking-widest text-sky-700">Dinero generado</span>
                     <span id="turno-balance-operativo" class="block text-2xl font-bold mt-3 text-sky-600 leading-tight">$0</span>
                     <span class="block text-xs text-sky-700/70 mt-2">Ingresos menos egresos</span>
                   </div>
-                  <div class="rounded-3xl border border-emerald-200 p-5 shadow-sm" style="background: linear-gradient(180deg, #ecfdf5, #d1fae5);">
+                  <div class="rounded-3xl border border-emerald-200 p-5 shadow-xs" style="background: linear-gradient(180deg, #ecfdf5, #d1fae5);">
                     <span class="block text-xs uppercase tracking-widest text-emerald-800">Balance total</span>
                     <span id="turno-balance" class="block text-2xl font-bold mt-3 text-emerald-600 leading-tight">$0</span>
                     <span class="block text-xs text-emerald-800/70 mt-2">Incluye apertura del turno</span>
@@ -370,7 +370,7 @@ async function renderizarUIAbierta() {
                 </div>
               </section>
 
-              <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+              <section class="rounded-3xl bg-white shadow-xs border border-slate-200 overflow-hidden">
                 <div class="p-5 border-b border-slate-200">
                   <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                     <div>
@@ -431,7 +431,7 @@ async function renderizarUIAbierta() {
             </div>
 
             <aside class="space-y-5">
-              <section class="rounded-3xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+              <section class="rounded-3xl bg-white shadow-xs border border-slate-200 overflow-hidden">
                 <div class="p-5 border-b border-slate-200" style="background: linear-gradient(180deg, #ffffff, #eef6ff);">
                   <p class="text-xs uppercase tracking-widest text-slate-400 mb-2">Operacion</p>
                   <h3 class="text-xl font-semibold text-slate-900">Registrar nuevo movimiento</h3>
@@ -485,12 +485,12 @@ async function renderizarUIAbierta() {
                     <input type="datetime-local" id="fecha-movimiento-custom" name="fecha_movimiento_custom" class="form-control">
                   </div>
 
-                  <button type="submit" class="button button-accent w-full py-3 rounded-2xl text-base font-semibold shadow-sm">+ Guardar movimiento</button>
+                  <button type="submit" class="button button-accent w-full py-3 rounded-2xl text-base font-semibold shadow-xs">+ Guardar movimiento</button>
                   <div id="turno-add-feedback" class="feedback-message mt-1"></div>
                 </form>
               </section>
 
-              <section class="rounded-3xl bg-slate-950 text-white shadow-sm overflow-hidden">
+              <section class="rounded-3xl bg-slate-950 text-white shadow-xs overflow-hidden">
                 <div class="p-5 border-b border-white/10">
                   <p class="text-xs uppercase tracking-widest text-sky-200 mb-2">Checklist rapido</p>
                   <h3 class="text-xl font-semibold">Buenas practicas del turno</h3>
@@ -698,7 +698,7 @@ async function renderizarUIAbierta() {
 function renderizarUICerrada() {
   currentContainerEl.innerHTML = `
     <div class="card shadow-xl rounded-3xl overflow-hidden border border-slate-200">
-      <div class="card-body p-8 text-center bg-gradient-to-br from-slate-50 to-white">
+      <div class="card-body p-8 text-center bg-linear-to-br from-slate-50 to-white">
         <div id="turno-global-feedback" class="feedback-message mb-4"></div>
         <p class="text-xs uppercase tracking-[0.22em] text-slate-400 mb-2">Caja</p>
         <h2 class="text-3xl font-semibold text-gray-700 mb-4">La caja esta cerrada</h2>

@@ -292,7 +292,7 @@ function isWhitelistedSuperadminAccount(user, perfil = null) {
 function buildNavLinkElement(linkConfig) {
   const link = document.createElement('a');
   link.href = linkConfig.path;
-  link.className = 'nav-link nav-link-dynamic p-2 hover:bg-gray-700 rounded flex items-center text-sm';
+  link.className = 'nav-link nav-link-dynamic p-2 hover:bg-gray-700 rounded-sm flex items-center text-sm';
 
   const icon = document.createElement('span');
   icon.className = 'mr-2 text-lg';
@@ -459,7 +459,7 @@ function updateUserInfo(user) {
         <span class="user-email block font-medium text-white truncate" title="${userEmail}">${userEmail}</span>
         <span class="user-role block text-xs text-gray-400">${displayRol}</span>
       </div>
-      <button id="logout-button" class="button button-danger w-full text-left p-2 hover:bg-red-700 rounded flex items-center text-sm mt-2">
+      <button id="logout-button" class="button button-danger w-full text-left p-2 hover:bg-red-700 rounded-sm flex items-center text-sm mt-2">
         <span class="mr-2 text-lg">ðŸšª</span> Cerrar Sesión
       </button>
     */
@@ -479,7 +479,7 @@ function updateUserInfo(user) {
 
     const logoutButtonEl = document.createElement('button');
     logoutButtonEl.id = 'logout-button';
-    logoutButtonEl.className = 'button button-danger w-full text-left p-2 hover:bg-red-700 rounded flex items-center text-sm mt-2';
+    logoutButtonEl.className = 'button button-danger w-full text-left p-2 hover:bg-red-700 rounded-sm flex items-center text-sm mt-2';
 
     const iconSpan = document.createElement('span');
     iconSpan.className = 'mr-2 text-lg';
@@ -635,7 +635,7 @@ async function router() {
       renderNavigation(userForModule);
 
       if (!canCurrentUserAccessBankPaymentPilot(hotelIdForModule)) {
-        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="mb-3 text-2xl font-semibold text-red-600">Piloto no disponible</h2><p class="text-gray-700">La conciliacion de pagos bancarios no esta habilitada para este hotel o usuario.</p><div class="mt-6"><a href="#/dashboard" class="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white shadow transition-colors hover:bg-blue-700">Volver al dashboard</a></div></div>`;
+        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="mb-3 text-2xl font-semibold text-red-600">Piloto no disponible</h2><p class="text-gray-700">La conciliacion de pagos bancarios no esta habilitada para este hotel o usuario.</p><div class="mt-6"><a href="#/dashboard" class="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white shadow-sm transition-colors hover:bg-blue-700">Volver al dashboard</a></div></div>`;
         hideGlobalLoading();
         routerBusy = false;
         return;
@@ -682,7 +682,7 @@ async function router() {
       if (!esModuloMeseroPermitido && moduleKeyFromRoute && !canAccessModuleForCurrentPlan(moduleKeyFromRoute, hotelIdForModule)) {
 
         console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
-        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al M\u00F3dulo</h2><p class="text-gray-700 mb-1">La funcionalidad o m\u00F3dulo '<strong>${escapeHtml(moduleKeyFromRoute)}</strong>' no est\u00E1 incluida en tu plan actual (<strong>${escapeHtml(currentActivePlanDetails.nombre)}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta secci\u00F3n, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
+        appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al M\u00F3dulo</h2><p class="text-gray-700 mb-1">La funcionalidad o m\u00F3dulo '<strong>${escapeHtml(moduleKeyFromRoute)}</strong>' no est\u00E1 incluida en tu plan actual (<strong>${escapeHtml(currentActivePlanDetails.nombre)}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta secci\u00F3n, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow-sm transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
         hideGlobalLoading();
         routerBusy = false;
         return;
@@ -736,7 +736,7 @@ async function router() {
           await moduleDefinition.default(appContainer, supabase, userForModuleWithRole, hotelIdForModule);
           currentModuleUnmount = null;
         } else {
-          if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error: M\u00F3dulo para "${escapeHtml(baseRoute)}" inv\u00E1lido.</p>`;
+          if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded-sm">Error: M\u00F3dulo para "${escapeHtml(baseRoute)}" inv\u00E1lido.</p>`;
           void logMonitoringEvent({
             source: 'router',
             level: 'error',
@@ -752,7 +752,7 @@ async function router() {
           currentModuleUnmount = moduleDefinition.unmount || null;
           currentPathLoaded = baseRoute;
         } catch (error) {
-          if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error al cargar m\u00F3dulo: ${escapeHtml(error?.message || 'Error desconocido')}</p>`;
+          if (appContainer) appContainer.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded-sm">Error al cargar m\u00F3dulo: ${escapeHtml(error?.message || 'Error desconocido')}</p>`;
           currentPathLoaded = null;
           void logMonitoringEvent({
             source: 'router',
@@ -1148,7 +1148,7 @@ document.addEventListener('DOMContentLoaded', () => {
     console.error("Error fatal durante la inicialización:", error);
     const appContainerError = document.getElementById('app-container');
     if (appContainerError) {
-      appContainerError.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded">Error crítico al iniciar.</p>`;
+      appContainerError.innerHTML = `<p class="error-indicator p-4 bg-red-100 text-red-700 rounded-sm">Error crítico al iniciar.</p>`;
     }
     hideGlobalLoading();
   });

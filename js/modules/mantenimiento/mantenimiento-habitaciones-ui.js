@@ -244,7 +244,7 @@ function renderRoomChecklistSection(form, rows) {
           <article data-room-review-id="${row.id}" class="rounded-2xl border p-3 ${meta.card}">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-2">
-                <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-slate-800 shadow-sm">${escapeHtml(row.habitacion_nombre_snapshot)}</span>
+                <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-sm font-black text-slate-800 shadow-xs">${escapeHtml(row.habitacion_nombre_snapshot)}</span>
                 <div><p class="text-sm font-black text-slate-900">Habitación ${escapeHtml(row.habitacion_nombre_snapshot)}</p><span class="mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-black ${meta.badge}">${meta.label}</span></div>
               </div>
               <select data-room-status class="form-control min-h-[40px] rounded-xl text-sm font-bold">

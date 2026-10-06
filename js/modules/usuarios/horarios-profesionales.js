@@ -147,8 +147,8 @@ function shiftBadge(template, type) {
 
 function renderShell(root) {
   root.innerHTML = `
-    <section class="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div class="border-b border-slate-200 bg-gradient-to-r from-slate-950 to-slate-800 px-4 py-5 text-white sm:px-6">
+    <section class="mb-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
+      <div class="border-b border-slate-200 bg-linear-to-r from-slate-950 to-slate-800 px-4 py-5 text-white sm:px-6">
         <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <div class="mb-2 flex flex-wrap items-center gap-2">
@@ -268,8 +268,8 @@ function renderTeamPanel() {
           <span class="min-w-0 flex-1">
             <span class="block truncate text-sm font-semibold text-slate-800">${escapeHtml(user.nombre)}</span>
             <span class="mt-1 flex flex-wrap gap-1">
-              ${user.evitaNoche ? '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Evita noche</span>' : ''}
-              ${user.prefiereDia ? '<span class="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Prefiere día</span>' : ''}
+              ${user.evitaNoche ? '<span class="rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">Evita noche</span>' : ''}
+              ${user.prefiereDia ? '<span class="rounded-sm bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800">Prefiere día</span>' : ''}
               ${!user.evitaNoche && !user.prefiereDia ? '<span class="text-[11px] text-slate-400">Sin preferencia especial</span>' : ''}
             </span>
           </span>
@@ -302,7 +302,7 @@ function renderGeneratorPanel() {
           <input data-period-end type="date" value="${range.end}" class="mt-1 w-full rounded-lg border border-slate-300 p-2 text-sm">
         </label>
       </div>
-      <button type="button" data-action="generate" class="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-blue-700">Generar borrador</button>
+      <button type="button" data-action="generate" class="rounded-xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-xs hover:bg-blue-700">Generar borrador</button>
     </div>
   `;
 }
@@ -426,7 +426,7 @@ function renderDrafts() {
       ${drafts.length ? `<div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         ${drafts.map((draft) => {
           const conflicts = draft.validacion?.conflictos?.length || 0;
-          return `<button type="button" data-action="open-draft" data-draft-id="${escapeHtml(draft.id)}" class="rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-blue-300 hover:shadow-sm">
+          return `<button type="button" data-action="open-draft" data-draft-id="${escapeHtml(draft.id)}" class="rounded-xl border border-slate-200 bg-white p-3 text-left hover:border-blue-300 hover:shadow-xs">
             <div class="flex items-center justify-between gap-2">
               <span class="text-sm font-bold text-slate-800">${escapeHtml(formatRange(draft.fecha_inicio, draft.fecha_fin))}</span>
               <span class="rounded-full px-2 py-0.5 text-[10px] font-bold ${draft.estado === 'publicado' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-800'}">${escapeHtml(String(draft.estado).toUpperCase())}</span>

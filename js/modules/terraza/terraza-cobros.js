@@ -256,7 +256,7 @@ async function collectMixedPayments(totalAPagar, metodos, money) {
         row.innerHTML = `
           <select class="form-control">${opciones}</select>
           <input type="number" min="0.01" step="0.01" class="form-control terraza-pago-monto" value="${escapeAttribute(String(amount))}" placeholder="Monto">
-          <button type="button" class="rounded text-xl font-bold text-red-600" aria-label="Quitar pago">&times;</button>`;
+          <button type="button" class="rounded-sm text-xl font-bold text-red-600" aria-label="Quitar pago">&times;</button>`;
         row.querySelector('button').addEventListener('click', () => {
           row.remove();
           updateTotals();

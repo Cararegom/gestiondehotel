@@ -145,7 +145,7 @@ function ensureShell() {
 
   shell = document.createElement('section');
   shell.id = 'mant-calendar-shell';
-  shell.className = 'mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm';
+  shell.className = 'mb-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs';
   shell.innerHTML = '<p class="text-sm font-semibold text-slate-500">Cargando calendario de mantenimiento...</p>';
 
   const summary = activeContainer.querySelector('#mant-resumen');
@@ -345,7 +345,7 @@ function showPlanModal(plan = null, seedDate = null) {
   const activeUsers = referenceData.usuarios.filter((user) => user.activo !== false);
 
   target.innerHTML = `
-    <div class="fixed inset-0 z-[270] overflow-y-auto bg-black/55 p-3 sm:p-5">
+    <div class="fixed inset-0 z-270 overflow-y-auto bg-black/55 p-3 sm:p-5">
       <div class="mx-auto max-w-3xl">
         <div class="relative rounded-3xl bg-white shadow-2xl">
           <button type="button" id="mant-plan-close" class="absolute right-4 top-3 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-500">&times;</button>

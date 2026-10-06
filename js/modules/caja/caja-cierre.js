@@ -254,7 +254,7 @@ export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomatic
           <input
             type="number"
             id="arqueo-input-${metodo.id}"
-            class="form-control pl-7 ${esEfectivo ? 'pr-20' : ''} w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 transition-colors"
+            class="form-control pl-7 ${esEfectivo ? 'pr-20' : ''} w-full border-gray-300 rounded-md shadow-xs focus:ring-blue-500 focus:border-blue-500 transition-colors"
             placeholder="0"
             min="0"
             step="0.01"
@@ -275,12 +275,12 @@ export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomatic
         ${[100000, 50000, 20000, 10000, 5000, 2000, 1000].map((val) => `
           <div class="flex items-center justify-between">
             <label class="text-gray-600">$${val / 1000}k</label>
-            <input type="number" class="calc-billete w-20 p-1 border rounded text-right focus:ring-1 focus:ring-blue-500" data-valor="${val}" placeholder="0" min="0">
+            <input type="number" class="calc-billete w-20 p-1 border rounded-sm text-right focus:ring-1 focus:ring-blue-500" data-valor="${val}" placeholder="0" min="0">
           </div>
         `).join('')}
         <div class="flex items-center justify-between col-span-2 border-t pt-2 mt-1">
           <label class="text-gray-600">Monedas (Total)</label>
-          <input type="number" id="calc-monedas" class="w-24 p-1 border rounded text-right focus:ring-1 focus:ring-blue-500" placeholder="0" min="0">
+          <input type="number" id="calc-monedas" class="w-24 p-1 border rounded-sm text-right focus:ring-1 focus:ring-blue-500" placeholder="0" min="0">
         </div>
       </div>
       <div class="mt-3 text-right">
@@ -292,7 +292,7 @@ export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomatic
 
   const modalHtml = `
     <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-fade-in-down transform transition-all">
-      <div class="bg-gradient-to-r from-blue-600 to-blue-500 p-4 border-b">
+      <div class="bg-linear-to-r from-blue-600 to-blue-500 p-4 border-b">
         <h3 class="text-lg font-bold text-white flex items-center gap-2">Arqueo de caja</h3>
         <p class="text-blue-100 text-xs mt-1">Cuenta el dinero fisico antes de ver el reporte.</p>
       </div>
@@ -311,7 +311,7 @@ export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomatic
 
   const modalContainer = document.createElement('div');
   modalContainer.id = 'modal-arqueo-ciego';
-  modalContainer.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-60 p-4 backdrop-blur-sm';
+  modalContainer.className = 'fixed inset-0 z-10000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs';
   modalContainer.innerHTML = modalHtml;
   document.body.appendChild(modalContainer);
 
@@ -531,15 +531,15 @@ export async function mostrarResumenCorteDeCaja({
 
     const modalHtml = `
       <div class="bg-white p-0 rounded-2xl shadow-2xl w-full max-w-4xl mx-auto border border-slate-200 relative animate-fade-in-down max-h-[90vh] flex flex-col">
-        <div class="py-5 px-8 border-b rounded-t-2xl bg-gradient-to-r from-blue-100 to-green-100 flex items-center justify-between">
+        <div class="py-5 px-8 border-b rounded-t-2xl bg-linear-to-r from-blue-100 to-green-100 flex items-center justify-between">
           <h2 class="text-2xl font-bold text-slate-800">Resultado del Cierre</h2>
-          <div class="text-sm bg-white px-3 py-1 rounded-full shadow-sm">
+          <div class="text-sm bg-white px-3 py-1 rounded-full shadow-xs">
             Usuario: <b>${turnoParaResumir.usuarios?.nombre || 'Sistema'}</b>
           </div>
         </div>
         <div class="p-6 overflow-y-auto custom-scrollbar">
           ${panelBancario}
-          <div class="mb-6 border rounded-lg overflow-hidden shadow-sm">
+          <div class="mb-6 border rounded-lg overflow-hidden shadow-xs">
             <div class="bg-gray-800 text-white px-4 py-2 text-sm font-bold uppercase tracking-wider">Cuadre de Caja</div>
             <table class="w-full text-sm">
               <thead class="bg-gray-100 text-gray-700">
@@ -569,7 +569,7 @@ export async function mostrarResumenCorteDeCaja({
           <div class="flex flex-col md:flex-row justify-end gap-3 mt-6 pt-4 border-t">
             <button id="btn-imprimir-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-slate-100 hover:bg-blue-100 text-blue-800 font-semibold transition order-2 md:order-1">Imprimir reporte</button>
             <button id="btn-cancelar-corte-caja" class="button button-neutral px-4 py-2 rounded-lg bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold transition order-1 md:order-2">Volver / corregir</button>
-            <button id="btn-confirmar-corte-caja" class="button button-primary px-4 py-2 rounded-lg bg-gradient-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold shadow transition order-3">Cerrar turno definitivamente</button>
+            <button id="btn-confirmar-corte-caja" class="button button-primary px-4 py-2 rounded-lg bg-linear-to-r from-green-600 to-green-500 hover:from-green-700 hover:to-green-600 text-white font-bold shadow-sm transition order-3">Cerrar turno definitivamente</button>
           </div>
         </div>
       </div>
@@ -577,7 +577,7 @@ export async function mostrarResumenCorteDeCaja({
 
     const modal = document.createElement('div');
     modal.id = 'modal-corte-caja';
-    modal.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-50 p-4';
+    modal.className = 'fixed inset-0 z-10000 flex items-center justify-center bg-black/50 p-4';
     modal.innerHTML = modalHtml;
     document.body.appendChild(modal);
 

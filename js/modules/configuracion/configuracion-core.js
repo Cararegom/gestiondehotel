@@ -36,7 +36,7 @@ export async function mount(container, supabase, user, hotelId) {
       <form id="config-form" class="space-y-10">
 
         <fieldset class="border-2 border-amber-200 p-6 rounded-xl shadow-md bg-amber-50/40">
-          <legend class="text-xl font-semibold text-amber-800 px-3 py-1 bg-white border-2 border-amber-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-amber-800 px-3 py-1 bg-white border-2 border-amber-200 rounded-lg shadow-xs">
             <span class="mr-2">⚡</span>Control de Energía por QR
           </legend>
           <div class="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -46,8 +46,8 @@ export async function mount(container, supabase, user, hotelId) {
             </div>
             <label class="energy-switch relative inline-flex cursor-pointer items-center" for="energy_control_enabled">
               <input id="energy_control_enabled" name="energy_control_enabled" type="checkbox" class="peer sr-only" role="switch" aria-describedby="energy-control-description energy-control-status">
-              <span class="h-8 w-16 rounded-full bg-slate-400 transition-colors duration-200 peer-checked:bg-emerald-500 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-200 peer-disabled:cursor-wait peer-disabled:opacity-60"></span>
-              <span class="pointer-events-none absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow transition-transform duration-200 peer-checked:translate-x-8"></span>
+              <span class="h-8 w-16 rounded-full bg-slate-400 transition-colors duration-200 peer-checked:bg-emerald-500 peer-focus:outline-hidden peer-focus:ring-4 peer-focus:ring-emerald-200 peer-disabled:cursor-wait peer-disabled:opacity-60"></span>
+              <span class="pointer-events-none absolute left-1 top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-transform duration-200 peer-checked:translate-x-8"></span>
               <span id="energy-control-status" class="ml-3 min-w-24 font-black text-slate-600">DESACTIVADO</span>
             </label>
           </div>
@@ -55,7 +55,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-blue-200 p-6 rounded-xl shadow-md bg-blue-50/30">
-          <legend class="text-xl font-semibold text-blue-700 px-3 py-1 bg-white border-2 border-blue-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-blue-700 px-3 py-1 bg-white border-2 border-blue-200 rounded-lg shadow-xs">
             <span class="mr-2">🏢</span>Información Fiscal y Contacto
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
@@ -70,7 +70,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-emerald-200 p-6 rounded-xl shadow-md bg-emerald-50/30">
-          <legend class="text-xl font-semibold text-emerald-700 px-3 py-1 bg-white border-2 border-emerald-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-emerald-700 px-3 py-1 bg-white border-2 border-emerald-200 rounded-lg shadow-xs">
             <span class="mr-2">Tienda</span>Pedidos Web por Habitacion
           </legend>
           <p class="form-helper-text mb-4">Configura el enlace que los clientes usaran desde el QR de la habitacion para pedir productos de tienda.</p>
@@ -92,7 +92,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-orange-200 p-6 rounded-xl shadow-md bg-orange-50/30">
-          <legend class="text-xl font-semibold text-orange-700 px-3 py-1 bg-white border-2 border-orange-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-orange-700 px-3 py-1 bg-white border-2 border-orange-200 rounded-lg shadow-xs">
             <span class="mr-2">🍴</span>Impuestos Específicos del Restaurante
           </legend>
           <p class="form-helper-text mb-4">Usa esta sección para impuestos que solo aplican a ventas de restaurante, como el Impoconsumo en Colombia.</p>
@@ -116,7 +116,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-green-200 p-6 rounded-xl shadow-md bg-green-50/30">
-          <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-xs">
             <span class="mr-2">💳</span>Métodos de Pago
           </legend>
           <div class="mt-4">
@@ -143,7 +143,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-green-200 p-6 rounded-xl shadow-md bg-green-50/30">
-          <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-green-700 px-3 py-1 bg-white border-2 border-green-200 rounded-lg shadow-xs">
              <span class="mr-2">⏱️</span>Horarios y Política de Cobro
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
@@ -167,7 +167,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-yellow-200 p-6 rounded-xl shadow-md bg-yellow-50/30">
-          <legend class="text-xl font-semibold text-yellow-700 px-3 py-1 bg-white border-2 border-yellow-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-yellow-700 px-3 py-1 bg-white border-2 border-yellow-200 rounded-lg shadow-xs">
             <span class="mr-2">📊</span>Impuestos y Precios
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
@@ -185,7 +185,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-purple-200 p-6 rounded-xl shadow-md bg-purple-50/30">
-          <legend class="text-xl font-semibold text-purple-700 px-3 py-1 bg-white border-2 border-purple-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-purple-700 px-3 py-1 bg-white border-2 border-purple-200 rounded-lg shadow-xs">
             <span class="mr-2">🎨</span>Personalización de Documentos
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
@@ -193,7 +193,7 @@ export async function mount(container, supabase, user, hotelId) {
               <label for="logo_upload" class="form-label">Subir Logo del Hotel</label>
               <input name="logo_upload" id="logo_upload" type="file" class="form-control" accept="image/png, image/jpeg, image/webp, image/svg+xml" />
               <div id="logo-preview-container" class="mt-2">
-                <img id="logo-preview" src="#" alt="Vista previa del logo" class="hidden max-h-20 rounded border p-1"/>
+                <img id="logo-preview" src="#" alt="Vista previa del logo" class="hidden max-h-20 rounded-sm border p-1"/>
                 <span id="current-logo-url" class="text-xs text-gray-500 block"></span>
               </div>
             </div>
@@ -206,7 +206,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-teal-200 p-6 rounded-xl shadow-md bg-teal-50/30">
-          <legend class="text-xl font-semibold text-teal-700 px-3 py-1 bg-white border-2 border-teal-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-teal-700 px-3 py-1 bg-white border-2 border-teal-200 rounded-lg shadow-xs">
             <span class="mr-2">💰</span>Configuración de Moneda
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5 mt-4">
@@ -218,7 +218,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
 
         <fieldset class="border-2 border-gray-300 p-6 rounded-xl shadow-md bg-gray-50/30">
-          <legend class="text-xl font-semibold text-gray-700 px-3 py-1 bg-white border-2 border-gray-300 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-gray-700 px-3 py-1 bg-white border-2 border-gray-300 rounded-lg shadow-xs">
             <span class="mr-2">📜</span>Políticas Generales
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
@@ -228,7 +228,7 @@ export async function mount(container, supabase, user, hotelId) {
         </fieldset>
         
         <fieldset class="border-2 border-cyan-200 p-6 rounded-xl shadow-md bg-cyan-50/30">
-          <legend class="text-xl font-semibold text-cyan-700 px-3 py-1 bg-white border-2 border-cyan-200 rounded-lg shadow-sm">
+          <legend class="text-xl font-semibold text-cyan-700 px-3 py-1 bg-white border-2 border-cyan-200 rounded-lg shadow-xs">
             <span class="mr-2">🖨️</span>Configuración de Impresión
           </legend>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-5 mt-4">
@@ -672,7 +672,7 @@ function showModalMetodoPago(metodoId = null) {
 
     const modalContainer = document.createElement('div');
     modalContainer.id = 'dynamic-modal-container';
-    modalContainer.className = "fixed inset-0 z-[1001] flex items-center justify-center bg-black/60 p-4";
+    modalContainer.className = "fixed inset-0 z-1001 flex items-center justify-center bg-black/60 p-4";
 
     modalContainer.innerHTML = `
         <div class="bg-white rounded-xl shadow-2xl w-full max-w-sm p-6 m-auto relative animate-fade-in-up">
