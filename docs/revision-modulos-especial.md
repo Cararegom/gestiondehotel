@@ -10,6 +10,10 @@ Esta revision ordena los modulos que conviene intervenir con mas cuidado, segun:
 
 Fecha de corte: 2026-03-28
 
+> Medición posterior al corte (2026-09-30): `reservas.js` mide 3289 líneas. La cifra de 2853 se
+> conserva abajo como evidencia histórica del corte, pero la partición volvió a estado "en progreso".
+> `npm run check:module-budgets`, ejecutado por CI, impide que el archivo supere la nueva línea base.
+
 ## Prioridad recomendada
 
 1. `reservas`
@@ -41,7 +45,7 @@ Fecha de corte: 2026-03-28
 Estado actual:
 - Ya tiene apoyo en `reservas-data.js`, `reservas-calculos.js`, `reservas-operacion.js`, `reservas-sync.js` y `reservas-descuentos.js`.
 - Ya se completo el refactor operativo con `reservas-pagos.js`, `reservas-historial.js`, `reservas-render.js`, `reservas-acciones.js`, `reservas-formulario.js`, `reservas-lista-acciones.js`, `reservas-ui.js` y `reservas-estado.js`.
-- `reservas.js` sigue siendo grande, pero ya quedo como orquestador y salio el codigo legacy duplicado que seguia colgando tras los wrappers.
+- `reservas.js` sigue siendo grande y coordina módulos extraídos, pero volvió a crecer hasta 3289 líneas; la partición no se considera terminada.
 
 Avance ya realizado:
 - Se saco el flujo de pago mixto y abonos a `reservas-pagos.js`.

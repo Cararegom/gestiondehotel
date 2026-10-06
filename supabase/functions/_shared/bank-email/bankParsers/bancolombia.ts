@@ -10,6 +10,7 @@ import {
   hasSuccessSignal,
   normalizeForMatching,
 } from "./generic.ts";
+import { DEFAULT_BANK_TIME_ZONE, normalizeBankTimeZone } from "../time-zone.ts";
 
 function emailHintsAtBancolombia(email: NormalizedEmail): boolean {
   const haystack = normalizeForMatching(`${email.from}\n${email.subject}\n${email.textBody.slice(0, 1_000)}`);
@@ -69,9 +70,14 @@ export const bancolombiaParser: BankParser = {
       parserId: "bancolombia",
       parserVersion: rule?.parserVersion ?? "1.0.0",
       bankName: rule?.bankName ?? "Bancolombia",
+      transactionTimeZone: normalizeBankTimeZone(rule?.transactionTimeZone, DEFAULT_BANK_TIME_ZONE),
       disposition,
       amountCop: amount.amountCop,
-      transactionOccurredAt: extractTransactionOccurredAt(text, email.receivedAt),
+      transactionOccurredAt: extractTransactionOccurredAt(
+        text,
+        email.receivedAt,
+        rule?.transactionTimeZone || DEFAULT_BANK_TIME_ZONE,
+      ),
       transactionReference: extractTransactionReference(text, rule),
       senderName: extractPayerName(text, rule),
       reviewReason: disposition === "detected" ? null : reasons[0] ?? "manual_review_required",

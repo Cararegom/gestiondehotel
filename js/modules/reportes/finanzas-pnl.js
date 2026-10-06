@@ -7,6 +7,27 @@ const number = (value) => Number(value || 0);
 const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
 const monthStart = (date = new Date()) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
 const monthEnd = (date = new Date()) => new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString().slice(0, 10);
+const COSTEO_FILTER_STORAGE_KEY = 'gestionhotel.costeo.filter';
+const COSTEO_RETURN_STORAGE_KEY = 'gestionhotel.costeo.returnTo';
+
+function rememberCostIssueContext(issue = {}) {
+  globalThis.sessionStorage?.setItem(COSTEO_FILTER_STORAGE_KEY, 'cost_issues');
+  globalThis.sessionStorage?.setItem(COSTEO_RETURN_STORAGE_KEY, 'resultados');
+  if (issue.item_id) {
+    globalThis.sessionStorage?.setItem('gestionhotel.restaurante.focusRecipe', JSON.stringify({
+      platoId: issue.item_id,
+      itemName: issue.item_name || '',
+      source: 'pnl',
+      createdAt: Date.now()
+    }));
+  }
+}
+
+function recipeLinkFor(issue = {}) {
+  return issue.item_id
+    ? `#/restaurante?tab=platos&plato=${encodeURIComponent(issue.item_id)}&from=pnl`
+    : '#/restaurante?tab=platos&from=pnl';
+}
 
 function roleKey(user) {
   return String(user?.role || user?.rol || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -29,6 +50,7 @@ function render(data) {
   const periodMonth = state.from.slice(0, 7);
   const period = (data.periods || []).find((item) => String(item.month).slice(0, 7) === periodMonth);
   const costIssues = quality.issues || [];
+  state.lastCostIssues = costIssues;
   root.querySelector('#pnl-results').innerHTML = `
     <div class="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong>Informe de control (shadow):</strong> sirve para validar cifras antes de convertirlo en contabilidad oficial. No modifica Caja, ventas, inventario ni gastos.</div>
     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -46,7 +68,7 @@ function render(data) {
       <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h2 class="font-bold text-slate-900">Presupuesto mensual</h2><p class="mb-4 text-xs text-slate-500">Define metas de ingresos y topes previstos de CMV y gastos para comparar ejecución.</p><form id="budget-form" class="grid grid-cols-1 gap-3 sm:grid-cols-2"><label class="text-sm font-medium">Mes<input id="budget-month" type="month" required value="${periodMonth}" class="mt-1 w-full rounded-lg border border-slate-300 p-2.5"></label><label class="text-sm font-medium">Meta de ingresos<input id="budget-revenue" type="number" min="0" step="1" required placeholder="Ej. 30000000" class="mt-1 w-full rounded-lg border border-slate-300 p-2.5"></label><label class="text-sm font-medium">Presupuesto de costo de ventas<input id="budget-cogs" type="number" min="0" step="1" required placeholder="Ej. 8000000" class="mt-1 w-full rounded-lg border border-slate-300 p-2.5"></label><label class="text-sm font-medium">Presupuesto de gastos operativos<input id="budget-opex" type="number" min="0" step="1" required placeholder="Ej. 12000000" class="mt-1 w-full rounded-lg border border-slate-300 p-2.5"></label><button class="rounded-lg bg-blue-600 px-4 py-2.5 font-semibold text-white sm:col-span-2">Guardar presupuesto</button></form></section>
       <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"><h2 class="font-bold text-slate-900">Cierre del periodo</h2><p class="text-sm text-slate-600">Mes consultado: <strong>${periodMonth}</strong></p><p class="mt-2 text-sm">Estado: <span class="rounded-full px-2 py-1 text-xs font-semibold ${period?.status === 'closed' ? 'bg-slate-800 text-white' : 'bg-emerald-100 text-emerald-800'}">${period?.status === 'closed' ? 'Cerrado' : 'Abierto'}</span></p><p class="mt-3 text-xs text-slate-500">El cierre deja evidencia administrativa del corte. En esta fase shadow no bloquea todavía movimientos operativos.</p><div class="mt-4 flex gap-2"><button id="close-period" ${quality.can_close === false ? 'disabled title="Corrige primero las ventas con costo pendiente"' : ''} class="rounded-lg bg-slate-900 px-4 py-2.5 font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">Cerrar mes</button><button id="open-period" class="rounded-lg border border-slate-300 px-4 py-2.5 font-semibold text-slate-700">Reabrir mes</button></div><div class="mt-4 rounded-lg ${costIssues.length ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'} p-3 text-xs"><strong>Calidad:</strong> ${number(quality.cogs_with_issues)} venta(s) con novedad de costo y ${number(quality.uncosted_inventory)} inventario(s) sin costo activo.</div></section>
     </div>
-    ${costIssues.length ? `<section class="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4"><h2 class="font-bold text-red-900">Pendientes que impiden cerrar el mes</h2><p class="mt-1 text-sm text-red-800">Configura la receta o costo y luego usa “Recalcular” en Costeo y margen.</p><div class="mt-3 space-y-2">${costIssues.map((issue) => `<div class="rounded-xl border border-red-200 bg-white p-3 text-sm"><strong>${escapeHtml(issue.item_name)}</strong> · Venta ${money(issue.revenue)} · ${escapeHtml(issue.business_date)}<p class="text-red-700">${escapeHtml(issue.message)}</p></div>`).join('')}</div><div class="mt-3 flex flex-wrap gap-2"><a href="#/restaurante" class="rounded-lg bg-red-700 px-4 py-2 text-sm font-semibold text-white">Configurar receta</a><button type="button" id="go-costeo" class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800">Ir a Costeo y margen</button></div></section>` : ''}
+    ${costIssues.length ? `<section class="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4"><h2 class="font-bold text-red-900">Pendientes que impiden cerrar el mes</h2><p class="mt-1 text-sm text-red-800">Configura la receta o costo real y luego usa “Recalcular CMV” en Costeo y margen. El sistema no asigna costos ficticios.</p><div class="mt-3 space-y-2">${costIssues.map((issue, index) => `<div class="rounded-xl border border-red-200 bg-white p-3 text-sm"><strong>${escapeHtml(issue.item_name)}</strong> · Venta ${money(issue.revenue)} · ${escapeHtml(issue.business_date)}<p class="text-red-700">${escapeHtml(issue.message)}</p><div class="mt-2 flex flex-wrap gap-2"><a href="${recipeLinkFor(issue)}" data-cost-issue-index="${index}" class="rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white">Configurar receta</a><button type="button" data-go-costeo-issue="${index}" class="rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-800">Recalcular en Costeo</button></div></div>`).join('')}</div><div class="mt-3 flex flex-wrap gap-2"><button type="button" id="go-costeo" class="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-800">Ver todos los pendientes en Costeo</button></div></section>` : ''}
     <section class="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div class="border-b border-slate-200 p-4"><h2 class="font-bold text-slate-900">Trazabilidad del resultado</h2><p class="text-xs text-slate-500">Hasta 300 movimientos que conforman este informe.</p></div><div class="max-h-[420px] overflow-auto"><table class="w-full min-w-[760px] text-sm"><thead class="sticky top-0 bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="px-3 py-3 text-left">Fecha</th><th class="px-3 py-3 text-left">Tipo</th><th class="px-3 py-3 text-left">Área / categoría</th><th class="px-3 py-3 text-left">Descripción</th><th class="px-3 py-3 text-right">Valor</th></tr></thead><tbody>${(data.transactions || []).map((row) => `<tr class="border-t border-slate-100"><td class="px-3 py-3">${escapeHtml(row.business_date)}</td><td class="px-3 py-3">${escapeHtml(row.kind)}</td><td class="px-3 py-3">${escapeHtml(row.area)} · ${escapeHtml(row.category)}</td><td class="px-3 py-3">${escapeHtml(row.description)}</td><td class="px-3 py-3 text-right font-medium">${money(row.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="p-5 text-center text-slate-500">Sin movimientos.</td></tr>'}</tbody></table></div></section>`;
   bindActions();
 }
@@ -88,9 +110,17 @@ function bindActions() {
   };
   root.querySelector('#close-period')?.addEventListener('click', () => changePeriod('closed'));
   root.querySelector('#open-period')?.addEventListener('click', () => changePeriod('open'));
-  root.querySelector('#go-costeo')?.addEventListener('click', () => {
-    root.closest('#app-container')?.querySelector('[data-report-tab="costeo"]')?.click();
+  root.querySelectorAll('[data-cost-issue-index]').forEach((link) => {
+    link.addEventListener('click', () => rememberCostIssueContext((state.lastCostIssues || [])[Number(link.dataset.costIssueIndex)]));
   });
+  const openCosteo = (issue) => {
+    rememberCostIssueContext(issue);
+    root.closest('#app-container')?.querySelector('[data-report-tab="costeo"]')?.click();
+  };
+  root.querySelectorAll('[data-go-costeo-issue]').forEach((button) => {
+    button.addEventListener('click', () => openCosteo((state.lastCostIssues || [])[Number(button.dataset.goCosteoIssue)]));
+  });
+  root.querySelector('#go-costeo')?.addEventListener('click', () => openCosteo((state.lastCostIssues || [])[0]));
 }
 
 export async function mount(container, supabaseClient, user) {

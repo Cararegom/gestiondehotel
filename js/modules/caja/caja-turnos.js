@@ -9,6 +9,8 @@ import {
 } from '../../uiUtils.js';
 import { escapeHtml } from '../../security.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
+import { combinarMetodosPagoParaArqueo, obtenerValorArqueo } from './caja-cierre.js';
 
 function normalizeRoleKey(value = '') {
   return String(value || '')
@@ -211,7 +213,7 @@ export async function verificarTurnoActivo({
     .order('fecha_apertura', { ascending: false });
 
   if (error) {
-    console.error('Error verificando turno activo:', error);
+    reportHandledError('caja', 'active_shift_check_failed', error);
     showError(
       currentContainerEl.querySelector('#turno-global-feedback'),
       'No se pudo verificar el estado del turno.'
@@ -224,10 +226,7 @@ export async function verificarTurnoActivo({
   }
 
   if (turnosAbiertos.length > 1) {
-    console.warn(
-      `[Caja] Hay ${turnosAbiertos.length} turnos abiertos para este usuario. Tomare el mas reciente. IDs:`,
-      turnosAbiertos.map((turno) => turno.id)
-    );
+    reportHandledError('caja', 'multiple_open_shifts_detected');
   }
 
   const turnoReciente = turnosAbiertos[0];
@@ -324,19 +323,20 @@ export async function cerrarTurnoFlow({
     const fechaAperturaISO = turnoACerrar.fecha_apertura;
     const usuarioDelTurnoId = usuarioDelTurno.id;
 
-    const { data: metodosDePago, error: metodosError } = await supabase
+    const { data: metodosDisponibles, error: metodosError } = await supabase
       .from('metodos_pago')
-      .select('id, nombre')
+      .select('id, nombre, activo')
       .eq('hotel_id', currentHotelId)
-      .eq('activo', true)
       .order('nombre');
     if (metodosError) throw metodosError;
 
     const { data: movimientos, error: movError } = await supabase
       .from('caja')
-      .select('*, usuarios(nombre), metodos_pago(nombre)')
+      .select('*, usuarios(nombre), metodos_pago(id, nombre, activo), pagos_reserva(reserva_id)')
       .eq('turno_id', turnoACerrar.id);
     if (movError) throw movError;
+
+    const metodosDePago = combinarMetodosPagoParaArqueo(metodosDisponibles, movimientos);
 
     const [
       { data: logAmenidades, error: logAmenidadesError },
@@ -383,14 +383,28 @@ export async function cerrarTurnoFlow({
     const reporte = procesarMovimientosParaReporte(movimientos);
     const { balanceFinal: balanceFinalEnCaja } = calcularTotalesSistemaCierre(reporte, metodosDePago);
     let resumenOperativo = null;
+    const reservaIdsTurno = [...new Set(
+      (movimientos || [])
+        .filter((movimiento) => movimiento?.tipo === 'ingreso')
+        .map((movimiento) => movimiento?.reserva_id || movimiento?.pagos_reserva?.reserva_id)
+        .filter(Boolean)
+    )];
 
     try {
       const [
+        { data: reservasTurno, error: reservasTurnoError },
         { data: ventasTiendaTurno, error: ventasTiendaError },
         { data: ventasRestauranteTurno, error: ventasRestauranteError },
         { data: ventasTerrazaTurno, error: ventasTerrazaError },
         { data: serviciosReservaTurno, error: serviciosReservaError }
       ] = await Promise.all([
+        reservaIdsTurno.length
+          ? supabase
+            .from('reservas')
+            .select('id, habitacion_id, habitaciones(id, nombre)')
+            .eq('hotel_id', currentHotelId)
+            .in('id', reservaIdsTurno)
+          : Promise.resolve({ data: [], error: null }),
         supabase
           .from('ventas_tienda')
           .select('id, total_venta, fecha, creado_en')
@@ -421,6 +435,7 @@ export async function cerrarTurnoFlow({
           .lte('creado_en', fechaCierreISO)
       ]);
 
+      if (reservasTurnoError) throw reservasTurnoError;
       if (ventasTiendaError) throw ventasTiendaError;
       if (ventasRestauranteError) throw ventasRestauranteError;
       if (ventasTerrazaError) throw ventasTerrazaError;
@@ -462,6 +477,7 @@ export async function cerrarTurnoFlow({
       resumenOperativo = construirResumenOperativoCierre({
         movimientos: movimientosOrdenados || [],
         reporte,
+        reservasTurno: reservasTurno || [],
         ventasTienda: ventasTiendaTurno || [],
         detallesVentasTienda: detallesVentasTiendaTurno || [],
         ventasRestaurante: ventasRestauranteTurno || [],
@@ -471,7 +487,7 @@ export async function cerrarTurnoFlow({
         serviciosReserva: serviciosReservaTurno || []
       });
     } catch (resumenError) {
-      console.warn('[Caja] No se pudo construir el resumen operativo del cierre.', resumenError);
+      reportHandledError('caja', 'close_summary_build_failed', resumenError);
     }
 
     const fechaCierreLocal = new Date(fechaCierreISO).toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'short' });
@@ -504,7 +520,7 @@ export async function cerrarTurnoFlow({
         inventarioTerrazaHtml = buildTerrazaInventoryHtml(inventarioTerraza || []);
       }
     } catch (inventarioError) {
-      console.warn('[Caja] No se pudo adjuntar inventario de Terraza al cierre del mesero.', inventarioError);
+      reportHandledError('caja', 'waiter_inventory_attachment_failed', inventarioError);
     }
 
     let asuntoEmail = `Cierre de Caja - ${usuarioNombre} - ${fechaCierreLocal}`;
@@ -528,14 +544,9 @@ export async function cerrarTurnoFlow({
     );
     const htmlReporte = appendHtmlBeforeBodyEnd(htmlReporteBase, inventarioTerrazaHtml);
 
-    const emailResult = await enviarReporteCierreCaja({
-      asunto: asuntoEmail,
-      htmlReporte
-    });
-
     const arqueos = (metodosDePago || []).map((metodo) => ({
       metodo_pago_id: metodo.id,
-      counted_amount: Number(valoresReales?.[metodo.id] ?? valoresReales?.get?.(metodo.id) ?? 0),
+      counted_amount: obtenerValorArqueo(valoresReales, metodo),
       note: valoresReales?.notes?.[metodo.id] || null
     }));
     const closeScope = buildOperationScope('turno-cierre', { turnoId: turnoACerrar.id, arqueos });
@@ -549,6 +560,16 @@ export async function cerrarTurnoFlow({
 
     if (updateError) throw updateError;
     completeStableOperation(closeScope);
+
+    let emailResult = { sent: false };
+    try {
+      emailResult = await enviarReporteCierreCaja({
+        asunto: asuntoEmail,
+        htmlReporte
+      });
+    } catch (emailError) {
+      reportHandledError('caja', 'close_report_send_failed', emailError);
+    }
 
     const successMessage = emailResult?.sent
       ? 'Turno cerrado y reporte enviado.'

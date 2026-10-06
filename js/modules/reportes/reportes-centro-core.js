@@ -1,12 +1,11 @@
 import { getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
 import {
   DEFAULT_HOTEL_TIME_ZONE,
-  addCalendarDays,
-  getTodayInTimeZone,
   getUtcRangeForHotelDates,
   loadHotelTimeZone as loadConfiguredHotelTimeZone,
   normalizeTimeZone
 } from '../../services/hotelTimeZoneService.js';
+import { getDefaultReportDateRange } from '../../services/reportesTimeZoneService.js';
 
 let root = null;
 let activeModule = null;
@@ -97,11 +96,11 @@ async function resolveHotelTimeZone(supabase, hotelId) {
 
 function applyOperationalTimeZoneUi(context) {
   if (!context?.host) return;
-  const today = getTodayInTimeZone(context.hotelTimeZone);
+  const defaultDateRange = getDefaultReportDateRange({ timeZone: context.hotelTimeZone });
   const startInput = context.host.querySelector('#reporte-fecha-inicio');
   const endInput = context.host.querySelector('#reporte-fecha-fin');
-  if (startInput) startInput.value = addCalendarDays(today, -30);
-  if (endInput) endInput.value = today;
+  if (startInput) startInput.value = defaultDateRange.startDate;
+  if (endInput) endInput.value = defaultDateRange.endDate;
 
   const controls = context.host.querySelector('.reportes-controles');
   if (controls && !context.host.querySelector('#reportes-zona-horaria-activa')) {

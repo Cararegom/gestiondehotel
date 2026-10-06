@@ -11,6 +11,7 @@ const manifest = JSON.parse(fs.readFileSync(
 
 const edgePaths = [
   'supabase/functions/bank-email-api/index.ts',
+  'supabase/functions/bank-payment-relation-api/index.ts',
   'supabase/functions/gmail-oauth-callback/index.ts',
   'supabase/functions/gmail-webhook/index.ts',
   'supabase/functions/gmail-watch-renew/index.ts'
@@ -46,6 +47,7 @@ test('Fase 22: manifiesto fija funciones, autenticacion y variables obligatorias
     manifest.functions.map((item) => [item.name, item.verifyJwt, item.authentication]),
     [
       ['bank-email-api', true, 'supabase-jwt'],
+      ['bank-payment-relation-api', true, 'supabase-jwt'],
       ['gmail-oauth-callback', false, 'oauth-state'],
       ['gmail-webhook', false, 'google-pubsub-oidc'],
       ['gmail-watch-renew', false, 'cron-secret']
@@ -53,18 +55,20 @@ test('Fase 22: manifiesto fija funciones, autenticacion y variables obligatorias
   );
 });
 
-test('Fase 22: las cuatro Edge Functions usan el gate de configuracion/UUID sin confiar en el navegador', () => {
+test('Fase 22: las cinco Edge Functions usan el gate de configuracion/UUID sin confiar en el navegador', () => {
   const config = read('supabase/functions/_shared/bank-email/config.ts');
   const pilot = read('supabase/functions/_shared/bank-email/pilot-hotel.ts');
   const api = read(edgePaths[0]);
-  const oauth = read(edgePaths[1]);
-  const webhook = read(edgePaths[2]);
-  const renew = read(edgePaths[3]);
+  const relation = read(edgePaths[1]);
+  const oauth = read(edgePaths[2]);
+  const webhook = read(edgePaths[3]);
+  const renew = read(edgePaths[4]);
 
   assert.match(config, /BANK_EMAIL_PILOT_HOTEL_ID/);
   assert.match(config, /UUID_PATTERN\.test\(config\.pilotHotelId/);
   assert.match(pilot, /\.eq\("id", configuredId\)/);
   assert.match(api, /assertBankEmailConfig\(config\)/);
+  assert.match(relation, /assertBankEmailConfig\(config\)/);
   assert.match(oauth, /isBankEmailProcessingEnabled\(config\)/);
   assert.match(webhook, /isBankEmailProcessingEnabled\(config\)/);
   assert.match(renew, /isBankEmailProcessingEnabled\(config\)/);

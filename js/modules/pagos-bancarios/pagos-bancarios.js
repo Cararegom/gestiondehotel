@@ -30,6 +30,7 @@ const STATUS_META = Object.freeze({
 });
 const EVENT_PAGE_SIZE = 100;
 const BANK_FIRST_WORKFLOW = true;
+const POSSIBLE_DUPLICATE_REASON = 'possible_duplicate_transfer';
 
 function createState() {
   return {
@@ -99,6 +100,26 @@ function eventDate(event) {
 
 function eventReference(event) {
   return String(firstValue(event, ['transaction_reference_masked', 'transaction_reference', 'reference', 'referencia'], '') || '').trim();
+}
+
+function reviewReasonLabel(event) {
+  const reason = String(firstValue(event, ['review_reason', 'analysis_reason'], '') || '').trim();
+  if (reason === POSSIBLE_DUPLICATE_REASON) {
+    return 'Posible notificación duplicada de la misma transferencia';
+  }
+  return reason || 'Sin observaciones';
+}
+
+function renderPossibleDuplicateWarning(event) {
+  if (event?.review_reason !== POSSIBLE_DUPLICATE_REASON) return '';
+  const candidateCount = Number(event?.metadata?.possible_duplicate_candidate_count || 0);
+  const candidateText = candidateCount === 1
+    ? 'Se encontró otra notificación compatible.'
+    : `Se encontraron ${candidateCount || 'otras'} notificaciones compatibles.`;
+  return `<aside class="mt-6 rounded-2xl border border-amber-300 bg-amber-50 p-5 text-amber-950" role="status">
+    <h3 class="font-bold">Verifica una posible notificación duplicada</h3>
+    <p class="mt-1 text-sm">${escapeHtml(candidateText)} Coinciden hotel, banco, monto, una ventana de dos minutos y el remitente o el contenido. Compara el movimiento bancario antes de relacionarlo. Ningún pago fue descartado automáticamente.</p>
+  </aside>`;
 }
 
 function maskReference(value) {
@@ -706,10 +727,12 @@ function renderDetailModal(event, candidates) {
 
         <div class="mt-6 grid gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5 md:grid-cols-2">
           <div><span class="text-xs font-semibold uppercase text-slate-400">Remitente</span><p class="mt-1 text-sm text-slate-700">${escapeHtml(firstValue(event, ['sender_name', 'payer_name'], 'No disponible'))}</p></div>
-          <div><span class="text-xs font-semibold uppercase text-slate-400">Analisis</span><p class="mt-1 text-sm text-slate-700">${escapeHtml(firstValue(event, ['review_reason', 'analysis_reason'], 'Sin observaciones'))}</p></div>
+          <div><span class="text-xs font-semibold uppercase text-slate-400">Análisis</span><p class="mt-1 text-sm text-slate-700">${escapeHtml(reviewReasonLabel(event))}</p></div>
           <div><span class="text-xs font-semibold uppercase text-slate-400">Parser</span><p class="mt-1 text-sm text-slate-700">${escapeHtml(firstValue(event, ['parser_version'], 'No informado'))}</p></div>
           <div><span class="text-xs font-semibold uppercase text-slate-400">ID interno</span><p class="mt-1 font-mono text-xs text-slate-500">${escapeHtml(event.id)}</p></div>
         </div>
+
+        ${renderPossibleDuplicateWarning(event)}
 
         <section class="mt-6 rounded-2xl border border-emerald-200 bg-white p-5">
           <h3 class="text-lg font-bold text-emerald-900">Distribución guardada</h3>

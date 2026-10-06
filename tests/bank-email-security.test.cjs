@@ -46,6 +46,7 @@ function productionBankEmailFiles() {
   const roots = [
     path.join(root, 'supabase', 'functions', '_shared', 'bank-email'),
     path.join(root, 'supabase', 'functions', 'bank-email-api'),
+    path.join(root, 'supabase', 'functions', 'bank-payment-relation-api'),
     path.join(root, 'supabase', 'functions', 'gmail-oauth-callback'),
     path.join(root, 'supabase', 'functions', 'gmail-webhook'),
     path.join(root, 'supabase', 'functions', 'gmail-watch-renew'),

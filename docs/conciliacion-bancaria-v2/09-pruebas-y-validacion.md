@@ -15,9 +15,20 @@
 - Marena: la columna bancaria se habilita por UUID exacto.
 - Otro hotel: la columna permanece oculta y no llama `cash-movement-statuses`.
 - La API exige usuario operativo activo del piloto y limita la solicitud a 200 movimientos.
-- La relación usa claves persistidas de pagos/ventas y allocations; no usa monto, fecha o concepto.
+- La implementación inicial usa claves persistidas de pagos/ventas y asignaciones. Esa lectura se conserva como compatibilidad legacy para filas sin `caja_id`.
 - La consulta es de solo lectura: no inserta pagos, Caja ni ledger.
 - Efectivo, egresos y reversiones quedan como `No aplica`.
+
+## Fase 25 y vínculo exacto con Caja
+
+- `bank-payment-relation-api` permite a recepción consultar datos sanitizados y ejecutar únicamente `link`.
+- Los candidatos se limitan a ingresos bancarios del mismo hotel dentro de ±48 horas.
+- La relación acepta entre 1 y 20 movimientos, exige motivo y requiere una suma exacta.
+- `replace_bank_payment_allocations_from_caja` valida de nuevo dentro de la transacción y persiste cada `bank_payment_allocations.caja_id`.
+- La clave foránea y la restricción única parcial impiden borrar una Caja enlazada o reutilizarla en otra transferencia.
+- `movement-statuses` prefiere el vínculo exacto; el respaldo legacy falla hacia revisión manual cuando es ambiguo.
+- `bank_payment_has_valid_caja_link` protege una conciliación válida durante checkout.
+- `tests/recepcion-bank-relation.test.cjs` y `tests/conciliacion-caja-id.test.cjs` verifican el contrato de permisos, la suma, el RPC, la UI y la resolución exacta.
 
 ## Capas
 

@@ -8,6 +8,10 @@ const alquiler = fs.readFileSync('js/modules/mapa-habitaciones/modales-alquiler.
 const saldoMapa = fs.readFileSync('js/mapa-saldo-enhancer.js', 'utf8');
 const pagosConsumos = fs.readFileSync('js/mapa-consumos-pagos-enhancer.js', 'utf8');
 const appIndex = fs.readFileSync('app/index.html', 'utf8');
+const cicloEstancia = fs.readFileSync(
+  'supabase/migrations/20260915120000_a13_a14_reservation_lifecycle_atomic.sql',
+  'utf8'
+);
 
 test('el mapa reconoce pagos historicos sin duplicar pagos normalizados', () => {
   assert.match(datos, /select\('monto_total, monto_pagado'\)/);
@@ -30,8 +34,13 @@ test('liberar habitacion no vuelve a cobrar consumos que ya figuran pagados', ()
 
 test('una reserva nueva no se declara pagada antes de persistir el pago', () => {
   assert.match(alquiler, /pagosLimpios\.length > 0 && !turnoActivoId/);
-  assert.match(alquiler, /monto_pagado: 0/);
-  assert.match(alquiler, /procesarPagosReservaAtomicos/);
+  assert.match(
+    alquiler,
+    /crearEstanciaAtomica\(supabase, \{\s*reserva: reservaInsert,\s*pagos: pagosLimpios/
+  );
+  assert.match(cicloEstancia, /monto_total, monto_pagado, metodo_pago_id, estado/);
+  assert.match(cicloEstancia, /v_monto_total, 0, v_metodo_pago_id/);
+  assert.match(cicloEstancia, /SELECT public\.procesar_pago_reserva_atomico\(/);
 });
 
 test('el mapa muestra saldo real reutilizando la misma fuente financiera del checkout', () => {

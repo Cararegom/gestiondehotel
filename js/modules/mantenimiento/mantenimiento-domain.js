@@ -242,33 +242,6 @@ export function sortTasks(tasks) {
   });
 }
 
-export function calculateNextScheduledDate(task) {
-  if (task?.plan_id) return null;
-
-  const frecuencia = normalizeTaskFrequency(task?.frecuencia);
-  if (!['diaria', 'semanal', 'mensual'].includes(frecuencia)) return null;
-
-  // La recurrencia se ancla a la fecha programada, no al momento de cierre.
-  // Si una tarea del lunes se completa el martes, la siguiente sigue cayendo
-  // en el lunes que corresponde. Para registros legacy sin fecha se usa el cierre.
-  const scheduledDate = task?.fecha_programada
-    ? new Date(`${String(task.fecha_programada).slice(0, 10)}T12:00:00`)
-    : null;
-  const completionDate = task?.fecha_completada || task?.cerrada_en;
-  const baseDate = scheduledDate && !Number.isNaN(scheduledDate.getTime())
-    ? scheduledDate
-    : (completionDate ? new Date(completionDate) : new Date());
-
-  if (Number.isNaN(baseDate.getTime())) return null;
-
-  const nextDate = new Date(baseDate);
-  if (frecuencia === 'diaria') nextDate.setDate(nextDate.getDate() + 1);
-  if (frecuencia === 'semanal') nextDate.setDate(nextDate.getDate() + 7);
-  if (frecuencia === 'mensual') nextDate.setMonth(nextDate.getMonth() + 1);
-
-  return nextDate.toISOString().slice(0, 10);
-}
-
 export function createRequestId() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (char) => {

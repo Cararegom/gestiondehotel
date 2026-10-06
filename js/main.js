@@ -14,6 +14,14 @@ import {
   isAseoModuleAllowed,
   isAseoRoleName
 } from './services/aseoRoleService.js';
+import {
+  buildSuperadminPlanDetails,
+  createRestrictedPlanDetails,
+  getAllowedPlanModules,
+  getExpiredSubscriptionRouteDecision,
+  isModuleAccessibleForPlan,
+  loadHotelSubscriptionContext
+} from './services/subscriptionAccessService.js';
 
 import { inicializarCampanitaGlobal, desmontarCampanitaGlobal } from './modules/notificaciones/notificaciones.js';
 
@@ -67,7 +75,7 @@ const routes = {
   '/onboarding': { loadModule: () => import('./modules/onboarding/onboarding.js'), moduleKey: 'onboarding' },
   '/sandbox': { loadModule: () => import('./modules/sandbox/sandbox.js'), moduleKey: 'sandbox' },
   '/operacion-hoy': { loadModule: () => import('./modules/operacion-hoy/operacion-hoy.js'), moduleKey: 'operacion-hoy' }
-  ,'/control-energia': { loadModule: () => import('./modules/control-energia/control-energia.js'), moduleKey: 'control-energia' }
+  ,'/control-energia': { loadModule: () => import('./modules/control-energia/control-energia.js?v=20260910-c6-camera-1'), moduleKey: 'control-energia' }
 };
 
 const navLinksConfig = [
@@ -252,14 +260,15 @@ function isTerrazaEnabledForActiveHotel() {
   return canCurrentUserAccessTerraza(currentActiveHotel?.id);
 }
 
-function isModuleAllowedByPlan(moduleKey, modulosPermitidos = [], hotelId = currentActiveHotel?.id) {
-  if (moduleKey === 'terraza') {
-    return canCurrentUserAccessTerraza(hotelId);
-  }
-  if (moduleKey === 'pagos-bancarios') {
-    return canCurrentUserAccessBankPaymentPilot(hotelId);
-  }
-  return modulosPermitidos.includes(moduleKey);
+function canAccessModuleForCurrentPlan(moduleKey, hotelId = currentActiveHotel?.id) {
+  return isModuleAccessibleForPlan(
+    moduleKey,
+    getAllowedPlanModules(currentActivePlanDetails),
+    {
+      canAccessTerraza: canCurrentUserAccessTerraza(hotelId),
+      canAccessBankPayments: canCurrentUserAccessBankPaymentPilot(hotelId)
+    }
+  );
 }
 
 function getDefaultHashForCurrentRole() {
@@ -278,36 +287,6 @@ function isWhitelistedSuperadminAccount(user, perfil = null) {
     user?.app_metadata?.email
   );
   return perfil?.rol === 'superadmin' || SUPERADMIN_EMAILS.has(email);
-}
-
-function resolveEffectiveHotelPlan(hotel) {
-  const pendingStart = hotel?.plan_pendiente_desde ? new Date(hotel.plan_pendiente_desde) : null;
-  const pendingDue = Boolean(
-    hotel?.plan_pendiente &&
-    pendingStart &&
-    !Number.isNaN(pendingStart.getTime()) &&
-    pendingStart <= new Date()
-  );
-
-  if (!pendingDue) {
-    return hotel;
-  }
-
-  return {
-    ...hotel,
-    plan: hotel.plan_pendiente,
-    plan_id: hotel.plan_pendiente_id ?? hotel.plan_id
-  };
-}
-
-function buildSuperadminPlanDetails() {
-  return {
-    nombre: 'Superadmin SaaS',
-    funcionalidades: {
-      limite_habitaciones: 0,
-      modulos_permitidos: ['ops-saas', 'bitacora', 'soporte', 'faq']
-    }
-  };
 }
 
 function buildNavLinkElement(linkConfig) {
@@ -346,38 +325,19 @@ function scheduleModuleWarmup(currentRole = null) {
   }
 }
 
-function calculateSubscriptionExpiredStatus(hotel) {
-  if (!hotel || !hotel.estado_suscripcion || (!hotel.suscripcion_fin && !hotel.trial_fin)) {
-    return false;
-  }
-  const fechaFinSusc = new Date(hotel.suscripcion_fin || hotel.trial_fin);
-  const fechaFinMasGracia = new Date(fechaFinSusc);
-  fechaFinMasGracia.setDate(fechaFinSusc.getDate() + 2);
-  const graciaManualHasta = hotel.gracia_hasta ? new Date(hotel.gracia_hasta) : null;
-  const fechaLimite = graciaManualHasta && !Number.isNaN(graciaManualHasta.getTime()) && graciaManualHasta > fechaFinMasGracia
-    ? graciaManualHasta
-    : fechaFinMasGracia;
-  return (new Date() > fechaLimite) && hotel.estado_suscripcion === 'vencido';
-}
-
 async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
   currentEnergyControlEnabled = false;
-  if (!hotelId) {
-    console.warn("loadHotelAndPlanDetails: hotelId no proporcionado. Usando plan restringido.");
-    currentActiveHotel = null;
-    currentActivePlanDetails = { nombre: "Invitado", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['micuenta'] } };
-    return;
-  }
   try {
-    const { data: hotelData, error: hotelError } = await supabaseInstance
-      .from('hoteles')
-      .select('id, nombre, plan, plan_id, plan_pendiente, plan_pendiente_id, plan_pendiente_desde, estado_suscripcion, suscripcion_fin, trial_fin, gracia_hasta, gracia_motivo, creado_por')
-      .eq('id', hotelId)
-      .single();
+    const subscriptionContext = await loadHotelSubscriptionContext(supabaseInstance, hotelId);
+    currentActiveHotel = subscriptionContext.hotel;
+    currentActivePlanDetails = subscriptionContext.planDetails;
+    isSubscriptionFueraDeGracia = subscriptionContext.subscriptionStatus.fueraDeGracia;
 
-    if (hotelError) throw hotelError;
-    if (!hotelData) throw new Error(`Hotel con ID ${hotelId} no encontrado.`);
-    currentActiveHotel = resolveEffectiveHotelPlan(hotelData);
+    if (!hotelId) {
+      console.warn("loadHotelAndPlanDetails: hotelId no proporcionado. Usando plan restringido.");
+      return;
+    }
+
     const { data: energyConfig } = await supabaseInstance
       .from('configuracion_hotel')
       .select('energy_control_enabled')
@@ -387,32 +347,15 @@ async function loadHotelAndPlanDetails(hotelId, supabaseInstance) {
 
     if (!currentActiveHotel.plan) {
       console.warn(`Hotel ${currentActiveHotel.id} no tiene un plan ('hoteles.plan') asignado. Usando plan por defecto restringido.`);
-      currentActivePlanDetails = {
-        nombre: "SinPlanAsignado",
-        funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['dashboard', 'micuenta'] }
-      };
       return;
     }
-    console.log("[DEBUG Plan] Buscando plan con nombre:", currentActiveHotel.plan);
-    const { data: planData, error: planError } = await supabaseInstance
-      .from('planes')
-      .select('nombre, funcionalidades')
-      .eq('nombre', currentActiveHotel.plan)
-      .single();
-
-    if (planError) throw planError;
-    if (!planData) throw new Error(`Detalles del plan '${currentActiveHotel.plan}' no encontrados en tabla 'planes'.`);
-
-    currentActivePlanDetails = planData;
     console.info('[PlanManager] Plan operativo cargado.');
 
   } catch (error) {
     console.error("Error crítico cargando detalles del hotel y/o plan:", error.message);
     currentActiveHotel = null;
-    currentActivePlanDetails = {
-      nombre: "ErrorCargaPlan",
-      funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['dashboard', 'micuenta'] }
-    };
+    currentActivePlanDetails = createRestrictedPlanDetails('ErrorCargaPlan', ['dashboard', 'micuenta']);
+    isSubscriptionFueraDeGracia = false;
   }
 }
 
@@ -478,12 +421,6 @@ function renderNavigation(user) {
       }
     });
   } else if (currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
-    const modulosPermitidos = currentActivePlanDetails.funcionalidades.modulos_permitidos;
-
-    // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
-    // Se añade la misma lista de módulos exentos que en el router.
-    const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos', 'costeo'];
-
     navLinksConfig.forEach(linkConfig => {
       if (linkConfig.energyOnly && !currentEnergyControlEnabled && !canCurrentUserPrepareEnergy(user)) return;
       if (linkConfig.adminOnly && !esAdminNavegacion) {
@@ -492,13 +429,11 @@ function renderNavigation(user) {
       if (linkConfig.superadminOnly && currentUserRole !== 'superadmin') {
         return;
       }
-      // Un enlace se muestra si su 'moduleKey' está en la lista de permitidos O en la lista de exentos.
-      if (isModuleAllowedByPlan(linkConfig.moduleKey, modulosPermitidos) || modulosExentos.includes(linkConfig.moduleKey)) {
+      if (canAccessModuleForCurrentPlan(linkConfig.moduleKey)) {
         const a = buildNavLinkElement(linkConfig);
         if (dynamicLinksContainer) dynamicLinksContainer.appendChild(a); else mainNav.appendChild(a);
       }
     });
-    // â–²â–²â–² FIN DE LA CORRECCIÃ“N â–²â–²â–²
   } else {
     // Lógica de fallback (sin cambios)
     navLinksConfig.forEach(linkConfig => {
@@ -740,19 +675,11 @@ async function router() {
     // En js/main.js, dentro de la función router()
 
     if (userForModule && currentActivePlanDetails && currentActivePlanDetails.funcionalidades && currentActivePlanDetails.funcionalidades.modulos_permitidos) {
-
-      // â–¼â–¼â–¼ INICIO DE LA CORRECCIÃ“N â–¼â–¼â–¼
-      // Creamos una lista de módulos que SIEMPRE deben estar accesibles.
-      const modulosExentos = ['micuenta', 'faq', 'bitacora', 'ops-saas', 'soporte', 'onboarding', 'sandbox', 'operacion-hoy', 'control-energia', 'finanzas-cuentas', 'gastos', 'costeo'];
-
-      // Verificamos si el módulo actual está en la lista de exentos.
-      const esModuloExento = modulosExentos.includes(moduleKeyFromRoute);
       const esModuloMeseroPermitido = isMeseroRole(currentUserRole)
         && MESERO_ALLOWED_MODULES.has(moduleKeyFromRoute)
         && (moduleKeyFromRoute !== 'terraza' || canCurrentUserAccessTerraza(hotelIdForModule));
 
-      // Si el módulo NO es exento Y NO está en la lista de permitidos del plan, entonces bloqueamos.
-      if (!esModuloMeseroPermitido && !esModuloExento && moduleKeyFromRoute && !isModuleAllowedByPlan(moduleKeyFromRoute, currentActivePlanDetails.funcionalidades.modulos_permitidos, hotelIdForModule)) {
+      if (!esModuloMeseroPermitido && moduleKeyFromRoute && !canAccessModuleForCurrentPlan(moduleKeyFromRoute, hotelIdForModule)) {
 
         console.warn(`[Router] Acceso denegado al módulo '${moduleKeyFromRoute}' para el plan '${currentActivePlanDetails.nombre}'.`);
         appContainer.innerHTML = `<div class="p-6 md:p-8 text-center"><h2 class="text-2xl font-semibold text-red-600 mb-3">Acceso Restringido al M\u00F3dulo</h2><p class="text-gray-700 mb-1">La funcionalidad o m\u00F3dulo '<strong>${escapeHtml(moduleKeyFromRoute)}</strong>' no est\u00E1 incluida en tu plan actual (<strong>${escapeHtml(currentActivePlanDetails.nombre)}</strong>).</p><p class="text-gray-600 text-sm">Si necesitas acceder a esta secci\u00F3n, puedes mejorar tu plan.</p><div class="mt-6"><a href="#/micuenta" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg shadow transition-colors">Ir a Mi Cuenta para Ver Planes</a></div></div>`;
@@ -760,7 +687,6 @@ async function router() {
         routerBusy = false;
         return;
       }
-      // â–²â–²â–² FIN DE LA CORRECCIÃ“N â–²â–²â–²
     }
 
     if (hotelIdForModule && userForModule && currentActiveHotel) {
@@ -781,19 +707,21 @@ async function router() {
         return;
       }
 
-      if (isSubscriptionFueraDeGracia) {
-        if (esAdminRouter) {
-          if (baseRoute !== '/micuenta') {
-            showAppFeedback('Tu suscripción ha vencido. Solo puedes acceder a "Mi Cuenta" para renovar tu plan.', 'warning', true, 6000);
-            window.location.hash = '#/micuenta';
-            return;
-          }
-        } else {
-          document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;padding:20px;background-color:#f3f4f6;"><h2 style="color:#be123c;font-size:1.8rem;margin-bottom:1rem;">Suscripción Vencida</h2><p style="font-size:1.1rem;color:#374151;">La suscripción del hotel ha expirado.<br>Comunícate con el administrador para renovar el acceso.</p></div>`;
-          hideGlobalLoading();
-          routerBusy = false;
-          return;
-        }
+      const expiredRouteDecision = getExpiredSubscriptionRouteDecision({
+        fueraDeGracia: isSubscriptionFueraDeGracia,
+        esAdmin: esAdminRouter,
+        baseRoute
+      });
+      if (expiredRouteDecision === 'redirect-micuenta') {
+        showAppFeedback('Tu suscripción ha vencido. Solo puedes acceder a "Mi Cuenta" para renovar tu plan.', 'warning', true, 6000);
+        window.location.hash = '#/micuenta';
+        return;
+      }
+      if (expiredRouteDecision === 'block-staff') {
+        document.body.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;padding:20px;background-color:#f3f4f6;"><h2 style="color:#be123c;font-size:1.8rem;margin-bottom:1rem;">Suscripción Vencida</h2><p style="font-size:1.1rem;color:#374151;">La suscripción del hotel ha expirado.<br>Comunícate con el administrador para renovar el acceso.</p></div>`;
+        hideGlobalLoading();
+        routerBusy = false;
+        return;
       }
     }
 
@@ -949,16 +877,13 @@ async function initializeApp() {
         isSubscriptionFueraDeGracia = false;
       } else if (hotelIdToLoad) {
         await loadHotelAndPlanDetails(hotelIdToLoad, supabase);
-        if (currentActiveHotel) {
-          isSubscriptionFueraDeGracia = calculateSubscriptionExpiredStatus(currentActiveHotel);
-        } else {
-          isSubscriptionFueraDeGracia = false;
+        if (!currentActiveHotel) {
           console.warn("onAuthStateChange: currentActiveHotel no se pudo cargar, usando estado de suscripción por defecto.");
         }
       } else {
         console.warn("Usuario autenticado pero sin hotel_id asociado. Usando plan/estado de suscripción por defecto.");
         currentActiveHotel = null;
-        currentActivePlanDetails = { nombre: "UsuarioSinHotel", funcionalidades: { limite_habitaciones: 0, modulos_permitidos: ['micuenta'] } };
+        currentActivePlanDetails = createRestrictedPlanDetails('UsuarioSinHotel');
         isSubscriptionFueraDeGracia = false;
       }
 

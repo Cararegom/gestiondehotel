@@ -8,10 +8,13 @@ import {
 import { escapeAttribute, escapeHtml, normalizeLegacyText } from '../../security.js';
 import {
   formatMovementDateTime,
+  getMovementOriginKey,
   getMovementTimeLabel,
   sortMovementsByDate
 } from './caja-movimientos.js';
 import { getBankPaymentCashStatuses, getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
+import { formatInTimeZone, getRuntimeHotelTimeZone } from '../../services/hotelTimeZoneService.js';
 const BANK_PAYMENT_METHOD_NAMES = new Set(['bancolombia', 'transferencia', 'transferencia bancaria', 'llave']);
 
 function normalizeHotelName(value = '') {
@@ -44,6 +47,7 @@ export function procesarMovimientosParaReporte(movimientos) {
     terraza: crearCategoria(),
     tienda: crearCategoria(),
     propinas: crearCategoria(),
+    otros: crearCategoria(),
     gastos: crearCategoria(),
     apertura: 0
   };
@@ -55,7 +59,6 @@ export function procesarMovimientosParaReporte(movimientos) {
   movimientos.forEach((movimiento) => {
     const monto = Number(movimiento.monto);
     const nombreMetodo = movimiento.metodos_pago?.nombre || 'Efectivo';
-    const concepto = normalizeLegacyText(movimiento.concepto || '').toLowerCase();
     let categoria = null;
 
     if (movimiento.tipo === 'apertura') {
@@ -64,20 +67,8 @@ export function procesarMovimientosParaReporte(movimientos) {
     }
 
     if (movimiento.tipo === 'ingreso') {
-      if (concepto.includes('propina')) {
-        categoria = reporte.propinas;
-      } else if (concepto.includes('terraza')) {
-        categoria = reporte.terraza;
-      } else if (concepto.includes('restaurante') || concepto.includes('cocina')) {
-        categoria = reporte.cocina;
-      } else if (concepto.includes('tienda') || concepto.includes('producto')) {
-        categoria = reporte.tienda;
-      } else if (concepto.includes('habitaci') || concepto.includes('alquiler') || concepto.includes('reserva') || concepto.includes('extensi')) {
-        categoria = reporte.habitaciones;
-      } else {
-        console.warn(`Movimiento de ingreso no clasificado, asignado a Habitaciones: "${movimiento.concepto}"`);
-        categoria = reporte.habitaciones;
-      }
+      const categoriaOrigen = getMovementOriginKey(movimiento);
+      categoria = reporte[categoriaOrigen] || reporte.otros;
 
       categoria.ventas += 1;
       categoria.transacciones += 1;
@@ -98,9 +89,50 @@ export function esMetodoEfectivo(nombreMetodo = '') {
   return String(nombreMetodo).toLowerCase().includes('efectivo');
 }
 
+export function combinarMetodosPagoParaArqueo(metodosDisponibles = [], movimientos = []) {
+  const catalogoPorId = new Map();
+  const metodosPorId = new Map();
+
+  (Array.isArray(metodosDisponibles) ? metodosDisponibles : []).forEach((metodo) => {
+    if (!metodo?.id) return;
+    const normalizado = {
+      id: String(metodo.id),
+      nombre: String(metodo.nombre || 'Metodo sin nombre'),
+      activo: metodo.activo !== false
+    };
+    catalogoPorId.set(normalizado.id, normalizado);
+    if (normalizado.activo) metodosPorId.set(normalizado.id, normalizado);
+  });
+
+  (Array.isArray(movimientos) ? movimientos : []).forEach((movimiento) => {
+    if (!['ingreso', 'egreso', 'apertura'].includes(String(movimiento?.tipo || ''))) return;
+    const id = movimiento?.metodo_pago_id || movimiento?.metodos_pago?.id;
+    if (!id) return;
+
+    const key = String(id);
+    const existente = metodosPorId.get(key) || catalogoPorId.get(key);
+    metodosPorId.set(key, {
+      id: key,
+      nombre: String(movimiento?.metodos_pago?.nombre || existente?.nombre || `Metodo historico ${key.slice(0, 8)}`),
+      activo: movimiento?.metodos_pago?.activo === true || existente?.activo === true
+    });
+  });
+
+  return [...metodosPorId.values()].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+export function obtenerValorArqueo(valores = null, metodo = {}) {
+  if (!valores || !metodo?.id) return 0;
+  const valor = valores instanceof Map
+    ? (valores.get(metodo.id) ?? valores.get(metodo.nombre))
+    : (valores[metodo.id] ?? valores[metodo.nombre]);
+  const numero = Number(valor);
+  return Number.isFinite(numero) ? numero : 0;
+}
+
 export function calcularTotalesSistemaCierre(reporte, metodosDePago) {
   const calcularTotalFila = (fila) => Object.values(fila?.pagos || {}).reduce((acc, val) => acc + val, 0);
-  const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.terraza) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas);
+  const totalIngresos = calcularTotalFila(reporte.habitaciones) + calcularTotalFila(reporte.cocina) + calcularTotalFila(reporte.terraza) + calcularTotalFila(reporte.tienda) + calcularTotalFila(reporte.propinas) + calcularTotalFila(reporte.otros);
   const totalGastos = calcularTotalFila(reporte.gastos);
   const balanceFinal = (reporte.apertura || 0) + totalIngresos - totalGastos;
 
@@ -111,7 +143,8 @@ export function calcularTotalesSistemaCierre(reporte, metodosDePago) {
       (reporte.cocina.pagos[nombreMetodo] || 0) +
       (reporte.terraza?.pagos?.[nombreMetodo] || 0) +
       (reporte.tienda.pagos[nombreMetodo] || 0) +
-      (reporte.propinas.pagos[nombreMetodo] || 0);
+      (reporte.propinas.pagos[nombreMetodo] || 0) +
+      (reporte.otros?.pagos?.[nombreMetodo] || 0);
     const totalGasto = reporte.gastos.pagos[nombreMetodo] || 0;
     const balanceSinApertura = totalIngreso - totalGasto;
 
@@ -131,27 +164,10 @@ export function calcularTotalesSistemaCierre(reporte, metodosDePago) {
   };
 }
 
-function extraerHabitacionDesdeConcepto(concepto = '') {
-  const texto = normalizeLegacyText(concepto || '');
-  const matchCompleto = texto.match(/(habitaci[oó]n\s+[a-z0-9-]+)/i);
-  if (matchCompleto?.[1]) {
-    return matchCompleto[1]
-      .replace(/\s+/g, ' ')
-      .trim()
-      .replace(/^habitaci[oó]n/i, 'Habitación');
-  }
-
-  const matchCorto = texto.match(/hab\.\s*([a-z0-9-]+)/i);
-  if (matchCorto?.[1]) {
-    return `Habitación ${matchCorto[1].trim()}`;
-  }
-
-  return '';
-}
-
 export function construirResumenOperativoCierre({
   movimientos = [],
   reporte = null,
+  reservasTurno = [],
   ventasTienda = [],
   detallesVentasTienda = [],
   ventasRestaurante = [],
@@ -162,17 +178,12 @@ export function construirResumenOperativoCierre({
 } = {}) {
   const movimientosList = Array.isArray(movimientos) ? movimientos : [];
   const reporteSeguro = reporte || procesarMovimientosParaReporte(movimientosList);
-  const habitacionesDetectadas = new Set();
-
-  movimientosList.forEach((movimiento) => {
-    if (movimiento?.tipo !== 'ingreso') return;
-
-    const concepto = normalizeLegacyText(movimiento?.concepto || '');
-    if (!/habitaci|alquiler|reserva|extensi/i.test(concepto)) return;
-
-    const habitacion = extraerHabitacionDesdeConcepto(concepto);
-    if (habitacion) habitacionesDetectadas.add(habitacion);
-  });
+  const habitacionesDetectadas = new Set(
+    (Array.isArray(reservasTurno) ? reservasTurno : [])
+      .map((reserva) => reserva?.habitacion_id || reserva?.habitaciones?.id)
+      .filter(Boolean)
+      .map(String)
+  );
 
   const tiendaUnidades = (Array.isArray(detallesVentasTienda) ? detallesVentasTienda : []).reduce(
     (acc, item) => acc + (Number(item?.cantidad) || 0),
@@ -202,7 +213,7 @@ export function construirResumenOperativoCierre({
   );
 
   return {
-    habitacionesAlquiladas: habitacionesDetectadas.size || Number(reporteSeguro?.habitaciones?.ventas || 0),
+    habitacionesAlquiladas: habitacionesDetectadas.size,
     habitacionesCobros: Number(reporteSeguro?.habitaciones?.ventas || 0),
     tiendaVentas: Array.isArray(ventasTienda) ? ventasTienda.length : Number(reporteSeguro?.tienda?.ventas || 0),
     tiendaUnidades,
@@ -226,8 +237,9 @@ export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomatic
   const idEfectivo = metodoEfectivo ? metodoEfectivo.id : null;
 
   const inputsHtml = metodosDePago.map((metodo) => {
-    if (Object.prototype.hasOwnProperty.call(valoresAutomaticos, metodo.nombre)) return '';
+    if (Object.prototype.hasOwnProperty.call(valoresAutomaticos, metodo.id)) return '';
     const esEfectivo = metodo.id === idEfectivo;
+    const estadoMetodo = metodo.activo === false ? ' (inactivo; usado en este turno)' : '';
     const botonCalc = esEfectivo
       ? '<button type="button" id="btn-abrir-calc" class="absolute inset-y-0 right-0 px-3 flex items-center bg-gray-100 hover:bg-gray-200 border-l text-gray-600 rounded-r-md transition" title="Abrir calculadora de billetes">Contar</button>'
       : '';
@@ -235,7 +247,7 @@ export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomatic
     return `
       <div class="mb-4">
         <label class="block text-sm font-medium text-gray-700 mb-1">
-          ${metodo.nombre} (Dinero fisico / real)
+          ${escapeHtml(metodo.nombre)}${estadoMetodo} (Dinero fisico / real)
         </label>
         <div class="relative group">
           <span class="absolute inset-y-0 left-0 pl-3 flex items-center text-gray-500">$</span>
@@ -355,8 +367,8 @@ export function renderizarModalArqueo(metodosDePago, onConfirm, valoresAutomatic
     const valoresReales = {};
     metodosDePago.forEach((metodo) => {
       const input = document.getElementById(`arqueo-input-${metodo.id}`);
-      const valor = input ? (parseFloat(input.value) || 0) : (Number(valoresAutomaticos[metodo.nombre]) || 0);
-      valoresReales[metodo.nombre] = valor;
+      const valor = input ? (parseFloat(input.value) || 0) : (Number(valoresAutomaticos[metodo.id]) || 0);
+      valoresReales[metodo.id] = valor;
     });
     modalContainer.remove();
     onConfirm(valoresReales);
@@ -389,13 +401,12 @@ export async function mostrarResumenCorteDeCaja({
   if (!valoresRealesArqueo) showGlobalLoading('Preparando cierre...');
 
   try {
-    const { data: metodosDePago, error: metodosError } = await supabase
+    const { data: metodosDisponibles, error: metodosError } = await supabase
       .from('metodos_pago')
-      .select('id, nombre')
+      .select('id, nombre, activo')
       .eq('hotel_id', hotelId)
-      .eq('activo', true)
       .order('nombre', { ascending: true });
-    if (metodosError) throw new Error('No se encontraron metodos de pago activos.');
+    if (metodosError) throw new Error('No se pudieron consultar los metodos de pago.');
 
     const { data: configHotel } = await supabase
       .from('configuracion_hotel')
@@ -405,7 +416,7 @@ export async function mostrarResumenCorteDeCaja({
 
     const { data: movimientos, error: movError } = await supabase
       .from('caja')
-      .select('*, usuarios(nombre), metodos_pago(nombre)')
+      .select('*, usuarios(nombre), metodos_pago(id, nombre, activo)')
       .eq('turno_id', turnoParaResumir.id);
 
     if (!valoresRealesArqueo) hideGlobalLoading();
@@ -416,6 +427,7 @@ export async function mostrarResumenCorteDeCaja({
       return;
     }
 
+    const metodosDePago = combinarMetodosPagoParaArqueo(metodosDisponibles, movimientos);
     const movimientosOrdenados = sortMovementsByDate(movimientos, true);
 
     const reporte = procesarMovimientosParaReporte(movimientosOrdenados);
@@ -431,13 +443,13 @@ export async function mostrarResumenCorteDeCaja({
       const pilotStatus = await getBankPaymentPilotStatus(supabase, hotelId);
       esPilotoBancario = pilotStatus.eligible === true && pilotStatus.canViewOperationalStatus === true;
     } catch (statusError) {
-      console.warn('Cierre: no se pudo validar la funcion bancaria; se continua sin el panel.', statusError);
+      reportHandledError('caja', 'close_bank_feature_status_failed', statusError);
     }
     const metodosBancarios = esPilotoBancario
       ? metodosDePago.filter((metodo) => esMetodoBancarioConciliable(metodo.nombre))
       : [];
     const valoresBancariosAutomaticos = Object.fromEntries(
-      metodosBancarios.map((metodo) => [metodo.nombre, totalesPorMetodo[metodo.nombre]?.esperadoArqueo || 0])
+      metodosBancarios.map((metodo) => [metodo.id, totalesPorMetodo[metodo.nombre]?.esperadoArqueo || 0])
     );
 
     if (!valoresRealesArqueo) {
@@ -467,14 +479,14 @@ export async function mostrarResumenCorteDeCaja({
         );
       } catch (error) {
         estadoBancarioDisponible = false;
-        console.warn('Cierre: estado bancario temporalmente no disponible; el cierre continua.', error);
+        reportHandledError('caja', 'close_bank_status_load_failed', error);
       }
     }
     const resumenBancario = calcularResumenBancarioCierre(movimientosOrdenados, estadosBancarios);
 
     const filasComparativas = metodosDePago.filter((metodo) => !esPilotoBancario || !esMetodoBancarioConciliable(metodo.nombre)).map((metodo) => {
       const sistema = totalesPorMetodo[metodo.nombre].esperadoArqueo;
-      const real = valoresRealesArqueo[metodo.nombre] || 0;
+      const real = obtenerValorArqueo(valoresRealesArqueo, metodo);
       const diferencia = real - sistema;
 
       let claseDif = 'text-gray-500';
@@ -491,7 +503,7 @@ export async function mostrarResumenCorteDeCaja({
 
       return `
         <tr class="border-b hover:bg-gray-50">
-          <td class="px-4 py-3 font-medium">${metodo.nombre}</td>
+          <td class="px-4 py-3 font-medium">${escapeHtml(metodo.nombre)}${metodo.activo === false ? ' <span class="text-xs text-amber-700">(inactivo; usado en el turno)</span>' : ''}</td>
           <td class="px-4 py-3 text-right text-gray-600">${formatCurrency(sistema)}</td>
           <td class="px-4 py-3 text-right font-bold text-gray-800 bg-yellow-50">${formatCurrency(real)}</td>
           <td class="px-4 py-3 text-right ${claseDif}">${icono} ${difFormat}</td>
@@ -591,7 +603,12 @@ export async function mostrarResumenCorteDeCaja({
       });
 
       const nombreUsuario = turnoParaResumir.usuarios?.nombre || turnoParaResumir.usuarios?.email || 'Usuario';
-      const fechaLocal = new Date().toLocaleString('es-CO', { dateStyle: 'full', timeStyle: 'medium' });
+      const fechaLocal = formatInTimeZone(
+        new Date(),
+        getRuntimeHotelTimeZone(),
+        'es-CO',
+        { dateStyle: 'full', timeStyle: 'medium' }
+      );
 
       imprimirCorteCajaAdaptable(
         configHotel,
@@ -612,7 +629,7 @@ export async function mostrarResumenCorteDeCaja({
     hideGlobalLoading();
     document.getElementById('modal-corte-caja')?.remove();
     showError(currentContainerEl.querySelector('#turno-global-feedback'), `Error generando el resumen: ${e.message}`);
-    console.error('Error en mostrarResumenCorteDeCaja:', e);
+    reportHandledError('caja', 'close_report_render_failed', e);
   }
 }
 
@@ -783,7 +800,7 @@ export function generarHTMLReporteCierre(
     let totalDeclarado = 0;
     const filasDescuadre = metodosDePago.map((metodo) => {
       const sistema = totalesPorMetodo[metodo.nombre].esperadoArqueo;
-      const real = valoresReales[metodo.nombre] || 0;
+      const real = obtenerValorArqueo(valoresReales, metodo);
       totalDeclarado += real;
       const dif = real - sistema;
 
@@ -792,7 +809,7 @@ export function generarHTMLReporteCierre(
       const color = dif < 0 ? '#dc2626' : '#2563eb';
       const signo = dif > 0 ? '+' : '';
       return `<tr>
-        <td style="padding:8px; border-bottom:1px solid #e5e7eb; white-space:nowrap;">${metodo.nombre}</td>
+        <td style="padding:8px; border-bottom:1px solid #e5e7eb; white-space:nowrap;">${escapeHtml(metodo.nombre)}${metodo.activo === false ? ' (inactivo; usado en el turno)' : ''}</td>
         <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; white-space:nowrap;">${formatCurrency(sistema)}</td>
         <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; white-space:nowrap;">${formatCurrency(real)}</td>
         <td style="padding:8px; border-bottom:1px solid #e5e7eb; text-align:right; color:${color}; font-weight:bold; white-space:nowrap;">${signo}${formatCurrency(dif)}</td>
@@ -961,9 +978,23 @@ export function generarHTMLReporteCierre(
             <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.tienda))}</td>
           </tr>
           <tr>
+            <td style="${styles.legacyTdConcepto}">PROPINAS:</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.propinas?.ventas || 0))}</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.propinas?.transacciones || 0))}</td>
+            ${generarCeldasResumen(reporte.propinas)}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.propinas))}</td>
+          </tr>
+          <tr>
+            <td style="${styles.legacyTdConcepto}">OTROS INGRESOS:</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.otros?.ventas || 0))}</td>
+            <td style="${styles.legacyTd} text-align:center;">${escapeHtml(String(reporte.otros?.transacciones || 0))}</td>
+            ${generarCeldasResumen(reporte.otros)}
+            <td style="${styles.legacyTdTotal}">${formatCurrency(calcularTotalCategoria(reporte.otros))}</td>
+          </tr>
+          <tr>
             <td style="${styles.legacyTdTotalConcepto}">Ingresos del turno:</td>
-            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.ventas || 0) + (reporte.cocina?.ventas || 0) + (reporte.terraza?.ventas || 0) + (reporte.tienda?.ventas || 0) + (reporte.propinas?.ventas || 0)))}</td>
-            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.terraza?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0)))}</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.ventas || 0) + (reporte.cocina?.ventas || 0) + (reporte.terraza?.ventas || 0) + (reporte.tienda?.ventas || 0) + (reporte.propinas?.ventas || 0) + (reporte.otros?.ventas || 0)))}</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.terraza?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0) + (reporte.otros?.transacciones || 0)))}</td>
             ${tdTotalesIngresosResumen}
             <td style="${styles.legacyTdTotal}">${formatCurrency(totalIngresos)}</td>
           </tr>
@@ -977,7 +1008,7 @@ export function generarHTMLReporteCierre(
           <tr>
             <td style="${styles.legacyTdTotalConcepto}">Dinero generado en el turno:</td>
             <td style="${styles.legacyTdTotal} text-align:center;">-</td>
-            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String(((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.terraza?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0) + (reporte.gastos?.transacciones || 0))))}</td>
+            <td style="${styles.legacyTdTotal} text-align:center;">${escapeHtml(String(((reporte.habitaciones?.transacciones || 0) + (reporte.cocina?.transacciones || 0) + (reporte.terraza?.transacciones || 0) + (reporte.tienda?.transacciones || 0) + (reporte.propinas?.transacciones || 0) + (reporte.otros?.transacciones || 0) + (reporte.gastos?.transacciones || 0))))}</td>
             ${tdTotalesBalanceResumen}
             <td style="${styles.legacyTdTotal} background-color:#007bff; color:white;">${formatCurrency(balanceOperativo)}</td>
           </tr>
@@ -1072,6 +1103,10 @@ export function generarHTMLReporteCierre(
         <tr>
           <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Propinas</span></td>
           <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.propinas))}</td>
+        </tr>
+        <tr>
+          <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Otros ingresos</span></td>
+          <td style="${styles.td}">${formatCurrency(calcularTotalCategoria(reporte.otros))}</td>
         </tr>
         <tr>
           <td style="${styles.tdLeft}"><span style="${styles.tdStrong}">Ingresos del turno</span></td>

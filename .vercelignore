@@ -13,4 +13,5 @@ supabase
 tests
 .env*
 .codex-remote-schema-audit.sql
-gestion de tales.rar
+*.rar
+js/modules/faq/*.mp4

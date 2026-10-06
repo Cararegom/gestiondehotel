@@ -1,39 +1,48 @@
-import { formatCurrency, formatDateTime, showError } from '../../uiUtils.js';
-import { escapeAttribute, escapeHtml, normalizeLegacyText } from '../../security.js';
+import { formatDateTime, showError } from '../../uiUtils.js';
+import { escapeAttribute, escapeHtml } from '../../security.js';
 
-export async function mostrarLogEliminados({ supabase }) {
+export async function mostrarHistorialReversiones({ supabase, hotelId }) {
   const modalContainer = document.createElement('div');
-  modalContainer.id = 'modal-log-eliminados';
+  modalContainer.id = 'modal-historial-reversiones';
   modalContainer.className = 'fixed inset-0 z-[10000] flex items-center justify-center bg-black bg-opacity-70 p-4';
-  modalContainer.innerHTML = '<div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl text-center"><p>Cargando historial...</p></div>';
+  modalContainer.innerHTML = '<div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-4xl text-center"><p>Cargando reversiones...</p></div>';
   document.body.appendChild(modalContainer);
 
   try {
-    const { data: logs, error } = await supabase
-      .from('log_caja_eliminados')
-      .select('creado_en, datos_eliminados, eliminado_por_usuario:usuarios(nombre)')
-      .order('creado_en', { ascending: false })
+    const { data: reversiones, error } = await supabase
+      .from('caja_reversiones')
+      .select(`
+        created_at,
+        reason,
+        original_movement_id,
+        reversal_movement_id,
+        created_by_usuario:usuarios!caja_reversiones_created_by_fkey(nombre),
+        approved_by_usuario:usuarios!caja_reversiones_approved_by_fkey(nombre)
+      `)
+      .eq('hotel_id', hotelId)
+      .order('created_at', { ascending: false })
       .limit(100);
 
     if (error) throw error;
 
     let tableRowsHtml = '';
-    if (!logs || logs.length === 0) {
-      tableRowsHtml = '<tr><td colspan="6" class="text-center p-4">No hay movimientos eliminados.</td></tr>';
+    if (!reversiones || reversiones.length === 0) {
+      tableRowsHtml = '<tr><td colspan="6" class="text-center p-4">No hay movimientos revertidos.</td></tr>';
     } else {
-      tableRowsHtml = logs.map((log) => {
-        const datos = log.datos_eliminados || {};
-        const usuarioElimino = escapeHtml(log.eliminado_por_usuario?.nombre || 'Desconocido');
-        const tipoOriginal = escapeHtml(normalizeLegacyText(datos.tipo || 'N/A'));
-        const conceptoOriginal = escapeHtml(normalizeLegacyText(datos.concepto || 'N/A'));
+      tableRowsHtml = reversiones.map((reversion) => {
+        const registradoPor = escapeHtml(reversion.created_by_usuario?.nombre || 'Usuario no disponible');
+        const aprobadoPor = escapeHtml(reversion.approved_by_usuario?.nombre || 'No aplica');
+        const motivo = escapeHtml(reversion.reason || 'Sin motivo registrado');
+        const originalId = escapeHtml(String(reversion.original_movement_id || '').slice(0, 8));
+        const reversalId = escapeHtml(String(reversion.reversal_movement_id || '').slice(0, 8));
         return `
           <tr class="hover:bg-gray-50 border-b">
-            <td class="p-3 text-sm">${formatDateTime(log.creado_en)}</td>
-            <td class="p-3 text-sm text-red-600 font-medium">${usuarioElimino}</td>
-            <td class="p-3 text-sm">${formatDateTime(datos.creado_en)}</td>
-            <td class="p-3 text-sm font-semibold ${datos.tipo === 'ingreso' ? 'text-green-700' : 'text-orange-700'}">${tipoOriginal}</td>
-            <td class="p-3 text-sm font-bold">${formatCurrency(datos.monto || 0)}</td>
-            <td class="p-3 text-sm text-left">${conceptoOriginal}</td>
+            <td class="p-3 text-sm">${formatDateTime(reversion.created_at)}</td>
+            <td class="p-3 text-sm font-medium">${registradoPor}</td>
+            <td class="p-3 text-sm">${aprobadoPor}</td>
+            <td class="p-3 text-sm text-left">${motivo}</td>
+            <td class="p-3 text-sm font-mono" title="${escapeAttribute(reversion.original_movement_id || '')}">${originalId || 'N/A'}</td>
+            <td class="p-3 text-sm font-mono" title="${escapeAttribute(reversion.reversal_movement_id || '')}">${reversalId || 'N/A'}</td>
           </tr>
         `;
       }).join('');
@@ -42,19 +51,22 @@ export async function mostrarLogEliminados({ supabase }) {
     modalContainer.innerHTML = `
       <div class="bg-white p-0 rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] flex flex-col">
         <div class="flex justify-between items-center p-4 border-b bg-gray-50 rounded-t-lg">
-          <h3 class="text-xl font-bold text-gray-700">Historial de Movimientos Eliminados</h3>
-          <button id="btn-cerrar-log-modal" class="text-gray-500 hover:text-red-600 text-3xl">&times;</button>
+          <div>
+            <h3 class="text-xl font-bold text-gray-700">Historial de reversiones de caja</h3>
+            <p class="text-sm text-gray-500 mt-1">Las reversiones conservan el movimiento original y crean un contramovimiento auditable.</p>
+          </div>
+          <button id="btn-cerrar-reversiones-modal" class="text-gray-500 hover:text-red-600 text-3xl">&times;</button>
         </div>
         <div class="overflow-y-auto">
           <table class="w-full text-left">
             <thead class="bg-gray-100 sticky top-0">
               <tr>
-                <th class="p-3 text-sm font-semibold">Fecha eliminacion</th>
-                <th class="p-3 text-sm font-semibold">Eliminado Por</th>
-                <th class="p-3 text-sm font-semibold">Fecha Original</th>
-                <th class="p-3 text-sm font-semibold">Tipo Original</th>
-                <th class="p-3 text-sm font-semibold">Monto Original</th>
-                <th class="p-3 text-sm font-semibold">Concepto Original</th>
+                <th class="p-3 text-sm font-semibold">Fecha</th>
+                <th class="p-3 text-sm font-semibold">Registrada por</th>
+                <th class="p-3 text-sm font-semibold">Aprobada por</th>
+                <th class="p-3 text-sm font-semibold">Motivo</th>
+                <th class="p-3 text-sm font-semibold">Movimiento original</th>
+                <th class="p-3 text-sm font-semibold">Contramovimiento</th>
               </tr>
             </thead>
             <tbody>
@@ -65,13 +77,13 @@ export async function mostrarLogEliminados({ supabase }) {
       </div>
     `;
 
-    modalContainer.querySelector('#btn-cerrar-log-modal').onclick = () => modalContainer.remove();
+    modalContainer.querySelector('#btn-cerrar-reversiones-modal').onclick = () => modalContainer.remove();
   } catch (err) {
     modalContainer.innerHTML = `<div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md text-center">
-      <p class="text-red-600">Error al cargar el historial: ${escapeHtml(err.message)}</p>
-      <button id="btn-cerrar-log-modal" class="button button-neutral mt-4">Cerrar</button>
+      <p class="text-red-600">Error al cargar las reversiones: ${escapeHtml(err.message)}</p>
+      <button id="btn-cerrar-reversiones-modal" class="button button-neutral mt-4">Cerrar</button>
     </div>`;
-    modalContainer.querySelector('#btn-cerrar-log-modal').onclick = () => modalContainer.remove();
+    modalContainer.querySelector('#btn-cerrar-reversiones-modal').onclick = () => modalContainer.remove();
   }
 }
 

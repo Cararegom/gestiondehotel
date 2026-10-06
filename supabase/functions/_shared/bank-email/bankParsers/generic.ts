@@ -7,6 +7,7 @@ import type {
   BankParserRule,
   NormalizedEmail,
 } from "../types.ts";
+import { bankLocalDateTimeToIso, DEFAULT_BANK_TIME_ZONE, normalizeBankTimeZone } from "../time-zone.ts";
 
 export type TransactionLanguage = "received" | "sent" | "reversed" | "failed" | "unknown";
 
@@ -101,7 +102,7 @@ const SPANISH_MONTHS = new Map([
   ["noviembre", 11], ["diciembre", 12],
 ]);
 
-function bogotaDateTimeToIso(
+function bankDateTimeToIso(
   year: number,
   month: number,
   day: number,
@@ -109,6 +110,7 @@ function bogotaDateTimeToIso(
   minute: number,
   second: number,
   meridiem = "",
+  timeZone = DEFAULT_BANK_TIME_ZONE,
 ): string | null {
   if (year < 2020 || year > 2100 || month < 1 || month > 12 || minute > 59 || second > 59) return null;
   const maxDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
@@ -118,7 +120,7 @@ function bogotaDateTimeToIso(
     if (meridiem === "pm" && hour < 12) hour += 12;
     if (meridiem === "am" && hour === 12) hour = 0;
   } else if (hour < 0 || hour > 23) return null;
-  return new Date(Date.UTC(year, month - 1, day, hour + 5, minute, second)).toISOString();
+  return bankLocalDateTimeToIso({ year, month, day, hour, minute, second, timeZone });
 }
 
 function plausibleTransactionTime(candidate: string | null, receivedAt: string | null): string | null {
@@ -134,7 +136,12 @@ function plausibleTransactionTime(candidate: string | null, receivedAt: string |
   return new Date(candidateMs).toISOString();
 }
 
-export function extractTransactionOccurredAt(text: string, receivedAt: string | null): string | null {
+export function extractTransactionOccurredAt(
+  text: string,
+  receivedAt: string | null,
+  timeZone = DEFAULT_BANK_TIME_ZONE,
+): string | null {
+  const sourceTimeZone = normalizeBankTimeZone(timeZone);
   const normalized = text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -152,8 +159,8 @@ export function extractTransactionOccurredAt(text: string, receivedAt: string | 
       const parsed = new Date(`${iso[1]}-${iso[2]}-${iso[3]}T${iso[4]}:${iso[5]}:${iso[6] || "00"}${suffix}`);
       candidate = Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
     } else {
-      candidate = bogotaDateTimeToIso(
-        Number(iso[1]), Number(iso[2]), Number(iso[3]), Number(iso[4]), Number(iso[5]), Number(iso[6] || 0)
+      candidate = bankDateTimeToIso(
+        Number(iso[1]), Number(iso[2]), Number(iso[3]), Number(iso[4]), Number(iso[5]), Number(iso[6] || 0), "", sourceTimeZone
       );
     }
     return plausibleTransactionTime(candidate, receivedAt);
@@ -163,9 +170,9 @@ export function extractTransactionOccurredAt(text: string, receivedAt: string | 
     /\b(\d{1,2})[\/-](\d{1,2})[\/-](20\d{2})[,\s]+(?:a\s+las\s+)?(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?\b/,
   );
   if (numeric) {
-    return plausibleTransactionTime(bogotaDateTimeToIso(
+    return plausibleTransactionTime(bankDateTimeToIso(
       Number(numeric[3]), Number(numeric[2]), Number(numeric[1]), Number(numeric[4]),
-      Number(numeric[5]), Number(numeric[6] || 0), numeric[7] || ""
+      Number(numeric[5]), Number(numeric[6] || 0), numeric[7] || "", sourceTimeZone
     ), receivedAt);
   }
 
@@ -174,9 +181,9 @@ export function extractTransactionOccurredAt(text: string, receivedAt: string | 
   );
   const month = words ? SPANISH_MONTHS.get(words[2]) : null;
   return words && month
-    ? plausibleTransactionTime(bogotaDateTimeToIso(
+    ? plausibleTransactionTime(bankDateTimeToIso(
         Number(words[3]), month, Number(words[1]), Number(words[4]),
-        Number(words[5]), Number(words[6] || 0), words[7] || ""
+        Number(words[5]), Number(words[6] || 0), words[7] || "", sourceTimeZone
       ), receivedAt)
     : null;
 }
@@ -262,9 +269,10 @@ export const genericBankParser: BankParser = {
       parserId: "generic",
       parserVersion: context.rule?.parserVersion ?? "1.0.0",
       bankName: context.rule?.bankName ?? null,
+      transactionTimeZone: normalizeBankTimeZone(context.rule?.transactionTimeZone),
       disposition,
       amountCop: amount.amountCop,
-      transactionOccurredAt: extractTransactionOccurredAt(text, email.receivedAt),
+      transactionOccurredAt: extractTransactionOccurredAt(text, email.receivedAt, context.rule?.transactionTimeZone),
       transactionReference: extractTransactionReference(text, context.rule),
       senderName: extractPayerName(text, context.rule),
       reviewReason: reasons[0] ?? "generic_parser_requires_manual_review",

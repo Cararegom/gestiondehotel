@@ -1,17 +1,17 @@
 import { showLoading, showError } from '../../uiUtils.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
 import {
+  TASK_STATES,
   TASK_TYPES,
   createRequestId,
   getPriorityMeta,
   getStatusMeta,
-  getTaskFrequencyLabel,
   getTypeMeta,
   isBlockingTask,
   isOccupiedMaintenanceConflict,
   isOpenTaskState,
-  normalizeTaskFrequency,
   normalizeTaskRecord,
+  normalizeTaskState,
   normalizeTaskType,
   sortTasks
 } from './mantenimiento-domain.js';
@@ -22,7 +22,6 @@ import {
   loadMaintenanceReferenceData,
   updateMaintenanceTask
 } from './mantenimiento-repository.js';
-import { ensureNextPreventiveTask } from './mantenimiento-preventivo.js';
 import {
   deleteMaintenanceEvidence,
   getMaintenanceEvidenceAcceptString,
@@ -38,6 +37,10 @@ import {
   normalizeQuickImpact,
   resolveDefaultMaintenanceAssignee
 } from './mantenimiento-quick-report.js';
+import {
+  MAINTENANCE_UI_SURFACES,
+  emitMaintenanceUiRendered
+} from './mantenimiento-ui-events.js';
 
 let mantenimientoSubscription = null;
 let supabaseInstance = null;
@@ -161,7 +164,7 @@ function renderMobileCard(task, roomMap, userMap) {
     <article class="rounded-2xl border ${isBlockingTask(task) && isOpenTaskState(task.estado) ? 'border-red-200 bg-red-50/30' : 'border-slate-200 bg-white'} p-4 shadow-sm" data-task-card="${task.id}">
       <div class="flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <div class="mb-2 flex flex-wrap items-center gap-1.5">
+          <div data-task-status-row class="mb-2 flex flex-wrap items-center gap-1.5">
             ${renderMeta(getStatusMeta(task.estado))}
             ${renderMeta(getTypeMeta(task.tipo, task))}
             ${overdue ? '<span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Vencida</span>' : ''}
@@ -296,6 +299,10 @@ async function refreshMaintenance(container = mountedContainer, supabase = supab
       renderSummary(container, hydrated);
       renderTaskList(container, applyQuickView(hydrated, quickView), referenceData.habitaciones, referenceData.usuarios);
       container.__mantAllTasks = hydrated;
+      emitMaintenanceUiRendered(container, MAINTENANCE_UI_SURFACES.taskList, {
+        taskCount: hydrated.length,
+        view: quickView
+      });
     } catch (error) {
       console.error('Error cargando mantenimiento:', error);
       if (list) showError(list, 'No fue posible cargar el módulo de mantenimiento.');
@@ -544,6 +551,7 @@ async function showFullTaskModal(container, supabase, hotelId, currentUser, task
   const { habitaciones, usuarios } = await loadMaintenanceReferenceData(supabase, hotelId);
   const requestId = normalized?.solicitud_id || createRequestId();
   const isEditing = Boolean(normalized?.id);
+  const currentState = normalizeTaskState(normalized?.estado || TASK_STATES.pendiente);
   let persisted = await hydrateMaintenanceEvidenceUrls(supabase, normalized?.adjuntos || []);
   let removed = [];
   let selectedFiles = [];
@@ -554,7 +562,8 @@ async function showFullTaskModal(container, supabase, hotelId, currentUser, task
       <div class="grid gap-3 sm:grid-cols-2"><div><label class="mb-1 block text-sm font-bold">Habitación / ubicación</label><select name="habitacion_id" class="form-control w-full rounded-xl"><option value="">Área general</option>${habitaciones.map((room) => `<option value="${room.id}" ${String(normalized?.habitacion_id || '') === String(room.id) ? 'selected' : ''}>${escapeHtml(room.nombre)} · ${escapeHtml(room.estado || '-')}</option>`).join('')}</select></div><div><label class="mb-1 block text-sm font-bold">Responsable</label><select name="asignada_a" class="form-control w-full rounded-xl"><option value="">Sin asignar</option>${usuarios.filter((user) => user.activo !== false).map((user) => `<option value="${user.id}" ${String(normalized?.asignada_a || '') === String(user.id) ? 'selected' : ''}>${escapeHtml(getUserLabel(user))}</option>`).join('')}</select></div></div>
       <div><label class="mb-1 block text-sm font-bold">Título <span class="text-red-500">*</span></label><input name="titulo" required maxlength="180" class="form-control w-full rounded-xl" value="${escapeHtml(normalized?.titulo || '')}" placeholder="Ej. Aire acondicionado no enfría"></div>
       <div><label class="mb-1 block text-sm font-bold">Descripción</label><textarea name="descripcion" class="form-control min-h-[90px] w-full rounded-xl">${escapeHtml(normalized?.descripcion || '')}</textarea></div>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><div><label class="mb-1 block text-sm font-bold">Impacto</label><select name="tipo" class="form-control w-full rounded-xl"><option value="programado" ${normalizeTaskType(normalized?.tipo, normalized) === TASK_TYPES.programado ? 'selected' : ''}>Puede seguir operando</option><option value="bloqueante" ${normalizeTaskType(normalized?.tipo, normalized) === TASK_TYPES.bloqueante ? 'selected' : ''}>Sacar de servicio</option></select></div><div><label class="mb-1 block text-sm font-bold">Categoría</label><select name="categoria" class="form-control w-full rounded-xl">${QUICK_MAINTENANCE_CATEGORIES.map((category) => `<option value="${category.id}" ${String(normalized?.categoria_mantenimiento || 'otro') === category.id ? 'selected' : ''}>${category.icon} ${escapeHtml(category.label)}</option>`).join('')}</select></div><div><label class="mb-1 block text-sm font-bold">Prioridad</label><select name="prioridad" class="form-control w-full rounded-xl"><option value="0" ${Number(normalized?.prioridad) === 0 ? 'selected' : ''}>Baja</option><option value="1" ${Number(normalized?.prioridad ?? 1) === 1 ? 'selected' : ''}>Media</option><option value="2" ${Number(normalized?.prioridad) === 2 ? 'selected' : ''}>Alta</option><option value="3" ${Number(normalized?.prioridad) === 3 ? 'selected' : ''}>Urgente</option></select></div><div><label class="mb-1 block text-sm font-bold">Estado</label><select name="estado" class="form-control w-full rounded-xl"><option value="pendiente" ${!normalized || normalized.estado === 'pendiente' ? 'selected' : ''}>Pendiente</option><option value="en_progreso" ${normalized?.estado === 'en_progreso' ? 'selected' : ''}>En progreso</option><option value="completada" ${normalized?.estado === 'completada' ? 'selected' : ''}>Completada</option><option value="cancelada" ${normalized?.estado === 'cancelada' ? 'selected' : ''}>Cancelada</option></select></div><div><label class="mb-1 block text-sm font-bold">Fecha programada</label><input name="fecha_programada" type="date" class="form-control w-full rounded-xl" value="${escapeHtml(String(normalized?.fecha_programada || '').slice(0, 10))}"></div><div><label class="mb-1 block text-sm font-bold">Frecuencia</label><select name="frecuencia" class="form-control w-full rounded-xl">${['unica','diaria','semanal','mensual','personalizada'].map((freq) => `<option value="${freq}" ${normalizeTaskFrequency(normalized?.frecuencia) === freq ? 'selected' : ''}>${escapeHtml(getTaskFrequencyLabel(freq))}</option>`).join('')}</select></div></div>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><div><label class="mb-1 block text-sm font-bold">Impacto</label><select name="tipo" class="form-control w-full rounded-xl"><option value="programado" ${normalizeTaskType(normalized?.tipo, normalized) === TASK_TYPES.programado ? 'selected' : ''}>Puede seguir operando</option><option value="bloqueante" ${normalizeTaskType(normalized?.tipo, normalized) === TASK_TYPES.bloqueante ? 'selected' : ''}>Sacar de servicio</option></select></div><div><label class="mb-1 block text-sm font-bold">Categoría</label><select name="categoria" class="form-control w-full rounded-xl">${QUICK_MAINTENANCE_CATEGORIES.map((category) => `<option value="${category.id}" ${String(normalized?.categoria_mantenimiento || 'otro') === category.id ? 'selected' : ''}>${category.icon} ${escapeHtml(category.label)}</option>`).join('')}</select></div><div><label class="mb-1 block text-sm font-bold">Prioridad</label><select name="prioridad" class="form-control w-full rounded-xl"><option value="0" ${Number(normalized?.prioridad) === 0 ? 'selected' : ''}>Baja</option><option value="1" ${Number(normalized?.prioridad ?? 1) === 1 ? 'selected' : ''}>Media</option><option value="2" ${Number(normalized?.prioridad) === 2 ? 'selected' : ''}>Alta</option><option value="3" ${Number(normalized?.prioridad) === 3 ? 'selected' : ''}>Urgente</option></select></div><div><label class="mb-1 block text-sm font-bold">Estado</label><select name="estado_display" class="form-control w-full rounded-xl bg-slate-100 text-slate-500" disabled aria-label="Estado actual"><option value="${escapeHtml(currentState)}" selected>${escapeHtml(getStatusMeta(currentState).text)}</option></select><input type="hidden" name="estado" value="${escapeHtml(currentState)}"></div><div><label class="mb-1 block text-sm font-bold">Fecha programada</label><input name="fecha_programada" type="date" class="form-control w-full rounded-xl" value="${escapeHtml(String(normalized?.fecha_programada || '').slice(0, 10))}"></div></div>
+      <div class="rounded-xl border border-violet-100 bg-violet-50 px-4 py-3 text-sm text-violet-900">${normalized?.plan_id ? 'Esta ejecución pertenece a una programación del calendario.' : 'Esta tarea se ejecutará una sola vez. Para repetirla, usa “Programar tarea” en el calendario de mantenimiento.'}</div>
       <div class="rounded-2xl border border-slate-200 p-4"><p class="mb-2 text-sm font-black text-slate-800">Evidencias privadas</p><div id="mant-full-existing" class="mb-3 space-y-2">${renderExistingAttachments(persisted)}</div><div class="grid grid-cols-2 gap-2"><label for="mant-full-camera" class="flex min-h-[48px] cursor-pointer items-center justify-center rounded-xl bg-slate-900 text-sm font-bold text-white">📷 Tomar foto</label><label for="mant-full-files" class="flex min-h-[48px] cursor-pointer items-center justify-center rounded-xl border border-slate-300 text-sm font-bold text-slate-700">📎 Adjuntar</label></div><input id="mant-full-camera" class="sr-only" type="file" accept="image/*" capture="environment"><input id="mant-full-files" class="sr-only" type="file" multiple accept="${escapeHtml(getMaintenanceEvidenceAcceptString())}"><div id="mant-full-selected" class="mt-2 space-y-1">${renderSelectedFiles([])}</div></div>
       <div id="mant-full-error" class="hidden rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700"></div>
       <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between"><div>${isEditing ? '<button type="button" id="mant-full-delete" class="button button-danger">Eliminar</button>' : ''}</div><div class="flex gap-2"><button type="button" id="mant-full-cancel" class="button button-secondary">Cancelar</button><button type="submit" id="mant-full-submit" class="button button-success">${isEditing ? 'Guardar cambios' : 'Crear tarea'}</button></div></div>
@@ -599,13 +608,14 @@ async function showFullTaskModal(container, supabase, hotelId, currentUser, task
     try {
       uploaded = await uploadMaintenanceEvidence({ supabase, hotelId, userId: currentUser?.id, files: selectedFiles, taskRequestId: requestId });
       const now = new Date().toISOString();
-      const completed = data.estado === 'completada';
+      const state = normalizeTaskState(data.estado || TASK_STATES.pendiente);
+      const completed = state === TASK_STATES.cerrado;
       const room = habitaciones.find((item) => String(item.id) === String(data.habitacion_id || '')) || null;
       const payload = {
         titulo: String(data.titulo).trim(), descripcion: String(data.descripcion || '').trim() || null,
-        prioridad: Number(data.prioridad || 0), estado: data.estado || 'pendiente',
+        prioridad: Number(data.prioridad || 0), estado: state,
         tipo: normalizeQuickImpact(data.tipo, room), categoria_mantenimiento: data.categoria || 'otro',
-        fecha_programada: data.fecha_programada || null, frecuencia: normalizeTaskFrequency(data.frecuencia),
+        fecha_programada: data.fecha_programada || null, frecuencia: normalized?.plan_id ? 'personalizada' : 'unica',
         asignada_a: data.asignada_a || null, habitacion_id: data.habitacion_id || null,
         adjuntos: [...persisted, ...uploaded].map(({ display_url, ...attachment }) => attachment),
         fecha_completada: completed ? (normalized?.fecha_completada || now) : null,
@@ -613,7 +623,6 @@ async function showFullTaskModal(container, supabase, hotelId, currentUser, task
         ultima_realizacion: completed ? now : (normalized?.ultima_realizacion || null)
       };
       const saved = isEditing ? await updateMaintenanceTask(supabase, hotelId, normalized.id, payload) : await createMaintenanceTask(supabase, hotelId, { ...payload, creada_por: currentUser?.id || null, solicitud_id: requestId });
-      await ensureNextPreventiveTask({ supabase, task: saved }).catch(() => {});
       await Promise.allSettled(removed.map((attachment) => deleteMaintenanceEvidence(supabase, attachment)));
       await notifyTaskChange({ supabase, hotelId, currentUser, rooms: habitaciones, task: saved, isEdit: isEditing });
       closeModal(target);
@@ -639,7 +648,6 @@ async function transitionTask(task, nextState, { claim = false } = {}) {
   };
   if (claim && mountedUser?.id) payload.asignada_a = mountedUser.id;
   const updated = await updateMaintenanceTask(supabaseInstance, mountedHotelId, task.id, payload);
-  await ensureNextPreventiveTask({ supabase: supabaseInstance, task: updated }).catch(() => {});
   const cache = mountedContainer?.__mantCache;
   await notifyTaskChange({ supabase: supabaseInstance, hotelId: mountedHotelId, currentUser: mountedUser, rooms: cache?.rooms || [], task: updated, isEdit: true });
   document.dispatchEvent(new CustomEvent('maintenanceChanged', { detail: { taskId: updated.id, action: nextState } }));
@@ -649,7 +657,7 @@ async function transitionTask(task, nextState, { claim = false } = {}) {
 async function notifyTaskChange({ supabase, hotelId, currentUser, rooms, task, isEdit }) {
   try {
     const roomName = rooms.find((room) => String(room.id) === String(task.habitacion_id))?.nombre || 'área general';
-    const completed = task.estado === 'completada';
+    const completed = normalizeTaskState(task.estado) === TASK_STATES.cerrado;
     const action = completed ? 'fue completada' : (isEdit ? 'fue actualizada' : 'fue reportada');
     await crearNotificacion(supabase, {
       hotelId,

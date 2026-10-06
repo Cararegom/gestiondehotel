@@ -299,13 +299,8 @@ test('7. rechaza transacciones fallidas y reversadas', async (t) => {
   }
 });
 
-test('8. la clave hotel+mensaje evita duplicar el mismo correo', async () => {
+test('8. la huella secundaria conserva fecha bancaria y referencia normalizada', async () => {
   const core = await corePromise;
-  const key = core.gmailMessageDeduplicationKey('pilot-id', 'gmail-123');
-  const seen = new Set([key]);
-  assert.equal(core.isDuplicateGmailMessage(seen, 'pilot-id', 'gmail-123'), true);
-  assert.equal(core.isDuplicateGmailMessage(seen, 'other-id', 'gmail-123'), false);
-
   const firstFingerprint = await core.transferFingerprint({
     hotelId: 'pilot-id',
     bankName: 'Banco de prueba',

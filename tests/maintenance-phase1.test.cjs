@@ -8,7 +8,6 @@ const workflowUi = fs.readFileSync('js/modules/mantenimiento/mantenimiento-workf
 const ui = fs.readFileSync('js/modules/mantenimiento/mantenimiento-mobile-ui.js', 'utf8');
 const domain = fs.readFileSync('js/modules/mantenimiento/mantenimiento-domain.js', 'utf8');
 const repository = fs.readFileSync('js/modules/mantenimiento/mantenimiento-repository.js', 'utf8');
-const preventive = fs.readFileSync('js/modules/mantenimiento/mantenimiento-preventivo.js', 'utf8');
 const evidence = fs.readFileSync('js/modules/mantenimiento/mantenimiento-evidencias.js', 'utf8');
 const enumMigration = fs.readFileSync('supabase/migrations/20260902032000_mantenimiento_tipo_profesional.sql', 'utf8');
 const hardening = fs.readFileSync('supabase/migrations/20260902032500_mantenimiento_fase1_hardening.sql', 'utf8');
@@ -21,7 +20,6 @@ test('maintenance entrypoint remains a small stable facade after the analytics e
   assert.match(workflowUi, /mantenimiento-mobile-ui\.js/);
   assert.match(ui, /mantenimiento-domain\.js/);
   assert.match(ui, /mantenimiento-repository\.js/);
-  assert.match(ui, /mantenimiento-preventivo\.js/);
   assert.match(ui, /mantenimiento-evidencias\.js/);
 });
 
@@ -83,8 +81,8 @@ test('realtime subscription is filtered by hotel', () => {
   assert.match(ui, /filter: `hotel_id=eq\.\$\{hotelId\}`/);
 });
 
-test('preventive scheduling remains isolated from UI', () => {
-  assert.match(preventive, /calculateNextScheduledDate/);
-  assert.match(preventive, /findOpenPreventiveTask/);
-  assert.match(preventive, /createNextPreventiveTask/);
+test('preventive scheduling is delegated to calendar plans', () => {
+  assert.doesNotMatch(ui, /mantenimiento-preventivo\.js/);
+  assert.doesNotMatch(domain, /calculateNextScheduledDate/);
+  assert.doesNotMatch(repository, /createNextPreventiveTask|findOpenPreventiveTask/);
 });

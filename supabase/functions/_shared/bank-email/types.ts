@@ -113,6 +113,8 @@ export interface BankSenderRule {
 export interface BankParserRule extends BankSenderRule {
   id: string;
   bankName: string;
+  /** IANA zone used by the bank in date/time text included in its messages. */
+  transactionTimeZone?: string;
   senderName?: string;
   expectedSubjectTerms?: string[];
   expectedBodyTerms?: string[];
@@ -142,6 +144,7 @@ export interface BankParseResult {
   parserId: string;
   parserVersion: string;
   bankName: string | null;
+  transactionTimeZone: string;
   disposition: ParserDisposition;
   amountCop: number | null;
   transactionOccurredAt: string | null;
