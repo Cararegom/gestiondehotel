@@ -1,3 +1,5 @@
+import { reportHandledError } from '../../services/handledErrorReporter.js';
+
 function parseEventoGoogle(evento) {
   if (!evento?.summary) return null;
 
@@ -53,7 +55,7 @@ function parseEventoICal(evento, habitaciones) {
   );
 
   if (!habitacionObj) {
-    console.warn(`[Sync ICal] Evento de ${evento.summary} descartado. No se encontro habitacion con el nombre: "${habitacionNombreDetectado}"`);
+    console.warn('[Sync ICal] Evento descartado porque la habitacion no tiene correspondencia local.');
     return null;
   }
 
@@ -96,7 +98,7 @@ export async function syncReservasConGoogleCalendar({
       { body: { hotelId } }
     );
     if (statusError) {
-      console.warn('[Sync] No fue posible comprobar el estado de Google Calendar:', statusError);
+      reportHandledError('reservas', 'calendar_status_check_failed', statusError);
       return;
     }
     if (!calendarStatus?.google?.connected) return;
@@ -107,10 +109,7 @@ export async function syncReservasConGoogleCalendar({
     ]);
 
     if (reservasResult.error || habitacionesResult.error) {
-      console.error('[Sync] Error obteniendo datos locales:', {
-        reservError: reservasResult.error,
-        habError: habitacionesResult.error
-      });
+      reportHandledError('reservas', 'calendar_local_data_load_failed');
       return;
     }
 
@@ -123,17 +122,7 @@ export async function syncReservasConGoogleCalendar({
     );
 
     if (errorInvocacion) {
-      let detalle = errorInvocacion.message;
-      try {
-        const respuesta = errorInvocacion.context;
-        if (respuesta && typeof respuesta.clone === 'function') {
-          const cuerpo = await respuesta.clone().json();
-          detalle = cuerpo?.error || cuerpo?.message || detalle;
-        }
-      } catch (_) {
-        // Conserva el mensaje original si la respuesta no contiene JSON.
-      }
-      console.error('[Sync] Error sincronizando Google Calendar:', detalle, errorInvocacion);
+      reportHandledError('reservas', 'calendar_sync_invocation_failed', errorInvocacion);
       return;
     }
 
@@ -156,7 +145,7 @@ export async function syncReservasConGoogleCalendar({
         if (habitacionEncontrada) {
           reservaParsed.habitacion_id = habitacionEncontrada.id;
         } else {
-          console.warn(`[Sync] Evento descartado. No se encontro ID para habitacion nombrada: "${reservaParsed.habitacion_nombre}"`);
+          console.warn('[Sync] Evento descartado porque la habitacion no tiene ID local.');
           continue;
         }
       }
@@ -181,7 +170,7 @@ export async function syncReservasConGoogleCalendar({
         .single();
 
       if (insertError) {
-        console.error('[Sync] No fue posible registrar la reserva:', insertError.message);
+        reportHandledError('reservas', 'calendar_reservation_insert_failed', insertError);
       } else {
         nuevasReservasInsertadas += 1;
         reservasActuales.push({ google_event_id: insertData.google_event_id });
@@ -192,6 +181,6 @@ export async function syncReservasConGoogleCalendar({
       await onNewReservations();
     }
   } catch (error) {
-    console.error('Error catastrofico en syncReservasConGoogleCalendar:', error);
+    reportHandledError('reservas', 'calendar_sync_failed', error);
   }
 }

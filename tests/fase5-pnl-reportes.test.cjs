@@ -31,6 +31,11 @@ test('financial close is blocked until every sale has a valid frozen cost', () =
   assert.match(closingSql, /'can_close',jsonb_array_length\(v_issues\)=0/);
   assert.match(pnl, /Pendientes que impiden cerrar el mes/);
   assert.match(pnl, /Configurar receta/);
+  assert.match(pnl, /gestionhotel\.costeo\.filter/);
+  assert.match(pnl, /gestionhotel\.costeo\.returnTo/);
+  assert.match(pnl, /rememberCostIssueContext/);
+  assert.match(pnl, /Recalcular en Costeo/);
+  assert.match(pnl, /#\/restaurante\?tab=platos&plato=/);
 });
 
 test('Reportes is the visible hub while legacy finance routes remain protected', () => {

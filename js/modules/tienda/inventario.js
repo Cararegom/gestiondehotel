@@ -1,5 +1,6 @@
 import { showError } from '../../uiUtils.js';
 import { crearNotificacion } from '../../services/NotificationService.js';
+import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 import { escapeAttribute, escapeHtml } from '../../security.js';
 import { tiendaState } from './state.js';
 import { checkTurnoActivo, closeModal, formatCurrency, getModalContainerEl, getTabContentEl, isMeseroRole, normalizeRoleKey } from './helpers.js';
@@ -735,21 +736,19 @@ async function saveMovimiento(productoId, tipo) {
     if (!user) throw new Error('No se pudo identificar al usuario.');
 
     const cantidad = parseInt(document.getElementById('movCantidad').value, 10);
-    const razon = document.getElementById('movRazon').value;
+    const razon = document.getElementById('movRazon').value.trim();
     if (isNaN(cantidad) || cantidad <= 0) throw new Error('La cantidad debe ser positiva.');
+    if (!razon) throw new Error('Debes indicar la razon del movimiento.');
 
     const producto = inventarioProductos.find((p) => p.id === productoId);
-    const stockAnterior = producto.stock_actual;
+    if (!producto) throw new Error('El producto ya no esta disponible.');
+    const stockMostrado = Number(producto.stock_actual) || 0;
     const stockMinimo = producto.stock_minimo || 0;
-    const nuevoStock = tipo === 'INGRESO'
-      ? stockAnterior + cantidad
-      : stockAnterior - cantidad;
-
-    if (tipo === 'SALIDA' && cantidad > stockAnterior) {
-      throw new Error(`No puedes dar salida a ${cantidad} unidades. Solo hay ${stockAnterior} en stock.`);
-    }
 
     if (tipo === 'SALIDA' && !isAdminOperativo()) {
+      if (cantidad > stockMostrado) {
+        throw new Error(`No puedes solicitar la salida de ${cantidad} unidades. El inventario muestra ${stockMostrado}.`);
+      }
       const { data, error } = await tiendaState.currentSupabase.rpc('solicitar_salida_inventario_tienda', {
         p_producto_id: productoId,
         p_cantidad: cantidad,
@@ -766,22 +765,32 @@ async function saveMovimiento(productoId, tipo) {
       return;
     }
 
-    const movimientoData = {
-      hotel_id: tiendaState.currentHotelId,
-      producto_id: productoId,
-      tipo_movimiento: tipo,
-      cantidad,
+    const delta = tipo === 'INGRESO' ? cantidad : -cantidad;
+    const operationScope = buildOperationScope('inventario-ajuste', {
+      hotelId: tiendaState.currentHotelId,
+      productoId,
+      delta,
       razon,
-      usuario_responsable: user.user_metadata?.full_name || user.user_metadata?.nombre || user.email,
-      stock_anterior: stockAnterior,
-      stock_nuevo: nuevoStock,
-    };
+    });
+    const { data: ajuste, error: ajusteError } = await tiendaState.currentSupabase.rpc('ajustar_stock_tienda_seguro', {
+      p_producto_id: productoId,
+      p_delta: delta,
+      p_reason: razon,
+      p_client_operation_id: getStableOperationId(operationScope),
+    });
+    if (ajusteError) {
+      if (/A16_STOCK_INSUFICIENTE|Stock insuficiente/i.test(ajusteError.message || '')) {
+        throw new Error('No hay stock suficiente para completar esta salida. Actualiza el inventario e intenta nuevamente.');
+      }
+      throw ajusteError;
+    }
 
-    const { error: movError } = await tiendaState.currentSupabase.from('movimientos_inventario').insert([movimientoData]);
-    if (movError) throw movError;
-
-    const { error: prodError } = await tiendaState.currentSupabase.from('productos_tienda').update({ stock_actual: nuevoStock, actualizado_en: new Date().toISOString() }).eq('id', productoId);
-    if (prodError) throw prodError;
+    const stockAnterior = Number(ajuste?.stock_anterior);
+    const nuevoStock = Number(ajuste?.stock_actual);
+    if (!ajuste?.producto_id || !Number.isFinite(stockAnterior) || !Number.isFinite(nuevoStock)) {
+      throw new Error('El servidor no confirmo el resultado del ajuste de inventario.');
+    }
+    completeStableOperation(operationScope);
 
     if (tipo === 'SALIDA' && stockAnterior > stockMinimo && nuevoStock <= stockMinimo && stockMinimo > 0) {
       try {

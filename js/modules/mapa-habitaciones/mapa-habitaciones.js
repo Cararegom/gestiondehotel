@@ -4,6 +4,8 @@ import { showClienteSelectorModal, mostrarFormularioCliente } from '../clientes/
 import { registrarUsoDescuento } from '../../uiUtils.js';
 import { renderFloorFilters, getRoomOperationalAlerts } from './room-card.js';
 import { startCronometro, clearTodosLosCronometros } from './cronometro-habitacion.js';
+import { syncOperationalRoomStates } from './operational-room-state-sync.js';
+import { mountMapaPaymentDates, unmountMapaPaymentDates } from '../../mapa-fechas-abonos-inline.js';
 
 let containerGlobal = null;
 let supabaseGlobal = null;
@@ -180,36 +182,6 @@ function applyUpcomingReservationLocks(rooms) {
         room.estado = 'reservada';
       }
     }
-  });
-}
-
-async function syncOperationalRoomStates(rooms, supabase, hotelId) {
-  const corrections = (Array.isArray(rooms) ? rooms : []).filter((room) => (
-    room?.needsOperationalResync
-    && room?.id
-    && room?.estado
-    && room.estado !== room.estado_base
-  ));
-
-  if (corrections.length === 0 || !supabase || !hotelId) return;
-
-  const results = await Promise.all(corrections.map((room) => (
-    supabase
-      .from('habitaciones')
-      .update({ estado: room.estado })
-      .eq('hotel_id', hotelId)
-      .eq('id', room.id)
-  )));
-
-  results.forEach((result, index) => {
-    const room = corrections[index];
-    if (result.error) {
-      console.warn(`[MapaHotel] No se pudo reconciliar el estado de la habitacion ${room?.nombre || room?.id}:`, result.error);
-      return;
-    }
-
-    room.estado_base = room.estado;
-    room.needsOperationalResync = false;
   });
 }
 
@@ -432,6 +404,7 @@ export async function mount(container, supabase, currentUser, hotelId) {
   if (!readOnly) {
     const hayTurno = await checkTurnoActivo(supabase, hotelId, currentUser.id);
     if (!hayTurno) return;
+    mountMapaPaymentDates({ supabase, hotelId });
   }
 
   buildBaseLayout(container, { readOnly });
@@ -468,7 +441,14 @@ export async function renderRooms(gridEl, supabase, currentUser, hotelId) {
   currentRooms = Array.isArray(habitaciones) ? habitaciones : [];
   applyUpcomingReservationLocks(currentRooms);
   if (!isAseoReadOnlyUser(currentUser)) {
-    await syncOperationalRoomStates(currentRooms, supabase, hotelId);
+    await syncOperationalRoomStates(currentRooms, supabase, hotelId, {
+      onError: ({ estado, roomIds, error }) => {
+        console.warn(
+          `[MapaHotel] No se pudo reconciliar el estado ${estado} de ${roomIds.length} habitacion(es):`,
+          error,
+        );
+      },
+    });
   }
   sortRooms(currentRooms);
   renderMapaKpis(currentRooms, kpiContainer);
@@ -478,6 +458,8 @@ export async function renderRooms(gridEl, supabase, currentUser, hotelId) {
 }
 
 export function unmount(container) {
+  unmountMapaPaymentDates();
+
   if (refreshListener) {
     document.removeEventListener('renderRoomsComplete', refreshListener);
     refreshListener = null;

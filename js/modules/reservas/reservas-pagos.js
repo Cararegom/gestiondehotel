@@ -2,6 +2,7 @@ import { formatCurrency } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 import { registrarEnBitacora } from '../../services/bitacoraservice.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
 
 function getCurrencyArgs(configHotel = {}) {
   return [
@@ -158,7 +159,7 @@ export async function showPagoMixtoModal({
       await onConfirm(pagosFinales);
       closeModal();
     } catch (error) {
-      console.error('Error en pago mixto:', error);
+      reportHandledError('reservas', 'mixed_payment_failed', error);
       btnConfirmar.disabled = false;
       btnConfirmar.textContent = 'Confirmar Pago';
       Swal.fire('Error', 'Hubo un problema al procesar el pago. Intente nuevamente.', 'error');

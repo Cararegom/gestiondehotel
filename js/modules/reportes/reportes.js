@@ -13,6 +13,16 @@ import { registrarEnBitacora } from '../../services/bitacoraservice.js';
 import { formatCurrency, formatDateTime, showConsumosYFacturarModal, mostrarInfoModalGlobal } from '../../uiUtils.js';
 import { escapeAttribute, escapeHtml } from '../../security.js';
 import { getReservaOriginFunnelStage, getReservaOriginLabel } from '../reservas/reservas-operacion.js';
+import {
+  aggregateAmountsByHotelPeriod,
+  aggregateIncomeByHotelDate,
+  buildReportDateKeys,
+  calculateHotelWeekdayMetrics,
+  getDefaultReportDateRange,
+  getReportComparisonRanges,
+  getReportUtcRange
+} from '../../services/reportesTimeZoneService.js';
+import { fetchAllWithPagination } from '../../services/supabasePaginationService.js';
 
 function legacyHandleVerConsumosDesdeReporte(roomContext) {
     // Esta función se encarga de llamar al modal, pasándole las variables
@@ -186,43 +196,6 @@ function exportarTablaAExcel(titulo, headers, data, nombreArchivo) {
   XLSX.writeFile(workbook, `${nombreArchivo}.xlsx`);
 }
 
-/**
- * Obtiene todos los registros de una consulta de Supabase utilizando paginación.
- * Maneja automáticamente el límite de 1,000 filas por consulta.
- * @param {object} queryBuilder - La consulta de Supabase ya construida (sin .range() o .limit()).
- * @returns {Promise<{data: Array, error: object}>} Un objeto con todos los datos o un error.
- */
-async function fetchAllWithPagination(queryBuilder) {
-    let allData = [];
-    let from = 0;
-    const pageSize = 1000; // El tamaño de página que usa Supabase por defecto
-
-    while (true) {
-        const { data, error } = await queryBuilder.range(from, from + pageSize - 1);
-
-        if (error) {
-            console.error("Error durante la obtención de datos paginados:", error);
-            return { data: null, error }; // Devuelve el error para detener la ejecución
-        }
-
-        if (data && data.length > 0) {
-            allData.push(...data); // Usa push con spread operator para eficiencia
-            from += pageSize;
-        } else {
-            // Si no vienen más datos, hemos terminado.
-            break;
-        }
-
-        // Una medida de seguridad para evitar bucles infinitos en casos extraños.
-        // 50,000 registros deberían ser más que suficientes para cualquier reporte.
-        if (from > 50000) { 
-             console.warn("La paginación se detuvo en 50,000 registros para prevenir un posible bucle infinito.");
-             break;
-        }
-    }
-    return { data: allData, error: null };
-}
-
 function renderSelectorReportes(planActivo) {
   // Lista de todos los reportes (puedes agregar/quitar)
   const TODOS_LOS_REPORTES = [
@@ -294,8 +267,7 @@ async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInpu
     resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Generando listado de reservas...</p>';
 
     try {
-        const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
-        const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
+        const reportRange = getReportUtcRange(fechaInicioInput, fechaFinInput);
 
         let query = supabaseClient
             .from('reservas')
@@ -304,10 +276,11 @@ async function generarReporteListadoReservas(resultsContainerEl, fechaInicioInpu
                 habitacion_id, habitaciones (nombre), metodo_pago_id, usuario_id 
             `)
             .eq('hotel_id', currentHotelId)
-            .order('fecha_inicio', { ascending: false });
+            .order('fecha_inicio', { ascending: false })
+            .order('id', { ascending: true });
 
-        if (fechaInicioInput) query = query.gte('fecha_inicio', fechaInicioQuery);
-        if (fechaFinInput) query = query.lte('fecha_inicio', fechaFinQuery);
+        if (fechaInicioInput) query = query.gte('fecha_inicio', reportRange.startIso);
+        if (fechaFinInput) query = query.lt('fecha_inicio', reportRange.endExclusiveIso);
         
         // USAR LA FUNCIÓN DE PAGINACIÓN
         const { data: reservas, error } = await fetchAllWithPagination(query);
@@ -394,44 +367,32 @@ async function generarReporteIngresosPorPeriodo(resultsContainerEl, fechaInicioI
     }
     destroyChartInstance('reporte-ingresos-habitaciones-chart');
     try {
-        const start = new Date(`${fechaInicioInput}T00:00:00.000Z`);
-        const end = new Date(`${fechaFinInput}T23:59:59.999Z`);
-        if (isNaN(start.getTime()) || isNaN(end.getTime()) || start > end) {
-            throw new Error('Rango de fechas inválido.');
-        }
-
-        const fechaInicioQuery = start.toISOString();
-        const fechaFinQuery = end.toISOString();
+        const reportRange = getReportUtcRange(fechaInicioInput, fechaFinInput);
 
         // 1. Obtener todos los movimientos relevantes en una sola consulta
-        const { data: movimientos, error: fetchError } = await supabaseClient
+        const query = supabaseClient
             .from('caja')
-            .select('fecha_movimiento, monto')
+            .select('id, fecha_movimiento, monto')
             .eq('hotel_id', currentHotelId)
             .eq('tipo', 'ingreso')
-            .gte('fecha_movimiento', fechaInicioQuery)
-            .lte('fecha_movimiento', fechaFinQuery)
-            .or('concepto.ilike.Alquiler de%,concepto.ilike.Extensión de%,concepto.ilike.Estadia en%,concepto.ilike.Noche adicional%,reserva_id.not.is.null');
+            .gte('fecha_movimiento', reportRange.startIso)
+            .lt('fecha_movimiento', reportRange.endExclusiveIso)
+            .or('concepto.ilike.Alquiler de%,concepto.ilike.Extensión de%,concepto.ilike.Estadia en%,concepto.ilike.Noche adicional%,reserva_id.not.is.null')
+            .order('fecha_movimiento', { ascending: true })
+            .order('id', { ascending: true });
+
+        const { data: movimientos, error: fetchError } = await fetchAllWithPagination(query);
 
         if (fetchError) {
             throw new Error(`Error al consultar la caja: ${fetchError.message}`);
         }
 
         // 2. Procesar los resultados en JavaScript para agrupar por día
-        const ingresosDiarios = {};
-        (movimientos || []).forEach(mov => {
-            const fecha = mov.fecha_movimiento.slice(0, 10); // Extraer YYYY-MM-DD
-            ingresosDiarios[fecha] = (ingresosDiarios[fecha] || 0) + mov.monto;
-        });
+        const ingresosDiarios = aggregateIncomeByHotelDate(movimientos, reportRange.timeZone);
 
         // 3. Generar etiquetas y datos para el rango de fechas completo, rellenando los días con cero ingresos
-        const labels = [];
-        const dailyIncomeValues = [];
-        for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-            const currentDateISO = d.toISOString().slice(0, 10);
-            labels.push(currentDateISO);
-            dailyIncomeValues.push(ingresosDiarios[currentDateISO] || 0);
-        }
+        const labels = buildReportDateKeys(fechaInicioInput, fechaFinInput);
+        const dailyIncomeValues = labels.map((dateKey) => ingresosDiarios[dateKey] || 0);
 
         // 4. Renderizar el gráfico (código de renderizado sin cambios)
         resultsContainerEl.innerHTML = `
@@ -488,8 +449,7 @@ async function generarReporteIngresosTerraza(resultsContainerEl, fechaInicioInpu
     if (!currentHotelId) return;
 
     try {
-        const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
-        const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
+        const reportRange = getReportUtcRange(fechaInicioInput, fechaFinInput);
 
         const query = supabaseClient
             .from('caja')
@@ -500,9 +460,10 @@ async function generarReporteIngresosTerraza(resultsContainerEl, fechaInicioInpu
             .eq('hotel_id', currentHotelId)
             .eq('tipo', 'ingreso')
             .not('venta_terraza_id', 'is', null)
-            .gte('fecha_movimiento', fechaInicioQuery)
-            .lte('fecha_movimiento', fechaFinQuery)
-            .order('fecha_movimiento', { ascending: true });
+            .gte('fecha_movimiento', reportRange.startIso)
+            .lt('fecha_movimiento', reportRange.endExclusiveIso)
+            .order('fecha_movimiento', { ascending: true })
+            .order('id', { ascending: true });
 
         const { data, error } = await fetchAllWithPagination(query);
         if (error) throw error;
@@ -529,12 +490,7 @@ async function generarReporteIngresosTerraza(resultsContainerEl, fechaInicioInpu
         const total = consumo + propinas;
         const cuentas = new Set(movimientos.map((mov) => mov.venta_terraza_id).filter(Boolean)).size;
 
-        const ingresosPorDia = movimientos.reduce((acc, mov) => {
-            const fecha = String(mov.fecha_movimiento || mov.creado_en || '').slice(0, 10);
-            if (!fecha) return acc;
-            acc[fecha] = (acc[fecha] || 0) + mov.monto;
-            return acc;
-        }, {});
+        const ingresosPorDia = aggregateIncomeByHotelDate(movimientos);
         const labels = Object.keys(ingresosPorDia).sort();
         const values = labels.map((fecha) => ingresosPorDia[fecha]);
 
@@ -659,23 +615,7 @@ function categorizarMovimiento(movimiento, serviciosAdicionales = []) {
 }
 
 function agregarDatosPorPeriodo(movimientos, agrupacion) {
-    const agregados = {};
-    movimientos.forEach(mov => {
-        const fecha = new Date(mov.fecha_movimiento);
-        if (isNaN(fecha.getTime())) return;
-        let clavePeriodo = '';
-        const year = fecha.getFullYear(); const month = fecha.getMonth();
-        switch (agrupacion) {
-            case 'diario': clavePeriodo = fecha.toISOString().slice(0, 10); break;
-            case 'mensual': clavePeriodo = `${year}-M${String(month + 1).padStart(2, '0')}`; break; // Prefix with M for sorting
-            case 'bimestral': clavePeriodo = `${year}-B${Math.floor(month / 2) + 1}`; break;
-            case 'trimestral': clavePeriodo = `${year}-T${Math.floor(month / 3) + 1}`; break;
-            case 'semestral': clavePeriodo = `${year}-S${Math.floor(month / 6) + 1}`; break;
-            case 'anual': clavePeriodo = String(year); break;
-            default: clavePeriodo = fecha.toISOString().slice(0, 10);
-        }
-        agregados[clavePeriodo] = (agregados[clavePeriodo] || 0) + mov.monto;
-    });
+    const agregados = aggregateAmountsByHotelPeriod(movimientos, agrupacion);
     const clavesOrdenadas = Object.keys(agregados).sort(robustPeriodSort);
     return { labels: clavesOrdenadas, data: clavesOrdenadas.map(clave => agregados[clave]) };
 }
@@ -782,8 +722,7 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
     destroyChartInstance('reporte-egresos-categoria-pie-chart');
     
     try {
-        const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
-        const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
+        const reportRange = getReportUtcRange(fechaInicioInput, fechaFinInput);
 
         const query = supabaseClient
             .from('caja')
@@ -793,9 +732,10 @@ async function generarReporteFinancieroGlobal(resultsContainerEl, fechaInicioInp
                 metodo_pago_id, metodos_pago(nombre), creado_en 
             `)
             .eq('hotel_id', currentHotelId)
-            .gte('fecha_movimiento', fechaInicioQuery)
-            .lte('fecha_movimiento', fechaFinQuery)
-            .order('fecha_movimiento', { ascending: true });
+            .gte('fecha_movimiento', reportRange.startIso)
+            .lt('fecha_movimiento', reportRange.endExclusiveIso)
+            .order('fecha_movimiento', { ascending: true })
+            .order('id', { ascending: true });
 
         const { data: movimientos, error: errorMovimientos } = await fetchAllWithPagination(query);
 
@@ -949,18 +889,22 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
             return;
         }
 
-        const fechaInicio = new Date(`${fechaInicioInput}T00:00:00.000Z`);
-        const fechaFin = new Date(`${fechaFinInput}T23:59:59.999Z`);
+        const reportRange = getReportUtcRange(fechaInicioInput, fechaFinInput);
+        const reportDateKeys = buildReportDateKeys(fechaInicioInput, fechaFinInput);
         
         const estadosOcupadosValidos = ['confirmada', 'activa', 'check_in']; 
 
-        const { data: todasLasReservas, error: errRes } = await supabaseClient
+        const reservasQuery = supabaseClient
             .from('reservas')
             .select('id, habitacion_id, fecha_inicio, fecha_fin, estado')
             .eq('hotel_id', currentHotelId)
             .in('estado', estadosOcupadosValidos)
-            .lte('fecha_inicio', fechaFin.toISOString()) 
-            .gte('fecha_fin', fechaInicio.toISOString()); 
+            .lt('fecha_inicio', reportRange.endExclusiveIso)
+            .gte('fecha_fin', reportRange.startIso)
+            .order('fecha_inicio', { ascending: true })
+            .order('id', { ascending: true });
+
+        const { data: todasLasReservas, error: errRes } = await fetchAllWithPagination(reservasQuery);
             
         if (errRes) {
             console.error('Supabase error fetching reservations for occupancy:', errRes);
@@ -969,20 +913,19 @@ async function generarReporteOcupacion(resultsContainerEl, fechaInicioInput, fec
 
         const occupancyData = [];
         let totalNochesOcupadas = 0;
-        let countDaysInPeriod = 0;
+        const countDaysInPeriod = reportDateKeys.length;
 
-        for (let d = new Date(fechaInicio); d <= fechaFin; d.setDate(d.getDate() + 1)) {
-            countDaysInPeriod++;
-            const currentDateStr = d.toISOString().slice(0, 10);
-            const inicioDia = new Date(currentDateStr + "T00:00:00.000Z");
-            const finDia = new Date(currentDateStr + "T23:59:59.999Z");
+        for (const currentDateStr of reportDateKeys) {
+            const dayRange = getReportUtcRange(currentDateStr, currentDateStr);
+            const inicioDiaMs = Date.parse(dayRange.startIso);
+            const finDiaExclusivoMs = Date.parse(dayRange.endExclusiveIso);
             
             let habitacionesOcupadasHoy = new Set();
 
             (todasLasReservas || []).forEach(reserva => {
-                const resInicio = new Date(reserva.fecha_inicio);
-                const resFin = new Date(reserva.fecha_fin);
-                if (resInicio <= finDia && resFin >= inicioDia) {
+                const resInicioMs = Date.parse(reserva.fecha_inicio);
+                const resFinMs = Date.parse(reserva.fecha_fin);
+                if (resInicioMs < finDiaExclusivoMs && resFinMs >= inicioDiaMs) {
                     habitacionesOcupadasHoy.add(reserva.habitacion_id);
                 }
             });
@@ -1090,11 +1033,14 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
         if (!turnoData) throw new Error('No se encontró el turno especificado.');
 
         // 2. Fetch movements for this specific shift
-        const { data: movimientos, error: movError } = await supabaseClient
+        const movimientosQuery = supabaseClient
             .from('caja')
             .select('*, usuarios(nombre), metodos_pago(nombre)') // Seleccionar todo de caja y nombres de usuario/método
             .eq('turno_id', turnoId)
-            .order('creado_en', { ascending: true });
+            .order('creado_en', { ascending: true })
+            .order('id', { ascending: true });
+
+        const { data: movimientos, error: movError } = await fetchAllWithPagination(movimientosQuery);
 
         if (movError) throw movError;
 
@@ -1276,10 +1222,9 @@ async function generarReporteCierresDeCaja(resultsContainerEl, fechaInicioInput,
     const feedbackEl = document.getElementById('reportes-feedback'); // General feedback element for the module
 
     try {
-        const fechaInicioQuery = `${fechaInicioInput}T00:00:00.000Z`;
-        const fechaFinQuery = `${fechaFinInput}T23:59:59.999Z`;
+        const reportRange = getReportUtcRange(fechaInicioInput, fechaFinInput);
 
-        const { data: cierres, error } = await supabaseClient
+        const cierresQuery = supabaseClient
         .from('turnos')
         .select(`
             id,
@@ -1291,9 +1236,12 @@ async function generarReporteCierresDeCaja(resultsContainerEl, fechaInicioInput,
         `) // MODIFICADO: created_at -> fecha_apertura
         .eq('hotel_id', currentHotelId)
         .eq('estado', 'cerrado')
-        .gte('fecha_cierre', fechaInicioQuery)
-        .lte('fecha_cierre', fechaFinQuery)
-        .order('fecha_cierre', { ascending: false });
+        .gte('fecha_cierre', reportRange.startIso)
+        .lt('fecha_cierre', reportRange.endExclusiveIso)
+        .order('fecha_cierre', { ascending: false })
+        .order('id', { ascending: true });
+
+    const { data: cierres, error } = await fetchAllWithPagination(cierresQuery);
 
     if (error) throw error;
 
@@ -1395,8 +1343,7 @@ async function generarReporteKPIsAvanzados(resultsContainerEl, fechaInicioInput,
  * @returns {Promise<object>} Un objeto con todos los datos requeridos.
  */
 async function fetchKPIData(fechaInicio, fechaFin) {
-    const fechaInicioQuery = `${fechaInicio}T00:00:00.000Z`;
-    const fechaFinQuery = `${fechaFin}T23:59:59.999Z`;
+    const reportRange = getReportUtcRange(fechaInicio, fechaFin);
 
     const [
         reservasResult, 
@@ -1405,17 +1352,29 @@ async function fetchKPIData(fechaInicio, fechaFin) {
         ventasTiendaResult, 
         serviciosResult
     ] = await Promise.all([
-        supabaseClient.from('reservas').select(`id, fecha_inicio, fecha_fin, monto_total, estado, cliente_id, clientes (nombre), habitaciones (nombre)`)
-            .eq('hotel_id', currentHotelId).gte('fecha_inicio', fechaInicioQuery).lte('fecha_inicio', fechaFinQuery),
-        supabaseClient.from('caja').select('fecha_movimiento, monto').eq('hotel_id', currentHotelId).eq('tipo', 'ingreso')
-            .gte('fecha_movimiento', fechaInicioQuery).lte('fecha_movimiento', fechaFinQuery),
+        fetchAllWithPagination(
+            supabaseClient.from('reservas').select(`id, fecha_inicio, fecha_fin, monto_total, estado, cliente_id, clientes (nombre), habitaciones (nombre)`)
+                .eq('hotel_id', currentHotelId).gte('fecha_inicio', reportRange.startIso).lt('fecha_inicio', reportRange.endExclusiveIso)
+                .order('fecha_inicio', { ascending: true }).order('id', { ascending: true })
+        ),
+        fetchAllWithPagination(
+            supabaseClient.from('caja').select('id, fecha_movimiento, monto').eq('hotel_id', currentHotelId).eq('tipo', 'ingreso')
+                .gte('fecha_movimiento', reportRange.startIso).lt('fecha_movimiento', reportRange.endExclusiveIso)
+                .order('fecha_movimiento', { ascending: true }).order('id', { ascending: true })
+        ),
         supabaseClient.from('habitaciones').select('*', { count: 'exact', head: true }).eq('hotel_id', currentHotelId).eq('activo', true),
-        supabaseClient.from('detalle_ventas_tienda').select(`cantidad, subtotal, producto:productos_tienda!detalle_ventas_tienda_producto_id_fkey(nombre)`)
-            .eq('hotel_id', currentHotelId).gte('creado_en', fechaInicioQuery).lte('creado_en', fechaFinQuery),
+        fetchAllWithPagination(
+            supabaseClient.from('detalle_ventas_tienda').select(`id, cantidad, subtotal, producto:productos_tienda!detalle_ventas_tienda_producto_id_fkey(nombre)`)
+                .eq('hotel_id', currentHotelId).gte('creado_en', reportRange.startIso).lt('creado_en', reportRange.endExclusiveIso)
+                .order('creado_en', { ascending: true }).order('id', { ascending: true })
+        ),
         
         // ▼▼▼ CORRECCIÓN AQUÍ: Se añade "descripcion_manual" a la consulta ▼▼▼
-        supabaseClient.from('servicios_x_reserva').select(`cantidad, precio_cobrado, descripcion_manual, servicio:servicios_adicionales(nombre)`)
-            .eq('hotel_id', currentHotelId).gte('creado_en', fechaInicioQuery).lte('creado_en', fechaFinQuery)
+        fetchAllWithPagination(
+            supabaseClient.from('servicios_x_reserva').select(`id, cantidad, precio_cobrado, descripcion_manual, servicio:servicios_adicionales(nombre)`)
+                .eq('hotel_id', currentHotelId).gte('creado_en', reportRange.startIso).lt('creado_en', reportRange.endExclusiveIso)
+                .order('creado_en', { ascending: true }).order('id', { ascending: true })
+        )
         // ▲▲▲ FIN DE LA CORRECCIÓN ▲▲▲
     ]);
 
@@ -1439,7 +1398,8 @@ async function fetchKPIData(fechaInicio, fechaFin) {
         movimientosIngreso: results.ingresos.data,
         totalHabitaciones: results.habitaciones.count,
         detallesVentasTienda: results.ventasTienda.data,
-        serviciosVendidos: results.servicios.data
+        serviciosVendidos: results.servicios.data,
+        timeZone: reportRange.timeZone
     };
 }
 
@@ -1450,13 +1410,13 @@ async function fetchKPIData(fechaInicio, fechaFin) {
  * @returns {object} Un objeto con todos los KPIs calculados.
  */
 function calculateKPIs(data, fechaInicio, fechaFin) {
-    const { reservas, movimientosIngreso, totalHabitaciones, detallesVentasTienda, serviciosVendidos } = data;
+    const { reservas, movimientosIngreso, totalHabitaciones, detallesVentasTienda, serviciosVendidos, timeZone } = data;
 
     // Hotelería (sin cambios)
     const reservasValidas = reservas.filter(r => r.estado !== 'cancelada' && r.estado !== 'no_show');
     const totalNoches = reservasValidas.reduce((sum, r) => sum + (new Date(r.fecha_fin) - new Date(r.fecha_inicio)) / (1000 * 60 * 60 * 24), 0);
     const totalIngresosHabitaciones = reservasValidas.reduce((sum, r) => sum + Number(r.monto_total || 0), 0);
-    const diasEnPeriodo = (new Date(fechaFin) - new Date(fechaInicio)) / (1000 * 60 * 60 * 24) + 1;
+    const diasEnPeriodo = buildReportDateKeys(fechaInicio, fechaFin).length;
     const totalNochesDisponibles = totalHabitaciones * diasEnPeriodo;
     
     // Mejor Cliente (sin cambios)
@@ -1470,15 +1430,14 @@ function calculateKPIs(data, fechaInicio, fechaFin) {
 
     // Días de mayor y menor movimiento (sin cambios)
     const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-    const demandaPorDia = new Array(7).fill(0);
-    reservasValidas.forEach(r => { demandaPorDia[new Date(r.fecha_inicio).getUTCDay()]++; });
+    const { demandaPorDia, ingresosPorDiaSemana, conteoDeDiasEnRango } = calculateHotelWeekdayMetrics({
+        reservas: reservasValidas,
+        movimientosIngreso,
+        startDate: fechaInicio,
+        endDate: fechaFin,
+        timeZone
+    });
     const maxDemanda = Math.max(...demandaPorDia);
-    const ingresosPorDiaSemana = new Array(7).fill(0);
-    const conteoDeDiasEnRango = new Array(7).fill(0);
-    for (let d = new Date(fechaInicio); d <= new Date(fechaFin); d.setDate(d.getDate() + 1)) {
-        conteoDeDiasEnRango[d.getUTCDay()]++;
-    }
-    movimientosIngreso.forEach(mov => { ingresosPorDiaSemana[new Date(mov.fecha_movimiento).getUTCDay()] += Number(mov.monto); });
     let minPromedio = Infinity;
     let diaMenosMovido = "N/A";
     ingresosPorDiaSemana.forEach((total, i) => {
@@ -1656,19 +1615,15 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
     if (!resultsContainerEl) return;
     resultsContainerEl.innerHTML = '<p class="loading-indicator text-center p-4 text-gray-500">Armando comparativo gerencial...</p>';
 
-    const currentStart = new Date(`${fechaInicioInput}T00:00:00.000Z`);
-    const currentEnd = new Date(`${fechaFinInput}T23:59:59.999Z`);
-    if (Number.isNaN(currentStart.getTime()) || Number.isNaN(currentEnd.getTime()) || currentStart > currentEnd) {
+    let comparisonRanges;
+    try {
+        comparisonRanges = getReportComparisonRanges(fechaInicioInput, fechaFinInput);
+    } catch {
         resultsContainerEl.innerHTML = '<p class="error-indicator text-center p-4 text-red-600 bg-red-50 rounded-md">El rango de fechas no es valido.</p>';
         return;
     }
-
-    const periodLengthMs = currentEnd.getTime() - currentStart.getTime();
-    const previousEnd = new Date(currentStart.getTime() - 1);
-    const previousStart = new Date(previousEnd.getTime() - periodLengthMs);
-
-    const toIsoStart = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
-    const toIsoEnd = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59, 999).toISOString();
+    const currentRange = comparisonRanges.current;
+    const previousRange = comparisonRanges.previous;
 
     try {
         const [
@@ -1682,59 +1637,94 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
             inspeccionesCurrentRes,
             mantenimientoCurrentRes
         ] = await Promise.all([
-            supabaseClient
-                .from('reservas')
-                .select('id, fecha_inicio, fecha_fin, monto_total, monto_pagado, estado, origen_reserva')
-                .eq('hotel_id', currentHotelId)
-                .gte('fecha_inicio', currentStart.toISOString())
-                .lte('fecha_inicio', currentEnd.toISOString()),
-            supabaseClient
-                .from('reservas')
-                .select('id, fecha_inicio, fecha_fin, monto_total, monto_pagado, estado, origen_reserva')
-                .eq('hotel_id', currentHotelId)
-                .gte('fecha_inicio', previousStart.toISOString())
-                .lte('fecha_inicio', previousEnd.toISOString()),
-            supabaseClient
-                .from('caja')
-                .select('tipo, monto, fecha_movimiento')
-                .eq('hotel_id', currentHotelId)
-                .gte('fecha_movimiento', currentStart.toISOString())
-                .lte('fecha_movimiento', currentEnd.toISOString()),
-            supabaseClient
-                .from('caja')
-                .select('tipo, monto, fecha_movimiento')
-                .eq('hotel_id', currentHotelId)
-                .gte('fecha_movimiento', previousStart.toISOString())
-                .lte('fecha_movimiento', previousEnd.toISOString()),
-            supabaseClient
-                .from('lista_espera_reservas')
-                .select('id, estado, fecha_inicio')
-                .eq('hotel_id', currentHotelId)
-                .gte('fecha_inicio', currentStart.toISOString())
-                .lte('fecha_inicio', currentEnd.toISOString()),
-            supabaseClient
-                .from('lista_espera_reservas')
-                .select('id, estado, fecha_inicio')
-                .eq('hotel_id', currentHotelId)
-                .gte('fecha_inicio', previousStart.toISOString())
-                .lte('fecha_inicio', previousEnd.toISOString()),
-            supabaseClient
-                .from('reglas_tarifas')
-                .select('id, nombre, activo, fecha_inicio, fecha_fin')
-                .eq('hotel_id', currentHotelId)
-                .eq('activo', true),
-            supabaseClient
-                .from('inspecciones_limpieza')
-                .select('id, puntaje, creado_en')
-                .eq('hotel_id', currentHotelId)
-                .gte('creado_en', currentStart.toISOString())
-                .lte('creado_en', currentEnd.toISOString()),
-            supabaseClient
-                .from('tareas_mantenimiento')
-                .select('id, estado, frecuencia, tipo, fecha_programada, fecha_completada')
-                .eq('hotel_id', currentHotelId)
-                .gte('creado_en', currentStart.toISOString())
-                .lte('creado_en', currentEnd.toISOString())
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('reservas')
+                    .select('id, fecha_inicio, fecha_fin, monto_total, monto_pagado, estado, origen_reserva')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('fecha_inicio', currentRange.startIso)
+                    .lt('fecha_inicio', currentRange.endExclusiveIso)
+                    .order('fecha_inicio', { ascending: true })
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('reservas')
+                    .select('id, fecha_inicio, fecha_fin, monto_total, monto_pagado, estado, origen_reserva')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('fecha_inicio', previousRange.startIso)
+                    .lt('fecha_inicio', previousRange.endExclusiveIso)
+                    .order('fecha_inicio', { ascending: true })
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('caja')
+                    .select('id, tipo, monto, fecha_movimiento')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('fecha_movimiento', currentRange.startIso)
+                    .lt('fecha_movimiento', currentRange.endExclusiveIso)
+                    .order('fecha_movimiento', { ascending: true })
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('caja')
+                    .select('id, tipo, monto, fecha_movimiento')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('fecha_movimiento', previousRange.startIso)
+                    .lt('fecha_movimiento', previousRange.endExclusiveIso)
+                    .order('fecha_movimiento', { ascending: true })
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('lista_espera_reservas')
+                    .select('id, estado, fecha_inicio')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('fecha_inicio', currentRange.startIso)
+                    .lt('fecha_inicio', currentRange.endExclusiveIso)
+                    .order('fecha_inicio', { ascending: true })
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('lista_espera_reservas')
+                    .select('id, estado, fecha_inicio')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('fecha_inicio', previousRange.startIso)
+                    .lt('fecha_inicio', previousRange.endExclusiveIso)
+                    .order('fecha_inicio', { ascending: true })
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('reglas_tarifas')
+                    .select('id, nombre, activo, fecha_inicio, fecha_fin')
+                    .eq('hotel_id', currentHotelId)
+                    .eq('activo', true)
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('inspecciones_limpieza')
+                    .select('id, puntaje, creado_en')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('creado_en', currentRange.startIso)
+                    .lt('creado_en', currentRange.endExclusiveIso)
+                    .order('creado_en', { ascending: true })
+                    .order('id', { ascending: true })
+            ),
+            fetchAllWithPagination(
+                supabaseClient
+                    .from('tareas_mantenimiento')
+                    .select('id, estado, frecuencia, tipo, fecha_programada, fecha_completada')
+                    .eq('hotel_id', currentHotelId)
+                    .gte('creado_en', currentRange.startIso)
+                    .lt('creado_en', currentRange.endExclusiveIso)
+                    .order('creado_en', { ascending: true })
+                    .order('id', { ascending: true })
+            )
         ]);
         const criticalResults = [reservasCurrentRes, reservasPreviousRes, cajaCurrentRes, cajaPreviousRes];
         const criticalError = criticalResults.find((result) => result.error);
@@ -1781,10 +1771,8 @@ async function generarReporteComparativoGerencial(resultsContainerEl, fechaInici
         const originSummary = aggregateReservationsByOrigin(reservasValidasCurrent);
         const funnelSummary = aggregateReservationsByFunnel(originSummary);
         const reglasActivasPeriodo = reglasCurrent.filter((rule) => {
-            const startRule = rule.fecha_inicio ? new Date(`${rule.fecha_inicio}T00:00:00`) : null;
-            const endRule = rule.fecha_fin ? new Date(`${rule.fecha_fin}T23:59:59`) : null;
-            if (startRule && startRule.getTime() > currentEnd.getTime()) return false;
-            if (endRule && endRule.getTime() < currentStart.getTime()) return false;
+            if (rule.fecha_inicio && rule.fecha_inicio > fechaFinInput) return false;
+            if (rule.fecha_fin && rule.fecha_fin < fechaInicioInput) return false;
             return true;
         }).length;
 
@@ -2200,11 +2188,9 @@ export async function mount(container, sbInstance, user) {
   resultadoContainerEl.addEventListener('click', handleReporteResultsClick);
   moduleListeners.push({ element: resultadoContainerEl, type: 'click', handler: handleReporteResultsClick });
 
-  const today = new Date();
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(today.getDate() - 30);
-  fechaInicioEl.value = thirtyDaysAgo.toISOString().split('T')[0];
-  fechaFinEl.value = today.toISOString().split('T')[0];
+  const defaultDateRange = getDefaultReportDateRange();
+  fechaInicioEl.value = defaultDateRange.startDate;
+  fechaFinEl.value = defaultDateRange.endDate;
 
   let planActivo = 'lite';
 

@@ -1,11 +1,17 @@
 ﻿import { formatCOP, waitForButtonAndBind, cerrarModalContainer, formatHorasMin, formatDateTime, mostrarInfoModalGlobal } from './helpers.js';
-import { showGlobalLoading, hideGlobalLoading, showError, formatCurrency, registrarUsoDescuento } from '../../uiUtils.js';
+import { showGlobalLoading, hideGlobalLoading, showError, formatCurrency } from '../../uiUtils.js';
 import { turnoService } from '../../services/turnoService.js';
 import { showClienteSelectorModal } from '../clientes/clientes.js';
 import { calcularSaldoReserva, getHorariosHotel, puedeHacerCheckIn, getTiemposEstancia, getMetodosPago } from './datos.js';
 import { updateClienteFields } from './room-card.js';
 import { buscarDescuentoParaAlquiler } from './descuentos-helper.js';
+import { crearEstanciaAtomica } from '../../services/reservationLifecycleService.js';
 import { procesarPagosReservaAtomicos } from '../../services/fase1OperationService.js';
+import {
+    formatInTimeZone,
+    getNearestCheckoutDateInTimeZone,
+    getRuntimeHotelTimeZone
+} from '../../services/hotelTimeZoneService.js';
 
 async function mostrarConfirmacionAlquilerExitosa() {
     const mensaje = 'La habitaci\u00f3n fue alquilada correctamente.';
@@ -21,20 +27,18 @@ async function mostrarConfirmacionAlquilerExitosa() {
 export function crearOpcionesNochesConPersonalizada(horarios, maxNoches = 5, fechaBase = null) {
     const opciones = [];
     const baseParaCalculo = fechaBase ? new Date(fechaBase) : new Date();
+    const timeZone = horarios?.timeZone || horarios?.zona_horaria || getRuntimeHotelTimeZone();
 
     for (let i = 1; i <= maxNoches; i++) {
-        const fechaFinCalculada = new Date(baseParaCalculo);
-        const [checkoutH, checkoutM] = (horarios.checkout || '12:00').split(':').map(Number);
-        fechaFinCalculada.setHours(checkoutH, checkoutM, 0, 0);
-
-        if (baseParaCalculo >= fechaFinCalculada) {
-            fechaFinCalculada.setDate(fechaFinCalculada.getDate() + 1);
-        }
-
-        fechaFinCalculada.setDate(fechaFinCalculada.getDate() + (i - 1));
+        const fechaFinCalculada = getNearestCheckoutDateInTimeZone(
+            baseParaCalculo,
+            horarios.checkout,
+            i,
+            timeZone
+        );
         opciones.push({
             noches: i,
-            label: `${i} noche${i > 1 ? 's' : ''} (hasta ${formatDateTime(fechaFinCalculada, undefined, { dateStyle: 'short' })} ${horarios.checkout})`,
+            label: `${i} noche${i > 1 ? 's' : ''} (hasta ${formatInTimeZone(fechaFinCalculada, timeZone, 'es-CO', { dateStyle: 'short' })} ${horarios.checkout})`,
             fechaFin: fechaFinCalculada
         });
     }
@@ -52,24 +56,17 @@ function getExtensionReferenceDate(fechaFinActual) {
     return new Date();
 }
 
-function calcularNuevaFechaFinExtension({ fechaFinActual, noches = 0, minutos = 0, checkoutStr = '12:00' }) {
+function calcularNuevaFechaFinExtension({
+    fechaFinActual,
+    noches = 0,
+    minutos = 0,
+    checkoutStr = '12:00',
+    timeZone = getRuntimeHotelTimeZone()
+}) {
     const referencia = getExtensionReferenceDate(fechaFinActual);
 
     if (Number(noches) > 0) {
-        const fechaSalida = new Date(referencia);
-        const [h, m] = (checkoutStr || '12:00').split(':').map(Number);
-        fechaSalida.setHours(h || 0, m || 0, 0, 0);
-
-        if (referencia.getTime() >= fechaSalida.getTime()) {
-            fechaSalida.setDate(fechaSalida.getDate() + 1);
-        }
-
-        const nochesExtra = Math.max(0, (Number(noches) || 1) - 1);
-        if (nochesExtra > 0) {
-            fechaSalida.setDate(fechaSalida.getDate() + nochesExtra);
-        }
-
-        return fechaSalida;
+        return getNearestCheckoutDateInTimeZone(referencia, checkoutStr, noches, timeZone);
     }
 
     if (Number(minutos) > 0) {
@@ -150,22 +147,12 @@ export async function calcularDetallesEstancia(dataForm, room, tiempos, horarios
     const precioLibreActivado = dataForm.precio_libre_toggle === 'on';
     const precioLibreValor = parseFloat(dataForm.precio_libre_valor) || 0;
 
-    const calcularFinPorNoches = (inicio, noches, checkoutStr) => {
-        const fechaSalida = new Date(inicio);
-        const [h, m] = (checkoutStr || '12:00').split(':').map(Number);
-        fechaSalida.setHours(h || 0, m || 0, 0, 0);
-
-        if (inicio.getTime() >= fechaSalida.getTime()) {
-            fechaSalida.setDate(fechaSalida.getDate() + 1);
-        }
-
-        const nochesExtra = Math.max(0, (Number(noches) || 1) - 1);
-        if (nochesExtra > 0) {
-            fechaSalida.setDate(fechaSalida.getDate() + nochesExtra);
-        }
-
-        return fechaSalida;
-    };
+    const calcularFinPorNoches = (inicio, noches, checkoutStr) => getNearestCheckoutDateInTimeZone(
+        inicio,
+        checkoutStr,
+        noches,
+        horarios?.timeZone || horarios?.zona_horaria || getRuntimeHotelTimeZone()
+    );
 
     if (precioLibreActivado) {
         montoEstanciaBaseBruto = precioLibreValor;
@@ -328,7 +315,6 @@ export async function registrarReservaYMovimientosCaja({
         })).filter((pago) => pago.monto > 0 && pago.metodo_pago_id)
         : [];
 
-    const totalPagado = pagosLimpios.reduce((sum, pago) => sum + pago.monto, 0);
     const metodoPagoReserva = pagosLimpios.length === 1 ? pagosLimpios[0].metodo_pago_id : null;
 
     const turnoActivoId = turnoService.getActiveTurnId
@@ -338,25 +324,9 @@ export async function registrarReservaYMovimientosCaja({
         throw new Error('Debes abrir un turno antes de registrar una reserva con pago.');
     }
 
-    let clienteIdFinal = formData?.cliente_id || null;
+    const clienteIdFinal = formData?.cliente_id || null;
     const cedula = (formData?.cedula ?? '').toString().trim() || null;
     const telefono = (formData?.telefono ?? '').toString().trim() || null;
-
-    if (!clienteIdFinal) {
-        const { data: nuevoCliente, error: errCliente } = await supabase
-            .from('clientes')
-            .insert({
-                hotel_id: hotelId,
-                nombre: clienteNombre,
-                documento: cedula,
-                telefono
-            })
-            .select('id')
-            .single();
-
-        if (errCliente) throw new Error(`Error al crear el nuevo cliente: ${errCliente.message}`);
-        clienteIdFinal = nuevoCliente.id;
-    }
 
     let notasFinales = formData?.notas ? formData.notas.toString().trim() : null;
     if (formData?.precio_libre_toggle === 'on') {
@@ -377,10 +347,7 @@ export async function registrarReservaYMovimientosCaja({
         fecha_fin: detallesEstancia.finAt.toISOString(),
         cantidad_huespedes: cantidadHuespedes,
         monto_total: Number(detallesEstancia?.precioTotal) || 0,
-        // El RPC de pago actualiza este acumulado después de crear cada pago real.
-        monto_pagado: 0,
         metodo_pago_id: metodoPagoReserva,
-        estado: 'ocupada',
         tipo_duracion: detallesEstancia?.tipoCalculo || null,
         cantidad_duracion: Number(detallesEstancia?.cantidadCalculo) || 0,
         monto_estancia_base: Number(detallesEstancia?.precioBase) || 0,
@@ -390,51 +357,15 @@ export async function registrarReservaYMovimientosCaja({
         nombre_impuesto_aplicado: detallesEstancia?.nombreImpuesto ?? null,
         descuento_aplicado_id: detallesEstancia?.descuentoAplicado?.id || null,
         monto_descontado: Number(detallesEstancia?.montoDescontado) || 0,
-        usuario_id: currentUser.id,
         notas: notasFinales
     };
 
-    const { data: nuevaReserva, error: errReserva } = await supabase
-        .from('reservas')
-        .insert(reservaInsert)
-        .select()
-        .single();
-
-    if (errReserva) throw new Error(`Error al crear la reserva: ${errReserva.message}`);
-
-    if (nuevaReserva.descuento_aplicado_id) {
-        await registrarUsoDescuento(supabase, nuevaReserva.descuento_aplicado_id);
-    }
-
-    const { error: errHab } = await supabase
-        .from('habitaciones')
-        .update({ estado: 'ocupada' })
-        .eq('id', room.id);
-
-    if (errHab) throw new Error(`Reserva creada, pero error al actualizar habitaci\u00f3n: ${errHab.message}`);
-
-    const { error: errCrono } = await supabase
-        .from('cronometros')
-        .insert({
-            hotel_id: hotelId,
-            reserva_id: nuevaReserva.id,
-            habitacion_id: room.id,
-            fecha_inicio: nuevaReserva.fecha_inicio,
-            fecha_fin: nuevaReserva.fecha_fin,
-            activo: true
-        });
-
-    if (errCrono) throw new Error(`Reserva creada, pero error al crear cron\u00f3metro: ${errCrono.message}`);
-
-    if (turnoActivoId && pagosLimpios.length > 0) {
-        await procesarPagosReservaAtomicos(supabase, {
-            reservaId: nuevaReserva.id,
-            pagos: pagosLimpios,
-            turnoId: turnoActivoId,
-            concepto: `Alquiler Hab. ${room.nombre} (${detallesEstancia?.descripcionEstancia || ''}) - Cliente: ${clienteNombre}`,
-            operationKey: `alquiler:${nuevaReserva.id}`
-        });
-    }
+    const nuevaReserva = await crearEstanciaAtomica(supabase, {
+        reserva: reservaInsert,
+        pagos: pagosLimpios,
+        turnoId: turnoActivoId,
+        conceptoPago: `Alquiler Hab. ${room.nombre} (${detallesEstancia?.descripcionEstancia || ''}) - Cliente: ${clienteNombre}`
+    });
 
     const modalContainer = document.getElementById('modal-container');
     if (modalContainer) {
@@ -1011,7 +942,8 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
                 nuevaFechaFinExt = calcularNuevaFechaFinExtension({
                     fechaFinActual: reservaActiva.fecha_fin,
                     noches: nochesSelExt,
-                    checkoutStr: horarios.checkout
+                    checkoutStr: horarios.checkout,
+                    timeZone: horarios.timeZone
                 });
                 descExtra = `${nochesSelExt} noche${nochesSelExt > 1 ? 's' : ''}`;
 
@@ -1025,7 +957,8 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             } else if (minutosSelExt > 0) {
                 nuevaFechaFinExt = calcularNuevaFechaFinExtension({
                     fechaFinActual: reservaActiva.fecha_fin,
-                    minutos: minutosSelExt
+                    minutos: minutosSelExt,
+                    timeZone: horarios.timeZone
                 });
                 const tiempoSelExt = tiempos.find(t => Number(t.minutos) === minutosSelExt);
                 descExtra = tiempoSelExt?.nombre || formatHorasMin(minutosSelExt);
@@ -1041,7 +974,12 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             ticketExtDescEl.textContent = descExtra;
             ticketExtPriceEl.textContent = formatCOP(precioExtra);
             ticketExtTotalEl.textContent = formatCOP(precioExtra); 
-            nuevaSalidaEstimadaEl.textContent = formatDateTime(nuevaFechaFinExt);
+            nuevaSalidaEstimadaEl.textContent = formatInTimeZone(
+                nuevaFechaFinExt,
+                horarios.timeZone,
+                'es-CO',
+                { dateStyle: 'short', timeStyle: 'short' }
+            );
         }
 
         selectNochesExtEl.onchange = () => { if (selectNochesExtEl.value) selectHorasExtEl.value = ""; actualizarResumenTicketExtension(); };
@@ -1073,7 +1011,8 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
                 nuevaFechaFinSubmit = calcularNuevaFechaFinExtension({
                     fechaFinActual: reservaActiva.fecha_fin,
                     noches: nochesExtSubmit,
-                    checkoutStr: horarios.checkout
+                    checkoutStr: horarios.checkout,
+                    timeZone: horarios.timeZone
                 });
                 descExtraSubmit = `${nochesExtSubmit} noche(s) adicional(es)`;
                 
@@ -1087,7 +1026,8 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             } else if (minutosExtSubmit > 0) {
                 nuevaFechaFinSubmit = calcularNuevaFechaFinExtension({
                     fechaFinActual: reservaActiva.fecha_fin,
-                    minutos: minutosExtSubmit
+                    minutos: minutosExtSubmit,
+                    timeZone: horarios.timeZone
                 });
                 const tiempoSelExt = tiempos.find(t => Number(t.minutos) === minutosExtSubmit);
                 descExtraSubmit = tiempoSelExt?.nombre || formatHorasMin(minutosExtSubmit);

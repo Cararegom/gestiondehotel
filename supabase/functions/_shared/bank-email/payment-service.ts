@@ -10,7 +10,8 @@ import { assertPilotHotelScope } from './pilot-hotel.ts';
 import { parseBankEmail } from './bankParsers/index.ts';
 import { decideExpectedPaymentMatch } from './matching.ts';
 import { hashSensitiveContent } from './security.ts';
-import { bogotaCalendarBucket, transferFingerprint } from './idempotency.ts';
+import { transferFingerprint } from './idempotency.ts';
+import { calendarBucketInTimeZone, DEFAULT_BANK_TIME_ZONE } from './time-zone.ts';
 
 export interface AnalyzeBankEmailOptions {
   save: boolean;
@@ -23,6 +24,9 @@ export interface AnalyzeBankEmailOptions {
 const BANCOLOMBIA_MARENA_RULE: BankParserRule = {
   id: 'bancolombia',
   bankName: 'Bancolombia',
+  // Bancolombia writes transaction timestamps in Colombian local time. This is
+  // the bank's source zone; the hotel's zone is used separately by UI filters.
+  transactionTimeZone: DEFAULT_BANK_TIME_ZONE,
   allowedFromAddresses: ['alertasynotificaciones@an.notificacionesbancolombia.com'],
   allowedFromDomains: ['an.notificacionesbancolombia.com'],
   allowedReturnPathDomains: ['an.notificacionesbancolombia.com'],
@@ -273,7 +277,8 @@ export async function analyzeBankEmail(
         bankName: parsed.bankName,
         transactionReference: parsed.transactionReference,
         amountCop: parsed.amountCop,
-        receivedAt: transactionOccurredAt
+        receivedAt: transactionOccurredAt,
+        transactionTimeZone: parsed.transactionTimeZone
       })
     : null;
   const expectedCandidates = await loadExpectedCandidates(
@@ -319,7 +324,7 @@ export async function analyzeBankEmail(
     email_subject: email.subject.slice(0, 500),
     email_received_at: receivedAt,
     transaction_occurred_at: transactionOccurredAt,
-    transaction_date: bogotaCalendarBucket(transactionOccurredAt),
+    transaction_date: calendarBucketInTimeZone(transactionOccurredAt, parsed.transactionTimeZone),
     status: parsed.disposition,
     matched_expected_payment_id: null,
     raw_content_hash: rawContentHash,
@@ -399,8 +404,29 @@ export async function analyzeBankEmail(
   if (inserted.hotel_id !== pilotHotel.id) throw new Error('BANK_EMAIL_OUTSIDE_PILOT_HOTEL');
 
   let event = inserted;
-  let match: unknown = matchPreview;
-  if (parsed.disposition === 'detected' && options.isTest !== true) {
+  let match: unknown = inserted.status === 'manual_review'
+    ? {
+        status: 'manual_review',
+        matchedExpectedPaymentId: null,
+        candidateIds: [],
+        reason: inserted.review_reason || 'manual_review_required'
+      }
+    : matchPreview;
+  if (
+    inserted.status === 'manual_review' &&
+    inserted.review_reason === 'possible_duplicate_transfer'
+  ) {
+    const duplicateMetadata = inserted.metadata && typeof inserted.metadata === 'object'
+      ? inserted.metadata as Record<string, unknown>
+      : {};
+    await writeAudit(admin, pilotHotel.id, 'duplicate_detected', inserted.id, options.userId || null, {
+      possible_duplicate: true,
+      candidate_ids: duplicateMetadata.possible_duplicate_candidate_ids || [],
+      window_seconds: duplicateMetadata.possible_duplicate_window_seconds || 120,
+      is_test: options.isTest === true
+    });
+  }
+  if (inserted.status === 'detected' && options.isTest !== true) {
     const matched = await matchStoredPaymentEvent(admin, pilotHotel, inserted.id, config);
     event = matched.event;
     match = matched.match;

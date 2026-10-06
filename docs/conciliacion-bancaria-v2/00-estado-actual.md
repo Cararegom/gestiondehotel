@@ -1,4 +1,6 @@
-# Estado actual y auditoría de Fase 1
+# Estado histórico auditado en Fase 1
+
+> Este documento conserva la fotografía del 25 de agosto de 2026. No representa por sí solo el estado vigente. El avance posterior se resume al final y el contrato actual está descrito en `03-modelo-datos.md`, `04-permisos-y-seguridad.md`, `07-integracion-caja.md`, `11-checklist-produccion.md` y `25-recepcion-relacion-transferencias.md`.
 
 Fecha de corte: 2026-08-25. Código auditado: `origin/main` en `367549d48b1e9c5a887dbbf79b38a24a35d8063f`. Proyecto Supabase: `iikpqpdoslyduecibaij`. No se modificó esquema ni se desplegaron funciones durante esta fase.
 
@@ -48,4 +50,8 @@ El piloto está limitado en servidor a Hotel Marena San Isidro. La autorización
 
 ## Avance posterior a la auditoría
 
-La Fase 2 fue aplicada el 2026-08-25 mediante `fase2_endurecer_bank_payment_allocations` y `fase2_indices_bank_payment_allocations`. Los dos constraints incompatibles, el orden de validación/reemplazo, la suma exacta y los índices quedaron corregidos. El flujo operativo aún no se considera terminado: las fases 3 en adelante siguen pendientes.
+Las Fases 2 a 24 y el ajuste de recepción de Fase 25 quedaron implementados y verificados técnicamente. Entre los cambios posteriores están las asignaciones múltiples, los permisos mínimos, la auditoría administrativa, la relación controlada desde Caja y la trazabilidad exacta mediante `bank_payment_allocations.caja_id`.
+
+Las relaciones nuevas desde recepción apuntan al movimiento exacto de Caja y usan `replace_bank_payment_allocations_from_caja`. `bank_payment_has_valid_caja_link` protege la relación durante checkout y las filas históricas ambiguas fallan de forma cerrada hacia revisión manual.
+
+La auditoría integral de 2026 añadió además una protección conservadora para posibles notificaciones duplicadas. Quedan aplazadas la aceptación funcional con datos del hotel de prueba y cualquier aplicación a producción, que requiere autorización explícita.

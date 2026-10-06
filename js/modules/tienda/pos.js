@@ -111,7 +111,8 @@ export async function cargarDatosPOS() {
 
   const { data: categorias } = await tiendaState.currentSupabase
     .from('categorias_producto')
-    .select('id, nombre');
+    .select('id, nombre')
+    .eq('hotel_id', tiendaState.currentHotelId);
 
   const catMap = Object.fromEntries((categorias || []).map((cat) => [cat.id, cat.nombre]));
   posProductos = (productos || []).map((producto) => ({

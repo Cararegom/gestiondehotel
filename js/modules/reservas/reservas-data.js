@@ -3,6 +3,7 @@ import {
   formatMinutesToHoursMinutes
 } from '../../uiUtils.js';
 import { cargarTarifasProgramadas } from '../../services/tarifasProgramadasService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
 
 export async function cargarHabitaciones({
   supabase,
@@ -165,7 +166,7 @@ export async function loadInitialData({
   onPaymentVisibilityChange
 }) {
   if (!ui?.habitacionIdSelect || !ui?.form?.elements.metodo_pago_id || !ui?.tiempoEstanciaIdSelect) {
-    console.error('[Reservas] Elementos de UI para carga inicial no encontrados.');
+    reportHandledError('reservas', 'initial_ui_missing');
     return;
   }
 
@@ -213,12 +214,12 @@ export async function loadInitialData({
       state.configHotel.minutos_alerta_checkout = Number(config.minutos_alerta_checkout) || 30;
       state.configHotel.zona_horaria = config.zona_horaria || state.configHotel.zona_horaria || 'America/Bogota';
     } else {
-      console.warn(`[Reservas] No se encontro configuracion para el hotel ${hotelId}. Usando valores predeterminados.`);
+      reportHandledError('reservas', 'hotel_config_missing');
     }
 
     ui.togglePaymentFieldsVisibility(state.configHotel.cobro_al_checkin);
   } catch (error) {
-    console.error('[Reservas] Error cargando configuracion del hotel:', error);
+    reportHandledError('reservas', 'hotel_config_load_failed', error);
     if (ui.feedbackDiv) {
       showError(ui.feedbackDiv, 'Error critico: No se pudo cargar la configuracion del hotel.');
     }
@@ -234,7 +235,7 @@ export async function loadInitialData({
       .order('prioridad', { ascending: false });
 
     if (pricingRulesError) {
-      console.warn('[Reservas] No se pudieron cargar las reglas de tarifa dinamica:', pricingRulesError.message);
+      reportHandledError('reservas', 'pricing_rules_load_failed', pricingRulesError);
       state.pricingRules = [];
       state.pricingRulesAvailable = false;
     } else {
@@ -242,7 +243,7 @@ export async function loadInitialData({
       state.pricingRulesAvailable = true;
     }
   } catch (error) {
-    console.warn('[Reservas] Carga de reglas dinamicas omitida:', error.message);
+    reportHandledError('reservas', 'pricing_rules_load_failed', error);
     state.pricingRules = [];
     state.pricingRulesAvailable = false;
   }
@@ -251,7 +252,7 @@ export async function loadInitialData({
     state.tarifasProgramadas = await cargarTarifasProgramadas(supabase, hotelId);
     state.tarifasProgramadasAvailable = true;
   } catch (error) {
-    console.warn('[Reservas] Carga de tarifas programadas omitida:', error.message);
+    reportHandledError('reservas', 'scheduled_rates_load_failed', error);
     state.tarifasProgramadas = [];
     state.tarifasProgramadasAvailable = false;
   }

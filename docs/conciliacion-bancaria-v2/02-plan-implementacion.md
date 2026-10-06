@@ -1,27 +1,43 @@
 # Plan de implementación por fases
 
-Cada cambio de esquema se hará en una migración nueva, con precheck de datos y sin editar migraciones ejecutadas. Cada fase termina con revisión, pruebas y checkpoint antes de continuar.
+Cada cambio de esquema se implementó mediante una migración nueva, con precheck de datos y sin editar migraciones ejecutadas. Esta tabla conserva el propósito de cada fase y refleja su estado al 21 de septiembre de 2026.
 
-| Fase | Problema / causa | Solución y superficies | Pruebas / aceptación | Riesgo / rollback |
-|---|---|---|---|---|
-| 1 | Estado supuesto y deriva producción/repositorio | Auditar código, Edge Functions, esquema y permisos; estos documentos | `HEAD=origin/main`, inventario y hallazgos reproducibles | Solo documentación; revertir carpeta |
-| 2 ✅ | Constraints legacy/auditoría bloqueaban allocations | Aplicado: constraints compatibles; RPC valida en dos pasadas, bloquea y reemplaza; índices de FK/consulta | Probado: suma exacta, relación única, split mixto, auditoría y fallo conserva distribución | Monitorear locks/errores; rollback mediante migración compensatoria |
-| 3 ✅ | Detalle y UI leían una sola relación | Aplicado: `bank-email-api`, servicio y módulo devuelven, enriquecen, muestran y restauran `allocations[]` | 121 pruebas; reabrir conserva importes y destinos; guardia ante varias reservas | Monitorear latencia; rollback de Edge Function y frontend |
-| 4 ✅ | Reserva tomaba monto total del evento | Aplicado en API piloto: compromiso directo por suma de `amount_cop` de allocations `reservation` | split 60/40 acredita 60; eventos no comprometidos no acreditan | Monitorear saldo de candidatos; rollback a v17 |
-| 5 ✅ | “pagado” se excluía aunque fuera conciliable | Aplicado: dominio `bank_email_sale_is_reconcilable`; candidatos bancarios de tienda/restaurante/terraza sin filtrar por cobro | venta Bancolombia pagada es conciliable; efectivo y otro hotel no | Candidatos falsos; rollback de migración y Edge v18 |
-| 6 ✅ | Una venta podía reutilizarse | Aplicado: saldo conciliable por venta, exclusión del evento actual y bloqueo transaccional por destino | parcial conserva saldo; segunda conciliación completa rechazada; otro hotel aislado | Monitorear contención; rollback de migración y Edge v19 |
-| 7 ✅ | Candidatos poco humanos/costosos | Aplicado: DTO humano, ventana de 7 días, orden por cercanía y detalles en lotes | reserva con total/pagado/pendiente; ventas con productos, cantidades, contexto y fecha | Ventas fuera de ventana; reabrir conserva destino actual |
-| 8 ✅ | Recepción necesitaba estado, no privilegio admin | Aplicado: resumen sanitario read-only; list/detail/candidates/actions solo admin en servidor y ruta | recepción conserva alertas y resumen; URL/acciones administrativas bloqueadas; otro hotel no lee | Error de rol; rollback a Edge v21 |
-| 9 ✅ | Caja no mostraba verificación persistida | Aplicado: estado read-only resuelto por referencias persistidas pago/reserva/venta↔allocation; columna exclusiva del piloto | pendiente/verificado/revisión/no aplica; 0 escrituras e ingresos nuevos | asociación ambigua en varias transferencias de una reserva; ocultar columna y volver Edge v22 |
-| 10 ✅ | Cambio de método divergía del ledger | Aplicado: RPC atómico actualiza solo método/cuenta, audita before/after y elimina UPDATE directo | 0 divergencias método/cuenta; mismo hotel/turno/monto/concepto; anon bloqueado | error al mapear cuenta; migración compensatoria restaura RPC anterior y grant puntual |
-| 11 ✅ | Cierre trataba banco como arqueo manual | Aplicado en Marena: panel informativo de registrado, confirmado, pendiente y diferencia; banco sale del conteo manual y efectivo sigue ciego | Gmail caído no bloquea cierre; regresión completa | confusión operativa; ocultar panel |
-| 12 ✅ | Salidas se rechazan sin clasificar | Diseño cerrado de bandeja admin separada, modelo, estados, asignaciones, seguridad y migración histórica; no mezclar con ingresos | ninguna salida entra como ingreso negativo; parser actual conserva el bloqueo | alcance alto; implementación posterior con kill switch |
-| 13 ✅ | Riesgo de segundo sistema financiero | Mapa canónico operación→Caja→ledger→conciliación, cardinalidades y auditoría productiva repetible | 402 movimientos shadow: 0 sin ledger y 0 divergencias; conciliación no escribe dinero | doble contabilización; ocultar conciliación sin tocar Caja/ledger |
-| 14–15 | Auditoría/permisos incompletos | before/after, motivo, actor; mínimos privilegios; cerrar `SECURITY DEFINER` | matriz admin/recepción/otro hotel/anon | romper acceso; migración de restauración puntual |
-| 16–17 | Regex no prueba comportamiento | pgTAP/SQL, backend, frontend y regresión completa | 18 casos obligatorios + módulos existentes | datos de prueba; transacciones/fixtures aislados |
-| 18–20 | Piloto y UX operativa | Gate UUID; estados simples para recepción; consola completa admin | ninguna evidencia en otro hotel | filtración tenant; kill switch |
-| 21–24 | Logs, despliegue y prueba final | logs estructurados, migrations, deploy y checklist controlado | E2E A–H sin dinero arbitrario | operación real; rollback por componente |
+| Fase | Estado | Resultado principal |
+|---|---|---|
+| 1 | ✅ | Auditoría de código, Edge Functions, esquema, permisos y deriva. |
+| 2 | ✅ | Constraints compatibles, reemplazo atómico de asignaciones e índices. |
+| 3 | ✅ | API y UI leen, muestran y restauran `allocations[]`. |
+| 4 | ✅ | La reserva acredita únicamente la suma asignada a ella. |
+| 5 | ✅ | Dominio de ventas bancarias conciliables separado del estado pagado. |
+| 6 | ✅ | Saldo conciliable y locks impiden reutilizar una venta. |
+| 7 | ✅ | Candidatos humanos, acotados, ordenados y consultados en lotes. |
+| 8 | ✅ | Panel completo solo para administración; recepción recibe resumen sanitario. |
+| 9 | ✅ | Caja muestra estado bancario sin crear movimientos. La lectura inicial por referencias quedó como compatibilidad legacy. |
+| 10 | ✅ | Cambio de método sincroniza Caja y ledger dentro de un RPC atómico. |
+| 11 | ✅ | Cierre muestra el bloque bancario informativo y conserva el arqueo de efectivo. |
+| 12 | ✅ diseño | Modelo de movimientos salientes definido y separado del flujo de ingresos. |
+| 13 | ✅ | Mapa canónico documento → Caja → ledger → evidencia bancaria. |
+| 14–15 | ✅ | Auditoría before/after, actor, motivo y mínimos privilegios. |
+| 16–17 | ✅ | Pruebas SQL, backend, frontend y regresión financiera. |
+| 18–20 | ✅ | Gate del piloto, UX operativa y aislamiento por hotel. |
+| 21–24 | ✅ | Logs, despliegue controlado, checklist y release técnico. |
+| 25 | ✅ | Recepción relaciona desde Caja mediante una API limitada a `link`. |
+| Posterior a 25 | ✅ | `bank_payment_allocations.caja_id`, unicidad por Caja, validación de integridad y preservación durante checkout. |
+| Auditoría M3 | ✅ | Posibles notificaciones duplicadas se conservan y pasan a revisión manual. |
 
-## Orden inmediato
+## Evolución de Fase 9 a Fase 25
 
-Las Fases 2 a 13 están cerradas. Las superficies bancarias siguen limitadas al piloto. La Fase 13 confirmó que Caja es la única fuente de movimientos operativos, el ledger es su proyección única y la conciliación solo enlaza evidencia. La siguiente es la Fase 14/24: completar auditoría before/after, motivo y actor en las acciones administrativas de conciliación.
+Fase 9 introdujo una lectura de estado a partir de referencias persistidas de pagos, reservas y ventas. Fase 25 habilitó una acción operativa limitada para recepción. La evolución posterior eliminó la ambigüedad en relaciones nuevas al guardar el identificador exacto en `bank_payment_allocations.caja_id`.
+
+El respaldo por referencia, monto y ventana temporal solo existe para filas antiguas sin `caja_id`. Si aparecen varios candidatos, el sistema no elige uno y devuelve revisión manual.
+
+## Estado de cierre técnico
+
+Las Fases 1 a 25 están cerradas técnicamente. El flujo administrativo, la relación desde recepción, el vínculo exacto con Caja, la auditoría y las restricciones de base de datos están implementados y cubiertos por pruebas automatizadas.
+
+Antes de producción quedan dos gates externos al desarrollo de estas fases:
+
+1. ejecutar la aceptación funcional aplazada con datos controlados del hotel de prueba;
+2. obtener autorización explícita para aplicar migraciones y desplegar Edge Functions y frontend en producción.
+
+El diseño de movimientos bancarios salientes de Fase 12 continúa como alcance futuro independiente; no se mezcla con la conciliación de ingresos.

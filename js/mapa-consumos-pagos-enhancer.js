@@ -226,9 +226,20 @@ function renderConsumosPaymentHistory(modalRoot, context) {
   renderLastPaymentDate(modalRoot, context);
 }
 
+function clearInlinePaymentHistory(modalRoot) {
+  modalRoot?.querySelectorAll(
+    `[${CONSUMOS_PAYMENT_HISTORY_ATTR}], [data-payment-history-section], [data-consumos-last-payment]`
+  ).forEach((element) => element.remove());
+}
+
 async function enhanceVisibleConsumosModal() {
   const modalRoot = getVisibleConsumosModal();
   if (!modalRoot || modalRoot.dataset.consumosPaymentHistoryState === 'loading') return;
+  if (modalRoot.dataset.inlinePaymentDates === 'true') {
+    clearInlinePaymentHistory(modalRoot);
+    modalRoot.dataset.consumosPaymentHistoryState = 'suppressed';
+    return;
+  }
   if (modalRoot.dataset.consumosPaymentHistoryState === 'ready') return;
 
   modalRoot.dataset.consumosPaymentHistoryState = 'loading';
@@ -506,6 +517,10 @@ async function interceptConsumosPrint(event) {
       window.alert(error.message || 'No se pudo imprimir la factura.');
     }
   } finally {
+    if (modalRoot.dataset.inlinePaymentDates === 'true') {
+      clearInlinePaymentHistory(modalRoot);
+      modalRoot.dataset.consumosPaymentHistoryState = 'suppressed';
+    }
     button.disabled = false;
     button.textContent = originalLabel;
   }

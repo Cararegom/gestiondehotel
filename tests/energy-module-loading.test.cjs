@@ -6,19 +6,21 @@ const index = fs.readFileSync('app/index.html', 'utf8');
 const serviceWorker = fs.readFileSync('sw.js', 'utf8');
 const recovery = fs.readFileSync('js/energy-module-recovery.js', 'utf8');
 const main = fs.readFileSync('js/main.js', 'utf8');
-const energy = fs.readFileSync('js/modules/control-energia/control-energia-20260902.js', 'utf8');
+const energy = fs.readFileSync('js/modules/control-energia/control-energia.js', 'utf8');
+const legacyEnergy = fs.readFileSync('js/modules/control-energia/control-energia-20260902.js', 'utf8');
 
-test('Control de Energia usa una URL nueva para evitar JS cacheado', () => {
-  assert.match(index, /type="importmap"/);
-  assert.match(index, /"\/js\/modules\/control-energia\/control-energia\.js"\s*:\s*"\/js\/modules\/control-energia\/control-energia-20260902\.js\?v=3"/);
-  assert.match(index, /\/js\/main\.js\?v=20260902-energy-loader-1/);
-  assert.match(main, /import\('\.\/modules\/control-energia\/control-energia\.js'\)/);
+test('Control de Energia carga directamente la implementacion canonica corregida', () => {
+  assert.doesNotMatch(index, /type="importmap"/);
+  assert.match(index, /\/js\/main\.js\?v=20260910-c6-camera-1/);
+  assert.match(main, /import\('\.\/modules\/control-energia\/control-energia\.js\?v=20260910-c6-camera-1'\)/);
   assert.match(energy, /export async function mount/);
+  assert.match(energy, /ENERGY_SCANNER_STOP_TIMEOUT_MS = 1500/);
+  assert.match(legacyEnergy, /export \{ mount, unmount \} from '\.\/control-energia\.js\?v=20260910-c6-camera-1'/);
 });
 
-test('service worker renueva caches y precarga el modulo versionado', () => {
-  assert.match(serviceWorker, /APP_VERSION = '20260903-sentry-tracing-1'/);
-  assert.match(serviceWorker, /control-energia-20260902\.js/);
+test('service worker renueva caches y precarga el modulo canonico', () => {
+  assert.match(serviceWorker, /APP_VERSION = '20260910-c6-camera-1'/);
+  assert.match(serviceWorker, /control-energia\.js\?v=20260910-c6-camera-1/);
   assert.match(serviceWorker, /cache\.match\(request\) \|\| await caches\.match\(request\)/);
   assert.match(serviceWorker, /self\.skipWaiting\(\)/);
   assert.match(serviceWorker, /self\.clients\.claim\(\)/);

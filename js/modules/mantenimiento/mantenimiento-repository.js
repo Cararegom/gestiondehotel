@@ -1,5 +1,4 @@
 import {
-  OPEN_TASK_STATES,
   TASK_SELECT_COLUMNS,
   normalizeTaskRecord
 } from './mantenimiento-domain.js';
@@ -175,40 +174,6 @@ export async function getMaintenanceMetrics(supabase, days = 30) {
     responsables: [],
     preventivos: []
   };
-}
-
-export async function findOpenPreventiveTask(supabase, task, nextDate) {
-  let query = supabase
-    .from('tareas_mantenimiento')
-    .select('id')
-    .eq('hotel_id', task.hotel_id)
-    .eq('titulo', task.titulo)
-    .eq('tipo', task.tipo)
-    .eq('frecuencia', task.frecuencia)
-    .eq('fecha_programada', nextDate)
-    .in('estado', OPEN_TASK_STATES)
-    .limit(1);
-
-  if (task.habitacion_id) {
-    query = query.eq('habitacion_id', task.habitacion_id);
-  } else {
-    query = query.is('habitacion_id', null);
-  }
-
-  const { data, error } = await query;
-  throwIfError(error);
-  return data?.[0] || null;
-}
-
-export async function createNextPreventiveTask(supabase, payload) {
-  const { data, error } = await supabase
-    .from('tareas_mantenimiento')
-    .insert([payload])
-    .select(TASK_SELECT_COLUMNS)
-    .single();
-
-  throwIfError(error);
-  return normalizeTaskRecord(data);
 }
 
 export async function listMaintenancePlans(supabase, hotelId) {

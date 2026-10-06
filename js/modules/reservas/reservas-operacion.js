@@ -1,4 +1,88 @@
-const ACTIVE_RESERVATION_STATES = ['reservada', 'confirmada', 'activa', 'ocupada', 'tiempo agotado'];
+// Estados que los flujos vigentes pueden escribir en una reserva abierta.
+export const RESERVA_CANONICAL_OPERATIONAL_STATES = Object.freeze([
+  'pendiente',
+  'reservada',
+  'confirmada',
+  'activa',
+  'ocupada'
+]);
+
+// Se conservan para leer filas historicas sin permitir nuevas escrituras.
+// Ambas representan una estancia abierta y deben seguir bloqueando cruces.
+export const RESERVA_LEGACY_OPERATIONAL_STATES = Object.freeze([
+  'check_in',
+  'tiempo agotado'
+]);
+
+export const RESERVA_OPERATIONAL_STATES = Object.freeze([
+  ...RESERVA_CANONICAL_OPERATIONAL_STATES,
+  ...RESERVA_LEGACY_OPERATIONAL_STATES
+]);
+
+export const RESERVA_CONFLICT_STATES = RESERVA_OPERATIONAL_STATES;
+
+export const RESERVA_CANONICAL_HISTORY_STATES = Object.freeze([
+  'cancelada',
+  'completada',
+  'finalizada',
+  'no_show',
+  'cancelada_mantenimiento',
+  'finalizada_auto'
+]);
+
+export const RESERVA_LEGACY_HISTORY_STATES = Object.freeze([
+  'facturada_pagada',
+  'check_out'
+]);
+
+export const RESERVA_HISTORY_STATES = Object.freeze([
+  ...RESERVA_CANONICAL_HISTORY_STATES,
+  ...RESERVA_LEGACY_HISTORY_STATES
+]);
+
+export const RESERVA_LEGACY_STATES = Object.freeze([
+  ...RESERVA_LEGACY_OPERATIONAL_STATES,
+  ...RESERVA_LEGACY_HISTORY_STATES
+]);
+
+export const RESERVA_WRITABLE_STATES = Object.freeze([
+  ...RESERVA_CANONICAL_OPERATIONAL_STATES,
+  ...RESERVA_CANONICAL_HISTORY_STATES
+]);
+
+export const RESERVA_VISIBLE_STATES = Object.freeze([
+  ...RESERVA_OPERATIONAL_STATES,
+  ...RESERVA_HISTORY_STATES
+]);
+
+export const RESERVA_STATE_LABELS = Object.freeze({
+  pendiente: 'Pendiente',
+  reservada: 'Reservada',
+  confirmada: 'Confirmada',
+  check_in: 'Check-in',
+  activa: 'Activa',
+  ocupada: 'Ocupada',
+  'tiempo agotado': 'Tiempo agotado',
+  cancelada: 'Cancelada',
+  completada: 'Completada',
+  finalizada: 'Finalizada',
+  facturada_pagada: 'Facturada y pagada',
+  check_out: 'Check-out',
+  no_show: 'No presentado',
+  cancelada_mantenimiento: 'Cancelada por mantenimiento',
+  finalizada_auto: 'Finalizada automaticamente'
+});
+
+export function getReservaStateLabel(state) {
+  const normalizedState = String(state || '').trim();
+  return RESERVA_STATE_LABELS[normalizedState]
+    || normalizedState.replace(/_/g, ' ').replace(/^./, (character) => character.toUpperCase())
+    || 'Sin estado';
+}
+
+export function isLegacyReservaState(state) {
+  return RESERVA_LEGACY_STATES.includes(String(state || '').trim());
+}
 
 export const RESERVA_ORIGIN_OPTIONS = [
   { value: 'directa', label: 'Directa' },
@@ -244,7 +328,7 @@ export function suggestRoomsForWaitlistItem(item, rooms = [], reservations = [],
       const roomTypeId = room.tipo_habitacion_id ? String(room.tipo_habitacion_id) : null;
       const conflictingReservations = (Array.isArray(reservations) ? reservations : []).filter((reservation) => {
         if (String(reservation?.habitacion_id || '') !== roomId) return false;
-        if (!ACTIVE_RESERVATION_STATES.includes(String(reservation?.estado || ''))) return false;
+        if (!RESERVA_CONFLICT_STATES.includes(String(reservation?.estado || ''))) return false;
         return reservationRangesOverlap(itemStart, itemEnd, reservation.fecha_inicio, reservation.fecha_fin);
       });
 

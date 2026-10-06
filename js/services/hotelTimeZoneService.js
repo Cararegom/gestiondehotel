@@ -99,6 +99,29 @@ export async function loadHotelTimeZone(supabase, hotelId) {
   return setRuntimeHotelTimeZone(data?.zona_horaria || DEFAULT_HOTEL_TIME_ZONE);
 }
 
+export async function loadRequiredHotelTimeZone(supabase, hotelId) {
+  if (!supabase || !hotelId) {
+    throw new Error('No se pudo identificar el hotel para cargar su zona horaria.');
+  }
+
+  const { data, error } = await supabase
+    .from('configuracion_hotel')
+    .select('zona_horaria')
+    .eq('hotel_id', hotelId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error('No se pudo cargar la zona horaria configurada del hotel.', { cause: error });
+  }
+
+  const configuredTimeZone = String(data?.zona_horaria || '').trim();
+  if (!isValidTimeZone(configuredTimeZone)) {
+    throw new Error('Configura una zona horaria válida para el hotel antes de usar el calendario.');
+  }
+
+  return setRuntimeHotelTimeZone(configuredTimeZone);
+}
+
 export function getSupportedTimeZones() {
   try {
     if (typeof Intl.supportedValuesOf === 'function') {
@@ -168,6 +191,26 @@ function getTimeZoneOffsetMs(instant, timeZone) {
   return representedAsUtc - instantRoundedToSecond;
 }
 
+function getDateTimePartsInTimeZone(value, timeZone) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error('Fecha y hora inválidas.');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23'
+  }).formatToParts(date);
+  const values = {};
+  for (const part of parts) {
+    if (part.type !== 'literal') values[part.type] = part.value;
+  }
+  return values;
+}
+
 export function zonedDateTimeToUtc(dateInput, timeInput = '00:00:00.000', timeZone = DEFAULT_HOTEL_TIME_ZONE) {
   const { year, month, day } = parseDateInput(dateInput);
   const { hour, minute, second, millisecond } = parseTimeInput(timeInput);
@@ -185,6 +228,59 @@ export function zonedDateTimeToUtc(dateInput, timeInput = '00:00:00.000', timeZo
   const result = new Date(candidateMs);
   if (Number.isNaN(result.getTime())) throw new Error('No se pudo convertir la fecha a UTC.');
   return result;
+}
+
+export function parseDateTimeInTimeZone(value, timeZone = getRuntimeHotelTimeZone()) {
+  if (value instanceof Date) {
+    const cloned = new Date(value.getTime());
+    if (Number.isNaN(cloned.getTime())) throw new Error('Fecha y hora inválidas.');
+    return cloned;
+  }
+
+  const text = String(value || '').trim();
+  const localDateTimeMatch = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?)$/.exec(text);
+  if (localDateTimeMatch) {
+    const result = zonedDateTimeToUtc(localDateTimeMatch[1], localDateTimeMatch[2], timeZone);
+    const values = getDateTimePartsInTimeZone(result, timeZone);
+    const representedWallClock = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+    const requestedWallClock = `${localDateTimeMatch[1]}T${localDateTimeMatch[2].slice(0, 5)}`;
+    if (representedWallClock !== requestedWallClock) {
+      throw new Error('La hora local no existe en la zona horaria seleccionada.');
+    }
+    return result;
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return zonedDateTimeToUtc(text, '00:00:00.000', timeZone);
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) throw new Error('Fecha y hora inválidas.');
+  return parsed;
+}
+
+export function getNearestCheckoutDateInTimeZone(
+  fechaEntrada,
+  checkoutTime = '12:00',
+  cantidadNoches = 1,
+  timeZone = getRuntimeHotelTimeZone()
+) {
+  const zone = normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE);
+  const entry = parseDateTimeInTimeZone(fechaEntrada, zone);
+  const entryDateKey = getDateKeyInTimeZone(entry, zone);
+  const checkoutWallTime = checkoutTime || '12:00';
+  const sameDayCheckout = parseDateTimeInTimeZone(`${entryDateKey}T${checkoutWallTime}`, zone);
+  const firstCheckoutOffset = entry.getTime() >= sameDayCheckout.getTime() ? 1 : 0;
+  const nights = Math.max(1, Math.trunc(Number(cantidadNoches) || 1));
+  const checkoutDateKey = addCalendarDays(entryDateKey, firstCheckoutOffset + nights - 1);
+  return parseDateTimeInTimeZone(`${checkoutDateKey}T${checkoutWallTime}`, zone);
+}
+
+export function toDateTimeLocalValueInTimeZone(value, timeZone = getRuntimeHotelTimeZone()) {
+  const zone = normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE);
+  const date = parseDateTimeInTimeZone(value, zone);
+  const values = getDateTimePartsInTimeZone(date, zone);
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 }
 
 export function addCalendarDays(dateInput, days) {
@@ -351,60 +447,4 @@ export function formatInTimeZone(value, timeZone = DEFAULT_HOTEL_TIME_ZONE, loca
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return 'Fecha Inválida';
   return new Intl.DateTimeFormat(locale, { ...safeOptions, timeZone: zone }).format(date);
-}
-
-function getDateTimePartsInTimeZone(value, timeZone) {
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) throw new Error('Fecha y hora inválidas.');
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE),
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23'
-  }).formatToParts(date);
-  const values = {};
-  for (const part of parts) {
-    if (part.type !== 'literal') values[part.type] = part.value;
-  }
-  return values;
-}
-
-export function parseDateTimeInTimeZone(value, timeZone = getRuntimeHotelTimeZone()) {
-  if (value instanceof Date) {
-    const cloned = new Date(value.getTime());
-    if (Number.isNaN(cloned.getTime())) throw new Error('Fecha y hora inválidas.');
-    return cloned;
-  }
-
-  const text = String(value || '').trim();
-  const localDateTimeMatch = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?)$/.exec(text);
-  if (localDateTimeMatch) {
-    const result = zonedDateTimeToUtc(localDateTimeMatch[1], localDateTimeMatch[2], timeZone);
-    const values = getDateTimePartsInTimeZone(result, timeZone);
-    const representedWallClock = `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
-    const requestedWallClock = `${localDateTimeMatch[1]}T${localDateTimeMatch[2].slice(0, 5)}`;
-    if (representedWallClock !== requestedWallClock) {
-      throw new Error('La hora local no existe en la zona horaria seleccionada.');
-    }
-    return result;
-  }
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    return zonedDateTimeToUtc(text, '00:00:00.000', timeZone);
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) throw new Error('Fecha y hora inválidas.');
-  return parsed;
-}
-
-export function toDateTimeLocalValueInTimeZone(value, timeZone = getRuntimeHotelTimeZone()) {
-  const zone = normalizeTimeZone(timeZone, DEFAULT_HOTEL_TIME_ZONE);
-  const date = parseDateTimeInTimeZone(value, zone);
-  const values = getDateTimePartsInTimeZone(date, zone);
-  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 }

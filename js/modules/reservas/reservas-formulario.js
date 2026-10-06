@@ -1,3 +1,6 @@
+import { parseDateTimeInTimeZone } from '../../services/hotelTimeZoneService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
+
 export function gatherReservaFormData(ui) {
     if (!ui.form) return {};
     const formElements = ui.form.elements;
@@ -64,8 +67,12 @@ export function validateReservaInitialInputs({ formData, state, formatCurrency }
     if (!formData.habitacion_id) throw new Error('Debe seleccionar una habitacion.');
     if (!formData.fecha_entrada) throw new Error('La fecha y hora de llegada son obligatorias.');
 
-    const fechaEntradaDate = new Date(formData.fecha_entrada);
-    if (Number.isNaN(fechaEntradaDate.getTime())) throw new Error('La fecha de llegada no es valida.');
+    let fechaEntradaDate;
+    try {
+        fechaEntradaDate = parseDateTimeInTimeZone(formData.fecha_entrada, state.configHotel?.zona_horaria);
+    } catch {
+        throw new Error('La fecha de llegada no es valida.');
+    }
 
     const unDiaEnMs = 24 * 60 * 60 * 1000;
     if (!state.isEditMode && fechaEntradaDate < new Date(Date.now() - 10 * 60 * 1000)) {
@@ -202,7 +209,7 @@ export async function submitReservaForm({
         await renderReservas();
         document.dispatchEvent(new CustomEvent('datosActualizados', { detail: { origen: 'reservas', accion: state.isEditMode ? 'update' : 'create' } }));
     } catch (err) {
-        console.error('Error en submit:', err);
+        reportHandledError('reservas', 'submit_failed', err);
         showError(ui.feedbackDiv, err.message);
     } finally {
         const metodoPagoValue = formEl?.elements?.metodo_pago_id?.value || '';

@@ -7,8 +7,8 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const domainPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-domain.js');
 const workflowUiPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-workflow-ui.js');
+const mobileUiPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-mobile-ui.js');
 const repositoryPath = path.join(root, 'js/modules/mantenimiento/mantenimiento-repository.js');
-const preventivePath = path.join(root, 'js/modules/mantenimiento/mantenimiento-preventivo.js');
 const enumMigrationPath = path.join(root, 'supabase/migrations/20260902043000_mantenimiento_fase3_estados.sql');
 const workflowMigrationPath = path.join(root, 'supabase/migrations/20260902043500_mantenimiento_fase3_flujo_trazable.sql');
 
@@ -89,11 +89,14 @@ test('El repositorio usa RPC para transiciones y comentarios y consulta historia
 
 test('La interfaz Fase 3 agrega SLA, historial y evita cambiar estado directo en el formulario', () => {
   const ui = fs.readFileSync(workflowUiPath, 'utf8');
+  const mobile = fs.readFileSync(mobileUiPath, 'utf8');
   assert.match(ui, /getSlaMeta/);
   assert.match(ui, /mant-f3-history-list/);
   assert.match(ui, /addMaintenanceComment/);
   assert.match(ui, /transitionMaintenanceTask/);
-  assert.match(ui, /stateSelect\.disabled = true/);
+  assert.match(mobile, /name="estado_display"[^>]*disabled/);
+  assert.match(mobile, /type="hidden" name="estado"/);
+  assert.doesNotMatch(ui, /stateSelect\.innerHTML|stateSelect\.disabled/);
   assert.match(ui, /dataset\.taskAction = 'workflow'/);
 });
 
@@ -106,9 +109,7 @@ test('El resumen no entra en ciclo de render y las tareas abiertas pueden cancel
   assert.match(ui, /TASK_STATES\.cancelado/);
 });
 
-test('Los preventivos se regeneran al cierre canonico', () => {
-  const preventive = fs.readFileSync(preventivePath, 'utf8');
-  assert.match(preventive, /TASK_STATES\.cerrado/);
-  assert.match(preventive, /normalizeTaskState/);
-  assert.match(preventive, /createNextPreventiveTask/);
+test('El cierre canonico no crea recurrencias desde el navegador', () => {
+  const workflow = fs.readFileSync(workflowUiPath, 'utf8');
+  assert.doesNotMatch(workflow, /ensureNextPreventive|createNextPreventiveTask|calculateNextScheduledDate/);
 });

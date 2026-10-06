@@ -33,5 +33,16 @@ Registrar códigos estables para correo recibido, duplicado, candidato, relació
 - Fase 8: sin migración; `bank-email-api` v22 activa con `verify_jwt=true`, permisos administrativos endurecidos y resumen operativo sanitario.
 - Fase 9: sin migración; `bank-email-api` v23 activa con `verify_jwt=true`, estados read-only en Caja y columna frontend exclusiva del piloto.
 - Fase 10: migración `20260827015126_fase10_sincronizar_metodo_pago_caja_ledger` aplicada; RPC y frontend atómicos, UPDATE directo revocado y divergencias reparadas.
+- Fase 14: migraciones `20260828023412_fase14_auditoria_acciones_conciliacion` y `20260828025943_fase14_fix_manual_audit_context` para actor, motivo y contexto de auditoría.
+- Fase 15: migraciones `20260828024228_fase15_minimos_privilegios_conciliacion` y `20260828030602_fase15_fix_assigned_admin_allocations` para permisos mínimos y roles asignados.
+- Fases 16–24: pruebas de comportamiento, aislamiento, observabilidad y checklist de release incorporados al repositorio y CI.
+- Fase 25: migración `20260828063000_recepcion_relacion_pagos_bancarios` y Edge Function `bank-payment-relation-api` para el flujo limitado de recepción.
+- Vínculo exacto con Caja: migraciones `20260901184238_bank_payment_allocation_caja_link`, `20260901185128_bank_payment_allocation_caja_legacy_backfill`, `20260901190101_bank_reconciliation_preserve_caja_on_checkout` y `20260901203000_bank_reconciliation_caja_integrity_repair`.
 - Sincronización histórica adicional sin reejecución: `20260826171602_grant_authenticated_insert_movimientos_inventario.sql`.
 - Sincronización histórica sin reejecución: `20260622090000_terraza_transferencias_sin_duplicados.sql`, `20260826000109_permitir_cambio_metodo_pago_caja.sql` y `20260826000318_grant_update_metodo_pago_caja.sql`.
+
+## Staging posterior a la auditoría integral — 2026-09-21
+
+La migración `20260921120000_m3_bank_email_possible_duplicate_review` se aplicó únicamente en Supabase staging. `bank-email-api`, `gmail-webhook` y `gmail-watch-renew` se desplegaron allí con sus opciones de autenticación esperadas. El entorno no tenía hotel piloto ni eventos bancarios, por lo que la prueba funcional con correos reales quedó aplazada.
+
+Este registro de staging no autoriza ni implica un despliegue a producción. Producción requiere prechecks actuales, aceptación funcional y aprobación explícita.

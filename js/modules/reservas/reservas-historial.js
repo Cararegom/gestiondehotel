@@ -1,3 +1,6 @@
+import { reportHandledError } from '../../services/handledErrorReporter.js';
+import { RESERVA_HISTORY_STATES, RESERVA_OPERATIONAL_STATES } from './reservas-operacion.js';
+
 export function getReservaRegistroISO(reserva) {
     return reserva?.creado_en || reserva?.created_at || reserva?.fecha_creacion || reserva?.actualizado_en || reserva?.fecha_inicio || null;
 }
@@ -45,7 +48,7 @@ export async function ensureReservasHistorialUsuarios(state) {
         .order('nombre', { ascending: true });
 
     if (error) {
-        console.warn('[Reservas] No se pudo cargar la lista de recepcionistas/usuarios:', error.message);
+        reportHandledError('reservas', 'history_users_load_failed', error);
         state.reservasHistorialUsuarios = [];
         return [];
     }
@@ -86,7 +89,7 @@ export async function cargarTurnosParaReservas(state, reservas) {
         .order('fecha_apertura', { ascending: false });
 
     if (error) {
-        console.warn('[Reservas] No se pudieron cargar los turnos para el historial:', error.message);
+        reportHandledError('reservas', 'history_shifts_load_failed', error);
         state.reservasHistorialTurnos = [];
         return [];
     }
@@ -248,8 +251,8 @@ export function updateReservasHistorySummary(ui, state, totalReservas, reservasF
 }
 
 export function updateReservasExperiencePanels({ reservas = [], state, getReservaToleranceStatus, formatDateTime }) {
-    const activas = reservas.filter((reserva) => ['reservada', 'confirmada', 'activa'].includes(reserva.estado)).length;
-    const historial = reservas.filter((reserva) => ['cancelada', 'completada', 'no_show', 'cancelada_mantenimiento', 'finalizada_auto'].includes(reserva.estado)).length;
+    const activas = reservas.filter((reserva) => RESERVA_OPERATIONAL_STATES.includes(reserva.estado)).length;
+    const historial = reservas.filter((reserva) => RESERVA_HISTORY_STATES.includes(reserva.estado)).length;
     const pendientes = reservas.filter((reserva) => Number(reserva.pendiente || 0) > 0).length;
     const noShowSugeridos = reservas.filter((reserva) => {
         const tolerance = getReservaToleranceStatus(reserva, state.configHotel, new Date());

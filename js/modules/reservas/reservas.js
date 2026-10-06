@@ -18,6 +18,7 @@ import { syncReservasConGoogleCalendar as syncReservasConGoogleCalendarModule } 
 import {
     calculateFechasEstancia as calculateFechasEstanciaModule,
     calculateMontos as calculateMontosModule,
+    assertBookingAvailability as assertBookingAvailabilityModule,
     validateAndCalculateBooking as validateAndCalculateBookingModule
 } from './reservas-calculos.js';
 import { buscarDescuentoParaReserva as buscarDescuentoParaReservaModule } from './reservas-descuentos.js';
@@ -72,6 +73,11 @@ import {
 } from './reservas-estado.js';
 import {
     RESERVA_ORIGIN_OPTIONS,
+    RESERVA_CONFLICT_STATES,
+    RESERVA_HISTORY_STATES,
+    RESERVA_OPERATIONAL_STATES,
+    RESERVA_VISIBLE_STATES,
+    getReservaStateLabel,
     getReservaOriginLabel,
     getReservaOriginFunnelStage,
     getReservaToleranceStatus,
@@ -79,6 +85,8 @@ import {
     suggestRoomsForWaitlistItem
 } from './reservas-operacion.js';
 import { escapeHtml } from '../../security.js';
+import { toDateTimeLocalValueInTimeZone } from '../../services/hotelTimeZoneService.js';
+import { reportHandledError } from '../../services/handledErrorReporter.js';
 // --- MÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œDULO DE ESTADO GLOBAL ---
 const state = {
     isModuleMounted: false,
@@ -122,7 +130,8 @@ const state = {
         moneda_decimales_info: '0',     // Nuevo, con default
         minutos_tolerancia_llegada: 60,
         minutos_alerta_reserva: 120,
-        minutos_alerta_checkout: 30
+        minutos_alerta_checkout: 30,
+        zona_horaria: 'America/Bogota'
     }
 };
 
@@ -187,7 +196,7 @@ const ui = {
     init(containerEl) {
         // Es crucial que containerEl no sea null y que el HTML ya estÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â© inyectado
         if (!containerEl) {
-            console.error("ui.init: El contenedor del mÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³dulo es null. No se pueden inicializar los elementos de la UI.");
+            reportHandledError('reservas', 'module_container_missing');
             return;
         }
         this.container = containerEl;
@@ -230,9 +239,9 @@ const ui = {
         this.btnCrearCliente = containerEl.querySelector('#btn_crear_cliente');       // BotÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n para crear cliente
         this.clienteIdHiddenInput = containerEl.querySelector('#cliente_id_hidden');  // Input oculto para guardar el cliente_id
         this.clienteNombreDisplay = containerEl.querySelector('#cliente_nombre_display'); // Para mostrar el nombre del cliente seleccionado
-        if (!this.form) console.error("ui.init: #reserva-form es null.");
-        if (!this.clienteNombreDisplay) console.error("ui.init: #cliente_nombre_display es null.");
-        if (!this.clienteSearchInput) console.error("ui.init: #cliente_search_input es null.");
+        if (!this.form) reportHandledError('reservas', 'reservation_form_missing');
+        if (!this.clienteNombreDisplay) reportHandledError('reservas', 'selected_client_ui_missing');
+        if (!this.clienteSearchInput) reportHandledError('reservas', 'client_search_ui_missing');
    
     },
     async showConfirmationModal(message, title = "Confirmar accion") {
@@ -584,7 +593,7 @@ async function refreshWaitlistItems() {
         }));
         state.waitlistAvailable = true;
     } catch (error) {
-        console.warn('[Reservas] No se pudo cargar la lista de espera:', error.message);
+        reportHandledError('reservas', 'waitlist_load_failed', error);
         state.waitlistItems = [];
         state.waitlistAvailable = false;
     }
@@ -689,7 +698,10 @@ async function prefillReservaFromWaitlist(waitlistId, roomId = null) {
     if (!item || !ui.form) return;
 
     updateClienteFieldsFromWaitlist(item);
-    ui.form.elements.fecha_entrada.value = new Date(new Date(item.fecha_inicio).getTime() - (new Date(item.fecha_inicio).getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+    ui.form.elements.fecha_entrada.value = toDateTimeLocalValueInTimeZone(
+        item.fecha_inicio,
+        state.configHotel.zona_horaria
+    );
     ui.form.elements.cantidad_huespedes.value = item.cantidad_huespedes || 1;
     ui.form.elements.notas.value = item.notas || '';
     if (ui.origenReservaSelect) ui.origenReservaSelect.value = item.origen_reserva || 'directa';
@@ -777,7 +789,7 @@ async function handleWaitlistPanelClick(event) {
             return;
         }
     } catch (error) {
-        console.error('[Reservas] Error manejando lista de espera:', error);
+        reportHandledError('reservas', 'waitlist_action_failed', error);
         showError(ui.feedbackDiv, `No se pudo actualizar la lista de espera: ${error.message}`);
     }
 }
@@ -939,7 +951,7 @@ function parseEventoICal(evento, habitaciones) {
     
     // Si no se encuentra una habitaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n coincidente en la BD, se descarta el evento.
     if (!habitacionObj) {
-        console.warn(`[Sync ICal] Evento de ${evento.summary} descartado. No se encontrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ habitaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n con el nombre: "${habitacionNombreDetectado}"`);
+        console.warn('[Sync ICal] Evento descartado porque la habitacion no tiene correspondencia local.');
         return null;
     }
 
@@ -990,7 +1002,7 @@ async function syncReservasConGoogleCalendarLegacy(state) {
     ]);
 
     if (reservasResult.error || habitacionesResult.error) {
-        console.error("[Sync] Error obteniendo datos locales:", { reservError: reservasResult.error, habError: habitacionesResult.error });
+        reportHandledError('reservas', 'calendar_local_data_load_failed');
         return;
     }
     const reservasActuales = reservasResult.data;
@@ -1001,7 +1013,7 @@ async function syncReservasConGoogleCalendarLegacy(state) {
       'calendar-sync-events', { body: { hotelId: state.hotelId } }
     );
     if (errorInvocacion) {
-      console.error('CRÃƒÆ’Ã†â€™Ãƒâ€šÃ‚ÂTICO: Error al invocar la Edge Function:', errorInvocacion);
+      reportHandledError('reservas', 'calendar_sync_invocation_failed', errorInvocacion);
       return;
     }
     const eventosGoogle = dataEventos.events;
@@ -1024,7 +1036,7 @@ async function syncReservasConGoogleCalendarLegacy(state) {
           if (habEncontrada) {
               reservaParsed.habitacion_id = habEncontrada.id;
           } else {
-              console.warn(`[Sync] Evento descartado. No se encontrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ ID para habitaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n nombrada: "${reservaParsed.habitacion_nombre}"`);
+              console.warn('[Sync] Evento descartado porque la habitacion no tiene ID local.');
               continue;
           }
       }
@@ -1039,7 +1051,7 @@ async function syncReservasConGoogleCalendarLegacy(state) {
         .from('reservas').insert(reservaParaInsertar).select().single();
       
       if (insertError) {
-        console.error('[Sync] No fue posible registrar la reserva:', insertError.message);
+        reportHandledError('reservas', 'calendar_reservation_insert_failed', insertError);
       } else {
         console.info('[Sync] Reserva insertada correctamente.');
         nuevasReservasInsertadas++;
@@ -1052,7 +1064,7 @@ async function syncReservasConGoogleCalendarLegacy(state) {
         await renderReservas();
     }
   } catch (e) {
-    console.error("Error catastrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³fico en syncReservasConGoogleCalendar:", e);
+    reportHandledError('reservas', 'calendar_sync_failed', e);
   }
 }
 
@@ -1064,7 +1076,8 @@ function calculateFechasEstancia(fechaEntradaStr, tipoCalculo, cantidadNochesStr
         cantidadNochesStr,
         tiempoEstanciaId,
         checkoutHoraConfig,
-        state.tiemposEstanciaDisponibles
+        state.tiemposEstanciaDisponibles,
+        state.configHotel.zona_horaria
     );
 }
 
@@ -1272,7 +1285,7 @@ async function validateAndCalculateBookingLegacy(formData) {
         .from('reservas')
         .select('id, fecha_inicio')
         .eq('habitacion_id', formData.habitacion_id)
-        .in('estado', ['reservada', 'confirmada', 'activa'])
+        .in('estado', RESERVA_CONFLICT_STATES)
         .gte('fecha_inicio', fechaEntrada.toISOString());
 
     // --- CORRECCIÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œN CRÃƒÆ’Ã†â€™Ãƒâ€šÃ‚ÂTICA AQUÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â ---
@@ -1296,23 +1309,14 @@ async function validateAndCalculateBookingLegacy(formData) {
         }
     }
 
-    // ValidaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n RPC (Cruce estricto en BD)
-    try {
-        const { data: hayCruce, error: errCruce } = await state.supabase.rpc('validar_cruce_reserva', {
-            p_habitacion_id: formData.habitacion_id, 
-            p_entrada: fechaEntrada.toISOString(),
-            p_salida: fechaSalida.toISOString(), 
-            // Esto ya estaba bien, pero es vital que siga aquÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­:
-            p_reserva_id_excluida: state.isEditMode ? state.editingReservaId : null
-        });
-
-        if (hayCruce === true) {
-            throw new Error("Conflicto: La habitaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n NO estÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ disponible para estas fechas.");
-        }
-    } catch (e) {
-        // Ignoramos errores de RPC faltante para no bloquear el precio, solo advertimos
-        console.warn("ValidaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de cruce RPC omitida o fallida:", e.message);
-    }
+    // Validacion RPC estricta: un fallo tecnico tambien bloquea el guardado.
+    await assertBookingAvailabilityModule({
+        supabase: state.supabase,
+        habitacionId: formData.habitacion_id,
+        fechaEntrada: fechaEntrada.toISOString(),
+        fechaSalida: fechaSalida.toISOString(),
+        reservaIdExcluida: state.isEditMode ? state.editingReservaId : null
+    });
     
     // Preparar notas
     let notasFinales = formData.notas.trim() || null;
@@ -1392,8 +1396,6 @@ async function recalcularYActualizarTotalUI() {
             renderPricingRuleSummary();
         }
     } catch (calcError) {
-        console.warn("[Reservas] Error al calcular:", calcError.message);
-        
         // Si el error NO es de conflicto (ej: es de capacidad excedida), ponemos 0
         if (!calcError.message.includes('Conflicto')) {
              state.currentBookingTotal = 0;
@@ -1628,7 +1630,10 @@ async function buscarDescuentoParaReservaLegacy(formData, codigoManual = null) {
     query = query.or(orConditions.join(','));
 
     const { data: descuentosPotenciales, error } = await query;
-    if (error) { console.error("Error buscando descuentos de reserva:", error); return null; }
+    if (error) {
+        reportHandledError('reservas', 'discount_lookup_failed', error);
+        return null;
+    }
 
     const descuentosValidos = descuentosPotenciales.filter(d => (d.usos_maximos || 0) === 0 || (d.usos_actuales || 0) < d.usos_maximos);
 
@@ -1710,7 +1715,7 @@ async function loadInitialData() {
 
 async function loadInitialDataLegacy() {
     if (!ui.habitacionIdSelect || !ui.form?.elements.metodo_pago_id || !ui.tiempoEstanciaIdSelect) {
-        console.error("[Reservas] Elementos de UI para carga inicial no encontrados.");
+        reportHandledError('reservas', 'initial_ui_missing');
         return;
     }
     try {
@@ -1743,12 +1748,12 @@ async function loadInitialDataLegacy() {
             state.configHotel.moneda_codigo_iso_info = config.moneda_codigo_iso_info || 'COP';
             state.configHotel.moneda_decimales_info = config.moneda_decimales_info !== null ? String(config.moneda_decimales_info) : '0';
         } else {
-            console.warn(`[Reservas] No se encontrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ configuraciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n para el hotel ${state.hotelId}. Usando valores predeterminados.`);
+            reportHandledError('reservas', 'hotel_config_missing');
         }
         ui.togglePaymentFieldsVisibility(state.configHotel.cobro_al_checkin);
 
     } catch (err) {
-        console.error("[Reservas] Error cargando configuraciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del hotel:", err);
+        reportHandledError('reservas', 'hotel_config_load_failed', err);
         if (ui.feedbackDiv) showError(ui.feedbackDiv, "Error crÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­tico: No se pudo cargar la configuraciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del hotel.");
         ui.togglePaymentFieldsVisibility(state.configHotel.cobro_al_checkin);
     }
@@ -1792,7 +1797,7 @@ async function createBooking(payload) {
              }).select('id').single();
              
              if(nuevo) clienteIdFinal = nuevo.id;
-             if(errNuevo) console.error("Error creando cliente rÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡pido:", errNuevo);
+             if (errNuevo) reportHandledError('reservas', 'quick_client_create_failed', errNuevo);
          }
     }
 
@@ -1864,7 +1869,6 @@ async function createBooking(payload) {
         .single();
 
     if (errInsert) {
-        console.error('No fue posible insertar la reserva:', errInsert?.message || 'Error de base de datos');
         throw new Error(`Error al guardar reserva en BD: ${errInsert.message}`);
     }
 
@@ -1895,7 +1899,7 @@ async function createBooking(payload) {
             .select('id, metodo_pago_id, monto');
 
         if (errPagosReserva) {
-            console.error("Error al registrar pagos_reserva", errPagosReserva);
+            reportHandledError('reservas', 'reservation_payments_save_failed', errPagosReserva);
         } else if (turnoId && pagosData && pagosData.length > 0) {
             // Registrar en Caja
             const { data: habitacionConceptoData } = await state.supabase
@@ -1982,7 +1986,7 @@ async function updateBooking(payload) {
             .update({ estado: 'libre' })
             .eq('id', originalHabitacionId);
 
-        if (errOldHab) console.error("Error al liberar la habitaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n original:", errOldHab);
+        if (errOldHab) reportHandledError('reservas', 'original_room_release_failed', errOldHab);
 
         const nuevoEstadoHabitacion = getEstadoHabitacionSegunReservaPendiente(updatedReserva.fecha_inicio);
 
@@ -1992,7 +1996,7 @@ async function updateBooking(payload) {
             .update({ estado: nuevoEstadoHabitacion })
             .eq('id', nuevaHabitacionId);
 
-        if (errNewHab) console.error("Error al actualizar la nueva habitaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de la reserva:", errNewHab);
+        if (errNewHab) reportHandledError('reservas', 'new_room_status_update_failed', errNewHab);
     }
     // --- FIN DE LA LÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œGICA DE CORRECCIÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œN ---
 
@@ -2002,7 +2006,7 @@ async function updateBooking(payload) {
            descuento_id_param: updatedReserva.descuento_aplicado_id
        });
        if (rpcError) {
-           console.error("Advertencia: No se pudo incrementar el uso del descuento al actualizar la reserva.", rpcError);
+           reportHandledError('reservas', 'discount_usage_increment_failed', rpcError);
        }
     }
 
@@ -2024,7 +2028,6 @@ async function prepareEditReserva(reservaId) {
 
     clearFeedback(ui.feedbackDiv);
     if (error || !r) {
-        console.error("Error cargando reserva para editar:", error);
         throw new Error(`No se pudo cargar la reserva (ID: ${reservaId.substring(0,8)}). Puede que ya no exista o haya un error de red.`);
     }
 
@@ -2039,8 +2042,10 @@ async function prepareEditReserva(reservaId) {
     if (ui.origenReservaSelect) ui.origenReservaSelect.value = r.origen_reserva || 'directa';
 
     if (r.fecha_inicio) {
-        const fEntrada = new Date(r.fecha_inicio);
-        ui.form.elements.fecha_entrada.value = new Date(fEntrada.getTime() - (fEntrada.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+        ui.form.elements.fecha_entrada.value = toDateTimeLocalValueInTimeZone(
+            r.fecha_inicio,
+            state.configHotel.zona_horaria
+        );
     } else {
         ui.form.elements.fecha_entrada.value = '';
     }
@@ -2122,13 +2127,13 @@ async function puedeHacerCheckIn(reservaId) {
         .select('monto_total, id')
         .eq('id', reservaId).single();
     if (errR || !r) {
-        console.error("Error obteniendo reserva para verificar check-in:", errR);
+        reportHandledError('reservas', 'checkin_reservation_load_failed', errR);
         return false;
     }
     const { data: p, error: errP } = await state.supabase.from('pagos_reserva')
         .select('monto').eq('reserva_id', reservaId);
     if (errP) {
-        console.error("Error obteniendo pagos para verificar check-in:", errP);
+        reportHandledError('reservas', 'checkin_payments_load_failed', errP);
         return false;
     }
     const totalPagado = p ? p.reduce((s, i) => s + Number(i.monto), 0) : 0;
@@ -2186,8 +2191,8 @@ function updateReservasHistorySummary(totalReservas, reservasFiltradas) {
 }
 
 function updateReservasExperiencePanels(reservas = []) {
-    const activas = reservas.filter((reserva) => ['reservada', 'confirmada', 'activa'].includes(reserva.estado)).length;
-    const historial = reservas.filter((reserva) => ['cancelada', 'completada', 'no_show', 'cancelada_mantenimiento', 'finalizada_auto'].includes(reserva.estado)).length;
+    const activas = reservas.filter((reserva) => RESERVA_OPERATIONAL_STATES.includes(reserva.estado)).length;
+    const historial = reservas.filter((reserva) => RESERVA_HISTORY_STATES.includes(reserva.estado)).length;
     const pendientes = reservas.filter((reserva) => Number(reserva.pendiente || 0) > 0).length;
     const noShowSugeridos = reservas.filter((reserva) => {
         const tolerance = getReservaToleranceStatus(reserva, state.configHotel, new Date());
@@ -2241,7 +2246,7 @@ function scheduleReservasFilterRender() {
     syncReservaFiltersFromUI();
     clearTimeout(reservasSearchDebounceTimer);
     reservasSearchDebounceTimer = setTimeout(() => {
-        renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error));
+        renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error));
     }, 220);
 }
 
@@ -2273,7 +2278,7 @@ async function renderReservas() {
         return;
     }
     if (!ui.reservasListEl) {
-        console.error("[Reservas] reservasListEl no encontrado en UI para renderizar.");
+        reportHandledError('reservas', 'reservation_list_ui_missing');
         return;
     }
 
@@ -2283,19 +2288,17 @@ async function renderReservas() {
     await ensureReservasHistorialUsuarios();
     poblarRecepcionistasFiltro();
 
-    const estadosVisibles = ['reservada', 'confirmada', 'activa', 'cancelada', 'completada', 'no_show', 'cancelada_mantenimiento', 'finalizada_auto'];
-
     const { data: rs, error } = await state.supabase
         .from('reservas')
         .select('*')
         .eq('hotel_id', state.hotelId)
-        .in('estado', estadosVisibles)
+        .in('estado', RESERVA_VISIBLE_STATES)
         .order('fecha_inicio', { ascending: false })
         .limit(500);
 
     if (error) {
         showError(ui.reservasListEl, `Error cargando reservas: ${error.message}`);
-        console.error("[Reservas] Render: Error detallado en la consulta:", error);
+        reportHandledError('reservas', 'reservation_list_load_failed', error);
         return;
     }
 
@@ -2342,7 +2345,7 @@ async function renderReservas() {
             });
         } catch (relatedError) {
             showError(ui.reservasListEl, `Error cargando datos relacionados de reservas: ${relatedError.message}`);
-            console.error('[Reservas] Error cargando relaciones por lotes:', relatedError);
+            reportHandledError('reservas', 'reservation_relations_load_failed', relatedError);
             return;
         }
     }
@@ -2396,7 +2399,7 @@ async function renderReservas() {
         ui.reservasListEl.style.display = 'block';
         ui.reservasListEl.innerHTML = htmlGeneral;
     } catch (e) {
-        console.error("[Reservas] Render: Error al insertar HTML en el DOM:", e);
+        reportHandledError('reservas', 'reservation_list_dom_render_failed', e);
         if (ui.reservasListEl) {
             ui.reservasListEl.innerHTML = "<p class='error-indicator'>Error critico al mostrar la lista de reservas. Revise la consola.</p>";
         }
@@ -2443,7 +2446,7 @@ function getAccionesReservaHTML(reserva) {
 
 
 function configureFechaEntrada(fechaEntradaInput) {
-    return configureReservaFechaEntrada(fechaEntradaInput);
+    return configureReservaFechaEntrada(fechaEntradaInput, state.configHotel.zona_horaria);
 }
 
 
@@ -2550,7 +2553,7 @@ function actualizarVisibilidadPago() {
 
     // Salir si algÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âºn elemento no se encuentra, para evitar errores
     if (!tipoPagoSelect || !abonoContainer || !totalPagoCompletoContainer || !metodoPagoSelect || !montoAbonoInput) {
-        console.error("No se encontraron todos los elementos del formulario de pago.");
+        reportHandledError('reservas', 'payment_form_ui_missing');
         return;
     }
 
@@ -3006,12 +3009,7 @@ container.innerHTML = `
                     <label for="reservas_estado_filter" class="font-semibold text-sm text-gray-700 block mb-1">Estado</label>
                     <select id="reservas_estado_filter" class="form-control">
                         <option value="">Todos</option>
-                        <option value="reservada">Reservada</option>
-                        <option value="confirmada">Confirmada</option>
-                        <option value="activa">Activa</option>
-                        <option value="completada">Completada</option>
-                        <option value="cancelada">Cancelada</option>
-                        <option value="no_show">No presentado</option>
+                        ${RESERVA_VISIBLE_STATES.map((estado) => `<option value="${estado}">${getReservaStateLabel(estado)}</option>`).join('')}
                     </select>
                 </div>
                 <div class="rounded-2xl border border-slate-200 bg-white p-4">
@@ -3176,7 +3174,7 @@ const setupEventListeners = () => {
     if (ui.waitlistListEl) ui.waitlistListEl.addEventListener('click', handleWaitlistPanelClick);
     if (ui.waitlistActionButton) ui.waitlistActionButton.addEventListener('click', () => {
         handleSaveWaitlistFromForm().catch((error) => {
-            console.error('[Reservas] Error enviando a lista de espera:', error);
+            reportHandledError('reservas', 'waitlist_submit_failed', error);
             showError(ui.feedbackDiv, `No se pudo enviar a lista de espera: ${error.message}`);
         });
     });
@@ -3184,16 +3182,16 @@ const setupEventListeners = () => {
     if (ui.pricingRulesPanel) ui.pricingRulesPanel.addEventListener('click', handlePricingRulePanelClick);
     if (ui.reservasFiltrosForm) ui.reservasFiltrosForm.addEventListener('submit', handleReservasFiltersSubmit);
     if (ui.reservasClearFiltersButton) ui.reservasClearFiltersButton.addEventListener('click', () => {
-        resetReservasFilters().catch((error) => console.error('[Reservas] Error limpiando filtros:', error));
+        resetReservasFilters().catch((error) => reportHandledError('reservas', 'filters_reset_failed', error));
     });
     if (ui.reservasSearchInput) ui.reservasSearchInput.addEventListener('input', scheduleReservasFilterRender);
-    if (ui.reservasFechaModoSelect) ui.reservasFechaModoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasFechaDesdeInput) ui.reservasFechaDesdeInput.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasFechaHastaInput) ui.reservasFechaHastaInput.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasRecepcionistaSelect) ui.reservasRecepcionistaSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasTurnoSelect) ui.reservasTurnoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasEstadoSelect) ui.reservasEstadoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
-    if (ui.reservasOrigenSelect) ui.reservasOrigenSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => console.error('[Reservas] Error aplicando filtros:', error)); });
+    if (ui.reservasFechaModoSelect) ui.reservasFechaModoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error)); });
+    if (ui.reservasFechaDesdeInput) ui.reservasFechaDesdeInput.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error)); });
+    if (ui.reservasFechaHastaInput) ui.reservasFechaHastaInput.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error)); });
+    if (ui.reservasRecepcionistaSelect) ui.reservasRecepcionistaSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error)); });
+    if (ui.reservasTurnoSelect) ui.reservasTurnoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error)); });
+    if (ui.reservasEstadoSelect) ui.reservasEstadoSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error)); });
+    if (ui.reservasOrigenSelect) ui.reservasOrigenSelect.addEventListener('change', () => { syncReservaFiltersFromUI(); renderReservas().catch((error) => reportHandledError('reservas', 'filter_render_failed', error)); });
     
     document.addEventListener('datosActualizados', handleExternalUpdate);
 };   

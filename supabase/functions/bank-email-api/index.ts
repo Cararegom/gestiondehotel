@@ -28,6 +28,11 @@ import { committedReservationTotals } from '../_shared/bank-email/allocation-tot
 import { isBankReconciliationPaymentMethod } from '../_shared/bank-email/sale-reconciliation.ts';
 import { activeSaleAllocationTotals, saleAvailableAmount } from '../_shared/bank-email/sale-capacity.ts';
 import { humanItemSummary, rankCandidatesByTime } from '../_shared/bank-email/candidate-ranking.ts';
+import {
+  DEFAULT_BANK_TIME_ZONE,
+  normalizeBankTimeZone,
+  utcRangeForCalendarDates
+} from '../_shared/bank-email/time-zone.ts';
 
 const PAYMENT_STATUSES = new Set(['detected', 'matched', 'confirmed', 'manual_review', 'rejected', 'duplicated']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -309,7 +314,8 @@ async function listEvents(
   admin: SupabaseClient,
   pilotHotelId: string,
   body: RequestBody,
-  singleId?: string
+  singleId?: string,
+  hotelTimeZone = DEFAULT_BANK_TIME_ZONE
 ) {
   const offset = singleId ? 0 : boundedInteger(body.offset, 0, 0, 1_000_000);
   const limit = singleId ? 1 : boundedInteger(body.limit, EVENT_PAGE_SIZE, 1, EVENT_PAGE_SIZE_MAX);
@@ -324,11 +330,14 @@ async function listEvents(
   if (status && PAYMENT_STATUSES.has(status)) query = query.eq('status', status);
   const dateFrom = asString(body.dateFrom, 10);
   const dateTo = asString(body.dateTo, 10);
-  if (ISO_DAY_PATTERN.test(dateFrom)) query = query.gte('email_received_at', `${dateFrom}T00:00:00-05:00`);
-  if (ISO_DAY_PATTERN.test(dateTo)) {
-    const exclusiveEnd = new Date(`${dateTo}T00:00:00-05:00`);
-    exclusiveEnd.setUTCDate(exclusiveEnd.getUTCDate() + 1);
-    query = query.lt('email_received_at', exclusiveEnd.toISOString());
+  const validFrom = ISO_DAY_PATTERN.test(dateFrom);
+  const validTo = ISO_DAY_PATTERN.test(dateTo);
+  if (validFrom || validTo) {
+    const rangeStart = validFrom ? dateFrom : dateTo;
+    const rangeEnd = validTo ? dateTo : dateFrom;
+    const range = utcRangeForCalendarDates(rangeStart, rangeEnd, hotelTimeZone);
+    if (validFrom) query = query.gte('email_received_at', range.startIso);
+    if (validTo) query = query.lt('email_received_at', range.endExclusiveIso);
   }
   query = query.range(offset, offset + limit);
   const { data, error } = await query;
@@ -343,6 +352,20 @@ async function listEvents(
     nextOffset: hasMore ? offset + visibleRows.length : null,
     limit
   };
+}
+
+async function loadHotelOperationalTimeZone(admin: SupabaseClient, hotelId: string): Promise<string> {
+  const { data, error } = await admin
+    .from('hoteles')
+    .select('zona_horaria')
+    .eq('id', hotelId)
+    .maybeSingle();
+  if (error) {
+    throw Object.assign(new Error('No se pudo consultar la zona horaria del hotel.'), {
+      code: 'hotel_time_zone_lookup_failed'
+    });
+  }
+  return normalizeBankTimeZone(data?.zona_horaria, DEFAULT_BANK_TIME_ZONE);
 }
 
 async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymentEventId?: string) {
@@ -820,7 +843,8 @@ async function handlePilotAction(
 
   if (action === 'list') {
     await requirePilotAdministrator(admin, context, pilotHotel.id);
-    const page = await listEvents(admin, pilotHotel.id, body);
+    const hotelTimeZone = await loadHotelOperationalTimeZone(admin, pilotHotel.id);
+    const page = await listEvents(admin, pilotHotel.id, body, undefined, hotelTimeZone);
     return {
       events: page.events,
       pagination: { hasMore: page.hasMore, nextOffset: page.nextOffset, limit: page.limit }
@@ -829,7 +853,8 @@ async function handlePilotAction(
   if (action === 'detail') {
     await requirePilotAdministrator(admin, context, pilotHotel.id);
     const paymentEventId = requireUuid(body.paymentEventId, 'invalid_payment_event_id');
-    const { events: [event] } = await listEvents(admin, pilotHotel.id, body, paymentEventId);
+    const hotelTimeZone = await loadHotelOperationalTimeZone(admin, pilotHotel.id);
+    const { events: [event] } = await listEvents(admin, pilotHotel.id, body, paymentEventId, hotelTimeZone);
     if (!event) throw new HttpError(404, 'payment_event_not_found', 'El pago bancario no existe.');
     const allocations = await getPaymentAllocations(admin, pilotHotel.id, paymentEventId);
     return { event, allocations };
