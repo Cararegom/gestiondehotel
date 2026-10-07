@@ -5,6 +5,9 @@ import {
 } from './fase1OperationService.js';
 
 const ERROR_MESSAGES = [
+  [/EXTENSION_ESTANCIA_CAMBIO/i, 'La estancia cambio desde que abriste el formulario. Actualiza el mapa antes de extender; no se registro ningun cobro.'],
+  [/EXTENSION_(FECHAS_INVALIDAS|PAGOS_INVALIDOS|MONTO_INVALIDO)/i, 'Revisa la nueva fecha de salida y los pagos de la extension. No se registro ningun cobro.'],
+  [/EXTENSION_(RESERVA_NO_ACTIVA|HABITACION_NO_DISPONIBLE)/i, 'La estancia ya no se puede extender. Actualiza el mapa; no se registro ningun cobro.'],
   [/A13_HABITACION_(NO_DISPONIBLE|CON_ESTANCIA_ACTIVA|CAMBIO_DURANTE_CREACION)/i, 'La habitacion ya no esta libre. Actualiza el mapa y vuelve a intentarlo.'],
   [/A13_CLIENTE_NO_AUTORIZADO/i, 'El cliente seleccionado no pertenece a este hotel o ya no esta activo.'],
   [/A13_TIEMPO_ESTANCIA_NO_AUTORIZADO/i, 'La tarifa seleccionada ya no esta disponible para este hotel.'],
@@ -20,6 +23,42 @@ const ERROR_MESSAGES = [
   [/A13_HOTEL_NO_AUTORIZADO|A14_(RESERVA|HABITACION)_NO_AUTORIZADA/i, 'No tienes acceso a esta operacion del hotel.'],
   [/A13_AUTENTICACION_REQUERIDA|A14_AUTENTICACION_REQUERIDA/i, 'Tu sesion ya no es valida. Inicia sesion nuevamente.']
 ];
+
+const pendingExtensions = new Map();
+
+export async function extenderEstanciaReservaAtomica(supabase, {
+  reservaId, fechaFinAnterior, nuevaFechaFin, monto, descripcion,
+  pagos = [], turnoId = null, notas = null, occurredAt = new Date().toISOString()
+}) {
+  const normalizedPayments = pagos.map((pago) => ({
+    metodo_pago_id: pago.metodo_pago_id, monto: Number(pago.monto)
+  }));
+  const scope = buildOperationScope('estancia-extension', {
+    reservaId, fechaFinAnterior, nuevaFechaFin, monto, descripcion, turnoId, notas,
+    pagos: JSON.stringify(normalizedPayments)
+  });
+  if (pendingExtensions.has(scope)) return pendingExtensions.get(scope);
+  const request = (async () => {
+    const { data, error } = await supabase.rpc('extender_estancia_reserva_atomica', {
+      p_reserva_id: reservaId,
+      p_fecha_fin_anterior: fechaFinAnterior,
+      p_nueva_fecha_fin: nuevaFechaFin,
+      p_monto: monto,
+      p_descripcion: descripcion,
+      p_pagos: normalizedPayments,
+      p_turno_id: turnoId,
+      p_client_operation_id: getStableOperationId(scope),
+      p_notas: notas,
+      p_occurred_at: occurredAt
+    });
+    if (error) throwLifecycleError(error, 'No se pudo registrar la extension.');
+    requireResult(data, 'reserva', 'La extension no devolvio la estancia actualizada.');
+    completeStableOperation(scope);
+    return data;
+  })();
+  pendingExtensions.set(scope, request);
+  try { return await request; } finally { pendingExtensions.delete(scope); }
+}
 
 export function getReservationLifecycleErrorMessage(error, fallback = 'No se pudo completar la operacion de la estancia.') {
   const rawMessage = [error?.message, error?.details, error?.hint]
