@@ -1,4 +1,4 @@
-import { escapeHtml } from '../security.js';
+import { escapeHtml, sanitizeUrl } from '../security.js';
 
 function formatCurrency(value) {
   return new Intl.NumberFormat('es-CO', {
@@ -54,18 +54,21 @@ function buildPrintStyle(config) {
 
 function renderHeader(config = {}, documentLabel) {
   const lines = [config.encabezado_ticket_l1, config.encabezado_ticket_l2, config.encabezado_ticket_l3].filter(Boolean);
-  const headerText = lines.length ? lines.join('<br>') : (config.encabezado_ticket || '');
+  const headerText = lines.length
+    ? lines.map((line) => escapeHtml(line)).join('<br>')
+    : escapeHtml(config.encabezado_ticket || '');
+  const logoUrl = config.mostrar_logo !== false ? sanitizeUrl(config.logo_url) : '';
   return `
-    ${config.mostrar_logo !== false && config.logo_url ? `<div style="text-align:center;margin-bottom:6px;"><img src="${config.logo_url}" style="max-width:42mm;max-height:40px;object-fit:contain;"></div>` : ''}
-    <div style="text-align:center;font-weight:800;font-size:1.2em;">${config.nombre_hotel || ''}</div>
+    ${logoUrl ? `<div style="text-align:center;margin-bottom:6px;"><img src="${escapeHtml(logoUrl)}" style="max-width:42mm;max-height:40px;object-fit:contain;"></div>` : ''}
+    <div style="text-align:center;font-weight:800;font-size:1.2em;">${escapeHtml(config.nombre_hotel || '')}</div>
     <div style="text-align:center;font-size:0.9em;line-height:1.35;">
-      ${config.razon_social || ''}
-      ${config.nit_rut ? `<br>NIT/RUT: ${config.nit_rut}` : ''}
-      ${config.direccion_fiscal ? `<br>${config.direccion_fiscal}` : ''}
+      ${escapeHtml(config.razon_social || '')}
+      ${config.nit_rut ? `<br>NIT/RUT: ${escapeHtml(config.nit_rut)}` : ''}
+      ${config.direccion_fiscal ? `<br>${escapeHtml(config.direccion_fiscal)}` : ''}
     </div>
     ${headerText ? `<div style="text-align:center;margin:6px 0;font-size:0.88em;">${headerText}</div>` : ''}
     <div style="border-bottom:1px dashed #333;margin:6px 0;"></div>
-    <div style="text-align:center;font-weight:800;font-size:1.05em;">${documentLabel}</div>
+    <div style="text-align:center;font-weight:800;font-size:1.05em;">${escapeHtml(documentLabel)}</div>
     <div style="border-bottom:1px dashed #333;margin:6px 0;"></div>
   `;
 }
@@ -80,8 +83,8 @@ function renderMeta(meta = []) {
   if (!cleanMeta.length) return '';
   return cleanMeta.map((item) => `
     <div class="meta-row">
-      <span class="meta-label"><b>${item.label}:</b></span>
-      <span class="meta-value">${item.value}</span>
+      <span class="meta-label"><b>${escapeHtml(item.label)}:</b></span>
+      <span class="meta-value">${escapeHtml(item.value)}</span>
     </div>
   `).join('');
 }
@@ -100,8 +103,8 @@ function renderItems(items = []) {
       <tbody>
         ${items.map((item) => `
           <tr>
-            <td class="item-name">${item.nombre || ''}${item.precio ? `<div class="item-price">${formatCurrency(item.precio)}</div>` : ''}</td>
-            <td class="item-qty">${item.cantidad || ''}</td>
+            <td class="item-name">${escapeHtml(item.nombre || '')}${item.precio ? `<div class="item-price">${formatCurrency(item.precio)}</div>` : ''}</td>
+            <td class="item-qty">${escapeHtml(item.cantidad || '')}</td>
             <td class="item-total">${formatCurrency(item.total || 0)}</td>
           </tr>
         `).join('')}
@@ -117,7 +120,7 @@ function renderPayments(payments = []) {
     <div style="font-weight:700;margin-bottom:4px;">Pagos</div>
     ${payments.map((payment) => `
       <div class="payment-row">
-        <span>${payment.label || 'Método'}</span>
+        <span>${escapeHtml(payment.label || 'Método')}</span>
         <span>${formatCurrency(payment.amount || 0)}</span>
       </div>
     `).join('')}
@@ -160,7 +163,7 @@ export async function imprimirTicketOperacion({
   const html = `
     <html>
       <head>
-        <title>${documentLabel}</title>
+        <title>${escapeHtml(documentLabel)}</title>
         <style>
           ${css}
           *{box-sizing:border-box;}
@@ -189,11 +192,11 @@ export async function imprimirTicketOperacion({
           <div class="total-row"><span>Subtotal</span><span>${formatCurrency(subtotal)}</span></div>
           ${discount > 0 ? `<div class="total-row"><span>Descuento</span><span>-${formatCurrency(discount)}</span></div>` : ''}
           ${taxes > 0 ? `<div class="total-row"><span>Impuestos</span><span>${formatCurrency(taxes)}</span></div>` : ''}
-          ${tip > 0 ? `<div class="total-row"><span>${tipLabel}</span><span>${formatCurrency(tip)}</span></div>` : ''}
-          <div class="total-row grand-total"><strong>${totalLabel}</strong><strong>${formatCurrency(total)}</strong></div>
+          ${tip > 0 ? `<div class="total-row"><span>${escapeHtml(tipLabel)}</span><span>${formatCurrency(tip)}</span></div>` : ''}
+          <div class="total-row grand-total"><strong>${escapeHtml(totalLabel)}</strong><strong>${formatCurrency(total)}</strong></div>
           ${renderPayments(payments)}
-          ${notes ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="font-size:0.88em;">${notes}</div>` : ''}
-          ${config?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${config.pie_ticket}</div>` : ''}
+          ${notes ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="font-size:0.88em;">${escapeHtml(notes)}</div>` : ''}
+          ${config?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${escapeHtml(config.pie_ticket)}</div>` : ''}
         </div>
         <!-- La impresion se inicia desde la ventana principal. -->
       </body>
@@ -312,8 +315,8 @@ export async function imprimirInventarioTerraza80mm({
         <div class="ticket">
           ${renderHeader(printConfig, 'Inventario Terraza')}
           ${renderMeta([
-            { label: 'Fecha', value: escapeHtml(fecha) },
-            { label: 'Usuario', value: escapeHtml(userName || 'Usuario') },
+            { label: 'Fecha', value: fecha },
+            { label: 'Usuario', value: userName || 'Usuario' },
             { label: 'Formato', value: 'Termica 80mm' }
           ])}
           <div class="summary">
@@ -332,7 +335,7 @@ export async function imprimirInventarioTerraza80mm({
           </div>
           ${rowsHtml}
           <div style="margin-top:8px;text-align:center;font-size:0.82em;">Sis: stock sistema | Res: reservado | Disp: disponible</div>
-          ${printConfig?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${printConfig.pie_ticket}</div>` : ''}
+          ${printConfig?.pie_ticket ? `<div style="border-top:1px dashed #333;margin:8px 0 6px;"></div><div style="text-align:center;font-size:0.86em;">${escapeHtml(printConfig.pie_ticket)}</div>` : ''}
         </div>
         <!-- La impresion se inicia desde la ventana principal. -->
       </body>
