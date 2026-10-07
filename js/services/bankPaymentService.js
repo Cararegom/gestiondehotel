@@ -51,10 +51,10 @@ async function invokeBankEmailApi(supabase, action, payload = {}) {
     } catch {
       // Algunas versiones del cliente no exponen el cuerpo de la respuesta.
     }
-    throw new Error(safeServerMessage(
+    throw Object.assign(new Error(safeServerMessage(
       serverMessage || error.message,
       'No se pudo completar la operacion bancaria.'
-    ));
+    )), { status: error.context?.status });
   }
 
   if (data?.error) {

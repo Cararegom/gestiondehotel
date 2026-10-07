@@ -87,6 +87,7 @@ import {
 import { escapeHtml } from '../../security.js';
 import { toDateTimeLocalValueInTimeZone } from '../../services/hotelTimeZoneService.js';
 import { reportHandledError } from '../../services/handledErrorReporter.js';
+import { readQueryWithNetworkRetry, readRelatedRowsInBatches } from '../../services/readQueryService.js';
 // --- MÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œDULO DE ESTADO GLOBAL ---
 const state = {
     isModuleMounted: false,
@@ -2282,19 +2283,20 @@ async function renderReservas() {
         return;
     }
 
+    const { supabase, hotelId } = state;
     showLoading(ui.reservasListEl, "Cargando reservas...");
     clearFeedback(ui.reservasListEl);
 
     await ensureReservasHistorialUsuarios();
     poblarRecepcionistasFiltro();
 
-    const { data: rs, error } = await state.supabase
+    const { data: rs, error } = await readQueryWithNetworkRetry(() => supabase
         .from('reservas')
         .select('*')
-        .eq('hotel_id', state.hotelId)
+        .eq('hotel_id', hotelId)
         .in('estado', RESERVA_VISIBLE_STATES)
         .order('fecha_inicio', { ascending: false })
-        .limit(500);
+        .limit(500));
 
     if (error) {
         showError(ui.reservasListEl, `Error cargando reservas: ${error.message}`);
@@ -2309,26 +2311,11 @@ async function renderReservas() {
         const canceladorIds = [...new Set(rs.map((reserva) => reserva.cancelado_por_usuario_id).filter(Boolean))];
         const reservaIds = rs.map((reserva) => reserva.id);
 
-        const consultarEnLotes = async (tabla, columnas, campo, ids, tamanoLote = 100) => {
-            if (!ids.length) return [];
-            const filas = [];
-            for (let indice = 0; indice < ids.length; indice += tamanoLote) {
-                const lote = ids.slice(indice, indice + tamanoLote);
-                const { data, error: errorLote } = await state.supabase
-                    .from(tabla)
-                    .select(columnas)
-                    .in(campo, lote);
-                if (errorLote) throw errorLote;
-                filas.push(...(data || []));
-            }
-            return filas;
-        };
-
         try {
             const [habitaciones, pagos, canceladores] = await Promise.all([
-                consultarEnLotes('habitaciones', 'id, nombre, tipo', 'id', habitacionIds),
-                consultarEnLotes('pagos_reserva', 'reserva_id, monto', 'reserva_id', reservaIds),
-                consultarEnLotes('usuarios', 'id, nombre', 'id', canceladorIds)
+                readRelatedRowsInBatches(supabase, 'habitaciones', 'id, nombre, tipo', 'id', habitacionIds),
+                readRelatedRowsInBatches(supabase, 'pagos_reserva', 'reserva_id, monto', 'reserva_id', reservaIds),
+                readRelatedRowsInBatches(supabase, 'usuarios', 'id, nombre', 'id', canceladorIds)
             ]);
             const habitacionesPorId = new Map(habitaciones.map((habitacion) => [habitacion.id, habitacion]));
             const canceladoresPorId = new Map(canceladores.map((usuario) => [usuario.id, usuario]));

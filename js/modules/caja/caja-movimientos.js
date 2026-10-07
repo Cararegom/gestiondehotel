@@ -11,6 +11,7 @@ import { confirmAction, seleccionarMetodoPago, solicitarMotivoCambioMetodo } fro
 import { buildOperationScope, completeStableOperation, getStableOperationId } from '../../services/fase1OperationService.js';
 import { getBankPaymentCashStatuses, getBankPaymentPilotStatus } from '../../services/bankPaymentService.js';
 import { reportHandledError } from '../../services/handledErrorReporter.js';
+import { readQueryWithNetworkRetry } from '../../services/readQueryService.js';
 import {
   getRuntimeHotelTimeZone,
   parseDateTimeInTimeZone,
@@ -255,7 +256,8 @@ export function getBankStatusBadge(status) {
     pending: ['Esperando verificacion', 'bg-amber-100 text-amber-800'],
     verified: ['Confirmado por banco', 'bg-emerald-100 text-emerald-800'],
     review: ['Revision administrativa', 'bg-rose-100 text-rose-800'],
-    not_applicable: ['No aplica', 'bg-slate-100 text-slate-600']
+    not_applicable: ['No aplica', 'bg-slate-100 text-slate-600'],
+    unavailable: ['Verificación no disponible', 'bg-slate-100 text-slate-600']
   };
   const [label, className] = badges[status] || badges.not_applicable;
   return `<span class="inline-flex rounded-full px-2 py-1 text-xs font-semibold ${className}">${label}</span>`;
@@ -650,11 +652,11 @@ export async function loadAndRenderMovements({
 
   tBodyEl.innerHTML = '<tr><td colspan="6" class="text-center p-4">Cargando movimientos del turno...</td></tr>';
   try {
-    const { data: movements, error } = await supabase
+    const { data: movements, error } = await readQueryWithNetworkRetry(() => supabase
       .from('caja')
       .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,reserva_id,pago_reserva_id,venta_tienda_id,venta_restaurante_id,venta_terraza_id,reserva_terraza_id,compra_tienda_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
       .eq('hotel_id', hotelId)
-      .eq('turno_id', turnoId);
+      .eq('turno_id', turnoId));
 
     if (error) throw error;
 
@@ -673,16 +675,16 @@ export async function loadAndRenderMovements({
     const restaurantSaleIds = [...new Set((movements || []).map((movement) => movement.venta_restaurante_id).filter(Boolean))];
     const [storeResult, restaurantResult] = await Promise.all([
       storeSaleIds.length
-        ? supabase
+        ? readQueryWithNetworkRetry(() => supabase
           .from('detalle_ventas_tienda')
           .select('venta_id,cantidad,producto:productos_tienda!detalle_ventas_tienda_producto_id_fkey(nombre)')
-          .in('venta_id', storeSaleIds)
+          .in('venta_id', storeSaleIds))
         : Promise.resolve({ data: [], error: null }),
       restaurantSaleIds.length
-        ? supabase
+        ? readQueryWithNetworkRetry(() => supabase
           .from('ventas_restaurante_items')
           .select('venta_id,cantidad,plato:platos!ventas_restaurante_items_plato_id_fkey(nombre)')
-          .in('venta_id', restaurantSaleIds)
+          .in('venta_id', restaurantSaleIds))
         : Promise.resolve({ data: [], error: null })
     ]);
     if (storeResult.error) throw storeResult.error;
@@ -704,16 +706,22 @@ export async function loadAndRenderMovements({
     });
     let revertedIds = new Set();
     if (movementIds.length) {
-      const { data: reversals, error: reversalsError } = await supabase
+      const { data: reversals, error: reversalsError } = await readQueryWithNetworkRetry(() => supabase
         .from('caja_reversiones')
         .select('original_movement_id')
-        .in('original_movement_id', movementIds);
+        .in('original_movement_id', movementIds));
       if (reversalsError) throw reversalsError;
       revertedIds = new Set((reversals || []).map((item) => item.original_movement_id));
     }
-    const bankStatuses = showBankStatus
-      ? await getBankPaymentCashStatuses(supabase, hotelId, movementIds)
-      : {};
+    let bankStatuses = {};
+    if (showBankStatus) {
+      try {
+        bankStatuses = await getBankPaymentCashStatuses(supabase, hotelId, movementIds);
+      } catch (statusError) {
+        reportHandledError('caja', 'bank_cash_statuses_load_failed', statusError);
+        bankStatuses = Object.fromEntries(movementIds.map((id) => [id, 'unavailable']));
+      }
+    }
     movementTableState.all = sortMovementsByDate((movements || []).map((movement) => ({
       ...movement,
       concepto_original: movement.concepto,
