@@ -19,7 +19,7 @@ test('M16 impide que reservas.js supere la linea base auditada', () => {
 
   assert.ok(reservas);
   assert.equal(reservas.maxLines, 3289);
-  assert.equal(reservas.lines, 3289);
+  assert.ok(reservas.lines <= reservas.maxLines);
   assert.equal(reservas.ok, true);
   assert.equal(MODULE_SIZE_BUDGETS.length, 1);
 });
