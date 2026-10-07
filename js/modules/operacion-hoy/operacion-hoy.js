@@ -1,5 +1,6 @@
 import { renderEmptyState, renderMetricCard, renderMetricGrid, renderPageHero, renderSectionCard } from '../../services/appUiKit.js';
 import { loadOperationTodaySnapshot } from '../../services/operationTodayService.js';
+import { escapeHtml } from '../../security.js';
 
 let currentContainer = null;
 let listeners = [];
@@ -11,23 +12,26 @@ function bind(element, type, handler) {
 
 function renderSimpleList(items, emptyText, type) {
   if (!items.length) {
-    return `<div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">${emptyText}</div>`;
+    return `<div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">${escapeHtml(emptyText)}</div>`;
   }
 
   return `
     <div class="space-y-3">
-      ${items.map((item) => `
+      ${items.map((item) => {
+        const route = typeof item.route === 'string' && item.route.startsWith('#/') ? item.route : '';
+        return `
         <article class="rounded-2xl border ${type === 'attention' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-white'} p-4 shadow-xs">
           <div class="flex items-start justify-between gap-3">
             <div>
-              <strong class="block text-slate-900">${item.cliente_nombre || item.title || 'Registro'}</strong>
-              <p class="mt-1 text-sm text-slate-600">${item.habitaciones?.nombre || item.helper || 'Sin detalle adicional'}</p>
-              ${item.schedule ? `<small class="mt-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">${item.schedule}</small>` : ''}
+              <strong class="block text-slate-900">${escapeHtml(item.cliente_nombre || item.title || 'Registro')}</strong>
+              <p class="mt-1 text-sm text-slate-600">${escapeHtml(item.habitaciones?.nombre || item.helper || 'Sin detalle adicional')}</p>
+              ${item.schedule ? `<small class="mt-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">${escapeHtml(item.schedule)}</small>` : ''}
             </div>
-            ${item.route ? `<a href="${item.route}" class="button button-neutral app-touch-button">Abrir</a>` : ''}
+            ${route ? `<a href="${escapeHtml(route)}" class="button button-neutral app-touch-button">Abrir</a>` : ''}
           </div>
         </article>
-      `).join('')}
+      `;
+      }).join('')}
     </div>
   `;
 }
