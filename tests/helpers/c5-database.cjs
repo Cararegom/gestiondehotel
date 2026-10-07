@@ -254,6 +254,7 @@ async function database() {
       grant execute on function public.actualizar_estado_pedido_web_tienda(uuid, uuid, text, text) to authenticated;
     `);
   }
+  await db.exec(latestFunction('ajustar_stock_tienda_seguro').definition);
   return { db, migration: rpc.migration };
 }
 
