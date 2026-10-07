@@ -5,8 +5,7 @@ import { showClienteSelectorModal } from '../clientes/clientes.js';
 import { calcularSaldoReserva, getHorariosHotel, puedeHacerCheckIn, getTiemposEstancia, getMetodosPago } from './datos.js';
 import { updateClienteFields } from './room-card.js';
 import { buscarDescuentoParaAlquiler } from './descuentos-helper.js';
-import { crearEstanciaAtomica } from '../../services/reservationLifecycleService.js';
-import { procesarPagosReservaAtomicos } from '../../services/fase1OperationService.js';
+import { crearEstanciaAtomica, extenderEstanciaReservaAtomica } from '../../services/reservationLifecycleService.js';
 import {
     formatInTimeZone,
     getNearestCheckoutDateInTimeZone,
@@ -690,6 +689,9 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
     const formMixto = modalContent.querySelector('#form-pago-mixto');
     const listaPagosDiv = modalContent.querySelector('#lista-pagos-mixtos');
     const btnConfirmar = modalContent.querySelector('#btn-confirmar-pago-mixto');
+    let processingPayment = false;
+    let resolvePayment;
+    const completion = new Promise((resolve) => { resolvePayment = resolve; });
 
     const actualizarTotalesMixtos = () => {
         let totalCubierto = 0;
@@ -702,7 +704,7 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
         const faltanteEl = modalContent.querySelector('#faltante-pago-mixto');
         faltanteEl.textContent = formatCurrency(faltante);
 
-        if (Math.abs(faltante) < 0.01) {
+        if (Math.abs(faltante) < 0.01 && !processingPayment) {
             btnConfirmar.disabled = false;
             faltanteEl.className = 'text-green-600';
         } else {
@@ -733,6 +735,7 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
     actualizarTotalesMixtos();
 
     modalContent.querySelector('#btn-cancelar-pago-mixto').onclick = () => {
+        if (processingPayment) return;
         modalContainer.style.display = 'none';
         modalContainer.innerHTML = '';
 
@@ -747,10 +750,13 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
             btnExtension.disabled = false;
             btnExtension.textContent = 'Confirmar Extensi\u00f3n';
         }
+        resolvePayment(false);
     };
 
     formMixto.onsubmit = async (event) => {
         event.preventDefault();
+        if (processingPayment) return;
+        processingPayment = true;
         btnConfirmar.disabled = true;
         btnConfirmar.textContent = 'Procesando...';
 
@@ -764,6 +770,7 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
         });
 
         if (pagosFinales.length === 0) {
+            processingPayment = false;
             alert('No se ha definido ning\u00fan pago v\u00e1lido.');
             btnConfirmar.disabled = false;
             btnConfirmar.textContent = 'Confirmar Pago';
@@ -774,13 +781,16 @@ async function showPagoMixtoModal(totalAPagar, metodosPago, onConfirm) {
             await onConfirm(pagosFinales);
             modalContainer.style.display = 'none';
             modalContainer.innerHTML = '';
+            resolvePayment(true);
         } catch (error) {
+            processingPayment = false;
             console.error('Error procesando pago mixto:', error);
             mostrarInfoModalGlobal(error.message || 'No se pudo registrar el pago mixto.', 'Error de Pago');
             btnConfirmar.disabled = false;
             btnConfirmar.textContent = 'Confirmar Pago';
         }
     };
+    return completion;
 }
 
 export async function showExtenderTiempoModal(room, supabase, currentUser, hotelId, mainAppContainer) {
@@ -986,10 +996,16 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
         selectHorasExtEl.onchange = () => { if (selectHorasExtEl.value) selectNochesExtEl.value = ""; actualizarResumenTicketExtension(); };
         actualizarResumenTicketExtension();
 
-        modalContent.querySelector('#close-modal-extender').onclick = () => { modalContainer.style.display = "none"; modalContainer.innerHTML = ''; };
-
+        let processingExtension = false;
+        modalContent.querySelector('#close-modal-extender').onclick = () => {
+            if (processingExtension) return;
+            modalContainer.style.display = "none";
+            modalContainer.innerHTML = '';
+        };
         formExtEl.onsubmit = async (ev) => {
             ev.preventDefault();
+            if (processingExtension) return;
+            processingExtension = true;
             const submitButton = formExtEl.querySelector('button[type="submit"]');
             submitButton.disabled = true;
             submitButton.textContent = "Procesando...";
@@ -1044,7 +1060,7 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
                 return; 
             }
             
-            // Lógica de pago y actualización (el resto de la función no necesita cambios significativos)...
+            // El servidor confirma pago, servicio y estancia en una sola transaccion.
             const turnoId = turnoService.getActiveTurnId();
             if (precioExtraSubmit > 0 && !turnoId) {
                 mostrarInfoModalGlobal("ACCI\u00d3N BLOQUEADA: No se puede registrar el pago de la extensi\u00f3n porque no hay un turno activo.", "Turno Requerido", [], modalContainer);
@@ -1053,55 +1069,19 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             }
             
             const handlePaymentAndDBUpdate = async (pagos) => {
-                const conceptoExtension = `Pago por extensi\u00f3n: ${descExtraSubmit} - Cliente: ${reservaActiva.cliente_nombre || 'Cliente General'}`;
-                const pagosData = await procesarPagosReservaAtomicos(supabase, {
-                    reservaId: reservaActiva.id, pagos, turnoId, concepto: conceptoExtension,
-                    operationKey: `extension:${reservaActiva.id}:${nuevaFechaFinSubmit.toISOString()}`
+                return extenderEstanciaReservaAtomica(supabase, {
+                    reservaId: reservaActiva.id,
+                    fechaFinAnterior: reservaActiva.fecha_fin,
+                    nuevaFechaFin: nuevaFechaFinSubmit.toISOString(),
+                    monto: precioExtraSubmit,
+                    descripcion: descExtraSubmit,
+                    pagos,
+                    turnoId,
+                    notas: notasAdicionales || null
                 });
-
-                await supabase.from('servicios_x_reserva').insert({
-                    hotel_id: hotelId, reserva_id: reservaActiva.id,
-                    descripcion_manual: `Extensi\u00f3n: ${descExtraSubmit}`, cantidad: 1,
-                    precio_cobrado: Math.round(precioExtraSubmit), estado_pago: 'pagado',
-                    pago_reserva_id: pagosData[0].pago_reserva_id, fecha_servicio: new Date().toISOString()
-                });
-
-                await supabase.from('reservas').update({
-                    fecha_fin: nuevaFechaFinSubmit.toISOString(),
-                    estado: 'activa',
-                    notas: reservaActiva.notas ? `${reservaActiva.notas}\n${notasAdicionales}` : notasAdicionales
-                }).eq('id', reservaActiva.id);
-
             };
 
             const finalizarExtension = async () => {
-                const { data: cronoAct } = await supabase
-                    .from('cronometros')
-                    .select('id')
-                    .eq('reserva_id', reservaActiva.id)
-                    .eq('habitacion_id', room.id)
-                    .eq('activo', true)
-                    .order('id', { ascending: false })
-                    .limit(1)
-                    .maybeSingle();
-
-                if (cronoAct?.id) {
-                    await supabase
-                        .from('cronometros')
-                        .update({ fecha_fin: nuevaFechaFinSubmit.toISOString(), activo: true })
-                        .eq('id', cronoAct.id);
-                } else {
-                    await supabase.from('cronometros').insert({
-                        hotel_id: hotelId,
-                        reserva_id: reservaActiva.id,
-                        habitacion_id: room.id,
-                        fecha_inicio: reservaActiva.fecha_inicio || new Date().toISOString(),
-                        fecha_fin: nuevaFechaFinSubmit.toISOString(),
-                        activo: true
-                    });
-                }
-
-                await supabase.from('habitaciones').update({ estado: 'ocupada' }).eq('id', room.id);
                 modalContainer.style.display = "none";
                 modalContainer.innerHTML = '';
                 document.dispatchEvent(new CustomEvent('renderRoomsComplete', { detail: { action: 'refresh' } }));
@@ -1110,7 +1090,7 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
             if (precioExtraSubmit > 0) {
                  const metodoPagoSeleccionado = formDataExt.metodo_pago_ext_id;
                  if(metodoPagoSeleccionado === 'mixto'){
-                    showPagoMixtoModal(precioExtraSubmit, metodosPagoExtension, async (pagosMixtos) => {
+                    await showPagoMixtoModal(precioExtraSubmit, metodosPagoExtension, async (pagosMixtos) => {
                         await handlePaymentAndDBUpdate(pagosMixtos);
                         await finalizarExtension();
                     });
@@ -1119,9 +1099,7 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
                     await handlePaymentAndDBUpdate([{ metodo_pago_id: metodoPagoSeleccionado, monto: precioExtraSubmit }]);
                  }
             } else {
-                 await supabase.from('reservas').update({
-                    fecha_fin: nuevaFechaFinSubmit.toISOString(), estado: 'activa'
-                }).eq('id', reservaActiva.id);
+                 await handlePaymentAndDBUpdate([]);
             }
 
                 await finalizarExtension();
@@ -1129,6 +1107,7 @@ export async function showExtenderTiempoModal(room, supabase, currentUser, hotel
                 console.error("Error procesando la extensi\u00f3n:", error);
                 mostrarInfoModalGlobal(error.message || "No se pudo registrar la extensi\u00f3n.", "Error de Extensi\u00f3n", [], modalContainer);
             } finally {
+                processingExtension = false;
                 submitButton.disabled = false;
                 submitButton.textContent = "Confirmar Extensi\u00f3n";
             }
