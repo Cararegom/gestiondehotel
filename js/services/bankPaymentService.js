@@ -105,6 +105,9 @@ export function isUuid(value) {
 export async function getBankPaymentPilotStatus(supabase, hotelId) {
   requireActiveHotel(hotelId);
   const data = await invokeBankEmailApi(supabase, 'pilot-status');
+  if (!isUuid(data.hotelId) || String(data.hotelId).toLowerCase() !== String(hotelId).toLowerCase()) {
+    throw new Error('El hotel de la sesion cambio. Vuelve a cargar la pagina.');
+  }
 
   return {
     eligible: data.eligible === true,
@@ -149,6 +152,8 @@ export async function getBankPaymentGmailStatus(supabase) {
     : {};
 
   return {
+    bankKey: normalizeOptionalText(data.settings?.bankKey, 160),
+    configuredLabelName: normalizeOptionalText(data.settings?.labelName, 160),
     connected: integration.connected === true,
     connectedEmail: normalizeOptionalText(integration.connectedEmail, 320),
     labelName: normalizeOptionalText(integration.labelName, 160),
@@ -159,6 +164,37 @@ export async function getBankPaymentGmailStatus(supabase) {
     renewalFailures: normalizeNonNegativeInteger(integration.renewalFailures),
     lastErrorCode: normalizeOptionalText(integration.lastErrorCode, 120)
   };
+}
+
+export async function saveBankPaymentEmailSettings(supabase, settings) {
+  return invokeBankEmailApi(supabase, 'save-bank-settings', {
+    labelName: String(settings?.labelName || '').trim(), bankKey: String(settings?.bankKey || '').trim()
+  });
+}
+
+export async function getBankPaymentOutlookStatus(supabase) {
+  const data = await invokeBankEmailApi(supabase, 'outlook-status');
+  const row = data.integration || {};
+  return { connected: row.connected === true,
+    connectedEmail: normalizeOptionalText(row.connectedEmail, 320),
+    watchStatus: normalizeOptionalText(row.watchStatus, 80),
+    lastSyncedAt: normalizeOptionalText(row.lastSyncedAt, 80),
+    lastErrorCode: normalizeOptionalText(row.lastErrorCode, 120) };
+}
+
+export async function runBankPaymentOutlookAction(supabase, action) {
+  const allowed = { connect: 'outlook-oauth-start', sync: 'outlook-sync', test: 'outlook-test', disconnect: 'outlook-disconnect' };
+  if (!allowed[action]) throw new Error('Accion de Outlook no valida.');
+  const data = await invokeBankEmailApi(supabase, allowed[action]);
+  if (action === 'connect') {
+    let url;
+    try { url = new URL(String(data.authUrl || '')); } catch { throw new Error('Microsoft no devolvio una URL de autorizacion.'); }
+    if (url.protocol !== 'https:' || url.hostname !== 'login.microsoftonline.com' || url.username || url.password || url.pathname !== '/common/oauth2/v2.0/authorize') {
+      throw new Error('La URL de autorizacion de Microsoft no es valida.');
+    }
+    return { authUrl: url.toString() };
+  }
+  return data;
 }
 
 export async function startBankPaymentGmailOAuth(supabase) {

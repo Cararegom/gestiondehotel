@@ -88,7 +88,8 @@ test('Fase 18 obliga BANK_EMAIL_PILOT_HOTEL_ID dentro del runtime Deno de Edge F
   assert.match(source, /PILOT_HOTEL_ID_REQUIRED/);
   for (const relativePath of edgeFiles) {
     const edgeSource = fs.readFileSync(path.join(root, relativePath), 'utf8');
-    assert.match(edgeSource, /getPilotHotel/);
+    assert.match(edgeSource, /getBankEmailHotel/);
+    assert.doesNotMatch(edgeSource, /getPilotHotel\(admin/);
   }
 });
 

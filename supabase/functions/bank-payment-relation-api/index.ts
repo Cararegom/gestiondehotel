@@ -1,6 +1,6 @@
-import { assertBankEmailConfig, isBankEmailProcessingEnabled, readBankEmailConfig } from '../_shared/bank-email/config.ts';
+import { isBankEmailProcessingEnabled, readBankEmailConfig } from '../_shared/bank-email/config.ts';
 import { buildCorsHeaders, HttpError, jsonResponse, readJsonBody, safeErrorCode, safeErrorMessage } from '../_shared/bank-email/http.ts';
-import { getPilotHotel } from '../_shared/bank-email/pilot-hotel.ts';
+import { getBankEmailHotel } from '../_shared/bank-email/hotel-scope.ts';
 import { isBankReconciliationPaymentMethod } from '../_shared/bank-email/sale-reconciliation.ts';
 import { buildAdminClient, isPilotOperationalUser, requireAuthenticatedProfile } from '../_shared/bank-email/server.ts';
 
@@ -119,11 +119,10 @@ function legacyAllocationMatchesMovement(allocation: LegacyAllocationRow, moveme
 
 async function requireOperationalContext(req: Request) {
   const config = readBankEmailConfig();
-  assertBankEmailConfig(config);
   if (!isBankEmailProcessingEnabled(config)) throw new HttpError(403, 'bank_integration_disabled', 'La integracion bancaria no esta habilitada.');
   const admin = buildAdminClient();
-  const pilot = await getPilotHotel(admin, config.pilotHotelName, config.pilotHotelId);
   const context = await requireAuthenticatedProfile(req, admin);
+  const pilot = await getBankEmailHotel(admin, context.profile.hotel_id);
   if (context.profile.hotel_id !== pilot.id || !(await isPilotOperationalUser(admin, context, pilot.id))) {
     throw new HttpError(403, 'operational_role_required', 'Esta accion requiere recepcion o administracion del hotel piloto.');
   }
@@ -343,7 +342,7 @@ Deno.serve(async (req) => {
         p_allocations: allocations,
         p_action: 'link',
         p_review_reason: reason,
-        p_pilot_hotel_name: pilot.nombre
+        p_pilot_hotel_name: pilot.id
       });
       if (error) {
         if (String(error.code || '') === '23505') throw new HttpError(409, 'cash_movement_already_reconciled', 'Ese movimiento de Caja ya fue conciliado con otra transferencia.');

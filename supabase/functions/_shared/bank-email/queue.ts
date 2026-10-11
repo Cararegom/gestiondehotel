@@ -11,6 +11,7 @@ import {
 import { parseGmailMessage } from './gmail-message.ts';
 import { analyzeBankEmail, isConfiguredBankSender } from './payment-service.ts';
 import { safeErrorCode } from './http.ts';
+import { bankEmailMatchesKey } from './hotel-scope.ts';
 import { isTerminalMissingGmailMessage, shouldDeadLetterPubSubInboxItem } from './pubsub.ts';
 
 interface InboxRow {
@@ -164,8 +165,9 @@ async function processInboxRow(
     await markInbox(admin, row, 'ignored', 'gmail_account_mismatch');
     return;
   }
-  const config = readBankEmailConfig();
+  const config = { ...readBankEmailConfig(), pilotHotelId: pilotHotel.id, pilotHotelName: pilotHotel.nombre, gmailPaymentLabel: integration.gmail_label_name };
   assertBankEmailConfig(config);
+  if (!integration.bank_key) throw Object.assign(new Error('Configura la llave bancaria del hotel.'), { code: 'bank_key_required' });
   const { accessToken } = await getValidGmailAccessToken(admin, integration);
   if (!integration.gmail_history_id) {
     await advanceHistoryCursor(admin, integration.id, pilotHotel.id, row.history_id);
@@ -209,11 +211,12 @@ async function processInboxRow(
       });
       continue;
     }
-    if (!isConfiguredBankSender(normalized)) continue;
+    if (!isConfiguredBankSender(normalized) || !bankEmailMatchesKey(normalized.textBody, integration.bank_key)) continue;
     await analyzeBankEmail(admin, pilotHotel, normalized, config, {
       save: true,
       isTest: false,
       source: 'gmail',
+      bankKey: integration.bank_key,
       integrationId: integration.id,
       userId: null
     });
@@ -230,7 +233,8 @@ export async function processPendingPubSubInbox(
 ): Promise<{ claimed: number; processed: number; failed: number }> {
   const config = readBankEmailConfig();
   if (!isBankEmailProcessingEnabled(config)) return { claimed: 0, processed: 0, failed: 0 };
-  const { data, error } = await admin.rpc('claim_bank_email_pubsub_inbox', {
+  const { data, error } = await admin.rpc('claim_bank_email_pubsub_inbox_for_hotel', {
+    p_hotel_id: pilotHotel.id,
     p_limit: Math.min(Math.max(Math.trunc(limit), 1), 100)
   });
   if (error) throw Object.assign(new Error('No se pudo reclamar la bandeja Pub/Sub.'), { code: 'pubsub_inbox_claim_failed' });
@@ -239,8 +243,7 @@ export async function processPendingPubSubInbox(
   let failed = 0;
   for (const row of rows) {
     if (row.hotel_id !== pilotHotel.id) {
-      await markInbox(admin, row, 'ignored', 'outside_pilot_hotel');
-      continue;
+      throw Object.assign(new Error('La cola no pertenece al hotel autorizado.'), { code: 'pubsub_hotel_mismatch' });
     }
     try {
       await processInboxRow(admin, pilotHotel, row);

@@ -1,5 +1,5 @@
 import { buildAdminClient } from '../_shared/bank-email/server.ts';
-import { getPilotHotel } from '../_shared/bank-email/pilot-hotel.ts';
+import { getBankEmailHotel, getHotelBankSettings, validateHotelBankSettings } from '../_shared/bank-email/hotel-scope.ts';
 import { exchangeGoogleAuthorizationCode, revokeGoogleToken } from '../_shared/bank-email/google-oauth.ts';
 import { decryptToken, encryptToken, getTokenEncryptionKey } from '../_shared/bank-email/token-crypto.ts';
 import { getGmailProfile, stopGmailWatch } from '../_shared/bank-email/gmail-api.ts';
@@ -45,8 +45,9 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
     const { data: pendingState, error: stateError } = await admin
       .from('bank_email_oauth_states')
-      .select('id, hotel_id, user_id, expires_at, consumed_at')
+      .select('id, hotel_id, user_id, expires_at, consumed_at, metadata')
       .eq('state_hash', stateHash)
+      .eq('provider', 'google')
       .is('consumed_at', null)
       .gt('expires_at', now)
       .maybeSingle();
@@ -65,7 +66,7 @@ Deno.serve(async (req) => {
       throw Object.assign(new Error('El estado OAuth ya fue utilizado.'), { code: 'oauth_state_replayed' });
     }
 
-    const pilotHotel = await getPilotHotel(admin, config.pilotHotelName);
+    const pilotHotel = await getBankEmailHotel(admin, pendingState.hotel_id);
     if (pendingState.hotel_id !== pilotHotel.id) {
       throw Object.assign(new Error('El estado OAuth no pertenece al hotel piloto.'), {
         code: 'oauth_state_hotel_mismatch'
@@ -85,7 +86,12 @@ Deno.serve(async (req) => {
       .select('creado_por')
       .eq('id', pilotHotel.id)
       .maybeSingle();
-    const isAdministrator = ['admin', 'superadmin', 'administrador'].includes(role) ||
+    const { data: assignments, error: rolesError } = await admin.from('usuarios_roles').select('roles(nombre)').eq('usuario_id', pendingState.user_id).eq('hotel_id', pilotHotel.id);
+    const assignedAdmin = !rolesError && (assignments || []).some((row) => {
+      const assigned = Array.isArray(row.roles) ? row.roles[0] : row.roles;
+      return ['admin', 'superadmin', 'administrador'].includes(String(assigned?.nombre || '').trim().toLowerCase());
+    });
+    const isAdministrator = assignedAdmin || ['admin', 'superadmin', 'administrador'].includes(role) ||
       hotel?.creado_por === pendingState.user_id;
     if (
       profileError || !profile || profile.activo !== true ||
@@ -105,7 +111,8 @@ Deno.serve(async (req) => {
     const gmailProfile = await getGmailProfile(tokens.access_token);
     const encryptionKey = getTokenEncryptionKey();
     const expiresAt = new Date(Date.now() + Math.max(60, tokens.expires_in || 3600) * 1000).toISOString();
-    const labelName = Deno.env.get('GMAIL_PAYMENT_LABEL') || 'PAGOS HOTEL MARENA';
+    const settings = validateHotelBankSettings(pendingState.metadata?.bankKey ? pendingState.metadata : await getHotelBankSettings(admin, pilotHotel));
+    const labelName = settings.labelName;
     const existingIntegration = await getBankEmailIntegration(admin, pilotHotel.id);
     const sameMailbox = existingIntegration?.connected_email.trim().toLowerCase() ===
       gmailProfile.emailAddress.trim().toLowerCase();
@@ -129,11 +136,12 @@ Deno.serve(async (req) => {
       .upsert({
         hotel_id: pilotHotel.id,
         provider: 'google',
-        connected_email: gmailProfile.emailAddress,
+        connected_email: gmailProfile.emailAddress.trim().toLowerCase(),
         access_token_encrypted: await encryptToken(tokens.access_token, encryptionKey),
         refresh_token_encrypted: await encryptToken(tokens.refresh_token, encryptionKey),
         token_expires_at: expiresAt,
         gmail_label_name: labelName,
+        bank_key: settings.bankKey,
         gmail_label_id: sameMailbox ? existingIntegration?.gmail_label_id || null : null,
         gmail_history_id: sameMailbox ? existingIntegration?.gmail_history_id || null : null,
         watch_expiration: null,

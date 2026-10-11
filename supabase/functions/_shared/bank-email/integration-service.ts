@@ -12,6 +12,10 @@ export interface BankEmailIntegrationRow {
   id: string;
   hotel_id: string;
   provider: string;
+  bank_key: string;
+  outlook_delta_link: string | null;
+  sync_lock_token: string | null;
+  sync_locked_until: string | null;
   connected_email: string;
   access_token_encrypted: string;
   refresh_token_encrypted: string;
@@ -36,13 +40,14 @@ export interface AccessContext {
 
 export async function getBankEmailIntegration(
   admin: SupabaseClient,
-  pilotHotelId: string
+  pilotHotelId: string,
+  provider: 'google' | 'microsoft' = 'google'
 ): Promise<BankEmailIntegrationRow | null> {
   const { data, error } = await admin
     .from('bank_email_integrations')
     .select('*')
     .eq('hotel_id', pilotHotelId)
-    .eq('provider', 'google')
+    .eq('provider', provider)
     .maybeSingle();
   if (error) {
     throw Object.assign(new Error('No se pudo consultar la integracion de Gmail.'), {
@@ -108,7 +113,7 @@ export async function renewGmailWatch(
     });
   }
 
-  const labelName = Deno.env.get('GMAIL_PAYMENT_LABEL') || freshIntegration.gmail_label_name;
+  const labelName = freshIntegration.gmail_label_name;
   const label = await findGmailLabel(accessToken, labelName);
   if (!label) {
     await admin

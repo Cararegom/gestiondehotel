@@ -68,7 +68,7 @@ function productionBankEmailFiles() {
 }
 
 test('13. la API deriva el hotel del perfil y filtra cada lectura por el piloto', () => {
-  assert.match(api, /const pilotHotel = await getPilotHotel\(admin, config\.pilotHotelName\)/);
+  assert.match(api, /const pilotHotel = await getBankEmailHotel\(admin, context\.profile\.hotel_id\)/);
   assert.match(api, /assertSamePilotHotel\(context, pilotHotel\.id\)/);
   assert.match(api, /\.eq\('hotel_id', pilotHotelId\)/);
   assert.match(api, /admin\.rpc\('review_bank_payment_event'/);

@@ -36,6 +36,7 @@ function createFunctionClient(response = {}) {
 test('el servicio consulta elegibilidad autoritativa sin enviar hotelId', async () => {
   const service = await loadServiceModule();
   const mock = createFunctionClient({
+    hotelId: validHotelId,
     eligible: true,
     integrationEnabled: true,
     isAdmin: false,
@@ -51,6 +52,13 @@ test('el servicio consulta elegibilidad autoritativa sin enviar hotelId', async 
     name: 'bank-email-api',
     options: { body: { action: 'pilot-status' } }
   }]);
+  assert.equal('hotelId' in mock.calls[0].options.body, false);
+});
+
+test('la elegibilidad bancaria rechaza un hotel distinto al mostrado, incluido el arqueo', async () => {
+  const service = await loadServiceModule();
+  const mock = createFunctionClient({ hotelId: validEventId, eligible: true, isAdmin: true, canViewOperationalStatus: true });
+  await assert.rejects(service.getBankPaymentPilotStatus(mock.client, validHotelId), /hotel de la sesion cambio/i);
   assert.equal('hotelId' in mock.calls[0].options.body, false);
 });
 
@@ -268,7 +276,7 @@ test('Integraciones solo monta Correo de pagos para el piloto administrador y co
   assert.match(integrations, /bankPaymentPilotStatus\?\.eligible === true && bankPaymentPilotStatus\?\.isAdmin === true/);
   assert.match(integrations, /renderModuleLayout\(\{ showGmailPaymentCard \}\)/);
   assert.match(integrations, /gmail_payment_status/);
-  assert.match(integrations, /params\.delete\('gmail_payment_status'\)/);
+  assert.match(integrations, /params\.delete\(parameter\)/);
   assert.match(integrations, /startBankPaymentGmailOAuth/);
   assert.match(integrations, /renewBankPaymentGmailWatch/);
   assert.match(integrations, /testBankPaymentGmailConnection/);

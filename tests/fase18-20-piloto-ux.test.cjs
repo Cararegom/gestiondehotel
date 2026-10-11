@@ -58,15 +58,15 @@ test('Fase 18 exige UUID autoritativo para habilitar el piloto', async () => {
 
   const withoutId = { ...runtime, pilotHotelId: '' };
   assert.throws(() => config.assertBankEmailConfig(withoutId), /PILOT_HOTEL_ID.*UUID/i);
-  assert.equal(config.isBankEmailProcessingEnabled(withoutId), false);
+  assert.equal(config.isBankEmailProcessingEnabled(withoutId), true);
 
   const invalidId = { ...runtime, pilotHotelId: 'hotel-marena' };
   assert.throws(() => config.assertBankEmailConfig(invalidId), /PILOT_HOTEL_ID.*UUID/i);
-  assert.equal(config.isBankEmailProcessingEnabled(invalidId), false);
+  assert.equal(config.isBankEmailProcessingEnabled(invalidId), true);
 
   const envExample = fs.readFileSync(path.join(root, '.env.example'), 'utf8');
   assert.match(envExample, /BANK_EMAIL_PILOT_HOTEL_ID=/);
-  assert.match(envExample, /Authoritative tenant gate/);
+  assert.match(envExample, /Legacy pilot settings/);
 });
 
 test('Fase 18 resuelve el hotel por UUID y falla cerrado ante mismatch', async () => {

@@ -8,7 +8,8 @@ import {
   requirePilotAdministrator,
   type AuthenticatedRequestContext
 } from '../_shared/bank-email/server.ts';
-import { getPilotHotel } from '../_shared/bank-email/pilot-hotel.ts';
+import { getBankEmailHotel, getHotelBankSettings, validateHotelBankSettings } from '../_shared/bank-email/hotel-scope.ts';
+import { buildOutlookAuthorizationUrl, getOutlookProfile, getValidOutlookAccessToken, syncOutlookPayments } from '../_shared/bank-email/outlook-service.ts';
 import { readBankEmailConfig, assertBankEmailConfig } from '../_shared/bank-email/config.ts';
 import { buildCorsHeaders, HttpError, jsonResponse, readJsonBody, safeErrorCode, safeErrorMessage } from '../_shared/bank-email/http.ts';
 import { createOAuthState, hashOAuthState } from '../_shared/bank-email/oauth-state.ts';
@@ -705,9 +706,10 @@ async function handlePilotAction(
   admin: SupabaseClient,
   context: AuthenticatedRequestContext
 ): Promise<Record<string, unknown>> {
-  const config = readBankEmailConfig();
+  const pilotHotel = await getBankEmailHotel(admin, context.profile.hotel_id);
+  const settings = await getHotelBankSettings(admin, pilotHotel);
+  const config = { ...readBankEmailConfig(), pilotHotelId: pilotHotel.id, pilotHotelName: pilotHotel.nombre, gmailPaymentLabel: settings.labelName };
   assertBankEmailConfig(config);
-  const pilotHotel = await getPilotHotel(admin, config.pilotHotelName);
   const action = asString(body.action, 80);
 
   if (action === 'pilot-status') {
@@ -726,6 +728,7 @@ async function handlePilotAction(
       ? await isPilotOperationalUser(admin, context, pilotHotel.id)
       : false;
     return {
+      hotelId: pilotHotel.id,
       eligible,
       integrationEnabled: config.enabled,
       isAdmin,
@@ -901,7 +904,7 @@ async function handlePilotAction(
         p_allocations: normalizedAllocations,
         p_action: databaseAction,
         p_review_reason: asString(body.reviewReason, 500) || null,
-        p_pilot_hotel_name: config.pilotHotelName
+        p_pilot_hotel_name: pilotHotel.id
       });
       if (error) throw Object.assign(new Error(error.message || 'No se pudo distribuir el pago bancario.'), { code: 'multiple_allocation_failed' });
       const result = data && typeof data === 'object' ? data as Record<string, unknown> : {};
@@ -931,7 +934,7 @@ async function handlePilotAction(
       p_sale_type: saleType,
       p_expected_payment_id: expectedPaymentId,
       p_review_reason: asString(body.reviewReason, 500) || null,
-      p_pilot_hotel_name: config.pilotHotelName
+      p_pilot_hotel_name: pilotHotel.id
     });
     if (error) throw Object.assign(new Error('No se pudo actualizar el pago bancario.'), { code: 'manual_action_failed' });
     const result = data && typeof data === 'object' ? data as Record<string, unknown> : {};
@@ -980,7 +983,7 @@ async function handlePilotAction(
       p_payment_method: paymentMethod,
       p_actor_id: context.user.id,
       p_expires_minutes: expiresMinutes,
-      p_pilot_hotel_name: config.pilotHotelName
+      p_pilot_hotel_name: pilotHotel.id
     });
     if (error) {
       const databaseMessage = String(error.message || '');
@@ -999,6 +1002,63 @@ async function handlePilotAction(
     }
     return data && typeof data === 'object' ? data as Record<string, unknown> : {};
   }
+  if (action === 'save-bank-settings') {
+    const next = validateHotelBankSettings({ labelName: body.labelName, bankKey: body.bankKey });
+    const { data: feature, error: readError } = await admin.from('hotel_features').select('configuration')
+      .eq('hotel_id', pilotHotel.id).eq('feature_key', 'bank_reconciliation_v2').single();
+    if (readError) throw new HttpError(503, 'bank_settings_lookup_failed', 'No se pudo consultar la configuracion.');
+    const { error } = await admin.from('hotel_features').update({
+      configuration: { ...(feature.configuration || {}), gmailLabelName: next.labelName, bankKey: next.bankKey }, updated_at: new Date().toISOString()
+    }).eq('hotel_id', pilotHotel.id).eq('feature_key', 'bank_reconciliation_v2');
+    if (error) throw new HttpError(503, 'bank_settings_save_failed', 'No se pudo guardar la configuracion.');
+    const { error: keyError } = await admin.from('bank_email_integrations').update({ bank_key: next.bankKey })
+      .eq('hotel_id', pilotHotel.id);
+    const { error: labelError } = await admin.from('bank_email_integrations').update({ gmail_label_name: next.labelName, gmail_label_id: null })
+      .eq('hotel_id', pilotHotel.id).eq('provider', 'google').neq('gmail_label_name', next.labelName);
+    if (keyError || labelError) throw new HttpError(503, 'bank_integration_settings_save_failed', 'No se pudo actualizar la conexion.');
+    await writeAudit(admin, pilotHotel.id, context.user.id, 'bank_email_settings_changed', {});
+    return { settings: next };
+  }
+  if (action === 'outlook-status') {
+    const integration = await getBankEmailIntegration(admin, pilotHotel.id, 'microsoft');
+    return { integration: integration ? {
+      connected: true, connectedEmail: integration.connected_email, watchStatus: integration.watch_status,
+      lastSyncedAt: integration.last_watch_renewed_at, lastErrorCode: integration.last_error_code
+    } : { connected: false }, settings };
+  }
+  if (['outlook-oauth-start', 'outlook-sync', 'outlook-test', 'outlook-disconnect'].includes(action)) {
+    if (!config.enabled && action !== 'outlook-disconnect') throw new HttpError(409, 'bank_email_integration_disabled', 'La integracion bancaria esta deshabilitada.');
+    if (action === 'outlook-oauth-start') {
+      const validated = validateHotelBankSettings(settings);
+      const state = `bank-outlook.${createOAuthState()}`;
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+      const authUrl = buildOutlookAuthorizationUrl(state);
+      const { error } = await admin.from('bank_email_oauth_states').insert({
+        state_hash: await hashOAuthState(state), provider: 'microsoft', hotel_id: pilotHotel.id,
+        user_id: context.user.id, expires_at: expiresAt, metadata: validated
+      });
+      if (error) throw new HttpError(503, 'oauth_state_store_failed', 'No se pudo iniciar Outlook.');
+      return { authUrl, expiresAt };
+    }
+    const integration = await getBankEmailIntegration(admin, pilotHotel.id, 'microsoft');
+    if (!integration) {
+      if (action === 'outlook-disconnect') return { disconnected: true };
+      throw new HttpError(409, 'outlook_not_connected', 'No hay una cuenta Outlook conectada.');
+    }
+    if (action === 'outlook-disconnect') {
+      const { error } = await admin.from('bank_email_integrations').delete().eq('id', integration.id).eq('hotel_id', pilotHotel.id);
+      if (error) throw new HttpError(503, 'outlook_disconnect_failed', 'No se pudo desconectar Outlook.');
+      await writeAudit(admin, pilotHotel.id, context.user.id, 'outlook_disconnected', {});
+      return { disconnected: true };
+    }
+    if (action === 'outlook-test') {
+      const { accessToken } = await getValidOutlookAccessToken(admin, integration);
+      const profile = await getOutlookProfile(accessToken);
+      if (profile.email !== integration.connected_email.toLowerCase()) throw new HttpError(409, 'outlook_account_mismatch', 'La cuenta Outlook no coincide.');
+      return { ok: true, connectedEmail: profile.email };
+    }
+    return { ok: true, sync: await syncOutlookPayments(admin, pilotHotel, integration) };
+  }
   if (action === 'gmail-status') {
     const integration = await getBankEmailIntegration(admin, pilotHotel.id);
     return {
@@ -1012,13 +1072,15 @@ async function handlePilotAction(
         lastWatchRenewedAt: integration.last_watch_renewed_at,
         renewalFailures: integration.watch_renewal_failures,
         lastErrorCode: integration.last_error_code
-      } : { connected: false }
+      } : { connected: false, labelName: settings.labelName },
+      settings
     };
   }
   if (!config.enabled && ['oauth-start', 'renew-watch', 'test-connection'].includes(action)) {
     throw new HttpError(409, 'bank_email_integration_disabled', 'La integracion bancaria esta deshabilitada.');
   }
   if (action === 'oauth-start') {
+    validateHotelBankSettings(settings);
     const state = createOAuthState();
     const stateHash = await hashOAuthState(state);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
@@ -1026,7 +1088,9 @@ async function handlePilotAction(
       state_hash: stateHash,
       hotel_id: pilotHotel.id,
       user_id: context.user.id,
-      expires_at: expiresAt
+      expires_at: expiresAt,
+      provider: 'google',
+      metadata: settings
     });
     if (error) throw Object.assign(new Error('No se pudo iniciar OAuth.'), { code: 'oauth_state_store_failed' });
     return { authUrl: buildGoogleAuthorizationUrl(state), expiresAt };

@@ -1,10 +1,8 @@
 {
-  "schemaVersion": 2,
-  "scope": "bank-email-pilot",
+  "schemaVersion": 3,
+  "scope": "bank-email-all-hotels",
   "requiredEnvironment": [
-    "BANK_EMAIL_INTEGRATION_ENABLED",
-    "BANK_EMAIL_PILOT_HOTEL_ID",
-    "BANK_EMAIL_PILOT_HOTEL_NAME"
+    "BANK_EMAIL_INTEGRATION_ENABLED"
   ],
   "functions": [
     {
@@ -12,45 +10,117 @@
       "entrypoint": "supabase/functions/bank-email-api/index.ts",
       "verifyJwt": true,
       "authentication": "supabase-jwt",
-      "methods": ["OPTIONS", "POST"],
+      "methods": [
+        "OPTIONS",
+        "POST"
+      ],
       "errorMode": "json-safe-code",
-      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "server.ts"]
+      "requiredSharedModules": [
+        "config.ts",
+        "http.ts",
+        "hotel-scope.ts",
+        "server.ts"
+      ]
     },
     {
       "name": "bank-payment-relation-api",
       "entrypoint": "supabase/functions/bank-payment-relation-api/index.ts",
       "verifyJwt": true,
       "authentication": "supabase-jwt",
-      "methods": ["OPTIONS", "POST"],
+      "methods": [
+        "OPTIONS",
+        "POST"
+      ],
       "errorMode": "json-safe-code",
-      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "sale-reconciliation.ts", "server.ts"]
+      "requiredSharedModules": [
+        "config.ts",
+        "http.ts",
+        "hotel-scope.ts",
+        "sale-reconciliation.ts",
+        "server.ts"
+      ]
     },
     {
       "name": "gmail-oauth-callback",
       "entrypoint": "supabase/functions/gmail-oauth-callback/index.ts",
       "verifyJwt": false,
       "authentication": "oauth-state",
-      "methods": ["GET"],
+      "methods": [
+        "GET"
+      ],
       "errorMode": "oauth-redirect-safe-code",
-      "requiredSharedModules": ["config.ts", "http.ts", "oauth-state.ts", "pilot-hotel.ts", "server.ts"]
+      "requiredSharedModules": [
+        "config.ts",
+        "http.ts",
+        "oauth-state.ts",
+        "hotel-scope.ts",
+        "server.ts"
+      ]
     },
     {
       "name": "gmail-webhook",
       "entrypoint": "supabase/functions/gmail-webhook/index.ts",
       "verifyJwt": false,
       "authentication": "google-pubsub-oidc",
-      "methods": ["POST"],
+      "methods": [
+        "POST"
+      ],
       "errorMode": "empty-ack-or-safe-code",
-      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "pubsub-oidc.ts", "queue.ts", "server.ts"]
+      "requiredSharedModules": [
+        "config.ts",
+        "http.ts",
+        "hotel-scope.ts",
+        "pubsub-oidc.ts",
+        "queue.ts",
+        "server.ts"
+      ]
     },
     {
       "name": "gmail-watch-renew",
       "entrypoint": "supabase/functions/gmail-watch-renew/index.ts",
       "verifyJwt": false,
       "authentication": "cron-secret",
-      "methods": ["POST"],
+      "methods": [
+        "POST"
+      ],
       "errorMode": "json-safe-code",
-      "requiredSharedModules": ["config.ts", "http.ts", "pilot-hotel.ts", "queue.ts", "server.ts"]
+      "requiredSharedModules": [
+        "config.ts",
+        "http.ts",
+        "hotel-scope.ts",
+        "queue.ts",
+        "server.ts"
+      ]
+    },
+    {
+      "name": "bank-outlook-sync",
+      "entrypoint": "supabase/functions/bank-outlook-sync/index.ts",
+      "verifyJwt": false,
+      "authentication": "cron-secret",
+      "methods": [
+        "POST"
+      ],
+      "errorMode": "json-safe-code",
+      "requiredSharedModules": [
+        "config.ts",
+        "cron-auth.ts",
+        "hotel-scope.ts",
+        "outlook-service.ts",
+        "server.ts"
+      ]
+    },
+    {
+      "name": "calendar-oauth-callback",
+      "entrypoint": "supabase/functions/calendar-oauth-callback/index.ts",
+      "verifyJwt": false,
+      "authentication": "oauth-state-dispatch",
+      "methods": [
+        "GET"
+      ],
+      "errorMode": "legacy-calendar-or-bank-callback",
+      "requiredSharedModules": [
+        "outlook-callback.ts"
+      ]
     }
   ]
 }

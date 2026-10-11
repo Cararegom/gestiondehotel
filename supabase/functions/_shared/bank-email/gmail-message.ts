@@ -134,13 +134,24 @@ function extractAuthDomain(raw: string, expression: RegExp): string | null {
 
 export function parseAuthenticationResults(
   headers: Readonly<Record<string, readonly string[]>>,
+  provider: 'google' | 'microsoft' = 'google',
 ): EmailAuthentication {
   // Only Gmail's own authentication boundary is authoritative. A sender can
   // inject Authentication-Results/Received-SPF headers before delivery, so
   // untrusted authserv-id values must never contribute a "pass" verdict.
   const [topmostAuthenticationResults] = getAllHeaders(headers, "authentication-results");
-  const authenticationResults = topmostAuthenticationResults &&
-      /^\s*mx\.google\.com\s*;/iu.test(topmostAuthenticationResults)
+  const microsoftReceived = /\bby\s+[a-z0-9.-]+\.(?:outlook\.com|outlook\.office365\.com)\b/iu
+    .test(getHeader(headers, 'received') || '');
+  // Microsoft stamps its composite authentication verdict on inbound mail.
+  // Only the topmost result inside the Microsoft receiving boundary is used;
+  // forwarded/sender-supplied results below it cannot turn a failure into a pass.
+  const trusted = provider === 'microsoft'
+    ? microsoftReceived && Boolean(topmostAuthenticationResults) && (
+      /^\s*[a-z0-9.-]+\.protection\.outlook\.com\s*;/iu.test(topmostAuthenticationResults || '') ||
+      /^\s*spf=/iu.test(topmostAuthenticationResults || '') && /\bcompauth=(?:pass|fail|softpass|none)\b/iu.test(topmostAuthenticationResults || '')
+    )
+    : /^\s*mx\.google\.com\s*;/iu.test(topmostAuthenticationResults || '');
+  const authenticationResults = topmostAuthenticationResults && trusted
     ? [topmostAuthenticationResults]
     : [];
   const raw = [...authenticationResults];

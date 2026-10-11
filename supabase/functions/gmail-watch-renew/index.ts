@@ -1,8 +1,9 @@
 import { buildAdminClient } from '../_shared/bank-email/server.ts';
-import { getPilotHotel } from '../_shared/bank-email/pilot-hotel.ts';
-import { readBankEmailConfig, assertBankEmailConfig, isBankEmailProcessingEnabled } from '../_shared/bank-email/config.ts';
+import { getBankEmailHotel } from '../_shared/bank-email/hotel-scope.ts';
+import type { BankEmailIntegrationRow } from '../_shared/bank-email/integration-service.ts';
+import { readBankEmailConfig, isBankEmailProcessingEnabled } from '../_shared/bank-email/config.ts';
 import { emptyResponse, jsonResponse, safeErrorCode } from '../_shared/bank-email/http.ts';
-import { getBankEmailIntegration, recordWatchFailure, renewGmailWatch } from '../_shared/bank-email/integration-service.ts';
+import { recordWatchFailure, renewGmailWatch } from '../_shared/bank-email/integration-service.ts';
 import { processPendingPubSubInbox } from '../_shared/bank-email/queue.ts';
 
 function constantTimeEqual(left: string, right: string): boolean {
@@ -77,46 +78,27 @@ Deno.serve(async (req) => {
   if (!cronAuthorized(req)) return jsonResponse({ error: 'unauthorized' }, 401);
 
   const admin = buildAdminClient();
-  try {
-    assertBankEmailConfig(config);
-    const pilotHotel = await getPilotHotel(admin, config.pilotHotelName);
-    const queueResult = await processPendingPubSubInbox(admin, pilotHotel, 50);
-    const integration = await getBankEmailIntegration(admin, pilotHotel.id);
-    if (!integration) return jsonResponse({ ok: true, skipped: 'gmail_not_connected', queue: queueResult });
-
-    const expiration = integration.watch_expiration ? new Date(integration.watch_expiration).getTime() : 0;
-    const renewBefore = Date.now() + 48 * 60 * 60 * 1000;
-    if (integration.watch_status === 'active' && expiration > renewBefore) {
-      return jsonResponse({ ok: true, skipped: 'watch_still_valid', queue: queueResult });
-    }
-
+  const { data: integrations, error: lookupError } = await admin.from('bank_email_integrations').select('*').eq('provider', 'google');
+  if (lookupError) return jsonResponse({ ok: false, error: 'integration_lookup_failed' }, 503);
+  const results: { integrationId: string; ok: boolean; error?: string }[] = [];
+  for (const integration of (integrations || []) as BankEmailIntegrationRow[]) {
     try {
-      const renewed = await renewGmailWatch(admin, integration);
-      await writeAudit(admin, pilotHotel.id, 'gmail_watch_renewed', {
-        expiration: renewed.integration.watch_expiration,
-        automated: true
-      });
-      return jsonResponse({
-        ok: true,
-        watchStatus: renewed.integration.watch_status,
-        watchExpiration: renewed.integration.watch_expiration,
-        queue: queueResult
-      });
+      const pilotHotel = await getBankEmailHotel(admin, integration.hotel_id);
+      await processPendingPubSubInbox(admin, pilotHotel, 50);
+      const expiration = new Date(integration.watch_expiration || '').getTime();
+      if (integration.watch_status !== 'active' || !Number.isFinite(expiration) || expiration <= Date.now() + 48 * 60 * 60 * 1000) {
+        const renewed = await renewGmailWatch(admin, integration);
+        await writeAudit(admin, pilotHotel.id, 'gmail_watch_renewed', { expiration: renewed.integration.watch_expiration, automated: true });
+      }
+      results.push({ integrationId: integration.id, ok: true });
     } catch (error) {
       const code = safeErrorCode(error, 'gmail_watch_renewal_failed');
       await recordWatchFailure(admin, integration, code);
       const failures = Number(integration.watch_renewal_failures || 0) + 1;
-      await writeAudit(admin, pilotHotel.id, 'gmail_watch_renewal_failed', {
-        error_code: code,
-        consecutive_failures: failures,
-        automated: true
-      });
-      await alertRepeatedWatchFailure(admin, pilotHotel.id, failures);
-      return jsonResponse({ ok: false, error: code, queue: queueResult }, 503);
+      await writeAudit(admin, integration.hotel_id, 'gmail_watch_renewal_failed', { error_code: code, consecutive_failures: failures, automated: true });
+      await alertRepeatedWatchFailure(admin, integration.hotel_id, failures);
+      results.push({ integrationId: integration.id, ok: false, error: code });
     }
-  } catch (error) {
-    const code = safeErrorCode(error, 'gmail_watch_cron_failed');
-    console.error('[gmail-watch-renew]', { code });
-    return jsonResponse({ ok: false, error: code }, 503);
   }
+  return jsonResponse({ ok: results.every(result => result.ok), results });
 });
