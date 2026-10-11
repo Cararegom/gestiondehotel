@@ -4,5 +4,8 @@
   "buildCommand": "npm run build",
   "outputDirectory": ".",
   "cleanUrls": false,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "rewrites": [
+    { "source": "/privacidad", "destination": "/privacidad.html" }
+  ]
 }
