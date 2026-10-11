@@ -1,8 +1,7 @@
 // @ts-nocheck -- Legacy Calendar flow; the bank callback is checked in outlook-callback.ts.
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { google } from "npm:googleapis";
+import { createClient } from "npm:@supabase/supabase-js@2.111.0";
 import { handleBankOutlookCallback } from '../_shared/bank-email/outlook-callback.ts';
+import { exchangeCalendarGoogleCode } from '../_shared/bank-email/calendar-google-oauth.ts';
 // Utilidad de cifrado JS (AES-GCM)
 async function encrypt(text, password) {
   const pwUtf8 = new TextEncoder().encode(password);
@@ -22,7 +21,7 @@ async function encrypt(text, password) {
     ct: Array.from(new Uint8Array(ctBuffer))
   }));
 }
-serve(async (req)=>{
+Deno.serve(async (req)=>{
   if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 });
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
@@ -58,17 +57,11 @@ serve(async (req)=>{
     let userEmail = null;
     let scopes = [];
     if (provider === "google") {
-      const oauth2Client = new google.auth.OAuth2(Deno.env.get("GOOGLE_CLIENT_ID"), Deno.env.get("GOOGLE_CLIENT_SECRET"), REDIRECT_URI);
-      const { tokens: gTokens } = await oauth2Client.getToken(code);
-      oauth2Client.setCredentials(gTokens);
-      const oauth2 = google.oauth2({
-        version: "v2",
-        auth: oauth2Client
-      });
-      const { data: userInfo } = await oauth2.userinfo.get();
-      userEmail = userInfo.email;
-      tokens = gTokens;
-      scopes = gTokens.scope?.split(" ") ?? [];
+      const result = await exchangeCalendarGoogleCode(code,
+        Deno.env.get("GOOGLE_CLIENT_ID") || "", Deno.env.get("GOOGLE_CLIENT_SECRET") || "", REDIRECT_URI);
+      userEmail = result.email;
+      tokens = result.tokens;
+      scopes = result.scopes;
     } else if (provider === "outlook") {
   // --- LÓGICA OUTLOOK ---
   const params = new URLSearchParams({

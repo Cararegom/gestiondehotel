@@ -63,6 +63,40 @@ test('Outlook autentica el aviso y extrae el mismo pago; cabeceras inyectadas no
   assert.throws(() => validateGraphUrl('https://graph.microsoft.com/v1.0/users/another/messages'));
 });
 
+test('El callback conserva correo, permisos y vencimiento del calendario Google y no revela errores con tokens', async t => {
+  const { exchangeCalendarGoogleCode } = await shared('calendar-google-oauth.ts');
+  const calls = [];
+  let failToken = false;
+  let failProfile = false;
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    calls.push({ url, options });
+    if (url === 'https://oauth2.googleapis.com/token') {
+      return Response.json(failToken ? { error_description: 'sensitive-provider-response' } : {
+        access_token: 'test-access', refresh_token: 'test-refresh', expires_in: 3600,
+        scope: 'calendar email'
+      }, { status: failToken ? 400 : 200 });
+    }
+    assert.equal(url, 'https://www.googleapis.com/oauth2/v2/userinfo');
+    assert.equal(options.headers.Authorization, 'Bearer test-access');
+    return Response.json({ email: 'calendar@example.test' }, { status: failProfile ? 403 : 200 });
+  });
+  const before = Date.now();
+  const result = await exchangeCalendarGoogleCode('test-code', 'test-client', 'test-secret', 'https://example.test/callback');
+  assert.equal(result.email, 'calendar@example.test');
+  assert.deepEqual(result.scopes, ['calendar','email']);
+  assert.equal(result.tokens.refresh_token, 'test-refresh');
+  assert.ok(result.tokens.expiry_date >= before + 3600000 && result.tokens.expiry_date <= Date.now() + 3600000);
+  assert.equal(calls[0].options.body.get('redirect_uri'), 'https://example.test/callback');
+  assert.equal(calls[0].options.body.get('grant_type'), 'authorization_code');
+  assert.ok(calls.every(call => call.options.redirect === 'error'));
+  failToken = true;
+  await assert.rejects(exchangeCalendarGoogleCode('x','client','secret','uri'), error =>
+    /No se pudo autorizar/.test(error.message) && !error.message.includes('sensitive-provider-response'));
+  failToken = false;
+  failProfile = true;
+  await assert.rejects(exchangeCalendarGoogleCode('x','client','secret','uri'), /No se pudo identificar/);
+});
+
 async function database() {
   const db = new PGlite();
   await db.exec(`
