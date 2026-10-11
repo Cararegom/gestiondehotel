@@ -102,7 +102,7 @@ export function assertBankEmailConfig(config: BankEmailConfig): void {
 }
 
 export function isBankEmailProcessingEnabled(config: BankEmailConfig): boolean {
-  return config.enabled && UUID_PATTERN.test(config.pilotHotelId || "") && Boolean(config.pilotHotelName);
+  return config.enabled;
 }
 
 function assertPresent(value: string, environmentName: string): void {

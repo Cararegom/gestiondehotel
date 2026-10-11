@@ -1,5 +1,5 @@
 import { buildAdminClient } from '../_shared/bank-email/server.ts';
-import { getPilotHotel } from '../_shared/bank-email/pilot-hotel.ts';
+import { getBankEmailHotel } from '../_shared/bank-email/hotel-scope.ts';
 import { verifyPubSubOidc } from '../_shared/bank-email/pubsub-oidc.ts';
 import { emptyResponse, jsonResponse, readJsonBody, safeErrorCode } from '../_shared/bank-email/http.ts';
 import { processPendingPubSubInbox } from '../_shared/bank-email/queue.ts';
@@ -60,11 +60,10 @@ Deno.serve(async (req) => {
 
   const admin = buildAdminClient();
   try {
-    const pilotHotel = await getPilotHotel(admin, config.pilotHotelName);
     const { data: integration, error: integrationError } = await admin
       .from('bank_email_integrations')
       .select('id, hotel_id, connected_email')
-      .eq('hotel_id', pilotHotel.id)
+      .eq('connected_email', emailAddress)
       .eq('provider', 'google')
       .maybeSingle();
     if (integrationError) {
@@ -72,12 +71,13 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'temporary_failure' }, 503);
     }
     if (
-      !integration || integration.hotel_id !== pilotHotel.id ||
+      !integration ||
       String(integration.connected_email || '').trim().toLowerCase() !== emailAddress
     ) {
       return emptyResponse(204);
     }
 
+    const pilotHotel = await getBankEmailHotel(admin, integration.hotel_id);
     const { data: queued, error: queueError } = await admin
       .from('bank_email_pubsub_inbox')
       .upsert({

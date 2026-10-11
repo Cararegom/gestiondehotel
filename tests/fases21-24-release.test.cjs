@@ -39,9 +39,7 @@ test('Fase 21: logs Edge conservan solo codigos/acciones y no exponen secretos o
 
 test('Fase 22: manifiesto fija funciones, autenticacion y variables obligatorias', () => {
   assert.deepEqual(manifest.requiredEnvironment, [
-    'BANK_EMAIL_INTEGRATION_ENABLED',
-    'BANK_EMAIL_PILOT_HOTEL_ID',
-    'BANK_EMAIL_PILOT_HOTEL_NAME'
+    'BANK_EMAIL_INTEGRATION_ENABLED'
   ]);
   assert.deepEqual(
     manifest.functions.map((item) => [item.name, item.verifyJwt, item.authentication]),
@@ -50,7 +48,9 @@ test('Fase 22: manifiesto fija funciones, autenticacion y variables obligatorias
       ['bank-payment-relation-api', true, 'supabase-jwt'],
       ['gmail-oauth-callback', false, 'oauth-state'],
       ['gmail-webhook', false, 'google-pubsub-oidc'],
-      ['gmail-watch-renew', false, 'cron-secret']
+      ['gmail-watch-renew', false, 'cron-secret'],
+      ['bank-outlook-sync', false, 'cron-secret'],
+      ['calendar-oauth-callback', false, 'oauth-state-dispatch']
     ]
   );
 });
@@ -68,7 +68,7 @@ test('Fase 22: las cinco Edge Functions usan el gate de configuracion/UUID sin c
   assert.match(config, /UUID_PATTERN\.test\(config\.pilotHotelId/);
   assert.match(pilot, /\.eq\("id", configuredId\)/);
   assert.match(api, /assertBankEmailConfig\(config\)/);
-  assert.match(relation, /assertBankEmailConfig\(config\)/);
+  assert.match(relation, /getBankEmailHotel\(admin, context\.profile\.hotel_id\)/);
   assert.match(oauth, /isBankEmailProcessingEnabled\(config\)/);
   assert.match(webhook, /isBankEmailProcessingEnabled\(config\)/);
   assert.match(renew, /isBankEmailProcessingEnabled\(config\)/);

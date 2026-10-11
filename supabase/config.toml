@@ -72,6 +72,12 @@ verify_jwt = false
 [functions.gmail-watch-renew]
 verify_jwt = false
 
+[functions.bank-outlook-sync]
+verify_jwt = false
+
+[functions.calendar-oauth-callback]
+verify_jwt = false
+
 # Browser requests keep the normal Supabase JWT gateway protection and are
 # authorized again against public.usuarios inside the function.
 [functions.bank-email-api]

@@ -1,6 +1,8 @@
+// @ts-nocheck -- Legacy Calendar flow; the bank callback is checked in outlook-callback.ts.
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { google } from "npm:googleapis";
+import { handleBankOutlookCallback } from '../_shared/bank-email/outlook-callback.ts';
 // Utilidad de cifrado JS (AES-GCM)
 async function encrypt(text, password) {
   const pwUtf8 = new TextEncoder().encode(password);
@@ -21,9 +23,11 @@ async function encrypt(text, password) {
   }));
 }
 serve(async (req)=>{
+  if (req.method !== 'GET') return new Response('Method not allowed', { status: 405 });
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
+  if (state?.startsWith('bank-outlook.')) return handleBankOutlookCallback(req);
   const errorParam = url.searchParams.get("error");
   const SITE_URL = Deno.env.get("SITE_URL");
   const ENCRYPTION_KEY = Deno.env.get("MY_ENCRYPTION_SECRET");

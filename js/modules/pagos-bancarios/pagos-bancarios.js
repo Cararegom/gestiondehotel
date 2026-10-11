@@ -285,7 +285,7 @@ function renderEventsTable() {
 
 function renderShell() {
   const hero = renderPageHero({
-    eyebrow: 'Fase 6 · Piloto Marena San Isidro',
+    eyebrow: 'Conciliacion bancaria',
     title: 'Conciliación bancaria',
     description: 'Primero se recibe el pago y luego la recepcionista registra la reserva o venta. Aquí el administrador asocia ambos registros para comprobar que correspondan.',
     badges: ['Solo administradores', 'No duplica ingresos en Caja', 'Revisión humana ante ambigüedad'],
@@ -1098,13 +1098,13 @@ export async function mount(container, supabase, user, hotelId) {
     return;
   }
 
-  container.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-xs">Verificando acceso al piloto...</div>';
+  container.innerHTML = '<div class="rounded-2xl border border-slate-200 bg-white p-8 text-center text-slate-500 shadow-xs">Verificando acceso a la conciliacion bancaria...</div>';
 
   try {
     state.pilotStatus = await getBankPaymentPilotStatus(supabase, hotelId);
   } catch (error) {
     console.warn('[Pagos bancarios] La verificacion autoritativa fallo; acceso cerrado.');
-    renderClosedState('No se pudo verificar el acceso al piloto. Intenta de nuevo mas tarde.');
+    renderClosedState('No se pudo verificar el acceso a la conciliacion bancaria. Intenta de nuevo mas tarde.');
     return;
   }
 

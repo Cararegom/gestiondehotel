@@ -16,7 +16,9 @@ const EXPECTED_FUNCTIONS = [
   'bank-payment-relation-api',
   'gmail-oauth-callback',
   'gmail-webhook',
-  'gmail-watch-renew'
+  'gmail-watch-renew',
+  'bank-outlook-sync',
+  'calendar-oauth-callback'
 ];
 
 function read(relativePath) {
@@ -47,7 +49,7 @@ function importedSharedModules(source) {
 }
 
 test('M2 manifiesta exactamente las cinco Edge Functions que consumen el nucleo bancario', () => {
-  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.schemaVersion, 3);
   assert.deepEqual(manifest.functions.map((item) => item.name), EXPECTED_FUNCTIONS);
 
   const actualConsumers = fs.readdirSync(functionsRoot, { withFileTypes: true })
@@ -67,7 +69,7 @@ test('M2 fija entrypoint, metodos y modulos compartidos requeridos por funcion',
     assert.equal(fs.existsSync(absoluteEntrypoint), true, `No existe ${contract.entrypoint}`);
 
     const source = sourceFor(contract);
-    assert.equal((source.match(/Deno\.serve\(/gu) || []).length, 1, `${contract.name} debe registrar un handler`);
+    assert.equal((source.match(/(?:Deno\.)?serve\(/gu) || []).length, 1, `${contract.name} debe registrar un handler`);
     assert.ok(Array.isArray(contract.methods) && contract.methods.length > 0);
     assert.ok(Array.isArray(contract.requiredSharedModules) && contract.requiredSharedModules.length > 0);
 
@@ -94,7 +96,9 @@ test('M2 alinea verify_jwt y la autenticacion interna de cada endpoint', () => {
     'bank-payment-relation-api': [/requireAuthenticatedProfile\(req, admin\)/u, /isPilotOperationalUser/u],
     'gmail-oauth-callback': [/hashOAuthState\(state\)/u, /\.is\('consumed_at', null\)/u, /oauth_state_replayed/u],
     'gmail-webhook': [/verifyPubSubOidc\(req\)/u, /pubsub_unauthorized/u],
-    'gmail-watch-renew': [/cronAuthorized\(req\)/u, /constantTimeEqual/u, /x-cron-secret/u]
+    'gmail-watch-renew': [/cronAuthorized\(req\)/u, /constantTimeEqual/u, /x-cron-secret/u],
+    'bank-outlook-sync': [/bankCronAuthorized\(req\)/u, /getBankEmailHotel/u],
+    'calendar-oauth-callback': [/state\?\.startsWith\('bank-outlook\.'/u, /handleBankOutlookCallback\(req\)/u]
   };
 
   for (const contract of manifest.functions) {
@@ -108,20 +112,21 @@ test('M2 conserva apagado seguro y errores publicos sin detalles internos', () =
   const errorContracts = {
     'json-safe-code': [/safeErrorCode/u, /jsonResponse/u],
     'oauth-redirect-safe-code': [/safeErrorCode/u, /redirectResult/u],
-    'empty-ack-or-safe-code': [/safeErrorCode/u, /emptyResponse/u]
+    'empty-ack-or-safe-code': [/safeErrorCode/u, /emptyResponse/u],
+    'legacy-calendar-or-bank-callback': [/handleBankOutlookCallback/u]
   };
 
   for (const contract of manifest.functions) {
     const source = sourceFor(contract);
-    assert.match(source, /readBankEmailConfig\(\)/u, contract.name);
+    if (contract.name !== 'calendar-oauth-callback') assert.match(source, /readBankEmailConfig\(\)/u, contract.name);
     for (const pattern of errorContracts[contract.errorMode]) assert.match(source, pattern, contract.name);
     assert.doesNotMatch(source, /JSON\.stringify\(error\)|message:\s*error\.message/u, contract.name);
   }
 
   assert.match(sourceFor(manifest.functions[0]), /config\.enabled/u);
   assert.match(sourceFor(manifest.functions[1]), /isBankEmailProcessingEnabled\(config\)/u);
-  for (const contract of manifest.functions.slice(2)) {
-    assert.match(sourceFor(contract), /isBankEmailProcessingEnabled\(config\)/u, contract.name);
+  for (const contract of manifest.functions.slice(2).filter(item => item.name !== 'calendar-oauth-callback')) {
+    assert.match(sourceFor(contract), /isBankEmailProcessingEnabled\((?:config|readBankEmailConfig\(\))\)/u, contract.name);
   }
 });
 

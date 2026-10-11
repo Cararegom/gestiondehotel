@@ -5,7 +5,10 @@ import {
   getBankPaymentPilotStatus,
   renewBankPaymentGmailWatch,
   startBankPaymentGmailOAuth,
-  testBankPaymentGmailConnection
+  testBankPaymentGmailConnection,
+  saveBankPaymentEmailSettings,
+  getBankPaymentOutlookStatus,
+  runBankPaymentOutlookAction
 } from '../../services/bankPaymentService.js';
 import {
   ACCOUNTING_INTEGRATIONS,
@@ -484,11 +487,13 @@ function takeGmailPaymentCallback() {
 
   const route = rawHash.slice(0, separatorIndex);
   const params = new URLSearchParams(rawHash.slice(separatorIndex + 1));
-  if (route !== '/integraciones' || !params.has('gmail_payment_status')) return null;
+  const parameter = params.has('outlook_payment_status') ? 'outlook_payment_status' : 'gmail_payment_status';
+  const provider = parameter === 'outlook_payment_status' ? 'outlook' : 'gmail';
+  if (route !== '/integraciones' || !params.has(parameter)) return null;
 
-  const status = String(params.get('gmail_payment_status') || '').trim().toLowerCase();
+  const status = String(params.get(parameter) || '').trim().toLowerCase();
   const code = normalizeCallbackCode(params.get('code'));
-  params.delete('gmail_payment_status');
+  params.delete(parameter);
   params.delete('code');
   const remainingQuery = params.toString();
   const cleanHash = `#${route}${remainingQuery ? `?${remainingQuery}` : ''}`;
@@ -498,7 +503,7 @@ function takeGmailPaymentCallback() {
     `${window.location.pathname}${window.location.search}${cleanHash}`
   );
 
-  return { status, code };
+  return { status, code, provider };
 }
 
 function showGmailFeedback(feedbackEl, message, tone = 'info', duration = 5000) {
@@ -527,16 +532,36 @@ function renderGmailPaymentCard() {
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <div class="flex flex-wrap items-center gap-2">
-            <p class="text-xs uppercase tracking-[0.25em] text-blue-600">Piloto administrativo</p>
+            <p class="text-xs uppercase tracking-[0.25em] text-blue-600">Conciliacion bancaria</p>
             <span id="gmail-payment-enabled-badge" class="rounded-full px-3 py-1 text-xs font-bold">Verificando...</span>
           </div>
           <h2 class="mt-2 text-2xl font-black text-slate-900">Correo de pagos</h2>
-          <p class="mt-2 max-w-3xl text-sm text-slate-600">Conecta la cuenta Gmail que recibe las notificaciones bancarias y supervisa la etiqueta y la suscripcion de Gmail Watch.</p>
+          <p class="mt-2 max-w-3xl text-sm text-slate-600">Conecta Gmail u Outlook para recibir los pagos de este hotel. Los avisos llegan a administracion y recepcion, y las transferencias se revisan en la conciliacion bancaria.</p>
         </div>
         <a id="gmail-payment-open-payments" href="#/pagos-bancarios" class="button button-primary" style="display:none;">Ver pagos bancarios</a>
       </div>
 
       <div id="gmail-payment-feedback" role="alert" aria-live="polite" style="display:none;"></div>
+      <div class="mt-4 grid gap-4 rounded-xl bg-slate-50 p-4 md:grid-cols-2">
+        <label class="text-sm font-semibold text-slate-700">Llave bancaria del hotel
+          <input id="bank-payment-key-input" type="text" maxlength="160" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 p-2" placeholder="Ej. 0090237193 o @hotelok">
+        </label>
+        <label class="text-sm font-semibold text-slate-700">Nombre exacto de la etiqueta en Gmail
+          <input id="bank-payment-label-input" type="text" maxlength="160" autocomplete="off" class="mt-2 w-full rounded-lg border border-slate-300 p-2" placeholder="PAGOS HOTEL ...">
+        </label>
+        <p class="text-sm text-slate-600 md:col-span-2">Se identifica el pago por la llave, aunque cambie la cuenta bancaria. Usa una cuenta de correo exclusiva para este hotel.</p>
+        <button id="bank-payment-save-settings" type="button" data-idle-label="Guardar configuracion" class="button button-secondary">Guardar configuracion</button>
+      </div>
+      <details class="mt-4 rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
+        <summary class="cursor-pointer font-semibold text-slate-800">Como preparar el correo</summary>
+        <ol class="mt-3 list-decimal space-y-2 pl-5">
+          <li>En Gmail, crea una etiqueta con el nombre indicado arriba.</li>
+          <li>Crea un filtro. En De escribe <strong>alertasynotificaciones@an.notificacionesbancolombia.com</strong>. En Contiene las palabras escribe <strong id="bank-payment-filter-query">conectado a la llave ...</strong>.</li>
+          <li>Selecciona Aplicar la etiqueta y elige la etiqueta del hotel. Conserva los avisos en Recibidos.</li>
+          <li>Guarda la configuracion y pulsa Conectar Gmail. Autoriza la cuenta que recibe los pagos.</li>
+        </ol>
+        <p class="mt-3">En Outlook, pulsa Conectar Outlook y permite leer el correo. Conserva los avisos en la bandeja de entrada; se revisa cada minuto y no requiere una etiqueta de Gmail.</p>
+      </details>
 
       <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <article class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -572,8 +597,19 @@ function renderGmailPaymentCard() {
         </div>
         <button type="button" id="gmail-payment-refresh" data-idle-label="Actualizar estado" class="button button-neutral">Actualizar estado</button>
       </div>
+      <div class="mt-6 border-t border-slate-200 pt-5">
+        <h3 class="text-base font-bold text-slate-800">Outlook para pagos bancarios</h3>
+        <p id="outlook-payment-state" class="mt-2 text-sm text-slate-600" aria-live="polite">Consultando...</p>
+        <p id="outlook-payment-last-sync" class="mt-1 text-sm text-slate-500"></p>
+        <div class="mt-3 flex flex-wrap gap-3">
+          <button type="button" id="outlook-payment-connect" data-idle-label="Conectar Outlook" class="button button-primary">Conectar Outlook</button>
+          <button type="button" id="outlook-payment-sync" data-idle-label="Sincronizar ahora" class="button button-secondary" style="display:none;">Sincronizar ahora</button>
+          <button type="button" id="outlook-payment-test" data-idle-label="Probar Outlook" class="button button-accent" style="display:none;">Probar Outlook</button>
+          <button type="button" id="outlook-payment-disconnect" data-idle-label="Desconectar Outlook" class="button button-danger" style="display:none;">Desconectar Outlook</button>
+        </div>
+      </div>
 
-      <p class="mt-4 text-xs text-slate-500">La cuenta debe usar la etiqueta indicada. Los tokens se administran exclusivamente en el servidor y nunca se muestran en esta pantalla.</p>
+      <p class="mt-4 text-xs text-slate-500">Gmail utiliza la etiqueta configurada. Outlook revisa la bandeja de entrada.</p>
     </section>
   `;
 }
@@ -583,6 +619,12 @@ function getGmailPaymentUi() {
   if (!root) return null;
   const ui = {
     root,
+    keyInput: root.querySelector('#bank-payment-key-input'),
+    labelInput: root.querySelector('#bank-payment-label-input'),
+    filterQuery: root.querySelector('#bank-payment-filter-query'),
+    saveSettingsButton: root.querySelector('#bank-payment-save-settings'),
+    outlookState: root.querySelector('#outlook-payment-state'),
+    outlookLastSync: root.querySelector('#outlook-payment-last-sync'),
     enabledBadge: root.querySelector('#gmail-payment-enabled-badge'),
     feedback: root.querySelector('#gmail-payment-feedback'),
     email: root.querySelector('#gmail-payment-email'),
@@ -601,7 +643,8 @@ function getGmailPaymentUi() {
     refreshButton: root.querySelector('#gmail-payment-refresh'),
     paymentsLink: root.querySelector('#gmail-payment-open-payments')
   };
-  ui.actionButtons = [ui.connectButton, ui.renewButton, ui.testButton, ui.disconnectButton, ui.refreshButton].filter(Boolean);
+  ui.outlookButtons = Object.fromEntries(['connect', 'sync', 'test', 'disconnect'].map(action => [action, root.querySelector(`#outlook-payment-${action}`)]));
+  ui.actionButtons = [ui.connectButton, ui.renewButton, ui.testButton, ui.disconnectButton, ui.refreshButton, ui.saveSettingsButton, ...Object.values(ui.outlookButtons)].filter(Boolean);
   return ui;
 }
 
@@ -624,6 +667,12 @@ function renderGmailPaymentStatus(ui, status, pilotStatus) {
     ? 'rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700'
     : 'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800';
 
+  if (!ui.settingsLoaded && status.configuredLabelName) {
+    ui.labelInput.value = status.configuredLabelName;
+    ui.keyInput.value = status.bankKey || '';
+    ui.filterQuery.textContent = `conectado a la llave ${status.bankKey || '...'}`;
+    ui.settingsLoaded = true;
+  }
   ui.email.textContent = status.connected ? (status.connectedEmail || 'Cuenta conectada') : 'Sin cuenta conectada';
   ui.label.textContent = status.labelName
     ? `${status.labelName}${status.labelConfigured ? ' · configurada' : ' · pendiente'}`
@@ -634,7 +683,7 @@ function renderGmailPaymentStatus(ui, status, pilotStatus) {
   ui.renewalFailures.textContent = String(status.renewalFailures || 0);
   ui.lastError.textContent = status.lastErrorCode || '';
   ui.lastErrorRow.style.display = status.lastErrorCode ? 'block' : 'none';
-  ui.connectButton.style.display = status.connected ? 'none' : 'inline-flex';
+  ui.connectButton.style.display = status.connected && status.watchStatus !== 'error' ? 'none' : 'inline-flex';
   ui.connectedActions.style.display = status.connected ? 'flex' : 'none';
   ui.paymentsLink.style.display = integrationEnabled ? 'inline-flex' : 'none';
 }
@@ -680,6 +729,7 @@ async function runGmailPaymentAction(action, ui, pilotStatus, mountToken, button
   setGmailActionLoading(ui, button, true, loadingLabels[action]);
   try {
     if (action === 'connect') {
+      await saveEmailSettings(ui);
       const { authUrl } = await startBankPaymentGmailOAuth(supabaseInstance);
       if (mountToken !== currentMountToken) return;
       window.location.assign(authUrl);
@@ -710,9 +760,58 @@ async function runGmailPaymentAction(action, ui, pilotStatus, mountToken, button
   }
 }
 
+async function saveEmailSettings(ui) {
+  const settings = { bankKey: ui.keyInput.value.trim(), labelName: ui.labelInput.value.trim() };
+  if (!settings.bankKey || !settings.labelName) throw new Error('Escribe la llave y el nombre exacto de la etiqueta de Gmail.');
+  await saveBankPaymentEmailSettings(supabaseInstance, settings);
+  ui.filterQuery.textContent = `conectado a la llave ${settings.bankKey}`;
+}
+
+async function loadOutlookPaymentStatus(ui, mountToken) {
+  try {
+    const status = await getBankPaymentOutlookStatus(supabaseInstance);
+    if (mountToken !== currentMountToken || !currentContainer?.contains(ui.root)) return;
+    ui.outlookState.textContent = status.connected
+      ? `${status.connectedEmail || 'Cuenta conectada'} · ${watchStatusLabel(status.watchStatus)}${status.lastErrorCode ? ' · Revisa la conexion' : ''}`
+      : 'Sin cuenta Outlook conectada';
+    ui.outlookLastSync.textContent = status.lastSyncedAt ? `Ultima sincronizacion: ${formatGmailDateTime(status.lastSyncedAt)}` : 'Revision automatica cada minuto';
+    for (const [action, button] of Object.entries(ui.outlookButtons)) {
+      const visible = action === 'connect' ? !status.connected || status.watchStatus === 'error' : status.connected;
+      button.style.display = visible ? 'inline-flex' : 'none';
+    }
+  } catch (error) {
+    if (mountToken === currentMountToken) ui.outlookState.textContent = error.message || 'No se pudo consultar Outlook.';
+  }
+}
+
+async function runOutlookPaymentAction(action, ui, mountToken) {
+  if (mountToken !== currentMountToken) return;
+  if (action === 'disconnect' && !window.confirm('Deseas desconectar Outlook para los pagos de este hotel?')) return;
+  const button = ui.outlookButtons[action];
+  setGmailActionLoading(ui, button, true);
+  try {
+    if (action === 'connect') await saveEmailSettings(ui);
+    const result = await runBankPaymentOutlookAction(supabaseInstance, action);
+    if (mountToken !== currentMountToken) return;
+    if (action === 'connect') { window.location.assign(result.authUrl); return; }
+    showGmailFeedback(ui.feedback, action === 'disconnect' ? 'Outlook desconectado.' : action === 'test' ? 'Conexion Outlook verificada.' : 'Correo Outlook sincronizado.', 'success');
+    await loadOutlookPaymentStatus(ui, mountToken);
+  } catch (error) {
+    if (mountToken === currentMountToken) showGmailFeedback(ui.feedback, error.message || 'No se pudo completar la accion de Outlook.', 'error', 0);
+  } finally {
+    if (mountToken === currentMountToken) setGmailActionLoading(ui, button, false);
+  }
+}
+
 function showGmailCallbackResult(ui, callbackResult) {
   if (!ui || !callbackResult) return;
   const suffix = callbackResult.code ? ` Codigo: ${callbackResult.code}.` : '';
+  if (callbackResult.provider === 'outlook') {
+    showGmailFeedback(ui.feedback, callbackResult.status === 'success'
+      ? 'Outlook quedo conectado. Los avisos bancarios se sincronizan cada minuto.'
+      : `No se pudo completar la conexion con Outlook.${suffix}`, callbackResult.status === 'success' ? 'success' : 'error', 8000);
+    return;
+  }
   if (callbackResult.status === 'success') {
     showGmailFeedback(ui.feedback, 'La cuenta Gmail quedo conectada y Gmail Watch fue activado.', 'success', 8000);
   } else if (callbackResult.status === 'connected_watch_pending') {
@@ -963,6 +1062,15 @@ export async function mount(container, sbInstance, user) {
   if (gmailPaymentUi) {
     renderGmailPaymentStatus(gmailPaymentUi, { connected: false, renewalFailures: 0 }, bankPaymentPilotStatus);
     showGmailCallbackResult(gmailPaymentUi, gmailCallbackResult);
+    addEvt(gmailPaymentUi.saveSettingsButton, 'click', async () => {
+      setGmailActionLoading(gmailPaymentUi, gmailPaymentUi.saveSettingsButton, true, 'Guardando...');
+      try { await saveEmailSettings(gmailPaymentUi); showGmailFeedback(gmailPaymentUi.feedback, 'Configuracion guardada para este hotel.', 'success'); }
+      catch (error) { showGmailFeedback(gmailPaymentUi.feedback, error.message, 'error', 0); }
+      finally { if (mountToken === currentMountToken) setGmailActionLoading(gmailPaymentUi, null, false); }
+    });
+    for (const action of Object.keys(gmailPaymentUi.outlookButtons)) addEvt(gmailPaymentUi.outlookButtons[action], 'click', () => {
+      void runOutlookPaymentAction(action, gmailPaymentUi, mountToken);
+    });
     addEvt(gmailPaymentUi.connectButton, 'click', () => {
       void runGmailPaymentAction('connect', gmailPaymentUi, bankPaymentPilotStatus, mountToken, gmailPaymentUi.connectButton);
     });
@@ -1006,7 +1114,7 @@ export async function mount(container, sbInstance, user) {
     loadIntegrationRequests()
   ];
   if (gmailPaymentUi) {
-    initialLoads.push(loadGmailPaymentStatus(gmailPaymentUi, bankPaymentPilotStatus, mountToken));
+    initialLoads.push(loadGmailPaymentStatus(gmailPaymentUi, bankPaymentPilotStatus, mountToken), loadOutlookPaymentStatus(gmailPaymentUi, mountToken));
   }
   await Promise.all(initialLoads);
 }

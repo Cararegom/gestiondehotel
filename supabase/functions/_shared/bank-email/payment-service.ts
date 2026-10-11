@@ -16,7 +16,8 @@ import { calendarBucketInTimeZone, DEFAULT_BANK_TIME_ZONE } from './time-zone.ts
 export interface AnalyzeBankEmailOptions {
   save: boolean;
   isTest?: boolean;
-  source?: 'gmail' | 'simulation';
+  source?: 'gmail' | 'outlook' | 'simulation';
+  bankKey?: string;
   userId?: string | null;
   integrationId?: string | null;
 }
@@ -108,6 +109,7 @@ function sanitizedMetadata(
   return {
     is_test: options.isTest === true,
     source: options.source || 'gmail',
+    bank_key: options.bankKey || null,
     parser_id: parsed.parserId,
     parser_reasons: parsed.reasons.slice(0, 20),
     sender_domain: domainFromAddress(email.fromAddress),
@@ -180,7 +182,7 @@ async function loadExpectedCandidates(
 async function findExistingDuplicate(
   admin: SupabaseClient,
   hotelId: string,
-  _provider: 'gmail' | 'simulation',
+  _provider: 'gmail' | 'outlook' | 'simulation',
   gmailMessageId: string,
   _fingerprint: string | null
 ) {
@@ -211,7 +213,7 @@ async function matchStoredPaymentEvent(
 ): Promise<{ event: Record<string, unknown>; match: unknown }> {
   const { data: match, error: matchError } = await admin.rpc('match_bank_payment_event', {
     p_payment_event_id: paymentEventId,
-    p_pilot_hotel_name: config.pilotHotelName,
+    p_pilot_hotel_name: pilotHotel.id,
     p_window_minutes: config.matchWindowMinutes
   });
   if (matchError) {

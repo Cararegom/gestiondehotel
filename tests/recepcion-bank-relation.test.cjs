@@ -29,7 +29,7 @@ test('roles asignados de banco quedan estrictamente limitados al hotel piloto', 
   assert.ok(tenantFilters.length >= 2, 'admin y operativo deben filtrar usuarios_roles por hotel_id');
   assert.match(bankServer, /isPilotAdministrator[\s\S]*\.eq\('usuario_id', context\.user\.id\)[\s\S]*\.eq\('hotel_id', pilotHotelId\)/);
   assert.match(bankServer, /isPilotOperationalUser[\s\S]*\.eq\('usuario_id', context\.user\.id\)[\s\S]*\.eq\('hotel_id', pilotHotelId\)/);
-  assert.match(bankServer, /\['admin', 'administrador', 'superadmin', 'recepcionista'\]/);
+  assert.match(bankServer, /\['admin', 'administrador', 'superadmin', 'recepcionista', 'recepcion'\]/);
 });
 
 test('API de recepcion falla cerrada por hotel/rol y solo expone nombre seguro del pagador', () => {

@@ -143,7 +143,7 @@ export async function isPilotOperationalUser(
 ): Promise<boolean> {
   if (context.profile.hotel_id !== pilotHotelId) return false;
   const directRole = String(context.profile.rol || '').trim().toLowerCase();
-  if (['admin', 'administrador', 'superadmin', 'recepcionista'].includes(directRole)) return true;
+  if (['admin', 'administrador', 'superadmin', 'recepcionista', 'recepcion'].includes(directRole)) return true;
   const { data, error } = await admin
     .from('usuarios_roles')
     .select('roles(nombre)')
@@ -156,7 +156,7 @@ export async function isPilotOperationalUser(
   }
   const assignedOperational = (data || []).some((assignment) => {
     const role = Array.isArray(assignment.roles) ? assignment.roles[0] : assignment.roles;
-    return ['admin', 'administrador', 'superadmin', 'recepcionista'].includes(String(role?.nombre || '').trim().toLowerCase());
+    return ['admin', 'administrador', 'superadmin', 'recepcionista', 'recepcion'].includes(String(role?.nombre || '').trim().toLowerCase());
   });
   if (assignedOperational) return true;
   return await isHotelCreator(admin, pilotHotelId, context.user.id);
@@ -178,6 +178,6 @@ export async function requirePilotAdministrator(
 ): Promise<void> {
   assertSamePilotHotel(context, pilotHotelId);
   if (!(await isPilotAdministrator(admin, context, pilotHotelId))) {
-    throw new HttpError(403, 'administrator_required', 'Esta accion requiere un administrador del hotel piloto.');
+    throw new HttpError(403, 'administrator_required', 'Esta accion requiere un administrador del hotel.');
   }
 }
