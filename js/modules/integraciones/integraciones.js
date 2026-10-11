@@ -588,6 +588,7 @@ function renderGmailPaymentCard() {
         <div id="gmail-payment-last-error-row" style="display:none;"><span class="font-semibold text-slate-500">Ultimo codigo:</span> <span id="gmail-payment-last-error" class="font-mono text-xs text-red-700"></span></div>
       </div>
 
+      <p class="mt-5 text-sm text-slate-600">Al conectar Gmail, autorizas la lectura del buzon. La conciliacion usa la etiqueta y la llave configuradas para leer los avisos bancarios y guardar nombre del pagador, valor, fecha y referencia. Los datos se muestran a administracion y recepcion de este hotel. Puedes desconectar la cuenta en cualquier momento. <a href="/privacidad#gmail" target="_blank" rel="noopener" class="font-semibold text-blue-600 underline">Politica de privacidad</a>.</p>
       <div class="mt-5 flex flex-wrap gap-3">
         <button type="button" id="gmail-payment-connect" data-idle-label="Conectar Gmail" class="button button-primary">Conectar Gmail</button>
         <div id="gmail-payment-connected-actions" class="flex flex-wrap gap-3" style="display:none;">
@@ -601,6 +602,7 @@ function renderGmailPaymentCard() {
         <h3 class="text-base font-bold text-slate-800">Outlook para pagos bancarios</h3>
         <p id="outlook-payment-state" class="mt-2 text-sm text-slate-600" aria-live="polite">Consultando...</p>
         <p id="outlook-payment-last-sync" class="mt-1 text-sm text-slate-500"></p>
+        <p class="mt-3 text-sm text-slate-600">Al conectar Outlook, autorizas la lectura del correo. Revisamos la bandeja de entrada para guardar los datos de los avisos bancarios y mostrarlos al personal autorizado de este hotel. Puedes desconectar la cuenta en cualquier momento. <a href="/privacidad#calendarios" target="_blank" rel="noopener" class="font-semibold text-blue-600 underline">Politica de privacidad</a>.</p>
         <div class="mt-3 flex flex-wrap gap-3">
           <button type="button" id="outlook-payment-connect" data-idle-label="Conectar Outlook" class="button button-primary">Conectar Outlook</button>
           <button type="button" id="outlook-payment-sync" data-idle-label="Sincronizar ahora" class="button button-secondary" style="display:none;">Sincronizar ahora</button>
