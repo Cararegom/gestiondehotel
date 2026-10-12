@@ -8,6 +8,7 @@ Google rechazó la información de la marca por dos razones: no estaba verificad
 
 - Página principal: `https://www.gestiondehotel.com/`.
 - Política de privacidad pública: `https://www.gestiondehotel.com/privacidad`.
+- Condiciones del servicio públicas: `https://www.gestiondehotel.com/terminos`, con el mismo contenido que antes mostraba el modal de la portada.
 - La página no requiere iniciar sesión y explica datos de Gmail, Outlook y calendarios, su uso, acceso, almacenamiento, revocación y solicitudes de eliminación.
 - La portada enlaza la política. Las opciones de conectar Gmail y Outlook incluyen información visible sobre el tratamiento de correo y un enlace a la política antes de autorizar.
 - La etiqueta `google-site-verification` de Search Console se publica en el `head` de la portada. No debe retirarse después de verificar.
@@ -17,7 +18,7 @@ En Search Console, verificar mediante **Etiqueta HTML** la propiedad de prefijo 
 ## Información de la marca
 
 1. En Google Auth Platform, abrir **Información de la marca**.
-2. Mantener una página principal pública y el enlace anterior a la política de privacidad.
+2. Mantener una página principal pública y los enlaces anteriores a la política de privacidad y las condiciones del servicio.
 3. Comprobar el contacto de soporte y el del desarrollador.
 4. Después de que Search Console confirme la propiedad, esperar la actualización de Google. El aviso de rechazo indica esperar 24 horas antes de volver a intentar la verificación de la marca.
 5. En **Ver problemas**, elegir **Corregí los problemas** cuando ambas correcciones estén confirmadas y solicitar de nuevo la verificación.
