@@ -28,9 +28,12 @@ const BANCOLOMBIA_MARENA_RULE: BankParserRule = {
   // Bancolombia writes transaction timestamps in Colombian local time. This is
   // the bank's source zone; the hotel's zone is used separately by UI filters.
   transactionTimeZone: DEFAULT_BANK_TIME_ZONE,
-  allowedFromAddresses: ['alertasynotificaciones@an.notificacionesbancolombia.com'],
-  allowedFromDomains: ['an.notificacionesbancolombia.com'],
-  allowedReturnPathDomains: ['an.notificacionesbancolombia.com'],
+  allowedFromAddresses: [
+    'alertasynotificaciones@an.notificacionesbancolombia.com',
+    'alertasynotificaciones@ayn.notificacionesbancolombia.com'
+  ],
+  allowedFromDomains: ['an.notificacionesbancolombia.com', 'ayn.notificacionesbancolombia.com'],
+  allowedReturnPathDomains: ['an.notificacionesbancolombia.com', 'ayn.notificacionesbancolombia.com'],
   allowedAuthenticationDomains: ['notificacionesbancolombia.com'],
   requireSpf: true,
   requireDkim: true,
@@ -47,8 +50,32 @@ const BANCOLOMBIA_MARENA_RULE: BankParserRule = {
     'recibiste\\s+una\\s+transferencia\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+de\\s+([^,;]+?)\\s+en\\s+tu\\s+cuenta',
     'recibiste\\s+un\\s+pago\\s+de\\s+([^,;]+?)\\s+por\\s+(?:COP\\s*|\\$\\s*)?[0-9][0-9.,]*\\s+en\\s+tu\\s+cuenta'
   ],
-  parserVersion: 'bancolombia-marena-3.1.0'
+  parserVersion: 'bancolombia-marena-3.2.0'
 };
+
+// Preserve configured parser expressions and authentication requirements while
+// migrating the bank's known notification sender. Do not expand other banks or
+// custom Bancolombia domains unrelated to the previous official sender.
+function expandBancolombiaSenders(rule: BankParserRule): BankParserRule {
+  if (rule.id.trim().toLowerCase() !== 'bancolombia') return rule;
+  const domains = ['an.notificacionesbancolombia.com', 'ayn.notificacionesbancolombia.com'] as const;
+  const migrations = {
+    allowedFromAddresses: domains.map(domain => `alertasynotificaciones@${domain}`),
+    allowedFromDomains: domains,
+    allowedReturnPathAddresses: domains.map(domain => `alertasynotificaciones@${domain}`),
+    allowedReturnPathDomains: domains,
+    allowedAuthenticationDomains: domains
+  };
+  const expanded = { ...rule };
+  for (const field of Object.keys(migrations) as (keyof typeof migrations)[]) {
+    const values = rule[field];
+    const [previous, current] = migrations[field];
+    if (Array.isArray(values) && values.some(value => value.trim().toLowerCase() === previous)) {
+      expanded[field] = [...new Set([...values, current])];
+    }
+  }
+  return expanded;
+}
 
 export function parseConfiguredRules(): BankParserRule[] {
   const runtime = globalThis as typeof globalThis & {
@@ -74,7 +101,7 @@ export function parseConfiguredRules(): BankParserRule[] {
     configured = [];
   }
   return configured.some((rule) => rule.id.trim().toLowerCase() === 'bancolombia')
-    ? configured
+    ? configured.map(expandBancolombiaSenders)
     : [BANCOLOMBIA_MARENA_RULE, ...configured];
 }
 

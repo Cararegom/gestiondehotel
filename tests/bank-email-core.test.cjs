@@ -197,7 +197,7 @@ test('4d. reconoce la alerta real de transferencia Bancolombia de Marena', async
   assert.equal(result.transactionReference, null);
   assert.equal(result.transactionOccurredAt, '2026-08-22T19:24:00.000Z');
   assert.equal(result.reviewReason, null);
-  assert.equal(result.parserVersion, 'bancolombia-marena-3.1.0');
+  assert.equal(result.parserVersion, 'bancolombia-marena-3.2.0');
   assert.equal(paymentService.isConfiguredBankSender(email), true);
 });
 
