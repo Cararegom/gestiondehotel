@@ -94,7 +94,6 @@ Deno.serve(async (req) => {
       const request = parseGmailReplayRequest(body);
       const hotel = await getBankEmailHotel(admin, request.hotelId);
       const result = await replayGmailMessages(admin, hotel, request.messageIds);
-      await writeAudit(admin, hotel.id, 'gmail_messages_replayed', { requested: request.messageIds.length, ...result });
       return jsonResponse({ ok: true, hotelId: hotel.id, ...result });
     } catch (error) {
       return jsonResponse({ ok: false, error: safeErrorCode(error, 'gmail_replay_failed') }, error instanceof HttpError ? error.status : 503);
