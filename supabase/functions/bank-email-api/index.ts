@@ -29,9 +29,9 @@ import { committedReservationTotals } from '../_shared/bank-email/allocation-tot
 import { isBankReconciliationPaymentMethod } from '../_shared/bank-email/sale-reconciliation.ts';
 import { activeSaleAllocationTotals, saleAvailableAmount } from '../_shared/bank-email/sale-capacity.ts';
 import { humanItemSummary, rankCandidatesByTime } from '../_shared/bank-email/candidate-ranking.ts';
+import { loadHotelOperationalTimeZone } from '../_shared/bank-email/hotel-time-zone.ts';
 import {
   DEFAULT_BANK_TIME_ZONE,
-  normalizeBankTimeZone,
   utcRangeForCalendarDates
 } from '../_shared/bank-email/time-zone.ts';
 
@@ -353,20 +353,6 @@ async function listEvents(
     nextOffset: hasMore ? offset + visibleRows.length : null,
     limit
   };
-}
-
-async function loadHotelOperationalTimeZone(admin: SupabaseClient, hotelId: string): Promise<string> {
-  const { data, error } = await admin
-    .from('hoteles')
-    .select('zona_horaria')
-    .eq('id', hotelId)
-    .maybeSingle();
-  if (error) {
-    throw Object.assign(new Error('No se pudo consultar la zona horaria del hotel.'), {
-      code: 'hotel_time_zone_lookup_failed'
-    });
-  }
-  return normalizeBankTimeZone(data?.zona_horaria, DEFAULT_BANK_TIME_ZONE);
 }
 
 async function getCandidates(admin: SupabaseClient, pilotHotelId: string, paymentEventId?: string) {
