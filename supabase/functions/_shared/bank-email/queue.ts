@@ -1,5 +1,6 @@
 import type { SupabaseClient } from 'npm:@supabase/supabase-js@2.111.0';
-import type { PilotHotel } from './types.ts';
+import type { BankEmailConfig, PilotHotel } from './types.ts';
+import type { BankEmailIntegrationRow } from './integration-service.ts';
 import { readBankEmailConfig, assertBankEmailConfig, isBankEmailProcessingEnabled } from './config.ts';
 import { getBankEmailIntegration, getValidGmailAccessToken } from './integration-service.ts';
 import {
@@ -150,6 +151,83 @@ async function collectMessageReferences(
   return [...messages.values()];
 }
 
+
+export interface GmailProcessingResult {
+  saved: number;
+  duplicates: number;
+  ignored: number;
+  unavailable: number;
+  parseErrors: number;
+}
+
+// Shared by push delivery and bounded recovery. Neither path bypasses sender,
+// hotel bank-key, authentication, matching, or Gmail-message idempotency checks.
+export async function processGmailReferences(
+  admin: SupabaseClient,
+  pilotHotel: PilotHotel,
+  integration: BankEmailIntegrationRow,
+  config: BankEmailConfig,
+  accessToken: string,
+  references: GmailMessageReference[]
+): Promise<GmailProcessingResult> {
+  if (integration.hotel_id !== pilotHotel.id || integration.provider !== 'google') {
+    throw Object.assign(new Error('La integracion no pertenece al hotel autorizado.'), { code: 'integration_hotel_mismatch' });
+  }
+  const result: GmailProcessingResult = { saved: 0, duplicates: 0, ignored: 0, unavailable: 0, parseErrors: 0 };
+  for (const reference of references) {
+    let resource;
+    try {
+      resource = await getGmailMessage(accessToken, reference.id);
+    } catch (error) {
+      const status = (error as { status?: number })?.status;
+      if (!isTerminalMissingGmailMessage(status)) throw error;
+      await admin.from('bank_payment_audit_log').insert({
+        hotel_id: pilotHotel.id,
+        user_id: null,
+        action: 'parse_error',
+        payment_event_id: null,
+        details: { error_code: 'gmail_message_unavailable', http_status: status }
+      });
+      result.unavailable += 1;
+      continue;
+    }
+    if (!resource.labelIds?.includes(GMAIL_WATCH_LABEL_ID)) {
+      result.ignored += 1;
+      continue;
+    }
+    let normalized;
+    try {
+      normalized = parseGmailMessage(resource as never);
+    } catch {
+      await admin.from('bank_payment_audit_log').insert({
+        hotel_id: pilotHotel.id,
+        user_id: null,
+        action: 'parse_error',
+        payment_event_id: null,
+        details: { error_code: 'gmail_message_parse_failed' }
+      });
+      result.parseErrors += 1;
+      continue;
+    }
+    if (!isConfiguredBankSender(normalized) || !bankEmailMatchesKey(normalized.textBody, integration.bank_key)) {
+      result.ignored += 1;
+      continue;
+    }
+    const analyzed = await analyzeBankEmail(admin, pilotHotel, normalized, config, {
+      save: true,
+      isTest: false,
+      source: 'gmail',
+      bankKey: integration.bank_key,
+      integrationId: integration.id,
+      userId: null
+    });
+    if (analyzed.saved === true) result.saved += 1;
+    else if (analyzed.duplicated === true) result.duplicates += 1;
+    else result.ignored += 1;
+  }
+  return result;
+}
+
 async function processInboxRow(
   admin: SupabaseClient,
   pilotHotel: PilotHotel,
@@ -181,46 +259,7 @@ async function processInboxRow(
     row.history_id,
     GMAIL_WATCH_LABEL_ID
   );
-  for (const reference of references) {
-    let resource;
-    try {
-      resource = await getGmailMessage(accessToken, reference.id);
-    } catch (error) {
-      const status = (error as { status?: number })?.status;
-      if (!isTerminalMissingGmailMessage(status)) throw error;
-      await admin.from('bank_payment_audit_log').insert({
-        hotel_id: pilotHotel.id,
-        user_id: null,
-        action: 'parse_error',
-        payment_event_id: null,
-        details: { error_code: 'gmail_message_unavailable', http_status: status }
-      });
-      continue;
-    }
-    if (!resource.labelIds?.includes(GMAIL_WATCH_LABEL_ID)) continue;
-    let normalized;
-    try {
-      normalized = parseGmailMessage(resource as never);
-    } catch {
-      await admin.from('bank_payment_audit_log').insert({
-        hotel_id: pilotHotel.id,
-        user_id: null,
-        action: 'parse_error',
-        payment_event_id: null,
-        details: { error_code: 'gmail_message_parse_failed' }
-      });
-      continue;
-    }
-    if (!isConfiguredBankSender(normalized) || !bankEmailMatchesKey(normalized.textBody, integration.bank_key)) continue;
-    await analyzeBankEmail(admin, pilotHotel, normalized, config, {
-      save: true,
-      isTest: false,
-      source: 'gmail',
-      bankKey: integration.bank_key,
-      integrationId: integration.id,
-      userId: null
-    });
-  }
+  await processGmailReferences(admin, pilotHotel, integration, config, accessToken, references);
 
   await advanceHistoryCursor(admin, integration.id, pilotHotel.id, row.history_id);
   await markInbox(admin, row, 'processed');
