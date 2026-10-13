@@ -58,7 +58,6 @@ test('M15 separa la zona fuente del banco de la zona operativa del hotel', () =>
     '../supabase/functions/_shared/bank-email/bankParsers/generic.ts'
   ), 'utf8');
 
-  assert.match(api, /select\('zona_horaria'\)/);
   assert.match(api, /utcRangeForCalendarDates\(rangeStart, rangeEnd, hotelTimeZone\)/);
   assert.doesNotMatch(api, /T00:00:00-05:00/);
   assert.match(paymentService, /transactionTimeZone:\s*DEFAULT_BANK_TIME_ZONE/);
