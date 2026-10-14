@@ -1,6 +1,6 @@
 import { buildAdminClient } from '../_shared/bank-email/server.ts';
 import { getBankEmailHotel } from '../_shared/bank-email/hotel-scope.ts';
-import { syncOutlookPayments } from '../_shared/bank-email/outlook-service.ts';
+import { getOutlookSetupStatus, syncOutlookPayments } from '../_shared/bank-email/outlook-service.ts';
 import type { BankEmailIntegrationRow } from '../_shared/bank-email/integration-service.ts';
 import { bankCronAuthorized } from '../_shared/bank-email/cron-auth.ts';
 import { isBankEmailProcessingEnabled, readBankEmailConfig } from '../_shared/bank-email/config.ts';
@@ -29,5 +29,5 @@ Deno.serve(async req => {
         user_id: null, action: 'outlook_sync_failed', details: { error_code: code } });
     }
   }
-  return jsonResponse({ ok: failed === 0, synced, failed });
+  return jsonResponse({ ok: failed === 0, synced, failed, configuration: getOutlookSetupStatus() });
 });

@@ -1,7 +1,8 @@
 import { buildAdminClient, isPilotAdministrator } from './server.ts';
 import { getBankEmailHotel, validateHotelBankSettings } from './hotel-scope.ts';
 import { buildOAuthRedirect, hashOAuthState } from './oauth-state.ts';
-import { exchangeOutlookAuthorizationCode, getOutlookProfile } from './outlook-service.ts';
+import { exchangeOutlookAuthorizationCode, getOutlookProfile, syncOutlookPayments } from './outlook-service.ts';
+import type { BankEmailIntegrationRow } from './integration-service.ts';
 import { getBankEmailIntegration } from './integration-service.ts';
 import { encryptToken, getTokenEncryptionKey } from './token-crypto.ts';
 import { isBankEmailProcessingEnabled, readBankEmailConfig } from './config.ts';
@@ -50,7 +51,7 @@ export async function handleBankOutlookCallback(req: Request): Promise<Response>
     const existing = await getBankEmailIntegration(admin, hotel.id, 'microsoft');
     const sameMailbox = existing?.connected_email.toLowerCase() === profileInfo.email;
     const key = getTokenEncryptionKey();
-    const { error: storeError } = await admin.from('bank_email_integrations').upsert({
+    const { data: stored, error: storeError } = await admin.from('bank_email_integrations').upsert({
       hotel_id: hotel.id, provider: 'microsoft', connected_email: profileInfo.email,
       access_token_encrypted: await encryptToken(tokens.access_token, key),
       refresh_token_encrypted: await encryptToken(tokens.refresh_token, key),
@@ -59,10 +60,18 @@ export async function handleBankOutlookCallback(req: Request): Promise<Response>
       bank_key: settings.bankKey, outlook_delta_link: sameMailbox ? existing?.outlook_delta_link || null : null,
       sync_lock_token: null, sync_locked_until: null, watch_status: 'pending', watch_renewal_failures: 0,
       last_error_code: null, created_by: pending.user_id, updated_at: now
-    }, { onConflict: 'hotel_id,provider' });
-    if (storeError) throw new HttpError(409, 'outlook_integration_store_failed', 'No se pudo guardar Outlook. Usa una cuenta exclusiva de este hotel.');
+    }, { onConflict: 'hotel_id,provider' }).select('*').single();
+    if (storeError || !stored) throw new HttpError(409, 'outlook_integration_store_failed', 'No se pudo guardar Outlook. Usa una cuenta exclusiva de este hotel.');
     await admin.from('bank_payment_audit_log').insert({ hotel_id: hotel.id, user_id: pending.user_id,
       action: 'outlook_connected', details: { mailbox_replaced: Boolean(existing && !sameMailbox) } });
+    try {
+      await syncOutlookPayments(admin, hotel, stored as BankEmailIntegrationRow);
+    } catch (error) {
+      const errorCode = safeErrorCode(error, 'outlook_initial_sync_failed');
+      await admin.from('bank_payment_audit_log').insert({ hotel_id: hotel.id, user_id: pending.user_id,
+        action: 'outlook_sync_failed', details: { error_code: errorCode, initial_sync: true } });
+      return redirect('connected_sync_pending', errorCode);
+    }
     return redirect('success');
   } catch (error) {
     const code = safeErrorCode(error, 'outlook_callback_failed');

@@ -9,7 +9,7 @@ import {
   type AuthenticatedRequestContext
 } from '../_shared/bank-email/server.ts';
 import { getBankEmailHotel, getHotelBankSettings, validateHotelBankSettings } from '../_shared/bank-email/hotel-scope.ts';
-import { buildOutlookAuthorizationUrl, getOutlookProfile, getValidOutlookAccessToken, syncOutlookPayments } from '../_shared/bank-email/outlook-service.ts';
+import { buildOutlookAuthorizationUrl, getOutlookSetupStatus, getValidOutlookAccessToken, syncOutlookPayments, testOutlookInbox } from '../_shared/bank-email/outlook-service.ts';
 import { readBankEmailConfig, assertBankEmailConfig } from '../_shared/bank-email/config.ts';
 import { buildCorsHeaders, HttpError, jsonResponse, readJsonBody, safeErrorCode, safeErrorMessage } from '../_shared/bank-email/http.ts';
 import { createOAuthState, hashOAuthState } from '../_shared/bank-email/oauth-state.ts';
@@ -1007,7 +1007,7 @@ async function handlePilotAction(
   }
   if (action === 'outlook-status') {
     const integration = await getBankEmailIntegration(admin, pilotHotel.id, 'microsoft');
-    return { integration: integration ? {
+    return { available: getOutlookSetupStatus().configured, integration: integration ? {
       connected: true, connectedEmail: integration.connected_email, watchStatus: integration.watch_status,
       lastSyncedAt: integration.last_watch_renewed_at, lastErrorCode: integration.last_error_code
     } : { connected: false }, settings };
@@ -1039,9 +1039,8 @@ async function handlePilotAction(
     }
     if (action === 'outlook-test') {
       const { accessToken } = await getValidOutlookAccessToken(admin, integration);
-      const profile = await getOutlookProfile(accessToken);
-      if (profile.email !== integration.connected_email.toLowerCase()) throw new HttpError(409, 'outlook_account_mismatch', 'La cuenta Outlook no coincide.');
-      return { ok: true, connectedEmail: profile.email };
+      const profile = await testOutlookInbox(accessToken, integration.connected_email);
+      return { ok: true, connectedEmail: profile.email, inboxReadable: true };
     }
     return { ok: true, sync: await syncOutlookPayments(admin, pilotHotel, integration) };
   }

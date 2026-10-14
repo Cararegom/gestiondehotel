@@ -560,7 +560,15 @@ function renderGmailPaymentCard() {
           <li>Selecciona Aplicar la etiqueta y elige la etiqueta del hotel. Conserva los avisos en Recibidos.</li>
           <li>Guarda la configuracion y pulsa Conectar Gmail. Autoriza la cuenta que recibe los pagos.</li>
         </ol>
-        <p class="mt-3">En Outlook, pulsa Conectar Outlook y permite leer el correo. Conserva los avisos en la bandeja de entrada; se revisa cada minuto y no requiere una etiqueta de Gmail.</p>
+        <p class="mt-3 font-semibold text-slate-800">Preparar Outlook o Hotmail</p>
+        <ol class="mt-2 list-decimal space-y-2 pl-5">
+          <li>Usa la cuenta de Outlook o Hotmail donde el banco envia directamente los avisos de este hotel.</li>
+          <li>En Outlook, abre Configuracion &gt; Correo &gt; Correo no deseado &gt; Remitentes y dominios seguros. Agrega <strong>alertasynotificaciones@an.notificacionesbancolombia.com</strong> y <strong>alertasynotificaciones@ayn.notificacionesbancolombia.com</strong>, y guarda.</li>
+          <li>Conserva los avisos originales en la Bandeja de entrada. Revisa que ninguna regla los mueva automaticamente a otra carpeta.</li>
+          <li>Guarda la llave bancaria del hotel, pulsa Conectar Outlook y acepta el permiso para leer el correo.</li>
+          <li>Al regresar, pulsa Probar Outlook y Sincronizar ahora. Revisa el resultado en Ver pagos bancarios.</li>
+        </ol>
+        <p class="mt-2">Outlook se revisa automaticamente cada minuto. Puedes cerrar el navegador; no necesitas crear una carpeta especial.</p>
       </details>
 
       <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -692,7 +700,9 @@ function renderGmailPaymentStatus(ui, status, pilotStatus) {
 
 function setGmailActionLoading(ui, activeButton, loading, loadingLabel = 'Procesando...') {
   ui?.actionButtons?.forEach((button) => {
-    button.disabled = loading;
+    const outlookUnavailable = ui.outlookAvailable === false && button !== ui.outlookButtons?.disconnect &&
+      Object.values(ui.outlookButtons || {}).includes(button);
+    button.disabled = loading || outlookUnavailable;
     if (!loading) button.textContent = button.dataset.idleLabel || button.textContent;
   });
   if (loading && activeButton) activeButton.textContent = loadingLabel;
@@ -773,13 +783,17 @@ async function loadOutlookPaymentStatus(ui, mountToken) {
   try {
     const status = await getBankPaymentOutlookStatus(supabaseInstance);
     if (mountToken !== currentMountToken || !currentContainer?.contains(ui.root)) return;
-    ui.outlookState.textContent = status.connected
+    ui.outlookAvailable = status.available;
+    ui.outlookState.textContent = status.available === false
+      ? 'La conexion de Microsoft aun requiere configuracion. Contacta a administracion.'
+      : status.connected
       ? `${status.connectedEmail || 'Cuenta conectada'} · ${watchStatusLabel(status.watchStatus)}${status.lastErrorCode ? ' · Revisa la conexion' : ''}`
       : 'Sin cuenta Outlook conectada';
     ui.outlookLastSync.textContent = status.lastSyncedAt ? `Ultima sincronizacion: ${formatGmailDateTime(status.lastSyncedAt)}` : 'Revision automatica cada minuto';
     for (const [action, button] of Object.entries(ui.outlookButtons)) {
       const visible = action === 'connect' ? !status.connected || status.watchStatus === 'error' : status.connected;
       button.style.display = visible ? 'inline-flex' : 'none';
+      button.disabled = status.available === false && action !== 'disconnect';
     }
   } catch (error) {
     if (mountToken === currentMountToken) ui.outlookState.textContent = error.message || 'No se pudo consultar Outlook.';
@@ -796,7 +810,7 @@ async function runOutlookPaymentAction(action, ui, mountToken) {
     const result = await runBankPaymentOutlookAction(supabaseInstance, action);
     if (mountToken !== currentMountToken) return;
     if (action === 'connect') { window.location.assign(result.authUrl); return; }
-    showGmailFeedback(ui.feedback, action === 'disconnect' ? 'Outlook desconectado.' : action === 'test' ? 'Conexion Outlook verificada.' : 'Correo Outlook sincronizado.', 'success');
+    showGmailFeedback(ui.feedback, action === 'disconnect' ? 'Outlook desconectado.' : action === 'test' ? 'Conexion Outlook verificada. Se puede leer la bandeja de entrada.' : 'Correo Outlook sincronizado.', 'success');
     await loadOutlookPaymentStatus(ui, mountToken);
   } catch (error) {
     if (mountToken === currentMountToken) showGmailFeedback(ui.feedback, error.message || 'No se pudo completar la accion de Outlook.', 'error', 0);
@@ -809,6 +823,10 @@ function showGmailCallbackResult(ui, callbackResult) {
   if (!ui || !callbackResult) return;
   const suffix = callbackResult.code ? ` Codigo: ${callbackResult.code}.` : '';
   if (callbackResult.provider === 'outlook') {
+    if (callbackResult.status === 'connected_sync_pending') {
+      showGmailFeedback(ui.feedback, 'Outlook quedo conectado. La primera sincronizacion requiere revision; pulsa Probar Outlook o Sincronizar ahora.', 'warning', 0);
+      return;
+    }
     showGmailFeedback(ui.feedback, callbackResult.status === 'success'
       ? 'Outlook quedo conectado. Los avisos bancarios se sincronizan cada minuto.'
       : `No se pudo completar la conexion con Outlook.${suffix}`, callbackResult.status === 'success' ? 'success' : 'error', 8000);
