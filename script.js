@@ -233,8 +233,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     if (referidoError) console.warn('No fue posible registrar el referido en este momento.');
                 }
-                await supabase.from('usuarios').insert({ id: supabaseUserId, nombre: adminName, hotel_id: hotelData.id, correo: email, rol: 'admin' });
-                await supabase.from('usuarios_roles').insert({ usuario_id: supabaseUserId, rol_id: ADMIN_ROL_ID, hotel_id: hotelData.id });
+                const { error: perfilError } = await supabase.from('usuarios').insert({ id: supabaseUserId, nombre: adminName, hotel_id: hotelData.id, correo: email, rol: 'admin' });
+                if (perfilError) {
+                    perfilError.registroIncompleto = true;
+                    throw perfilError;
+                }
+                const { error: rolError } = await supabase.from('usuarios_roles').insert({ usuario_id: supabaseUserId, rol_id: ADMIN_ROL_ID, hotel_id: hotelData.id });
+                if (rolError) {
+                    rolError.registroIncompleto = true;
+                    throw rolError;
+                }
 
                 // 3. ÉXITO
                 localStorage.removeItem('referido_id');
@@ -260,8 +268,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // --- INICIO DE LA LÓGICA CORREGIDA ---
 
+                // 0. El hotel ya se creó pero falló el perfil o el rol del administrador.
+                if (error.registroIncompleto) {
+                    userMessage = 'Tu hotel quedó creado, pero no pudimos terminar de configurar tu usuario administrador. No vuelvas a registrarte: escríbenos a soporte con este correo y lo completamos por ti.';
+
                 // 1. Buscamos PRIMERO el error de la base de datos que descubrimos.
-                if (error.message && error.message.includes('hoteles_correo_key')) {
+                } else if (error.message && error.message.includes('hoteles_correo_key')) {
                     userMessage = 'Ese correo ya está siendo usado como contacto principal de otro hotel. <a href="/login.html" class="font-bold underline hover:text-blue-700">¿Deseas iniciar sesión?</a>';
                 
                 // 2. Mantenemos la revisión del error de autenticación por si acaso.
