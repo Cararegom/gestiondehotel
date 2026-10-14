@@ -24,13 +24,31 @@ El filtro organiza el correo. El servidor vuelve a validar el remitente bancario
 
 ## Outlook
 
-1. Introduce la llave del hotel y guarda la configuracion.
-2. Pulsa **Conectar Outlook** dentro de **Correo de pagos**.
-3. Inicia sesion con la cuenta que recibe los avisos y permite leer el correo.
-4. Conserva estos avisos en **Bandeja de entrada**; no requiere crear una etiqueta de Gmail. El sistema revisa Outlook cada minuto.
-5. Usa **Probar Outlook** o **Sincronizar ahora** para comprobar la conexion.
+1. Usa una cuenta de Outlook, Hotmail o Microsoft 365 exclusiva del hotel. El banco debe enviar sus avisos originales directamente a esa cuenta.
+2. En Outlook web abre **Configuracion > Correo > Correo no deseado > Remitentes y dominios seguros**. Agrega ambas direcciones y guarda:
+   - `alertasynotificaciones@an.notificacionesbancolombia.com`
+   - `alertasynotificaciones@ayn.notificacionesbancolombia.com`
+3. Conserva los avisos en **Bandeja de entrada**. En **Configuracion > Correo > Reglas** revisa que ninguna regla los elimine o mueva a otra carpeta. No necesitas crear una carpeta especial.
+4. En Gestion de Hotel selecciona el hotel correcto y abre **Integraciones > Correo de pagos**. Guarda la llave que aparece en los avisos del banco; para Marena/Hotel OK es `@hotelok`.
+5. Pulsa **Conectar Outlook**, inicia sesion con esa cuenta y acepta los permisos de lectura. La aplicacion no solicita permisos para enviar correos ni modificar el buzon.
+6. Al regresar se inicia la primera sincronizacion. Pulsa **Probar Outlook** para comprobar que el servidor puede leer la bandeja y **Sincronizar ahora** para revisar los avisos recientes.
+7. Comprueba el resultado en **Ver pagos bancarios** y en la campana de notificaciones. Para una prueba completa, espera el siguiente aviso real del banco recibido despues de conectar; normalmente se procesara en la siguiente revision de un minuto.
+
+El proceso funciona en el servidor: puedes cerrar Outlook y Gestion de Hotel. Un estado conectado no reemplaza la prueba de una transferencia real. La primera conexion revisa desde diez minutos antes de conectar; no importa toda la historia del buzon.
 
 Esta conexion utiliza permisos de correo y credenciales cifradas independientes de la conexion de calendario. Si el permiso se revoca, vuelve a conectar Outlook desde Correo de pagos.
+
+### Configuracion de Microsoft para la administracion del sistema
+
+Si Integraciones indica que Microsoft requiere configuracion, completar primero el registro de la aplicacion en Microsoft Entra:
+
+1. Usar una aplicacion que admita cuentas de cualquier organizacion y cuentas personales de Microsoft para poder conectar Outlook.com/Hotmail y Microsoft 365.
+2. En **Autenticacion**, registrar la plataforma **Web** y esta direccion de retorno exacta: `https://iikpqpdoslyduecibaij.supabase.co/functions/v1/calendar-oauth-callback`.
+3. En **Permisos de API > Microsoft Graph > Permisos delegados**, habilitar `User.Read` y `Mail.Read`. El flujo pide tambien `openid`, `profile`, `email` y `offline_access`. No usar permisos de aplicacion ni `Mail.Send` o `Mail.ReadWrite` para esta conexion.
+4. Guardar el identificador de la aplicacion y el valor de su secreto en los secretos del servidor `OUTLOOK_CLIENT_ID` y `OUTLOOK_CLIENT_SECRET`. El calendario utiliza la misma aplicacion registrada; preservar su configuracion y direcciones de retorno existentes.
+5. Volver a Integraciones y conectar la cuenta bancaria mediante el boton de Outlook. Si es una cuenta empresarial con consentimiento restringido, su administrador debe autorizar la aplicacion.
+
+Referencias: [registro de aplicaciones Microsoft](https://learn.microsoft.com/en-us/graph/auth-register-app-v2), [permiso Mail.Read](https://learn.microsoft.com/en-us/graph/permissions-reference#mailread), [remitentes seguros en Outlook](https://support.microsoft.com/en-us/outlook/mail/add-recipients-to-the-safe-senders-list-in-outlook).
 
 ## Recepcion y arqueo
 

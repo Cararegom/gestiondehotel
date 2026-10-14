@@ -109,7 +109,7 @@ function addressDomain(address: string): string {
   return address.slice(address.lastIndexOf('@') + 1).trim().toLowerCase();
 }
 
-export function isConfiguredBankSender(email: NormalizedEmail): boolean {
+export function isConfiguredBankSender(email: Pick<NormalizedEmail, 'fromAddress'>): boolean {
   const address = String(email.fromAddress || '').trim().toLowerCase();
   if (!address) return false;
   const domain = addressDomain(address);
@@ -381,7 +381,7 @@ export async function analyzeBankEmail(
       is_test: options.isTest === true
     });
     if (
-      provider === 'gmail' && parsed.disposition === 'detected' &&
+      provider !== 'simulation' && parsed.disposition === 'detected' &&
       existing.status === 'detected' && !hasCompletedMatching(existing)
     ) {
       const recovered = await matchStoredPaymentEvent(admin, pilotHotel, existing.id, config);
@@ -412,7 +412,7 @@ export async function analyzeBankEmail(
         is_test: options.isTest === true
       });
       if (
-        duplicate && provider === 'gmail' && parsed.disposition === 'detected' &&
+        duplicate && provider !== 'simulation' && parsed.disposition === 'detected' &&
         duplicate.status === 'detected' && !hasCompletedMatching(duplicate)
       ) {
         const recovered = await matchStoredPaymentEvent(admin, pilotHotel, duplicate.id, config);

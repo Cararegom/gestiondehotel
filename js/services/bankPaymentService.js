@@ -175,7 +175,7 @@ export async function saveBankPaymentEmailSettings(supabase, settings) {
 export async function getBankPaymentOutlookStatus(supabase) {
   const data = await invokeBankEmailApi(supabase, 'outlook-status');
   const row = data.integration || {};
-  return { connected: row.connected === true,
+  return { available: data.available !== false, connected: row.connected === true,
     connectedEmail: normalizeOptionalText(row.connectedEmail, 320),
     watchStatus: normalizeOptionalText(row.watchStatus, 80),
     lastSyncedAt: normalizeOptionalText(row.lastSyncedAt, 80),

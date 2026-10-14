@@ -10,6 +10,15 @@ import { HttpError, safeErrorCode } from './http.ts';
 
 const GRAPH_ORIGIN = 'https://graph.microsoft.com';
 const SCOPES = 'openid profile email offline_access User.Read Mail.Read';
+const MESSAGE_FIELDS = 'id,from,subject,body,receivedDateTime,internetMessageHeaders';
+
+export function getOutlookSetupStatus(): { configured: boolean; redirectUri: string | null } {
+  const apiUrl = Deno.env.get('API_BASE_URL') || Deno.env.get('SUPABASE_URL') || '';
+  return {
+    configured: Boolean(Deno.env.get('OUTLOOK_CLIENT_ID')?.trim() && Deno.env.get('OUTLOOK_CLIENT_SECRET')?.trim() && apiUrl),
+    redirectUri: apiUrl ? `${apiUrl.replace(/\/$/u, '')}/functions/v1/calendar-oauth-callback` : null
+  };
+}
 
 function outlookConfig() {
   const clientId = Deno.env.get('OUTLOOK_CLIENT_ID') || '';
@@ -75,6 +84,15 @@ export async function getOutlookProfile(accessToken: string): Promise<{ email: s
   return { email };
 }
 
+export async function testOutlookInbox(accessToken: string, connectedEmail: string): Promise<{ email: string }> {
+  const profile = await getOutlookProfile(accessToken);
+  if (profile.email !== connectedEmail.trim().toLowerCase()) {
+    throw new HttpError(409, 'outlook_account_mismatch', 'La cuenta Outlook no coincide.');
+  }
+  await outlookGraphGet(accessToken, '/mailFolders/inbox/messages?$top=1&$select=id');
+  return profile;
+}
+
 export async function getValidOutlookAccessToken(admin: SupabaseClient, integration: BankEmailIntegrationRow): Promise<AccessContext> {
   if (integration.provider !== 'microsoft') throw new HttpError(403, 'outlook_provider_mismatch', 'La conexion no pertenece a Outlook.');
   const key = getTokenEncryptionKey();
@@ -120,10 +138,24 @@ export function parseOutlookMessage(message: OutlookMessage): NormalizedEmail {
   return normalized;
 }
 
+async function completeOutlookMessage(accessToken: string, message: OutlookMessage): Promise<OutlookMessage> {
+  if (
+    typeof message.body?.content === 'string' && message.from?.emailAddress?.address &&
+    Number.isFinite(new Date(message.receivedDateTime || '').getTime()) &&
+    Array.isArray(message.internetMessageHeaders) && message.internetMessageHeaders.length > 0
+  ) return message;
+  // Delta can contain partial read/unread updates. Retrieve the original headers
+  // and content before authentication or payment parsing; never trust a preview.
+  const full = await outlookGraphGet(accessToken,
+    `/messages/${encodeURIComponent(message.id || '')}?$select=${MESSAGE_FIELDS}`) as OutlookMessage;
+  if (full.id !== message.id) throw new HttpError(502, 'outlook_message_mismatch', 'Outlook devolvio un mensaje diferente.');
+  return full;
+}
+
 function initialDeltaLink(integration: BankEmailIntegrationRow): string {
   // Start at connection time; reconnection/recovery retains seven days, IDs deduplicate retries.
   const since = new Date(Math.max(new Date(integration.created_at).getTime() - 600_000, Date.now() - 7 * 86_400_000)).toISOString();
-  const params = new URLSearchParams({ '$select': 'id,from,subject,body,receivedDateTime,internetMessageHeaders',
+  const params = new URLSearchParams({ '$select': MESSAGE_FIELDS,
     '$filter': `receivedDateTime ge ${since}` });
   return `${GRAPH_ORIGIN}/v1.0/me/mailFolders/inbox/messages/delta?${params}`;
 }
@@ -152,7 +184,17 @@ export async function syncOutlookPayments(admin: SupabaseClient, hotel: PilotHot
       }
       for (const message of (Array.isArray(page.value) ? page.value : []) as OutlookMessage[]) {
         if (!message.id || message['@removed']) continue;
-        const email = parseOutlookMessage(message);
+        if (message.from?.emailAddress?.address && !isConfiguredBankSender({ fromAddress: message.from.emailAddress.address })) continue;
+        let complete;
+        try {
+          complete = await completeOutlookMessage(accessToken, message);
+        } catch (error) {
+          if ((error as { upstreamStatus?: number }).upstreamStatus !== 404) throw error;
+          await admin.from('bank_payment_audit_log').insert({ hotel_id: hotel.id, user_id: null,
+            action: 'parse_error', details: { error_code: 'outlook_message_unavailable' } });
+          continue;
+        }
+        const email = parseOutlookMessage(complete);
         if (!isConfiguredBankSender(email) || !bankEmailMatchesKey(email.textBody, fresh.bank_key)) continue;
         await analyzeBankEmail(admin, hotel, email, config, { save: true, source: 'outlook',
           bankKey: fresh.bank_key, integrationId: fresh.id, userId: null });

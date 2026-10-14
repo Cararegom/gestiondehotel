@@ -33,6 +33,19 @@ function createFunctionClient(response = {}) {
   };
 }
 
+test('Outlook conserva la disponibilidad del servidor sin confundirla con una cuenta conectada', async () => {
+  const service = await loadServiceModule();
+  const missing = createFunctionClient({ available: false, integration: { connected: false } });
+  const status = await service.getBankPaymentOutlookStatus(missing.client);
+  assert.equal(status.available, false);
+  assert.equal(status.connected, false);
+  assert.deepEqual(missing.calls[0].options.body, { action: 'outlook-status' });
+  const existing = createFunctionClient({ integration: { connected: true, connectedEmail: 'hotel@example.test' } });
+  const connected = await service.getBankPaymentOutlookStatus(existing.client);
+  assert.equal(connected.available, true);
+  assert.equal(connected.connectedEmail, 'hotel@example.test');
+});
+
 test('el servicio consulta elegibilidad autoritativa sin enviar hotelId', async () => {
   const service = await loadServiceModule();
   const mock = createFunctionClient({
