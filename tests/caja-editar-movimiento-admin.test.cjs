@@ -481,3 +481,19 @@ test('ni superadmin modifica monto conciliado ni convierte ventas en egresos', a
   );
   assert.equal((await cajaRow(db, ids.conciliado)).monto, 30000);
 });
+
+test('una venta de tienda con movimientos duplicados no altera el total original', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+  await db.query(
+    'insert into public.caja(id, hotel_id, turno_id, tipo, monto, concepto, metodo_pago_id, fecha_movimiento, venta_tienda_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    [id(150), ids.hotel, ids.turno, 'ingreso', 10000, 'Venta tienda duplicada', ids.cash, OPEN_AT, ids.ventaTienda]
+  );
+  await assert.rejects(
+    () => editar(db, ids.superadmin, { movimiento: ids.tiendaMov, monto: 12000, concepto: 'Venta tienda' }),
+    /CAJA_EDICION_TIENDA_MULTIPLE/,
+  );
+  const sale = await db.query('select total_venta from public.ventas_tienda where id=$1', [ids.ventaTienda]);
+  assert.equal(Number(sale.rows[0].total_venta), 10000);
+  assert.equal((await cajaRow(db, ids.tiendaMov)).monto, 10000);
+});
