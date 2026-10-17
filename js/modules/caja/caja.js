@@ -76,6 +76,11 @@ function isAdminUser() {
     .some((roleName) => ADMIN_ROLES.includes(normalizeRoleName(roleName)));
 }
 
+function isSuperAdminUser() {
+  return [currentUserRole, ...currentUserRoleNames]
+    .some((roleName) => normalizeRoleName(roleName) === 'superadmin');
+}
+
 function setTurnoActivo(nuevoTurno) {
   turnoActivo = nuevoTurno;
 }
@@ -174,6 +179,7 @@ async function handleMovementTableClick(event, tBodyEl, summaryEls, turnoId, mov
     movementRefs,
     movementTableState,
     isAdminUser: isAdminUser(),
+    isSuperAdminUser: isSuperAdminUser(),
     supabase: currentSupabaseInstance,
     hotelId: currentHotelId,
     hotelName: currentHotelName,
