@@ -285,6 +285,12 @@ begin
   end if;
 
   if v_delta <> 0 and v_mov.venta_tienda_id is not null then
+    if (select count(*) from public.caja c
+        where c.venta_tienda_id = v_mov.venta_tienda_id
+          and c.original_movement_id is null and c.source is distinct from 'caja_reversal') <> 1 then
+      raise exception 'CAJA_EDICION_TIENDA_MULTIPLE: la venta tiene mas de un movimiento de Caja; requiere conciliacion individual'
+        using errcode = '23514';
+    end if;
     update public.ventas_tienda
        set total_venta = coalesce(total_venta, 0) + v_delta
      where id = v_mov.venta_tienda_id and hotel_id = v_mov.hotel_id
@@ -297,6 +303,12 @@ begin
   end if;
 
   if v_delta <> 0 and v_mov.venta_restaurante_id is not null then
+    if (select count(*) from public.caja c
+        where c.venta_restaurante_id = v_mov.venta_restaurante_id
+          and c.original_movement_id is null and c.source is distinct from 'caja_reversal') <> 1 then
+      raise exception 'CAJA_EDICION_RESTAURANTE_MULTIPLE: la venta tiene varios cobros; requiere conciliacion individual'
+        using errcode = '23514';
+    end if;
     update public.ventas_restaurante
        set total_venta = case when total_venta is null then null else total_venta + v_delta end,
            monto_total = case when monto_total is null then null else monto_total + v_delta end
