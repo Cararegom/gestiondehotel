@@ -194,6 +194,12 @@ begin
       raise exception 'CAJA_EDICION_CONCILIADO: desvincula o revisa la conciliacion bancaria antes de corregir el monto'
         using errcode = '23514';
     end if;
+    if v_vinculado and v_mov.reserva_terraza_id is not null
+       and v_mov.venta_terraza_id is null
+       and not exists (select 1 from public.terraza_reservas tr where tr.caja_anticipo_id = v_mov.id) then
+      raise exception 'CAJA_EDICION_TERRAZA_ESPECIAL: corrige esta operacion desde Terraza'
+        using errcode = '23514';
+    end if;
     if v_vinculado and v_mov.compra_tienda_id is not null then
       raise exception 'CAJA_EDICION_COMPRA: un pago de inventario debe corregirse desde compras para conservar sus abonos'
         using errcode = '23514';
@@ -252,11 +258,17 @@ begin
     select to_jsonb(p) into v_related_after from public.pagos_reserva p
       where p.id = v_mov.pago_reserva_id;
     if v_delta <> 0 then
+      -- Ajuste incremental: no borra abonos historicos que no tengan
+      -- su registro en pagos_reserva (existen movimientos legacy).
       update public.reservas r
-        set monto_pagado = (select coalesce(sum(p.monto), 0)
-                            from public.pagos_reserva p
-                            where p.reserva_id = r.id and p.hotel_id = r.hotel_id)
-        where r.id = (v_related_after->>'reserva_id')::uuid and r.hotel_id = v_mov.hotel_id;
+        set monto_pagado = coalesce(r.monto_pagado, 0) + v_delta
+        where r.id = (v_related_after->>'reserva_id')::uuid and r.hotel_id = v_mov.hotel_id
+          and coalesce(r.monto_pagado, 0) + v_delta >= 0;
+      get diagnostics v_related_count = row_count;
+      if v_related_count <> 1 then
+        raise exception 'CAJA_EDICION_RESERVA: no se pudo ajustar el monto pagado'
+          using errcode = '23514';
+      end if;
     end if;
   elsif v_delta <> 0 and v_mov.reserva_id is not null
       and v_mov.venta_tienda_id is null and v_mov.venta_restaurante_id is null
