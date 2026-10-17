@@ -79,12 +79,10 @@ begin
    limit 1;
   v_es_admin := lower(coalesce(v_rol_nombre, '')) in ('admin', 'administrador', 'superadmin')
              or lower(coalesce(v_actor.rol::text, '')) in ('admin', 'administrador', 'superadmin');
-  v_es_superadmin := lower(coalesce(v_actor.rol::text, '')) = 'superadmin'
-    or exists (
-      select 1 from public.usuarios_roles ur
-      join public.roles r on r.id = ur.rol_id
-      where ur.usuario_id = auth.uid() and lower(r.nombre) = 'superadmin'
-    );
+  -- El superadmin SaaS es reconocido por auth.users/email confirmado, no
+  -- necesariamente por la columna usuarios.rol (puede ser 'admin').
+  v_es_superadmin := public.actor_is_saas_superadmin();
+  v_es_admin := v_es_admin or v_es_superadmin;
   if not v_es_admin then
     raise exception 'CAJA_EDICION_SOLO_ADMIN: solo un administrador puede editar movimientos de caja'
       using errcode = '42501';
