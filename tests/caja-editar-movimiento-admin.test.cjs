@@ -14,6 +14,10 @@ const upgradedMigration = fs.readFileSync(
   path.join(root, 'supabase', 'migrations', '20261016223000_superadmin_caja_edicion_vinculada.sql'),
   'utf8',
 );
+const ownerMigration = fs.readFileSync(
+  path.join(root, 'supabase', 'migrations', '20261017041500_caja_propietario_edicion_avanzada.sql'),
+  'utf8',
+);
 const movimientosSource = fs.readFileSync(path.join(root, 'js/modules/caja/caja-movimientos.js'), 'utf8');
 
 const id = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
@@ -26,6 +30,7 @@ const ids = {
   otherAdmin: id(13),
   superadmin: id(14),
   rolAdmin: id(15),
+  owner: id(16),
   turno: id(20),
   turnoCerrado: id(21),
   cash: id(30),
@@ -67,6 +72,7 @@ async function createDatabase() {
 
     create type public.tipo_movimiento_caja_enum as enum ('ajuste', 'apertura', 'cierre', 'egreso', 'ingreso');
 
+    create table public.hoteles(id uuid primary key, creado_por uuid);
     create table public.usuarios(id uuid primary key, hotel_id uuid not null, rol text, activo boolean default true);
     create table public.roles(id uuid primary key, nombre text not null);
     create table public.usuarios_roles(
@@ -188,7 +194,11 @@ async function createDatabase() {
       ('${ids.recepcion}', '${ids.hotel}', 'recepcionista'),
       ('${ids.adminRoleUser}', '${ids.hotel}', 'recepcionista'),
       ('${ids.otherAdmin}', '${ids.otherHotel}', 'admin'),
-      ('${ids.superadmin}', '${ids.hotel}', 'superadmin');
+      ('${ids.superadmin}', '${ids.hotel}', 'superadmin'),
+      ('${ids.owner}', '${ids.hotel}', 'admin');
+    insert into public.hoteles(id, creado_por) values
+      ('${ids.hotel}', '${ids.owner}'),
+      ('${ids.otherHotel}', '${ids.otherAdmin}');
     insert into public.usuarios_roles(usuario_id, rol_id, hotel_id) values ('${ids.adminRoleUser}', '${ids.rolAdmin}', '${ids.hotel}');
     insert into public.metodos_pago(id, hotel_id, nombre, activo) values
       ('${ids.cash}', '${ids.hotel}', 'Efectivo', true),
@@ -234,6 +244,7 @@ async function createDatabase() {
   }
   await db.exec(migration);
   await db.exec(upgradedMigration);
+  await db.exec(ownerMigration);
   return db;
 }
 
@@ -496,4 +507,52 @@ test('una venta de tienda con movimientos duplicados no altera el total original
   const sale = await db.query('select total_venta from public.ventas_tienda where id=$1', [ids.ventaTienda]);
   assert.equal(Number(sale.rows[0].total_venta), 10000);
   assert.equal((await cajaRow(db, ids.tiendaMov)).monto, 10000);
+});
+
+test('propietario verificado de Hotel Marena con rol admin corrige el pago de reserva vinculado', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+
+  const result = await editar(db, ids.owner, {
+    movimiento: ids.reservaPago,
+    tipo: 'ingreso',
+    monto: 85000,
+    concepto: 'Pago reserva corregido',
+    metodo: ids.bank,
+    motivo: 'Corrijo el valor cobrado desde Caja',
+  });
+  assert.equal(result.ledger_sincronizado, true);
+  assert.equal((await cajaRow(db, ids.reservaPago)).monto, 85000);
+  assert.equal((await ledgerRow(db, ids.reservaPago))[0].amount, 85000);
+  const pago = await db.query('select monto from public.pagos_reserva where id=$1', [ids.pago]);
+  const reserva = await db.query('select monto_pagado from public.reservas where id=$1', [ids.reserva]);
+  assert.equal(Number(pago.rows[0].monto), 85000);
+  assert.equal(Number(reserva.rows[0].monto_pagado), 85000);
+  const audit = await db.query(
+    "select actor_id, reason from public.auditoria_operaciones where entity_id=$1", [ids.reservaPago]
+  );
+  assert.equal(audit.rows[0].actor_id, ids.owner);
+  assert.equal(audit.rows[0].reason, 'Corrijo el valor cobrado desde Caja');
+});
+
+test('propietario puede corregir un turno cerrado; administrador no titular no puede hacerlo', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+  await editar(db, ids.owner, { movimiento: ids.cerradoMov, monto: 8500, concepto: 'Turno viejo' });
+  assert.equal((await cajaRow(db, ids.cerradoMov)).monto, 8500);
+  const arqueo = await db.query('select expected_amount, counted_amount from public.turno_arqueos where turno_id=$1', [ids.turnoCerrado]);
+  assert.equal(Number(arqueo.rows[0].expected_amount), 8500);
+  assert.equal(Number(arqueo.rows[0].counted_amount), 7000);
+  await assert.rejects(
+    () => editar(db, ids.admin, { movimiento: ids.cerradoMov, monto: 9000, concepto: 'Turno viejo' }),
+    /CAJA_EDICION_TURNO_CERRADO/,
+  );
+});
+
+test('el frontend reconoce al propietario por hoteles.creado_por y no por cualquier rol admin', async () => {
+  const caja = fs.readFileSync(path.join(root, 'js/modules/caja/caja.js'), 'utf8');
+  assert.match(caja, /hoteles\(nombre,creado_por\)/);
+  assert.match(caja, /perfil\.hoteles\.creado_por === user\.id/);
+  assert.match(caja, /canEditLinkedMovements: canEditLinkedMovements\(\)/);
+  assert.match(movimientosSource, /linked && !canEditLinkedMovements/);
 });
