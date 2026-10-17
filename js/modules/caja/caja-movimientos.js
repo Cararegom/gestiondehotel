@@ -169,7 +169,7 @@ export function canAdminEditMovement(movement = {}, isAdminUser = false) {
     && ['ingreso', 'egreso', 'apertura'].includes(movement?.tipo);
 }
 
-export async function solicitarEdicionMovimientoAdmin({ movement, metodos, timeZone = getRuntimeHotelTimeZone() }) {
+export async function solicitarEdicionMovimientoAdmin({ movement, metodos, isSuperAdminUser = false, timeZone = getRuntimeHotelTimeZone() }) {
   if (typeof Swal === 'undefined') {
     throw new Error('El editor de movimientos no esta disponible en este navegador.');
   }
@@ -193,10 +193,12 @@ export async function solicitarEdicionMovimientoAdmin({ movement, metodos, timeZ
     width: 560,
     html: `
       <div style="display:grid;gap:12px;text-align:left">
-        ${linked ? '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm p-2">Este movimiento esta ligado a una reserva o venta: el monto y el tipo se corrigen desde ese modulo.</p>' : ''}
+        ${linked ? (isSuperAdminUser
+          ? '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm p-2">Corrección como superadministrador: puedes editar el monto de este movimiento vinculado. Se actualizarán los valores relacionados y quedará una auditoría. El tipo se conserva; las conciliaciones bancarias y pagos complejos requieren revisión independiente.</p>'
+          : '<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-sm p-2">Este movimiento esta ligado a una reserva o venta: solo el superadministrador puede corregir el monto desde Caja.</p>') : ''}
         <label class="text-sm font-semibold">Tipo ${tipoField}</label>
         <label class="text-sm font-semibold">Monto
-          <input id="edit-mov-monto" type="number" min="1" step="any" class="swal2-input" style="width:100%;margin:0" value="${escapeAttribute(String(Number(movement.monto) || ''))}" ${linked ? 'disabled' : ''}>
+          <input id="edit-mov-monto" type="number" min="1" step="any" class="swal2-input" style="width:100%;margin:0" value="${escapeAttribute(String(Number(movement.monto) || ''))}" ${linked && !isSuperAdminUser ? 'disabled' : ''}>
         </label>
         <label class="text-sm font-semibold">Concepto
           <textarea id="edit-mov-concepto" maxlength="500" class="swal2-textarea" style="width:100%;margin:0">${escapeHtml(movement.concepto_original ?? movement.concepto ?? '')}</textarea>
@@ -432,6 +434,7 @@ export async function handleMovementTableClick({
   movementRefs = {},
   movementTableState,
   isAdminUser,
+  isSuperAdminUser = false,
   supabase,
   hotelId,
   hotelName = '',
@@ -463,7 +466,7 @@ export async function handleMovementTableClick({
 
     let cambios;
     try {
-      cambios = await solicitarEdicionMovimientoAdmin({ movement, metodos: metodosEditables });
+      cambios = await solicitarEdicionMovimientoAdmin({ movement, metodos: metodosEditables, isSuperAdminUser });
     } catch (modalError) {
       showError(feedbackEl, modalError.message);
       return;

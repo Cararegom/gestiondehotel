@@ -10,6 +10,10 @@ const migration = fs.readFileSync(
   path.join(root, 'supabase', 'migrations', '20261006120000_caja_editar_movimiento_admin.sql'),
   'utf8',
 );
+const upgradedMigration = fs.readFileSync(
+  path.join(root, 'supabase', 'migrations', '20261016223000_superadmin_caja_edicion_vinculada.sql'),
+  'utf8',
+);
 const movimientosSource = fs.readFileSync(path.join(root, 'js/modules/caja/caja-movimientos.js'), 'utf8');
 
 const id = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
@@ -20,6 +24,7 @@ const ids = {
   recepcion: id(11),
   adminRoleUser: id(12),
   otherAdmin: id(13),
+  superadmin: id(14),
   rolAdmin: id(15),
   turno: id(20),
   turnoCerrado: id(21),
@@ -36,6 +41,10 @@ const ids = {
   reversion: id(46),
   cerradoMov: id(47),
   legacySinLedger: id(48),
+  tiendaMov: id(49),
+  reserva: id(98),
+  pago: id(99),
+  ventaTienda: id(100),
 };
 
 const hoursAgo = (hours) => new Date(Date.now() - hours * 3600 * 1000).toISOString();
@@ -102,9 +111,35 @@ async function createDatabase() {
       original_movement_id uuid not null references public.caja(id),
       reversal_movement_id uuid not null references public.caja(id)
     );
-    create table public.terraza_reservas(id uuid primary key default gen_random_uuid(), caja_anticipo_id uuid);
-    create table public.expense_payments(id uuid primary key default gen_random_uuid(), caja_id uuid);
+    create table public.reservas(
+      id uuid primary key, hotel_id uuid not null, monto_pagado numeric not null default 0
+    );
+    create table public.pagos_reserva(
+      id uuid primary key, hotel_id uuid not null, reserva_id uuid not null,
+      monto numeric not null, metodo_pago_id uuid not null
+    );
+    create table public.ventas_tienda(
+      id uuid primary key, hotel_id uuid not null, total_venta numeric not null, metodo_pago_id uuid
+    );
+    create table public.ventas_restaurante(
+      id uuid primary key, hotel_id uuid not null, total_venta numeric, monto_total numeric
+    );
+    create table public.terraza_pedidos(id uuid primary key, hotel_id uuid not null, total numeric);
+    create table public.terraza_reservas(
+      id uuid primary key default gen_random_uuid(), caja_anticipo_id uuid,
+      hotel_id uuid, saldo_consumido numeric default 0, anticipo_consumible numeric default 0
+    );
+    create table public.expense_payments(
+      id uuid primary key default gen_random_uuid(), caja_id uuid, hotel_id uuid,
+      amount numeric, metodo_pago_id uuid
+    );
     create table public.bank_payment_allocations(id uuid primary key default gen_random_uuid(), caja_id uuid);
+    create table public.turno_arqueos(
+      id uuid primary key default gen_random_uuid(),
+      turno_id uuid, hotel_id uuid, metodo_pago_id uuid,
+      expected_amount numeric not null, counted_amount numeric not null,
+      difference numeric generated always as (counted_amount - expected_amount) stored
+    );
     create table public.account_movements(
       id uuid primary key default gen_random_uuid(),
       hotel_id uuid not null,
@@ -126,6 +161,13 @@ async function createDatabase() {
 
     create function public.hotel_business_date(p_hotel_id uuid, p_instant timestamptz)
     returns date language sql stable as $$ select (p_instant at time zone 'America/Bogota')::date $$;
+    -- El entorno de prueba usa el rol de perfil para simular la verificacion
+    -- fuerte de auth.users de la funcion SaaS de produccion.
+    create function public.actor_is_saas_superadmin() returns boolean
+    language sql stable as $$
+      select exists(select 1 from public.usuarios u
+        where u.id = auth.uid() and u.rol = 'superadmin' and u.activo)
+    $$;
 
     create function public.fase2_ensure_method_account(p_method_id uuid, p_hotel_id uuid, p_actor uuid)
     returns uuid language plpgsql security definer set search_path = pg_catalog, public as $$
@@ -145,7 +187,8 @@ async function createDatabase() {
       ('${ids.admin}', '${ids.hotel}', 'admin'),
       ('${ids.recepcion}', '${ids.hotel}', 'recepcionista'),
       ('${ids.adminRoleUser}', '${ids.hotel}', 'recepcionista'),
-      ('${ids.otherAdmin}', '${ids.otherHotel}', 'admin');
+      ('${ids.otherAdmin}', '${ids.otherHotel}', 'admin'),
+      ('${ids.superadmin}', '${ids.hotel}', 'superadmin');
     insert into public.usuarios_roles(usuario_id, rol_id, hotel_id) values ('${ids.adminRoleUser}', '${ids.rolAdmin}', '${ids.hotel}');
     insert into public.metodos_pago(id, hotel_id, nombre, activo) values
       ('${ids.cash}', '${ids.hotel}', 'Efectivo', true),
@@ -164,7 +207,18 @@ async function createDatabase() {
       ('${ids.revertido}', '${ids.hotel}', '${ids.turno}', 'ingreso', 5000, 'Error', '${ids.cash}', '${OPEN_AT}', 'manual_cash', null, null),
       ('${ids.reversion}', '${ids.hotel}', '${ids.turno}', 'egreso', 5000, 'Reversion: Error', '${ids.cash}', '${OPEN_AT}', 'caja_reversal', null, '${ids.revertido}'),
       ('${ids.cerradoMov}', '${ids.hotel}', '${ids.turnoCerrado}', 'ingreso', 7000, 'Turno viejo', '${ids.cash}', '${OPEN_AT}', 'manual_cash', null, null),
-      ('${ids.legacySinLedger}', '${ids.hotel}', '${ids.turno}', 'ingreso', 4000, 'Legacy', '${ids.cash}', '${OPEN_AT}', 'manual_cash', null, null);
+      ('${ids.legacySinLedger}', '${ids.hotel}', '${ids.turno}', 'ingreso', 4000, 'Legacy', '${ids.cash}', '${OPEN_AT}', 'manual_cash', null, null),
+      ('${ids.tiendaMov}', '${ids.hotel}', '${ids.turno}', 'ingreso', 10000, 'Venta tienda', '${ids.cash}', '${OPEN_AT}', 'store_atomic', null, null);
+    update public.caja set venta_tienda_id = '${ids.ventaTienda}' where id = '${ids.tiendaMov}';
+    insert into public.reservas(id,hotel_id,monto_pagado)
+      values ('${ids.reserva}','${ids.hotel}',90000);
+    insert into public.pagos_reserva(id,hotel_id,reserva_id,monto,metodo_pago_id)
+      values ('${ids.pago}','${ids.hotel}','${ids.reserva}',90000,'${ids.bank}');
+    update public.caja set reserva_id = '${ids.reserva}' where id = '${ids.reservaPago}';
+    insert into public.ventas_tienda(id,hotel_id,total_venta,metodo_pago_id)
+      values ('${ids.ventaTienda}','${ids.hotel}',10000,'${ids.cash}');
+    insert into public.turno_arqueos(turno_id, hotel_id, metodo_pago_id, expected_amount, counted_amount)
+      values ('${ids.turnoCerrado}', '${ids.hotel}', '${ids.cash}', 7000, 7000);
     insert into public.caja_reversiones(original_movement_id, reversal_movement_id) values ('${ids.revertido}', '${ids.reversion}');
     insert into public.bank_payment_allocations(caja_id) values ('${ids.conciliado}');
   `);
@@ -179,6 +233,7 @@ async function createDatabase() {
     `, [movId]);
   }
   await db.exec(migration);
+  await db.exec(upgradedMigration);
   return db;
 }
 
@@ -369,4 +424,76 @@ test('frontend: admin ve editor completo, otros roles solo cambian metodo', asyn
   // El atajo de conciliacion bancaria sigue encontrando el boton por data-edit-metodo.
   assert.match(movimientosSource, /data-edit-movimiento-admin="\$\{movementIdAttr\}" data-edit-metodo="\$\{movementIdAttr\}"/);
   assert.match(movimientosSource, /pago_reserva_id,venta_tienda_id,venta_restaurante_id,venta_terraza_id,reserva_terraza_id,compra_tienda_id/);
+});
+
+test('superadmin corrige monto de un pago ligado a reserva y conserva Caja, recibo, reserva y ledger sincronizados', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+
+  const result = await editar(db, ids.superadmin, {
+    movimiento: ids.reservaPago, monto: 95000, concepto: 'Pago reserva', tipo: 'ingreso', metodo: ids.bank
+  });
+  assert.equal(result.ledger_sincronizado, true);
+  assert.equal((await cajaRow(db, ids.reservaPago)).monto, 95000);
+  assert.equal((await ledgerRow(db, ids.reservaPago))[0].amount, 95000);
+  assert.equal(Number((await db.query('select monto from public.pagos_reserva where id = $1', [ids.pago])).rows[0].monto), 95000);
+  assert.equal(Number((await db.query('select monto_pagado from public.reservas where id = $1', [ids.reserva])).rows[0].monto_pagado), 95000);
+  await assert.rejects(
+    () => editar(db, ids.superadmin, {
+      movimiento: ids.reservaPago, monto: 95000, concepto: 'Pago reserva', tipo: 'egreso', metodo: ids.bank
+    }), /CAJA_EDICION_TIPO_VINCULADO/,
+  );
+});
+
+test('superadmin corrige venta de tienda ligada a Caja y deja trazabilidad', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+
+  await editar(db, ids.superadmin, { movimiento: ids.tiendaMov, monto: 12000, concepto: 'Venta tienda' });
+  assert.equal((await cajaRow(db, ids.tiendaMov)).monto, 12000);
+  const sale = await db.query('select total_venta from public.ventas_tienda where id=$1', [ids.ventaTienda]);
+  assert.equal(Number(sale.rows[0].total_venta), 12000);
+  const audit = await db.query("select after_data->>'delta_monto' as delta from public.auditoria_operaciones where entity_id=$1", [ids.tiendaMov]);
+  assert.equal(audit.rows[0].delta, '2000');
+});
+
+test('superadmin corrige un turno cerrado conservando conteo de caja y actualizando diferencia historica', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+
+  await editar(db, ids.superadmin, { movimiento: ids.cerradoMov, monto: 9000, concepto: 'Turno viejo' });
+  const historic = await db.query('select expected_amount, counted_amount, difference from public.turno_arqueos where turno_id=$1', [ids.turnoCerrado]);
+  assert.equal(Number(historic.rows[0].expected_amount), 9000);
+  assert.equal(Number(historic.rows[0].counted_amount), 7000);
+  assert.equal(Number(historic.rows[0].difference), -2000);
+  await assert.rejects(
+    () => editar(db, ids.admin, { movimiento: ids.cerradoMov, monto: 10000, concepto: 'Turno viejo' }),
+    /CAJA_EDICION_TURNO_CERRADO/,
+  );
+});
+
+test('ni superadmin modifica monto conciliado ni convierte ventas en egresos', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+  await assert.rejects(
+    () => editar(db, ids.superadmin, { movimiento: ids.conciliado, monto: 31000, concepto: 'Transferencia', metodo: ids.bank }),
+    /CAJA_EDICION_CONCILIADO/,
+  );
+  assert.equal((await cajaRow(db, ids.conciliado)).monto, 30000);
+});
+
+test('una venta de tienda con movimientos duplicados no altera el total original', async (t) => {
+  const db = await createDatabase();
+  t.after(() => db.close());
+  await db.query(
+    'insert into public.caja(id, hotel_id, turno_id, tipo, monto, concepto, metodo_pago_id, fecha_movimiento, venta_tienda_id) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+    [id(150), ids.hotel, ids.turno, 'ingreso', 10000, 'Venta tienda duplicada', ids.cash, OPEN_AT, ids.ventaTienda]
+  );
+  await assert.rejects(
+    () => editar(db, ids.superadmin, { movimiento: ids.tiendaMov, monto: 12000, concepto: 'Venta tienda' }),
+    /CAJA_EDICION_TIENDA_MULTIPLE/,
+  );
+  const sale = await db.query('select total_venta from public.ventas_tienda where id=$1', [ids.ventaTienda]);
+  assert.equal(Number(sale.rows[0].total_venta), 10000);
+  assert.equal((await cajaRow(db, ids.tiendaMov)).monto, 10000);
 });
