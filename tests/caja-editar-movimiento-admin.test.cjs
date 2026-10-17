@@ -160,14 +160,14 @@ async function createDatabase() {
     );
 
     create function public.hotel_business_date(p_hotel_id uuid, p_instant timestamptz)
-    returns date language sql stable as $ select (p_instant at time zone 'America/Bogota')::date $;
+    returns date language sql stable as $$ select (p_instant at time zone 'America/Bogota')::date $$;
     -- El entorno de prueba usa el rol de perfil para simular la verificacion
     -- fuerte de auth.users de la funcion SaaS de produccion.
     create function public.actor_is_saas_superadmin() returns boolean
-    language sql stable as $
+    language sql stable as $$
       select exists(select 1 from public.usuarios u
         where u.id = auth.uid() and u.rol = 'superadmin' and u.activo)
-    $;
+    $$;
 
     create function public.fase2_ensure_method_account(p_method_id uuid, p_hotel_id uuid, p_actor uuid)
     returns uuid language plpgsql security definer set search_path = pg_catalog, public as $$
