@@ -11,16 +11,16 @@ const legacyEnergy = fs.readFileSync('js/modules/control-energia/control-energia
 
 test('Control de Energia carga directamente la implementacion canonica corregida', () => {
   assert.doesNotMatch(index, /type="importmap"/);
-  assert.match(index, /\/js\/main\.js\?v=20260910-c6-camera-1/);
-  assert.match(main, /import\('\.\/modules\/control-energia\/control-energia\.js\?v=20260910-c6-camera-1'\)/);
+  assert.match(index, /\/js\/main\.js\?v=20261020-reception-warning-1/);
+  assert.match(main, /import\('\.\/modules\/control-energia\/control-energia\.js\?v=20261020-reception-warning-1'\)/);
   assert.match(energy, /export async function mount/);
   assert.match(energy, /ENERGY_SCANNER_STOP_TIMEOUT_MS = 1500/);
-  assert.match(legacyEnergy, /export \{ mount, unmount \} from '\.\/control-energia\.js\?v=20260910-c6-camera-1'/);
+  assert.match(legacyEnergy, /export \{ mount, unmount \} from '\.\/control-energia\.js\?v=20261020-reception-warning-1'/);
 });
 
 test('service worker renueva caches y precarga el modulo canonico', () => {
-  assert.match(serviceWorker, /APP_VERSION = '20260910-c6-camera-1'/);
-  assert.match(serviceWorker, /control-energia\.js\?v=20260910-c6-camera-1/);
+  assert.match(serviceWorker, /APP_VERSION = '20261020-reception-warning-1'/);
+  assert.match(serviceWorker, /control-energia\.js\?v=20261020-reception-warning-1/);
   assert.match(serviceWorker, /cache\.match\(request\) \|\| await caches\.match\(request\)/);
   assert.match(serviceWorker, /self\.skipWaiting\(\)/);
   assert.match(serviceWorker, /self\.clients\.claim\(\)/);
