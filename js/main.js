@@ -4,6 +4,7 @@ import { getCurrentUser, handleLogout, onAuthStateChange } from './authService.j
 import { showAppFeedback, showGlobalLoading, hideGlobalLoading } from './uiUtils.js';
 import { fetchTurnoActivo } from './services/turnoService.js';
 import { destroyMonitoring, initMonitoring, logMonitoringEvent } from './services/monitoringService.js';
+import { startEnergyReceptionWarning, stopEnergyReceptionWarning } from './services/energyReceptionWarning.js';
 import { escapeHtml, installLegacyTextNormalizer } from './security.js';
 import { initInternalSupportChat, destroyInternalSupportChat } from './app-support-chat.js';
 import { initPWAExperience } from './services/pwaService.js';
@@ -75,7 +76,7 @@ const routes = {
   '/onboarding': { loadModule: () => import('./modules/onboarding/onboarding.js'), moduleKey: 'onboarding' },
   '/sandbox': { loadModule: () => import('./modules/sandbox/sandbox.js'), moduleKey: 'sandbox' },
   '/operacion-hoy': { loadModule: () => import('./modules/operacion-hoy/operacion-hoy.js'), moduleKey: 'operacion-hoy' }
-  ,'/control-energia': { loadModule: () => import('./modules/control-energia/control-energia.js?v=20260910-c6-camera-1'), moduleKey: 'control-energia' }
+  ,'/control-energia': { loadModule: () => import('./modules/control-energia/control-energia.js?v=20261020-reception-warning-1'), moduleKey: 'control-energia' }
 };
 
 const navLinksConfig = [
@@ -829,6 +830,7 @@ async function initializeApp() {
     if (appUser && authInitializationUserId === appUser.id && ['INITIAL_SESSION', 'SIGNED_IN', 'TOKEN_REFRESHED'].includes(event)) {
       return;
     }
+    stopEnergyReceptionWarning();
     authInitializationUserId = appUser?.id || null;
 
     if (session && session.user && session.user.aud === 'authenticated' && session.expires_in === 3600) {
@@ -919,6 +921,7 @@ async function initializeApp() {
       }
 
       renderNavigation(appUser);
+      startEnergyReceptionWarning({ supabase, hotelId: hotelIdToLoad, userId: appUser.id, role: currentUserRole });
       scheduleModuleWarmup(currentUserRole);
 
       if (notificacionesCampanitaContainer && !campanitaInicializada && hotelIdToLoad && currentUserRole !== 'superadmin') {

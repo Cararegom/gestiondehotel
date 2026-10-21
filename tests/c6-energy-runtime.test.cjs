@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ENERGY_VERSION = '20260910-c6-camera-1';
+const ENERGY_VERSION = '20261020-reception-warning-1';
 const CANONICAL_MODULE = 'js/modules/control-energia/control-energia.js';
 const LEGACY_MODULE = 'js/modules/control-energia/control-energia-20260902.js';
 

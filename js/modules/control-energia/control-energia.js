@@ -84,7 +84,7 @@ async function readCapabilities() {
 
 async function readConfig() {
   const { data, error } = await db.from('configuracion_hotel')
-    .select('energy_control_enabled,energy_check_timeout_minutes,energy_email_notifications_enabled,energy_alert_emails')
+    .select('energy_control_enabled,energy_check_timeout_minutes,energy_email_notifications_enabled,energy_alert_emails,energy_reception_warning_enabled,energy_reception_warning_minutes')
     .eq('hotel_id', hotelId)
     .single();
   if (error) throw error;
@@ -503,6 +503,21 @@ async function renderSettings(config) {
         <label class="font-semibold">Tiempo máximo (min)<input name="timeout" type="number" min="1" max="1440" value="${Number(config.energy_check_timeout_minutes || 10)}" class="mt-1 w-full rounded-sm border p-2"></label>
         <label class="font-semibold">Alertas por correo<select name="emails_on" class="mt-1 w-full rounded-sm border p-2"><option value="true" ${config.energy_email_notifications_enabled ? 'selected' : ''}>Activadas</option><option value="false" ${!config.energy_email_notifications_enabled ? 'selected' : ''}>Desactivadas</option></select></label>
         <label class="font-semibold">Correos adicionales<input name="emails" value="${escapeHtml(config.energy_alert_emails || '')}" class="mt-1 w-full rounded-sm border p-2" placeholder="admin@hotel.com"></label>
+        <section class="md:col-span-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <h3 class="text-lg font-black text-amber-950">⚡ Advertencia a recepción</h3>
+          <p class="mt-1 mb-4 text-sm text-amber-900">Muestra un aviso grande en el centro de la pantalla de las recepcionistas cuando una habitación siga sin control de energía después del tiempo indicado. Es independiente del plazo máximo y del correo al administrador.</p>
+          <div class="grid gap-4 md:grid-cols-2">
+            <label class="font-semibold text-amber-950">Advertencia en pantalla
+              <select name="reception_warning_enabled" class="mt-1 w-full rounded-lg border border-amber-200 bg-white p-2">
+                <option value="true" ${config.energy_reception_warning_enabled ? 'selected' : ''}>Activada</option>
+                <option value="false" ${!config.energy_reception_warning_enabled ? 'selected' : ''}>Desactivada</option>
+              </select>
+            </label>
+            <label class="font-semibold text-amber-950">Avisar después de (minutos)
+              <input name="reception_warning_minutes" type="number" min="1" max="1440" step="1" required value="${Number(config.energy_reception_warning_minutes || 5)}" class="mt-1 w-full rounded-lg border border-amber-200 bg-white p-2">
+            </label>
+          </div>
+        </section>
         <button class="rounded-xl bg-slate-900 px-4 py-3 font-bold text-white md:col-span-3">Guardar configuración</button>
       </form>`
     : `<div class="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-blue-950">
@@ -575,10 +590,19 @@ async function renderSettings(config) {
   view.querySelector('#energy-settings')?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const receptionWarningMinutes = Number(form.get('reception_warning_minutes'));
+    const energyTimeoutMinutes = Number(form.get('timeout'));
+    if (!Number.isInteger(receptionWarningMinutes) || receptionWarningMinutes < 1 || receptionWarningMinutes > 1440 ||
+        !Number.isInteger(energyTimeoutMinutes) || energyTimeoutMinutes < 1 || energyTimeoutMinutes > 1440) {
+      feedback('Introduce una cantidad válida de minutos entre 1 y 1440.');
+      return;
+    }
     const next = {
-      energy_check_timeout_minutes: Number(form.get('timeout')),
+      energy_check_timeout_minutes: energyTimeoutMinutes,
       energy_email_notifications_enabled: form.get('emails_on') === 'true',
-      energy_alert_emails: String(form.get('emails') || '').trim() || null
+      energy_alert_emails: String(form.get('emails') || '').trim() || null,
+      energy_reception_warning_enabled: form.get('reception_warning_enabled') === 'true',
+      energy_reception_warning_minutes: receptionWarningMinutes
     };
     const { error: updateError } = await db.from('configuracion_hotel')
       .update(next)
