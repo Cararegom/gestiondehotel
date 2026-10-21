@@ -1,4 +1,4 @@
-const APP_VERSION = '20260910-c6-camera-1';
+const APP_VERSION = '20261020-reception-warning-1';
 const APP_SHELL_CACHE = `gestiondehotel-shell-${APP_VERSION}`;
 const RUNTIME_CACHE = `gestiondehotel-runtime-${APP_VERSION}`;
 const OFFLINE_URL = '/app/offline.html';
@@ -9,10 +9,10 @@ const APP_SHELL_ASSETS = [
   '/app/index.html',
   OFFLINE_URL,
   '/style.css',
-  '/js/main.js?v=20260910-c6-camera-1',
+  '/js/main.js?v=20261020-reception-warning-1',
   '/js/sentry-browser.js?v=20260903-tracing-1',
   '/js/manifest.json',
-  '/js/modules/control-energia/control-energia.js?v=20260910-c6-camera-1',
+  '/js/modules/control-energia/control-energia.js?v=20261020-reception-warning-1',
   '/js/modules/control-energia/control-energia-20260902.js?v=2',
   '/favicon.ico',
   '/icons/logo.jpeg',
