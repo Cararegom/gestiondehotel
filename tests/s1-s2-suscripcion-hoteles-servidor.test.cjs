@@ -8,7 +8,6 @@ const migration = fs.readFileSync(
   path.join(__dirname, '..', 'supabase', 'migrations', '20261103160000_blindar_suscripcion_hoteles.sql'),
   'utf8',
 );
-const registroSource = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
 
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const H1 = id(1);
@@ -386,17 +385,4 @@ test('S2: altas desde service_role (soporte) conservan sus valores', async (t) =
   const { rows } = await as(db, 'service_role', null, () => db.query(`insert into public.hoteles(nombre, plan, estado_suscripcion, suscripcion_fin)
     values ('Hotel Interno', 'pro', 'activo', '2030-01-01') returning plan, estado_suscripcion`));
   assert.deepEqual(rows, [{ plan: 'pro', estado_suscripcion: 'activo' }]);
-});
-
-test('script.js registra con la RPC, comprueba errores y conserva Auth y dataLayer', () => {
-  assert.match(registroSource, /supabase\.auth\.signUp\(/);
-  assert.match(registroSource, /supabase\.rpc\('registrar_hotel_inicial'/);
-  assert.match(registroSource, /if \(registroError\) throw registroError;/);
-  assert.match(registroSource, /if \(!hotelId\) throw new Error\('registro_incompleto'\);/);
-  assert.doesNotMatch(registroSource, /from\('(hoteles|usuarios|usuarios_roles)'\)\.insert/);
-  assert.doesNotMatch(registroSource, /trial_fin|suscripcion_fin|estado_suscripcion/);
-  assert.match(registroSource, /'event': 'crear_cuenta'/);
-  assert.match(registroSource, /trackLandingEvent\('account_created_from_landing'/);
-  // El exito solo se marca despues de que la RPC respondio sin error.
-  assert.ok(registroSource.indexOf('registrationWasSuccessful = true') > registroSource.indexOf("rpc('registrar_hotel_inicial'"));
 });

@@ -12,6 +12,7 @@ if (refId) {
 
 // Importaciones y constantes globales
 import { supabase } from '/js/supabaseClient.js';
+import { registrarCuentaYHotel } from '/js/services/registroHotelService.js';
 
 const LANDING_TRACK_EVENT_ENDPOINT = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1/landing-track-event';
 
@@ -197,29 +198,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 // 2. PROCESO DE REGISTRO CON SUPABASE (LÓGICA BACK-END)
-                const { data: authData, error: authError } = await supabase.auth.signUp({
-                    email: email,
-                    password: password,
-                    options: { data: { full_name: adminName } }
-                });
-
-                if (authError) throw authError;
-
-                if (!authData.session) throw new Error('registro_sin_sesion');
+                // El servidor crea hotel, perfil admin y rol y asigna el trial de 30 dias.
                 const idDeReferido = localStorage.getItem('referido_id');
-
-                // El servidor crea hotel, perfil admin y rol en una sola transaccion y
-                // asigna el trial de 30 dias con su propia fecha (S1/S2 auditoria 2026-11-03).
-                const { data: hotelId, error: registroError } = await supabase.rpc('registrar_hotel_inicial', {
-                    p_nombre_hotel: hotelName,
-                    p_nombre_admin: adminName,
-                    p_referido_por: idDeReferido || null
+                const { cuentaExistente, hotelCreado } = await registrarCuentaYHotel(supabase, {
+                    email,
+                    password,
+                    hotelName,
+                    adminName,
+                    referidoId: idDeReferido
                 });
 
-                if (registroError) throw registroError;
-                if (!hotelId) throw new Error('registro_incompleto');
-                
-                if (idDeReferido) {
+                if (hotelCreado && idDeReferido) {
                     const { error: referidoError } = await supabase.functions.invoke('registrar-pre-referido', {
                         body: { ref: idDeReferido, nombre_hotel: hotelName }
                     });
@@ -231,13 +220,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 registroForm.reset();
                 alertElement.classList.add('d-none');
                 
-                window.dataLayer = window.dataLayer || [];
-                window.dataLayer.push({ 'event': 'crear_cuenta' });
-                console.log("Evento 'crear_cuenta' enviado a dataLayer.");
-                trackLandingEvent('account_created_from_landing', {
-                    hotel_name: hotelName,
-                    email
-                });
+                if (!cuentaExistente) {
+                    window.dataLayer = window.dataLayer || [];
+                    window.dataLayer.push({ 'event': 'crear_cuenta' });
+                    console.log("Evento 'crear_cuenta' enviado a dataLayer.");
+                    trackLandingEvent('account_created_from_landing', {
+                        hotel_name: hotelName,
+                        email
+                    });
+                }
+
+                if (hotelCreado) {
+                    window.location.href = '/app/index.html#/dashboard';
+                    return;
+                }
                 
                 registrationWasSuccessful = true;
                 if (registroModalInstance) registroModalInstance.hide();    
@@ -261,8 +257,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 3. Mantenemos los otros errores que ya manejábamos.
                 } else if (error.message.includes('duplicate key value') && error.message.includes('hoteles_nombre_key')) {
                     userMessage = "El nombre de este hotel ya ha sido registrado. Por favor, elige otro.";
-                } else if (error.message === 'registro_sin_sesion') {
-                    userMessage = 'Tu cuenta de acceso se creó, pero no pudimos iniciar sesión para crear el hotel. Escríbenos a soporte y lo activamos.';
+                } else if (error.message === 'registro_confirmar_correo') {
+                    userMessage = 'Esta cuenta ya existe pero falta confirmar el correo. Revisa tu bandeja (y la carpeta de no deseado) y luego <a href="/login.html" class="font-bold underline hover:text-blue-700">inicia sesión</a>.';
                 } else if (error.message.includes('ya pertenece a un hotel')) {
                     userMessage = 'Esta cuenta ya pertenece a un hotel. <a href="/login.html" class="font-bold underline hover:text-blue-700">¿Deseas iniciar sesión?</a>';
                 } else if (error.message.includes('Password should be at least 6 characters')) {
