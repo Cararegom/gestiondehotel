@@ -13,8 +13,6 @@ if (refId) {
 // Importaciones y constantes globales
 import { supabase } from '/js/supabaseClient.js';
 
-// Debes poner aquí el rol_id real de "Administrador" en tu tabla "roles"
-const ADMIN_ROL_ID = '76b034c3-e70d-44a1-98ee-9c6eabde6f2b';
 const LANDING_TRACK_EVENT_ENDPOINT = 'https://iikpqpdoslyduecibaij.supabase.co/functions/v1/landing-track-event';
 
 // ===================================================================
@@ -207,25 +205,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (authError) throw authError;
 
-                const supabaseUserId = authData.user?.id;
-                const now = new Date();
-                const trialEnd = new Date();
-                trialEnd.setDate(now.getDate() + 30);
+                if (!authData.session) throw new Error('registro_sin_sesion');
                 const idDeReferido = localStorage.getItem('referido_id');
 
-                const { data: hotelData, error: hotelError } = await supabase.from('hoteles').insert({ 
-                    nombre: hotelName, 
-                    correo: email, 
-                    plan: 'max', 
-                    estado_suscripcion: 'trial', 
-                    trial_inicio: now.toISOString(), 
-                    trial_fin: trialEnd.toISOString(), 
-                    suscripcion_fin: trialEnd.toISOString(), 
-                    creado_por: supabaseUserId, 
-                    referido_por: idDeReferido || null 
-                }).select('id').single();
+                // El servidor crea hotel, perfil admin y rol en una sola transaccion y
+                // asigna el trial de 30 dias con su propia fecha (S1/S2 auditoria 2026-11-03).
+                const { data: hotelId, error: registroError } = await supabase.rpc('registrar_hotel_inicial', {
+                    p_nombre_hotel: hotelName,
+                    p_nombre_admin: adminName,
+                    p_referido_por: idDeReferido || null
+                });
 
-                if (hotelError) throw hotelError;
+                if (registroError) throw registroError;
+                if (!hotelId) throw new Error('registro_incompleto');
                 
                 if (idDeReferido) {
                     const { error: referidoError } = await supabase.functions.invoke('registrar-pre-referido', {
@@ -233,8 +225,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     if (referidoError) console.warn('No fue posible registrar el referido en este momento.');
                 }
-                await supabase.from('usuarios').insert({ id: supabaseUserId, nombre: adminName, hotel_id: hotelData.id, correo: email, rol: 'admin' });
-                await supabase.from('usuarios_roles').insert({ usuario_id: supabaseUserId, rol_id: ADMIN_ROL_ID, hotel_id: hotelData.id });
 
                 // 3. ÉXITO
                 localStorage.removeItem('referido_id');
@@ -271,6 +261,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 // 3. Mantenemos los otros errores que ya manejábamos.
                 } else if (error.message.includes('duplicate key value') && error.message.includes('hoteles_nombre_key')) {
                     userMessage = "El nombre de este hotel ya ha sido registrado. Por favor, elige otro.";
+                } else if (error.message === 'registro_sin_sesion') {
+                    userMessage = 'Tu cuenta de acceso se creó, pero no pudimos iniciar sesión para crear el hotel. Escríbenos a soporte y lo activamos.';
+                } else if (error.message.includes('ya pertenece a un hotel')) {
+                    userMessage = 'Esta cuenta ya pertenece a un hotel. <a href="/login.html" class="font-bold underline hover:text-blue-700">¿Deseas iniciar sesión?</a>';
                 } else if (error.message.includes('Password should be at least 6 characters')) {
                     userMessage = "La contrase\u00F1a es demasiado corta. Debe tener al menos 8 caracteres.";
                 }
