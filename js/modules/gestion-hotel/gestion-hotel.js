@@ -71,14 +71,6 @@ function formatDateTime(dateStr, locale = 'es-CO', options = { dateStyle: 'mediu
 }
 
 // ======================= LÓGICA DE DATOS COMUNES (Supabase) ===========================
-async function getHorariosHotelComun(supabase, hotelId) { /* ... tu función ... */ }
-async function getTiemposEstanciaComun(supabase, hotelId) { /* ... tu función ... */ }
-async function getMetodosPagoComun(supabase, hotelId) { /* ... tu función ... */ }
-
-// (Copiar las implementaciones de getHorariosHotel, getTiemposEstancia, getMetodosPago aquí,
-//  renombradas con "Comun" si es necesario para evitar conflictos con las que puedan
-//  estar dentro de las secciones de los módulos que pegarás)
-// EJEMPLO:
 async function getHorariosHotelComun(supabase, hotelId) {
     const { data, error } = await supabase.from('hoteles').select('checkin_hora, checkout_hora').eq('id', hotelId).single();
     if (error) {

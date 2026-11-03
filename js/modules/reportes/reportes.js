@@ -1024,7 +1024,7 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
         // 1. Fetch shift details (including user name)
         const { data: turnoData, error: turnoError } = await supabaseClient
         .from('turnos')
-        .select('id, fecha_cierre, balance_final, fecha_apertura, usuarios(nombre, email)')
+        .select('id, fecha_cierre, balance_final, fecha_apertura, usuarios:usuarios_historial(nombre, email)')
         .eq('id', turnoId)
         .eq('hotel_id', currentHotelId) // Asegurarse de que el turno pertenezca al hotel actual
         .single();
@@ -1035,7 +1035,7 @@ async function mostrarDetalleCierreCajaModal(turnoId, feedbackElToUse) {
         // 2. Fetch movements for this specific shift
         const movimientosQuery = supabaseClient
             .from('caja')
-            .select('*, usuarios(nombre), metodos_pago(nombre)') // Seleccionar todo de caja y nombres de usuario/método
+            .select('*, usuarios:usuarios_historial(nombre), metodos_pago(nombre)') // Seleccionar todo de caja y nombres de usuario/método
             .eq('turno_id', turnoId)
             .order('creado_en', { ascending: true })
             .order('id', { ascending: true });
@@ -1229,7 +1229,7 @@ async function generarReporteCierresDeCaja(resultsContainerEl, fechaInicioInput,
         .select(`
             id,
             usuario_id,
-            usuarios (nombre, email),
+            usuarios:usuarios_historial(nombre, email),
             fecha_cierre,
             balance_final,
             fecha_apertura 
