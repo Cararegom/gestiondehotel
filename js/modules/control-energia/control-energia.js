@@ -71,7 +71,10 @@ async function stopScanner() {
   try {
     await withTimeout(current.stop(), ENERGY_SCANNER_STOP_TIMEOUT_MS, 'ENERGY_SCANNER_STOP_TIMEOUT');
   } catch (error) {
-    reportEnergyError('ENERGY_QR_SCANNER_STOP_FAILED', error);
+    // Detener un escaner que nunca llego a iniciar (p. ej. camara denegada) no es un fallo.
+    if (!/not running or paused/i.test(String(error?.message || error || ''))) {
+      reportEnergyError('ENERGY_QR_SCANNER_STOP_FAILED', error);
+    }
   }
   try { current.clear(); } catch {}
 }
@@ -333,8 +336,14 @@ async function renderScanner() {
       'ENERGY_QR_CAMERA_START_TIMEOUT'
     );
   } catch (error) {
-    reportEnergyError('ENERGY_QR_CAMERA_OPEN_FAILED', error);
     void stopScanner();
+    // El usuario nego o bloqueo el permiso de camara: es una decision suya, no un error de la app.
+    if (/NotAllowedError|Permission denied/i.test(String(error?.message || error || ''))) {
+      feedback('El permiso de la cámara está bloqueado. Actívalo en la configuración del navegador para este sitio y vuelve a intentarlo.');
+      renderScanRetry(view, 'Permite el acceso a la cámara para escanear el QR de la habitación.');
+      return;
+    }
+    reportEnergyError('ENERGY_QR_CAMERA_OPEN_FAILED', error);
     feedback('No fue posible abrir la cámara. Verifica el permiso, la conexión y que haya una cámara disponible.');
     renderScanRetry(view, 'No se pudo iniciar el escáner. Revisa los permisos de cámara e inténtalo de nuevo.');
   }

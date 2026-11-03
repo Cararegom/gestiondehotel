@@ -146,6 +146,8 @@ export async function renderPOS() {
 
   cont.innerHTML = '<div>Cargando...</div>';
   await cargarDatosPOS();
+  // El usuario pudo cambiar de pestana o de modulo mientras cargaba.
+  if (!cont.isConnected) return;
 
   cont.innerHTML = `
     <div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start; justify-content:center; background:#f3f6fa; border-radius:16px; padding:32px 18px 26px 18px; box-shadow:0 6px 32px #23408c12; margin-top:20px;">

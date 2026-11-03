@@ -771,6 +771,10 @@ export async function mount(container, supabaseInst, user) {
 
 
 export function unmount() {
+  // Los modales de arqueo y corte viven en document.body: si quedan abiertos al
+  // salir del modulo, confirmarlos ejecutaria el cierre sin contenedor ni estado.
+  document.getElementById('modal-arqueo-ciego')?.remove();
+  document.getElementById('modal-corte-caja')?.remove();
   moduleListeners.forEach(({ element, type, handler }) => {
     element?.removeEventListener(type, handler);
   });

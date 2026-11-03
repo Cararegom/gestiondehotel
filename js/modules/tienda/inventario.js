@@ -20,6 +20,8 @@ export async function renderInventario() {
   cont.innerHTML = '<div style="padding:24px;text-align:center;color:#64748b;">Cargando inventario...</div>';
   await cargarRolOperativoTienda();
   await Promise.all([cargarCategoriasYProveedores(), cargarProductosInventario(), cargarProductosTerraza(), cargarSolicitudesSalidaPendientes()]);
+  // El usuario pudo cambiar de pestana o de modulo mientras cargaba.
+  if (!cont.isConnected) return;
 
   const soloTransferenciaMesero = isMeseroOperativo() && !isAdminOperativo();
   const transferenciasPanel = renderTransferenciasTerrazaPanel();

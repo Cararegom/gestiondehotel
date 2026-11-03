@@ -26,6 +26,8 @@ export async function renderListaCompras() {
   if (!cont) return;
 
   await cargarDatosListaCompras();
+  // El usuario pudo cambiar de pestana o de modulo mientras cargaba.
+  if (!cont.isConnected) return;
 
   cont.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
