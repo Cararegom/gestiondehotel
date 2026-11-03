@@ -263,6 +263,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     userMessage = 'Esta cuenta ya pertenece a un hotel. <a href="/login.html" class="font-bold underline hover:text-blue-700">¿Deseas iniciar sesión?</a>';
                 } else if (error.message.includes('Password should be at least 6 characters')) {
                     userMessage = "La contrase\u00F1a es demasiado corta. Debe tener al menos 8 caracteres.";
+                } else if (/rate limit/i.test(error.message)) {
+                    userMessage = 'Ahora mismo no podemos enviar el correo de confirmaci\u00F3n. Espera unos minutos e int\u00E9ntalo de nuevo.';
+                } else if (/email address .* is invalid/i.test(error.message)) {
+                    userMessage = 'No pudimos usar ese correo. Revisa que est\u00E9 bien escrito.';
                 }
                 
                 // --- FIN DE LA LÓGICA CORREGIDA ---
