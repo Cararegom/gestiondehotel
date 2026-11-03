@@ -54,8 +54,20 @@ migración no se ha aplicado en producción ni en staging.**
 - **Siguen funcionando:** webhooks de Wompi y Mercado Pago (`service_role`), bono de referido,
   superadmin SaaS (`actor_is_saas_superadmin()`, verificado en servidor contra `auth.users`/`usuarios`),
   `saas_otorgar_dias_gracia` (SECURITY DEFINER) y el cron `sincronizar_estados_suscripcion` (rol propietario).
-- **Registro:** `script.js` llama a `signUp` (sin cambios) y después a la RPC
-  `registrar_hotel_inicial(p_nombre_hotel, p_nombre_admin, p_referido_por)`. En una sola transacción:
+- **Registro.** Supabase Auth exige confirmar el correo en staging y en producción
+  (`mailer_autoconfirm = false` en `/auth/v1/settings`), así que `signUp` no devuelve sesión y el hotel
+  no se puede crear en ese momento. El flujo queda así (`js/services/registroHotelService.js`):
+  1. El formulario llama a `signUp` y guarda `hotel_name`, `full_name` y `referido_id` en `user_metadata`.
+     Muestra el modal existente "Cuenta creada, revisa tu correo" y envía `crear_cuenta` a `dataLayer`.
+  2. Al primer inicio de sesión, `login.html` ve que la cuenta no tiene perfil y llama a la RPC con esos
+     datos; después entra al dashboard. Si la cuenta no tiene datos de registro (las altas fallidas antiguas),
+     muestra un enlace a "Completa el registro".
+  3. Si alguien vuelve a enviar el formulario con una cuenta de Auth que ya existe, el alta se retoma: inicia
+     sesión con la contraseña escrita y crea el hotel. Si el correo aún no está confirmado, lo dice; si la
+     contraseña no coincide, se muestra el mensaje de siempre ("ya registrado").
+  4. Si Auth no exigiera confirmación, el hotel se crea en el mismo envío del formulario.
+
+  La RPC `registrar_hotel_inicial(p_nombre_hotel, p_nombre_admin, p_referido_por)` hace en una sola transacción:
   - exige sesión (`auth.uid()`) y que la cuenta no tenga ya perfil en `usuarios`;
   - toma el correo de `auth.users`, no del formulario;
   - crea el hotel con `plan = 'max'`, `estado_suscripcion = 'trial'`, `trial_inicio = now()`,
@@ -75,8 +87,11 @@ migración no se ha aplicado en producción ni en staging.**
 | Archivo | Cambio |
 |---|---|
 | `supabase/migrations/20261103160000_blindar_suscripcion_hoteles.sql` | Nuevo. Trigger `trg_blindar_suscripcion_hotel` + función `blindar_suscripcion_hotel()` (SECURITY INVOKER), RPC `registrar_hotel_inicial` (SECURITY DEFINER, `search_path = ''`, solo `authenticated`), retira la política `hoteles_onboarding_insert`. Idempotente. |
-| `script.js` | El alta usa la RPC y comprueba sus errores; quita el cálculo del trial y el `ADMIN_ROL_ID` del navegador; dos mensajes nuevos ("cuenta ya pertenece a un hotel" y "cuenta creada sin sesión"). |
-| `tests/s1-s2-suscripcion-hoteles-servidor.test.cjs` | Nuevo. 10 pruebas PGlite con roles `authenticated`/`anon`/`service_role`, RLS activa y las políticas y triggers de producción. |
+| `js/services/registroHotelService.js` | Nuevo. Flujo de registro (signUp, retomar alta, llamada a la RPC) y lectura de los datos pendientes. |
+| `script.js` | El formulario usa el servicio y comprueba sus errores; quita el cálculo del trial y el `ADMIN_ROL_ID` del navegador; mensajes para "cuenta ya pertenece a un hotel" y "falta confirmar el correo". |
+| `login.html` | `.maybeSingle()` para distinguir "sin perfil" de un error; si no hay perfil, completa el alta pendiente o enlaza al registro. |
+| `tests/s1-s2-suscripcion-hoteles-servidor.test.cjs` | Nuevo. 9 pruebas PGlite con roles `authenticated`/`anon`/`service_role`, RLS activa y las políticas y triggers de producción. |
+| `tests/s2-registro-hotel-flujo.test.cjs` | Nuevo. 8 pruebas del flujo con las respuestas reales de Auth (con y sin confirmación, cuenta existente, errores). |
 
 ## Decisiones (documentación de Supabase consultada el 2026-11-03)
 
@@ -108,12 +123,24 @@ migración no se ha aplicado en producción ni en staging.**
 
 | Comando | Resultado |
 |---|---|
-| `node --test tests/s1-s2-suscripcion-hoteles-servidor.test.cjs` | 10/10 pasan |
-| `npm test` (suite completa) | 863 pruebas: 862 pasan, 1 falla. La que falla es `tests/rol-aseo.test.cjs` "main.js limita menu y rutas del rol aseo": ya fallaba antes de esta entrega y comprueba `js/main.js`, que esta rama no toca. |
-| `npm run check:syntax` | Sintaxis validada en 331 archivos |
+| `node --test tests/s1-s2-suscripcion-hoteles-servidor.test.cjs tests/s2-registro-hotel-flujo.test.cjs` | 17/17 pasan |
+| `npm test` (suite completa) | 870 pruebas: 869 pasan, 1 falla. La que falla es `tests/rol-aseo.test.cjs` "main.js limita menu y rutas del rol aseo": ya fallaba antes de esta entrega y comprueba `js/main.js`, que esta rama no toca. |
+| `npm run check:syntax` | Sintaxis validada en 333 archivos |
 | `npm run check:module-budgets` | OK |
 | `graphify update .` | Grafo reconstruido (7226 nodos) |
 | `npx supabase db query --read-only --linked --project-ref iikpqpdoslyduecibaij ...` | Solo lectura en producción: políticas de `hoteles`/`usuarios`/`usuarios_roles`/`referidos`, triggers, privilegios, columnas, funciones que actualizan `hoteles`, el rol Administrador y conteos agregados de altas. No se mostró ningún dato de huéspedes ni secretos. |
+
+## Staging (2026-11-03)
+
+- Migración aplicada en `vyzscuzgjdhrhzctmsuv` con `npx supabase db query --linked --yes -f ...` y registrada a mano en
+  `supabase_migrations.schema_migrations` (la CLI v3 no acepta el `supabase/config.toml` actual para `migration repair`).
+  Verificado: existe `trg_blindar_suscripcion_hotel`, no existe `hoteles_onboarding_insert` y
+  `registrar_hotel_inicial` es ejecutable por `authenticated` y no por `anon`.
+- Staging va por detrás de producción: no tiene el rol "Administrador" (la RPC lo necesita) ni la migración
+  `20260903090000` (columnas de exención). La migración nueva funciona igual sin esas columnas.
+- Frontend: preview de Vercel de la rama, protegido con Vercel Authentication.
+- **Pendiente:** prueba de alta pública, alta retomada, edición de teléfono, rechazo del vencimiento y días de gracia
+  desde el panel SaaS, a la espera de acceso al preview y de preparar staging.
 
 ## Pasos de aplicación (cuando se apruebe)
 
@@ -144,7 +171,7 @@ no hace falta restaurar filas.
 
 1. `select tgname from pg_trigger where tgrelid = 'public.hoteles'::regclass and not tgisinternal;` incluye `trg_blindar_suscripcion_hotel`.
 2. `select policyname from pg_policies where tablename = 'hoteles';` ya no incluye `hoteles_onboarding_insert`.
-3. Registro completo desde la landing con un correo de prueba: entra al dashboard; el hotel tiene
+3. Registro completo desde la landing con un correo de prueba, confirmación del correo e inicio de sesión: entra al dashboard; el hotel tiene
    `estado_suscripcion = 'trial'`, `plan = 'max'`, `trial_fin - trial_inicio = 30 días`; existe su fila en
    `usuarios` (rol admin) y en `usuarios_roles`. En GTM se ve `crear_cuenta`.
 4. Registro con `?ref=<id de un hotel>`: el hotel nuevo guarda ese `referido_por`.
@@ -156,9 +183,9 @@ no hace falta restaurar filas.
 
 ## Pendiente y fuera de alcance
 
-- **5 cuentas de Auth sin perfil desde agosto** (registros que fallaron por el punto 3). Esas personas no
-  pueden reintentar, porque `signUp` responde "ya registrado". Se pueden recuperar contactándolas y llamando
-  a la RPC con su sesión, o con un flujo "completar registro" en el login. Queda para decidir.
+- **5 cuentas de Auth sin perfil desde agosto** (registros que fallaron por el punto 3). Con esta entrega
+  pueden terminar el alta: al iniciar sesión verán el enlace "Completa el registro" y, al reenviar el formulario
+  con el mismo correo y contraseña, se crea su hotel. Falta decidir si se les avisa.
 - `registrar-pre-referido` valida `ref` como id de `usuarios`, pero el enlace de Mi cuenta envía el id del
   **hotel**, así que la tabla `referidos` no registra esos pre-referidos (el bono por pago sí funciona porque usa
   `hoteles.referido_por`). Es un error previo y no se corrigió aquí.
