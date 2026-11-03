@@ -86,7 +86,7 @@ migración no se ha aplicado en producción ni en staging.**
 
 | Archivo | Cambio |
 |---|---|
-| `supabase/migrations/20261103160000_blindar_suscripcion_hoteles.sql` | Nuevo. Trigger `trg_blindar_suscripcion_hotel` + función `blindar_suscripcion_hotel()` (SECURITY INVOKER), RPC `registrar_hotel_inicial` (SECURITY DEFINER, `search_path = ''`, solo `authenticated`), retira la política `hoteles_onboarding_insert`. Idempotente. |
+| `supabase/migrations/20261103230000_blindar_suscripcion_hoteles.sql` | Nuevo. Trigger `trg_blindar_suscripcion_hotel` + función `blindar_suscripcion_hotel()` (SECURITY INVOKER), RPC `registrar_hotel_inicial` (SECURITY DEFINER, `search_path = ''`, solo `authenticated`), retira la política `hoteles_onboarding_insert`. Idempotente. |
 | `js/services/registroHotelService.js` | Nuevo. Flujo de registro (signUp, retomar alta, llamada a la RPC) y lectura de los datos pendientes. |
 | `script.js` | El formulario usa el servicio y comprueba sus errores; quita el cálculo del trial y el `ADMIN_ROL_ID` del navegador; mensajes para "cuenta ya pertenece a un hotel" y "falta confirmar el correo". |
 | `login.html` | `.maybeSingle()` para distinguir "sin perfil" de un error; si no hay perfil, completa el alta pendiente o enlaza al registro. |
@@ -148,8 +148,8 @@ migración no se ha aplicado en producción ni en staging.**
 2. **Aplicar la migración antes de publicar el frontend.** Si `script.js` se publica antes, el registro
    llama a una RPC que no existe; hoy el registro ya falla, así que no empeora, pero conviene respetar el orden.
    Flujo del proyecto: aplicar en staging, probar, y luego en producción con
-   `npx supabase db query --linked --project-ref iikpqpdoslyduecibaij -f supabase/migrations/20261103160000_blindar_suscripcion_hoteles.sql`
-   y `npx supabase migration repair --status applied 20261103160000 --linked --project-ref iikpqpdoslyduecibaij`.
+   `npx supabase db query --linked --project-ref iikpqpdoslyduecibaij -f supabase/migrations/20261103230000_blindar_suscripcion_hoteles.sql`
+   y `npx supabase migration repair --status applied 20261103230000 --linked --project-ref iikpqpdoslyduecibaij`.
 3. Publicar el frontend (Vercel).
 
 ## Recuperación

@@ -5,7 +5,7 @@ const test = require('node:test');
 const { PGlite } = require('@electric-sql/pglite');
 
 const migration = fs.readFileSync(
-  path.join(__dirname, '..', 'supabase', 'migrations', '20261103160000_blindar_suscripcion_hoteles.sql'),
+  path.join(__dirname, '..', 'supabase', 'migrations', '20261103230000_blindar_suscripcion_hoteles.sql'),
   'utf8',
 );
 
