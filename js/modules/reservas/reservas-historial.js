@@ -41,10 +41,10 @@ export async function ensureReservasHistorialUsuarios(state) {
     }
 
     const { data, error } = await state.supabase
-        .from('usuarios')
+        .from('usuarios_historial')
         .select('id, nombre, correo, activo')
         .eq('hotel_id', state.hotelId)
-        .eq('activo', true)
+        .or('activo.eq.true,trasladado.eq.true')
         .order('nombre', { ascending: true });
 
     if (error) {

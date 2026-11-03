@@ -657,7 +657,7 @@ export async function loadAndRenderMovements({
   try {
     const { data: movements, error } = await readQueryWithNetworkRetry(() => supabase
       .from('caja')
-      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,reserva_id,pago_reserva_id,venta_tienda_id,venta_restaurante_id,venta_terraza_id,reserva_terraza_id,compra_tienda_id,usuarios(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
+      .select('id,tipo,monto,concepto,creado_en,fecha_movimiento,turno_id,usuario_id,source,original_movement_id,reserva_id,pago_reserva_id,venta_tienda_id,venta_restaurante_id,venta_terraza_id,reserva_terraza_id,compra_tienda_id,usuarios:usuarios_historial(nombre),metodo_pago_id,metodos_pago(nombre),reservas(cliente_nombre)')
       .eq('hotel_id', hotelId)
       .eq('turno_id', turnoId));
 
