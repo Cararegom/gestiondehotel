@@ -98,6 +98,18 @@ async function createDatabase() {
       using (public.usuario_actual_es_admin_hotel(id) or public.actor_is_saas_superadmin())
       with check (public.usuario_actual_es_admin_hotel(id) or public.actor_is_saas_superadmin());
 
+    -- Igual que en produccion: sin search_path propio y con la tabla sin esquema, asi que
+    -- depende del search_path de quien inserta (lo detecto la prueba en staging).
+    create table public.configuracion_hotel(hotel_id uuid primary key references public.hoteles(id), correo_remitente text);
+    create function public.after_insert_hotel_add_config() returns trigger language plpgsql as $$
+    begin
+      insert into configuracion_hotel (hotel_id, correo_remitente) values (new.id, 'support@gestiondehotel.com');
+      return new;
+    end;
+    $$;
+    create trigger trg_add_configuracion_hotel after insert on public.hoteles
+      for each row execute function public.after_insert_hotel_add_config();
+
     create function public.proteger_suscripcion_exenta_hotel() returns trigger language plpgsql
       security invoker set search_path = public as $$
     begin
@@ -118,6 +130,7 @@ async function createDatabase() {
     grant select, insert, update on public.hoteles to authenticated, service_role;
     grant select, insert on public.usuarios, public.usuarios_roles to authenticated, service_role;
     grant select on public.roles to authenticated, service_role;
+    grant select, insert on public.configuracion_hotel to authenticated, service_role;
 
     insert into public.roles values ('${ROL_ADMIN}', 'Administrador'), ('${id(91)}', 'Recepcionista');
     insert into auth.users values ('${NUEVO}', 'nuevo@example.com'), ('${ADMIN}', 'admin1@example.com');
@@ -306,7 +319,7 @@ test('la migracion no recalcula suscripciones ni exenciones existentes y es idem
   assert.deepEqual(await snapshot(), before);
 
   const triggers = await db.query(`select tgname from pg_trigger where tgrelid = 'public.hoteles'::regclass and not tgisinternal order by tgname`);
-  assert.deepEqual(triggers.rows.map((r) => r.tgname), ['trg_blindar_suscripcion_hotel', 'trg_proteger_suscripcion_exenta_hotel']);
+  assert.deepEqual(triggers.rows.map((r) => r.tgname), ['trg_add_configuracion_hotel', 'trg_blindar_suscripcion_hotel', 'trg_proteger_suscripcion_exenta_hotel']);
   const policies = await db.query(`select policyname from pg_policies where tablename = 'hoteles' order by 1`);
   assert.deepEqual(policies.rows.map((r) => r.policyname), ['hoteles_admin_update', 'hoteles_tenant_select']);
 });
@@ -333,6 +346,9 @@ test('S2: el alta normal crea hotel, admin y rol con el trial de 30 dias del ser
   assert.deepEqual(perfil.rows, [{ nombre: 'Ana Admin', hotel_id: hotelId, correo: 'nuevo@example.com', rol: 'admin' }]);
   const roles = await db.query('select rol_id, hotel_id from public.usuarios_roles where usuario_id = $1', [NUEVO]);
   assert.deepEqual(roles.rows, [{ rol_id: ROL_ADMIN, hotel_id: hotelId }]);
+  // El trigger trg_add_configuracion_hotel (sin esquema) tambien corre dentro de la RPC.
+  const config = await db.query('select correo_remitente from public.configuracion_hotel where hotel_id = $1', [hotelId]);
+  assert.deepEqual(config.rows, [{ correo_remitente: 'support@gestiondehotel.com' }]);
 
   // Ya es miembro: lee su hotel, y un segundo registro con la misma cuenta se rechaza.
   const visible = await as(db, 'authenticated', NUEVO, () => db.query('select estado_suscripcion from public.hoteles where id = $1', [hotelId]));

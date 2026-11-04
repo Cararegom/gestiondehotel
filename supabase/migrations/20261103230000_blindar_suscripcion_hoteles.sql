@@ -117,7 +117,10 @@ create or replace function public.registrar_hotel_inicial(
 returns uuid
 language plpgsql
 security definer
-set search_path = ''
+-- No vacio a proposito: los triggers heredan este search_path y after_insert_hotel_add_config
+-- (trg_add_configuracion_hotel) usa "configuracion_hotel" sin esquema. pg_temp va al final para que
+-- un objeto temporal no suplante a uno de public; dentro de la funcion todo va calificado.
+set search_path = public, pg_temp
 as $$
 declare
   v_uid uuid := auth.uid();
