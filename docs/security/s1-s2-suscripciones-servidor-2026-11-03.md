@@ -124,23 +124,43 @@ migración no se ha aplicado en producción ni en staging.**
 | Comando | Resultado |
 |---|---|
 | `node --test tests/s1-s2-suscripcion-hoteles-servidor.test.cjs tests/s2-registro-hotel-flujo.test.cjs` | 17/17 pasan |
-| `npm test` (suite completa) | 870 pruebas: 869 pasan, 1 falla. La que falla es `tests/rol-aseo.test.cjs` "main.js limita menu y rutas del rol aseo": ya fallaba antes de esta entrega y comprueba `js/main.js`, que esta rama no toca. |
-| `npm run check:syntax` | Sintaxis validada en 333 archivos |
+| `npm test` (suite completa, `eb93333`) | 871 pruebas: 870 pasan, 1 falla. La que falla es `tests/rol-aseo.test.cjs` "main.js limita menu y rutas del rol aseo": ya fallaba antes de esta entrega y comprueba `js/main.js`, que esta rama no toca. |
+| `npm run check:syntax` | Sintaxis validada en 334 archivos |
 | `npm run check:module-budgets` | OK |
 | `graphify update .` | Grafo reconstruido (7226 nodos) |
 | `npx supabase db query --read-only --linked --project-ref iikpqpdoslyduecibaij ...` | Solo lectura en producción: políticas de `hoteles`/`usuarios`/`usuarios_roles`/`referidos`, triggers, privilegios, columnas, funciones que actualizan `hoteles`, el rol Administrador y conteos agregados de altas. No se mostró ningún dato de huéspedes ni secretos. |
 
-## Staging (2026-11-03)
+## Staging (2026-11-03 y 2026-11-04), commit probado `eb93333`
 
-- Migración aplicada en `vyzscuzgjdhrhzctmsuv` con `npx supabase db query --linked --yes -f ...` y registrada a mano en
+Preparación (autorizada por Carlos, solo en `vyzscuzgjdhrhzctmsuv`):
+- Migración `20261103230000` aplicada con `npx supabase db query --linked --yes -f ...` y registrada a mano en
   `supabase_migrations.schema_migrations` (la CLI v3 no acepta el `supabase/config.toml` actual para `migration repair`).
-  Verificado: existe `trg_blindar_suscripcion_hotel`, no existe `hoteles_onboarding_insert` y
-  `registrar_hotel_inicial` es ejecutable por `authenticated` y no por `anon`.
-- Staging va por detrás de producción: no tiene el rol "Administrador" (la RPC lo necesita) ni la migración
-  `20260903090000` (columnas de exención). La migración nueva funciona igual sin esas columnas.
-- Frontend: preview de Vercel de la rama, protegido con Vercel Authentication.
-- **Pendiente:** prueba de alta pública, alta retomada, edición de teléfono, rechazo del vencimiento y días de gracia
-  desde el panel SaaS, a la espera de acceso al preview y de preparar staging.
+  Renombrada desde `20261103160000` para quedar después de `20261103213652`, que llegó desde `main`.
+- Staging no tenía el rol "Administrador": se creó con el id que usaba `script.js` (`76b034c3-…`) y el nombre que esperan
+  la RPC y `pre_fase14_can_bootstrap_*`, con los permisos por nombre de `20260809100000_fase1_authz_rls_base.sql`.
+  Staging tampoco tiene `20260903090000` (columnas de exención); la migración nueva funciona igual sin ellas.
+- Frontend: la rama servida en `localhost:5173` con `?backend=staging`; antes de escribir se comprobó que el cliente
+  apuntaba a `https://vyzscuzgjdhrhzctmsuv.supabase.co` y que se veía el distintivo "ENTORNO DE PRUEBAS · STAGING".
+- Cuentas: el alta por el formulario público quedó bloqueada por Auth de staging ("email rate limit exceeded", 429, y
+  `@example.com` rechazado como inválido), sin crear nada. Con autorización, se crearon 3 cuentas
+  `support+qas1s2…@gestiondehotel.com` con la API de administración, confirmadas y **sin enviar correo**. El envío y el
+  enlace del correo de confirmación quedan **pendientes de validar** con un SMTP o límite adecuado.
+
+Fallo encontrado y corregido: la primera prueba de alta falló con `relation "configuracion_hotel" does not exist`.
+`after_insert_hotel_add_config` (trigger `trg_add_configuracion_hotel`, igual en producción) no fija `search_path` y usa
+la tabla sin esquema; heredaba el `search_path` vacío de la RPC. Corregido en `eb93333` (`search_path = public, pg_temp`)
+y añadido a la prueba PGlite, que reproduce el error con la versión anterior. La transacción fallida no dejó nada creado.
+
+| Prueba (localhost + staging, `eb93333`) | Resultado |
+|---|---|
+| Alta nueva: cuenta con los datos del formulario en `user_metadata`, primer inicio de sesión | Entra al dashboard. Hotel `max`, `trial`, `trial_fin - trial_inicio = 30 days`, `suscripcion_fin = trial_fin`; perfil `admin`; rol `Administrador`; fila en `configuracion_hotel` |
+| Alta interrumpida: cuenta confirmada sin perfil ni datos de registro | El login muestra "Tu cuenta aún no tiene un hotel. Completa el registro…"; el enlace abre el registro y, con el mismo correo y contraseña, se crea el hotel (30 días) y entra al dashboard |
+| Admin edita `telefono` | OK (1 fila) |
+| Admin cambia `suscripcion_fin`, `trial_fin`, `plan`, `estado_suscripcion`, `gracia_hasta`, `creado_por` | Rechazado, `42501` "La suscripcion del hotel solo se puede modificar desde el sistema de pagos (columna …)"; valores sin cambios |
+| Admin inserta un hotel directamente con plan y vencimiento falsos | Rechazado, `42501` RLS |
+| Admin llama otra vez a `registrar_hotel_inicial` | Rechazado: "Esta cuenta ya pertenece a un hotel." |
+| Admin de otro hotel actualiza vencimiento y teléfono ajenos | 0 filas; no ve el hotel ajeno |
+| Superadmin de prueba en la Consola SaaS: "Dar gracia" 3 días | "Se otorgaron 3 día(s) de gracia… hasta 7 de dic de 2026"; `gracia_hasta` y `gracia_motivo` guardados |
 
 ## Pasos de aplicación (cuando se apruebe)
 
