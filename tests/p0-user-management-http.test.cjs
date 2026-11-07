@@ -17,6 +17,14 @@ async function harness(name, options = {}) {
   }
   const calls = [];
   const client = {
+    from:table=>({select:columns=>{
+      const filters=[];
+      const query={eq:(key,value)=>{filters.push([key,value]);return query;},maybeSingle:async()=>{
+        calls.push(['lookupExisting',table,columns,filters]);
+        return {data:options.existingProfile || null,error:options.lookupError || null};
+      }};
+      return query;
+    }}),
     auth:{getUser: async token => {
       calls.push(['getUser',token]);
       return options.invalidToken || token !== 'valid-user-jwt'
@@ -159,6 +167,30 @@ test('crear_colaborador: fallo Auth no intenta guardar perfil y no expone correo
   assert.equal(calls.some(c=>c[0]==='p0_finalizar_colaborador'),false);
   assert.doesNotMatch(await response.text(),/sensitive|existing/);
 });
+for (const code of ['email_exists','user_already_exists']) {
+  for (const activo of [true,false]) {
+    test(`crear_colaborador: ${code} de empleado propio ${activo ? 'activo' : 'archivado'} indica cómo continuar sin mutaciones`,async()=>{
+      const {handler,calls}=await harness('crear_colaborador',{createError:{code},existingProfile:{id:'existing-user',activo}});
+      const response=await handler(request(createBody));
+      assert.equal(response.status,409);
+      assert.match((await response.json()).error,activo ? /Editar o Reset Pass/ : /Archivados.*Reactivar/);
+      const lookup=calls.find(c=>c[0]==='lookupExisting');
+      assert.deepEqual(lookup.slice(1,3),['usuarios','id, activo']);
+      assert.ok(lookup[3].some(([key,value])=>key==='hotel_id' && value==='trusted-hotel'));
+      assert.ok(lookup[3].some(([key,value])=>key==='correo' && value===createBody.correo));
+      assert.equal(calls.some(c=>['p0_finalizar_colaborador','enable','deleteAuth','deleteTable'].includes(c[0])),false);
+    });
+  }
+}
+for (const opts of [{},{lookupError:{code:'42501'}}]) {
+  test('crear_colaborador: duplicado fuera del hotel visible mantiene respuesta genérica',async()=>{
+    const {handler,calls}=await harness('crear_colaborador',{createError:{code:'email_exists',message:'sensitive'},...opts});
+    const response=await handler(request(createBody));
+    assert.equal(response.status,400);
+    assert.doesNotMatch(await response.text(),/sensitive|pertenece|archivado|email_exists/i);
+    assert.equal(calls.some(c=>['p0_finalizar_colaborador','enable','deleteAuth','deleteTable'].includes(c[0])),false);
+  });
+}
 test('actualizar_permisos_usuario: éxito conserva contrato y nunca obtiene service_role',async()=>{
   const {handler,calls}=await harness('actualizar_permisos_usuario');
   const response=await handler(request(permissionBody));
