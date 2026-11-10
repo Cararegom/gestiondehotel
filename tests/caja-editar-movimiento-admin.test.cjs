@@ -18,6 +18,10 @@ const ownerMigration = fs.readFileSync(
   path.join(root, 'supabase', 'migrations', '20261017041500_caja_propietario_edicion_avanzada.sql'),
   'utf8',
 );
+const adminAmountsMigration = fs.readFileSync(
+  path.join(root, 'supabase', 'migrations', '20261110043640_caja_montos_administradores.sql'),
+  'utf8',
+);
 const movimientosSource = fs.readFileSync(path.join(root, 'js/modules/caja/caja-movimientos.js'), 'utf8');
 
 const id = (value) => `00000000-0000-4000-8000-${String(value).padStart(12, '0')}`;
@@ -245,6 +249,7 @@ async function createDatabase() {
   await db.exec(migration);
   await db.exec(upgradedMigration);
   await db.exec(ownerMigration);
+  await db.exec(adminAmountsMigration);
   return db;
 }
 
@@ -354,9 +359,10 @@ test('rol administrador asignado por usuarios_roles tambien puede editar', async
 test('solo el admin puede editar y solo en su hotel', async (t) => {
   const db = await createDatabase();
   t.after(() => db.close());
-  await assert.rejects(() => editar(db, ids.recepcion, { monto: 1 }), /CAJA_EDICION_SOLO_ADMIN/);
-  await assert.rejects(() => editar(db, ids.otherAdmin, { monto: 1 }), /otro hotel/);
-  assert.equal((await cajaRow(db, ids.ingreso)).monto, 50000);
+  const cambio = { movimiento: ids.reservaPago, monto: 95000, concepto: 'Pago reserva', metodo: ids.bank };
+  await assert.rejects(() => editar(db, ids.recepcion, cambio), /CAJA_EDICION_SOLO_ADMIN/);
+  await assert.rejects(() => editar(db, ids.otherAdmin, cambio), /otro hotel/);
+  assert.equal((await cajaRow(db, ids.reservaPago)).monto, 90000);
 });
 
 test('rechaza turnos cerrados, reversiones, revertidos y datos invalidos sin cambiar nada', async (t) => {
@@ -384,23 +390,34 @@ test('rechaza turnos cerrados, reversiones, revertidos y datos invalidos sin cam
   assert.equal(audit.rows[0].n, 0);
 });
 
-test('movimientos ligados a reservas o conciliaciones no cambian monto ni tipo, pero si concepto y fecha', async (t) => {
+test('administrador de turno abierto puede corregir un pago de reserva sin cambiar su tipo', async (t) => {
   const db = await createDatabase();
   t.after(() => db.close());
 
   const base = { movimiento: ids.reservaPago, tipo: 'ingreso', monto: 90000, concepto: 'Pago reserva', metodo: ids.bank };
-  await assert.rejects(() => editar(db, ids.admin, { ...base, monto: 95000 }), /CAJA_EDICION_VINCULADO/);
-  await assert.rejects(() => editar(db, ids.admin, { ...base, tipo: 'egreso' }), /CAJA_EDICION_VINCULADO/);
+  await assert.rejects(() => editar(db, ids.admin, { ...base, tipo: 'egreso' }), /CAJA_EDICION_TIPO_VINCULADO/);
   await assert.rejects(
     () => editar(db, ids.admin, { movimiento: ids.conciliado, monto: 31000, concepto: 'Transferencia', metodo: ids.bank }),
-    /CAJA_EDICION_VINCULADO/,
+    /CAJA_EDICION_CONCILIADO/,
   );
 
-  await editar(db, ids.admin, { ...base, concepto: 'Pago reserva hab 201', fecha: EDIT_AT });
+  const result = await editar(db, ids.admin, {
+    ...base, monto: 95000, concepto: 'Pago reserva hab 201', fecha: EDIT_AT,
+  });
+  assert.equal(result.ledger_sincronizado, true);
   const row = await cajaRow(db, ids.reservaPago);
-  assert.equal(row.monto, 90000);
+  assert.equal(row.monto, 95000);
   assert.equal(row.concepto, 'Pago reserva hab 201');
-  assert.equal((await ledgerRow(db, ids.reservaPago))[0].description, 'Pago reserva hab 201');
+  const [ledger] = await ledgerRow(db, ids.reservaPago);
+  assert.equal(ledger.amount, 95000);
+  assert.equal(ledger.description, 'Pago reserva hab 201');
+  const pago = await db.query('select monto from public.pagos_reserva where id = $1', [ids.pago]);
+  const reserva = await db.query('select monto_pagado from public.reservas where id = $1', [ids.reserva]);
+  assert.equal(Number(pago.rows[0].monto), 95000);
+  assert.equal(Number(reserva.rows[0].monto_pagado), 95000);
+  const audit = await db.query('select actor_id, reason from public.auditoria_operaciones where entity_id = $1', [ids.reservaPago]);
+  assert.deepEqual(audit.rows, [{ actor_id: ids.admin, reason: 'Correccion de digitacion' }]);
+  assert.equal((await cajaRow(db, ids.conciliado)).monto, 30000);
 });
 
 test('sin cambios no audita; movimiento legado sin asiento no crea uno nuevo', async (t) => {
@@ -456,11 +473,11 @@ test('superadmin corrige monto de un pago ligado a reserva y conserva Caja, reci
   );
 });
 
-test('superadmin corrige venta de tienda ligada a Caja y deja trazabilidad', async (t) => {
+test('administrador asignado por usuarios_roles corrige una venta ligada a Caja y deja trazabilidad', async (t) => {
   const db = await createDatabase();
   t.after(() => db.close());
 
-  await editar(db, ids.superadmin, { movimiento: ids.tiendaMov, monto: 12000, concepto: 'Venta tienda' });
+  await editar(db, ids.adminRoleUser, { movimiento: ids.tiendaMov, monto: 12000, concepto: 'Venta tienda' });
   assert.equal((await cajaRow(db, ids.tiendaMov)).monto, 12000);
   const sale = await db.query('select total_venta from public.ventas_tienda where id=$1', [ids.ventaTienda]);
   assert.equal(Number(sale.rows[0].total_venta), 12000);
@@ -549,10 +566,21 @@ test('propietario puede corregir un turno cerrado; administrador no titular no p
   );
 });
 
-test('el frontend reconoce al propietario por hoteles.creado_por y no por cualquier rol admin', async () => {
-  const caja = fs.readFileSync(path.join(root, 'js/modules/caja/caja.js'), 'utf8');
-  assert.match(caja, /hoteles\(nombre,creado_por\)/);
-  assert.match(caja, /perfil\.hoteles\.creado_por === user\.id/);
-  assert.match(caja, /canEditLinkedMovements: canEditLinkedMovements\(\)/);
-  assert.match(movimientosSource, /linked && !canEditLinkedMovements/);
+test('el editor administrativo habilita el monto y conserva el tipo de un pago vinculado', async (t) => {
+  const moduleUrl = pathToFileURL(path.join(root, 'js/modules/caja/caja-movimientos.js')).href;
+  const { solicitarEdicionMovimientoAdmin } = await import(moduleUrl);
+  globalThis.Swal = {
+    async fire({ html }) {
+      const amount = html.match(/<input id="edit-mov-monto"[^>]*>/)?.[0];
+      assert.ok(amount);
+      assert.doesNotMatch(amount, /\bdisabled\b/);
+      assert.match(html, /<select id="edit-mov-tipo"[^>]*\bdisabled\b/);
+      return { isConfirmed: false };
+    },
+  };
+  t.after(() => { delete globalThis.Swal; });
+  await solicitarEdicionMovimientoAdmin({
+    movement: { tipo: 'ingreso', monto: 90000, pago_reserva_id: ids.pago, fecha_movimiento: OPEN_AT },
+    metodos: [],
+  });
 });
