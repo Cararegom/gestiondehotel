@@ -47,7 +47,6 @@ let currentModuleUser = null;
 let currentContainerEl = null;
 let currentUserRole = null;
 let currentUserRoleNames = [];
-let currentIsHotelOwner = false;
 let turnoActivo = null;
 let turnoEnSupervision = null;
 let turnosAbiertosCache = new Map();
@@ -75,11 +74,6 @@ function isMeseroUser() {
 function isAdminUser() {
   return [currentUserRole, ...currentUserRoleNames]
     .some((roleName) => ADMIN_ROLES.includes(normalizeRoleName(roleName)));
-}
-
-function canEditLinkedMovements() {
-  return currentIsHotelOwner || [currentUserRole, ...currentUserRoleNames]
-    .some((roleName) => normalizeRoleName(roleName) === 'superadmin');
 }
 
 function setTurnoActivo(nuevoTurno) {
@@ -180,7 +174,6 @@ async function handleMovementTableClick(event, tBodyEl, summaryEls, turnoId, mov
     movementRefs,
     movementTableState,
     isAdminUser: isAdminUser(),
-    canEditLinkedMovements: canEditLinkedMovements(),
     supabase: currentSupabaseInstance,
     hotelId: currentHotelId,
     hotelName: currentHotelName,
@@ -742,15 +735,13 @@ export async function mount(container, supabaseInst, user) {
 
   const { data: perfil } = await supabaseInst
     .from('usuarios')
-    .select('hotel_id, rol, nombre, email, hoteles(nombre,creado_por), usuarios_roles(roles(nombre))')
+    .select('hotel_id, rol, nombre, email, hoteles(nombre), usuarios_roles(roles(nombre))')
     .eq('id', user.id)
     .single();
   
   currentHotelId = perfil?.hotel_id;
   currentHotelName = perfil?.hoteles?.nombre || '';
   currentUserRole = perfil?.rol;
-  // Se compara contra el titular real guardado en BD, no se infiere del rol 'admin'.
-  currentIsHotelOwner = Boolean(perfil?.hoteles?.creado_por && perfil.hoteles.creado_por === user.id);
   currentUserRoleNames = (perfil?.usuarios_roles || [])
     .map((item) => item?.roles?.nombre)
     .filter(Boolean);
@@ -782,7 +773,6 @@ export function unmount() {
   currentContainerEl = null;
   currentUserRole = null;
   currentUserRoleNames = [];
-  currentIsHotelOwner = false;
   turnoActivo = null;
   turnoEnSupervision = null;
   turnosAbiertosCache = new Map();
