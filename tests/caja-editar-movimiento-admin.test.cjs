@@ -19,7 +19,7 @@ const ownerMigration = fs.readFileSync(
   'utf8',
 );
 const adminAmountsMigration = fs.readFileSync(
-  path.join(root, 'supabase', 'migrations', '20261110043141_caja_montos_administradores.sql'),
+  path.join(root, 'supabase', 'migrations', '20261110043640_caja_montos_administradores.sql'),
   'utf8',
 );
 const movimientosSource = fs.readFileSync(path.join(root, 'js/modules/caja/caja-movimientos.js'), 'utf8');
