@@ -23,6 +23,18 @@ export function createHandler(deps: Dependencies = dependencies) {
       user_metadata: { nombre: nombre.trim() },
       app_metadata: { p0_created_by: actor.id, p0_hotel_id: hotelId },
     });
+    if (error?.code === "email_exists" || error?.code === "user_already_exists") {
+      // Only describe accounts already visible to this actor in the authorized hotel.
+      // Never adopt, reset or delete an existing Auth account on a create request.
+      const { data: existing, error: lookupError } = await actor.client
+        .from("usuarios").select("id, activo")
+        .eq("hotel_id", hotelId).eq("correo", correo.trim()).maybeSingle();
+      if (!lookupError && existing) {
+        throw new RequestError(409, existing.activo
+          ? "Ese correo ya pertenece a un empleado de este hotel. Usa Editar o Reset Pass en su registro existente."
+          : "Ese correo pertenece a un empleado inactivo de este hotel. Ve a Archivados y selecciona Reactivar.");
+      }
+    }
     if (error || !data.user?.id) throw new RequestError(400, "No se pudo crear el usuario con los datos indicados.");
     const userId = data.user.id;
     try {
