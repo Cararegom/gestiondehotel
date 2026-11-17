@@ -136,6 +136,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
 
   <script type="module">
     import { supabase } from './js/supabaseClient.js'; 
+    import { completarRegistroHotel, datosRegistroPendiente } from './js/services/registroHotelService.js';
 
     document.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
@@ -202,11 +203,31 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe>
           .from('usuarios')
           .select('hotel_id, rol') 
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
-        if (perfilError || !perfilUsuario) {
-            console.error("Login: Error al obtener perfil de usuario o perfil no encontrado:", perfilError);
+        if (perfilError) {
+            console.error("Login: Error al obtener perfil de usuario:", perfilError);
             loginErrorElement.textContent = "Error al verificar tu perfil. Intenta de nuevo.";
+            return;
+        }
+
+        if (!perfilUsuario) {
+            // Cuenta confirmada sin hotel todavia: termina el alta con los datos del registro.
+            const pendiente = datosRegistroPendiente(user, email);
+            if (!pendiente) {
+                loginErrorElement.innerHTML = 'Tu cuenta aún no tiene un hotel. <a href="/index.html?modal=registro" class="font-bold underline">Completa el registro</a> con este mismo correo y contraseña.';
+                return;
+            }
+            try {
+                await completarRegistroHotel(supabase, pendiente);
+            } catch (registroError) {
+                console.error("Login: No fue posible completar el alta del hotel.");
+                loginErrorElement.innerHTML = String(registroError?.message || '').includes('hoteles_nombre_key')
+                    ? 'Ese nombre de hotel ya está registrado. <a href="/index.html?modal=registro" class="font-bold underline">Completa el registro</a> con otro nombre, usando este mismo correo y contraseña.'
+                    : 'No pudimos terminar de crear tu hotel. Intenta de nuevo o escríbenos a soporte.';
+                return;
+            }
+            window.location.href = '/app/index.html#/dashboard';
             return;
         }
 
